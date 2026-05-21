@@ -446,6 +446,43 @@
             background: #27272a;
             border-color: #3f3f46;
         }
+
+        .extras-mode-tab.active {
+            background: #ff3b3b;
+            border-color: #ff3b3b;
+            color: #ffffff;
+        }
+
+        .extras-mode-tab:not(.active) {
+            background: #09090b;
+            border-color: #27272a;
+            color: #a1a1aa;
+        }
+
+        .extras-drop-zone {
+            background:
+                linear-gradient(135deg, rgba(255, 59, 59, 0.06), transparent 32%),
+                #09090b;
+        }
+
+        .extras-drop-zone.is-loaded {
+            border-style: solid;
+            border-color: rgba(255, 59, 59, 0.72);
+            background: rgba(255, 59, 59, 0.045);
+        }
+
+        .extras-preview-shell {
+            background:
+                radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.04), transparent 34%),
+                #050506;
+        }
+
+        .extras-processing-ring {
+            stroke-dasharray: 213;
+            stroke-dashoffset: 213;
+            transform-origin: center;
+            transform: rotate(-90deg);
+        }
     </style>
 </head>
 <body class="h-screen flex flex-col antialiased">
@@ -1639,91 +1676,196 @@
             </div>
 
             <!-- Activity: Extras -->
-            <div id="view-extras" class="activity-panel flex-1 flex-col bg-nexus-bg overflow-y-auto">
+            <div id="view-extras" class="activity-panel flex-1 flex-col bg-nexus-bg overflow-hidden">
                 <div class="h-12 border-b border-nexus-border flex items-center justify-between px-4 bg-nexus-panel shrink-0">
                     <div class="flex items-center gap-2">
                         <i class="fa-solid fa-expand text-nexus-red"></i>
                         <span id="extrasTitle" class="text-xs font-bold text-white uppercase tracking-wider">Extras / Image Tools</span>
                     </div>
-                    <button class="bg-nexus-red hover:bg-nexus-darkRed text-white px-4 py-2 rounded-sm text-xs font-bold uppercase"><i class="fa-solid fa-bolt mr-1"></i> Process</button>
+                    <div class="flex items-center gap-2 bg-nexus-bg border border-nexus-border p-1 rounded-sm">
+                        <button id="extrasModeImageBtn" type="button" onclick="setExtrasMode('image')" class="extras-mode-tab active px-3 py-1.5 border rounded-sm text-[10px] font-bold uppercase flex items-center gap-1.5 transition-colors">
+                            <i class="fa-regular fa-image"></i> Image
+                        </button>
+                        <button id="extrasModeVideoBtn" type="button" onclick="setExtrasMode('video')" class="extras-mode-tab px-3 py-1.5 border rounded-sm text-[10px] font-bold uppercase flex items-center gap-1.5 transition-colors">
+                            <i class="fa-solid fa-film"></i> Video
+                        </button>
+                        <button id="extrasGalleryToggleBtn" type="button" onclick="toggleExtrasGallery()" class="px-3 py-1.5 border border-nexus-border bg-nexus-bg text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm text-[10px] font-bold uppercase flex items-center gap-1.5 transition-colors">
+                            <i class="fa-regular fa-image text-nexus-red"></i> Gallery
+                        </button>
+                    </div>
                 </div>
-                <div class="p-4 space-y-4">
-                    <div class="drop-zone border border-dashed border-nexus-border h-28 flex items-center justify-center text-center">
-                        <div>
-                            <i class="fa-solid fa-layer-group text-2xl text-nexus-red"></i>
-                            <p class="text-xs font-bold text-white mt-2">Drop files or send from gallery</p>
-                            <p class="text-[10px] text-nexus-muted mt-1">The toolset follows the selected model template.</p>
-                        </div>
-                    </div>
 
-                    <div id="extrasImagePanel" class="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                        <section class="data-card p-3 space-y-3">
-                            <div class="flex items-center justify-between">
-                                <span class="mini-label">Upscale</span>
-                                <i class="fa-solid fa-up-right-and-down-left-from-center text-nexus-red"></i>
+                <div class="flex-1 grid grid-cols-1 xl:grid-cols-[minmax(410px,48%)_1fr] overflow-hidden">
+                    <aside class="border-b xl:border-b-0 xl:border-r border-nexus-border bg-zinc-950 overflow-y-auto">
+                        <div class="p-4 space-y-4">
+                            <input id="extrasFileInput" type="file" accept="image/*" class="hidden" onchange="handleExtrasFileInput(event)">
+                            <div id="extrasDropzone" onclick="triggerExtrasFilePicker()" ondragover="event.preventDefault(); this.classList.add('border-nexus-red')" ondragleave="this.classList.remove('border-nexus-red')" ondrop="handleExtrasDrop(event)" class="extras-drop-zone border border-dashed border-[#1d2434] min-h-36 flex items-center justify-center text-center cursor-pointer transition-colors hover:border-nexus-red rounded-sm">
+                                <div id="extrasDropEmpty" class="flex flex-col items-center px-5">
+                                    <i id="extrasDropIcon" class="fa-solid fa-cloud-arrow-up text-2xl text-nexus-red"></i>
+                                    <p id="extrasDropTitle" class="text-xs font-bold text-white mt-3">Drop image file here</p>
+                                    <p class="text-[10px] text-nexus-muted mt-1 uppercase tracking-wide">Click, drag from gallery, or send current output</p>
+                                </div>
+                                <div id="extrasDropLoaded" class="hidden flex-col items-center px-5 max-w-full">
+                                    <i class="fa-solid fa-circle-check text-xl text-nexus-red"></i>
+                                    <p id="extrasLoadedName" class="text-xs font-bold text-white mt-3 font-mono truncate max-w-full">-</p>
+                                    <button type="button" onclick="event.stopPropagation(); clearExtrasSource()" class="mt-2 text-[10px] font-bold uppercase text-nexus-muted hover:text-nexus-red">Clear source</button>
+                                </div>
                             </div>
-                            <select class="flat-input"><option>4x-UltraSharp</option><option>RealESRGAN 4x</option><option>SwinIR</option><option>Lanczos</option></select>
-                            <div class="grid grid-cols-2 gap-2">
-                                <button class="flat-button py-2 text-xs font-bold">2x</button>
-                                <button class="flat-button py-2 text-xs font-bold">4x</button>
-                            </div>
-                        </section>
-                        <section class="data-card p-3 space-y-3">
-                            <div class="flex items-center justify-between">
-                                <span class="mini-label">Restore</span>
-                                <i class="fa-solid fa-face-smile text-nexus-red"></i>
-                            </div>
-                            <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">Face restoration<span class="toggle-switch"><input type="checkbox"><span class="toggle-track"></span></span></label>
-                            <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">Color match<span class="toggle-switch"><input type="checkbox" checked><span class="toggle-track"></span></span></label>
-                        </section>
-                        <section class="data-card p-3 space-y-3">
-                            <div class="flex items-center justify-between">
-                                <span class="mini-label">Memory</span>
-                                <i class="fa-solid fa-memory text-nexus-red"></i>
-                            </div>
-                            <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">Tiled VAE<span class="toggle-switch"><input type="checkbox" checked><span class="toggle-track"></span></span></label>
-                            <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">Latent upscale model<span class="toggle-switch"><input type="checkbox"><span class="toggle-track"></span></span></label>
-                        </section>
-                    </div>
 
-                    <div id="extrasVideoPanel" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-3">
-                        <section class="data-card p-3 space-y-3">
-                            <div class="flex items-center justify-between">
-                                <span class="mini-label">Interpolate</span>
-                                <i class="fa-solid fa-film text-nexus-red"></i>
-                            </div>
-                            <select class="flat-input"><option>RIFE</option><option>FILM</option><option>Off</option></select>
-                            <input class="flat-input font-mono" type="number" value="30">
-                        </section>
-                        <section class="data-card p-3 space-y-3">
-                            <div class="flex items-center justify-between">
-                                <span class="mini-label">Stabilize</span>
-                                <i class="fa-solid fa-wave-square text-nexus-red"></i>
-                            </div>
-                            <div class="flex justify-between text-[10px] font-mono text-nexus-text"><span>Deflicker</span><span>0.35</span></div>
-                            <input type="range" min="0" max="1" value="0.35" step="0.01">
-                        </section>
-                        <section class="data-card p-3 space-y-3">
-                            <div class="flex items-center justify-between">
-                                <span class="mini-label">Encode</span>
-                                <i class="fa-solid fa-file-video text-nexus-red"></i>
-                            </div>
-                            <select class="flat-input"><option>MP4 H.264</option><option>WebM VP9</option><option>PNG sequence</option></select>
-                            <button class="flat-button py-2 text-xs font-bold">Pack metadata</button>
-                        </section>
-                    </div>
+                            <div id="extrasImagePanel" class="space-y-4">
+                                <section class="data-card p-3.5 space-y-3.5">
+                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Upscale Model</span>
+                                        <i class="fa-solid fa-up-right-and-down-left-from-center text-nexus-red text-[10px]"></i>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="mini-label">Upscaler algorithm</label>
+                                        <select id="extrasImageUpscaler" class="flat-input appearance-none cursor-pointer">
+                                            <option>4x-UltraSharp</option>
+                                            <option>R-ESRGAN 4x+</option>
+                                            <option>R-ESRGAN 4x+ Anime6B</option>
+                                            <option>SwinIR</option>
+                                            <option>Lanczos</option>
+                                        </select>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="mini-label">Scale factor</label>
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <button id="extrasScale2Btn" type="button" onclick="selectExtrasScale('2x')" class="flat-button py-2 text-xs font-bold">2x</button>
+                                            <button id="extrasScale4Btn" type="button" onclick="selectExtrasScale('4x')" class="flat-button py-2 text-xs font-bold bg-nexus-red text-white border-nexus-red">4x</button>
+                                        </div>
+                                    </div>
+                                </section>
 
-                    <section class="data-card p-3 space-y-2">
-                        <div class="flex justify-between items-center">
-                            <span class="mini-label">Batch Queue</span>
-                            <span class="text-[10px] font-mono text-nexus-red">3 items</span>
+                                <section class="data-card p-3.5 space-y-3">
+                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Restore & Align</span>
+                                        <i class="fa-regular fa-face-smile text-nexus-red text-[11px]"></i>
+                                    </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
+                                        <span><span class="font-bold block">Face restoration</span><span class="text-[9px] text-nexus-muted font-mono">GFPGAN style pass</span></span>
+                                        <span class="toggle-switch"><input id="extrasFaceRestore" type="checkbox"><span class="toggle-track"></span></span>
+                                    </label>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
+                                        <span><span class="font-bold block">Color match</span><span class="text-[9px] text-nexus-muted font-mono">Preserve source palette</span></span>
+                                        <span class="toggle-switch"><input id="extrasColorMatch" type="checkbox" checked><span class="toggle-track"></span></span>
+                                    </label>
+                                </section>
+
+                                <section class="data-card p-3.5 space-y-3">
+                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Memory Optimizations</span>
+                                        <i class="fa-solid fa-microchip text-nexus-red text-[10px]"></i>
+                                    </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
+                                        <span><span class="font-bold block">Tiled VAE</span><span class="text-[9px] text-nexus-muted font-mono">Lower VRAM decode</span></span>
+                                        <span class="toggle-switch"><input id="extrasTiledVae" type="checkbox" checked><span class="toggle-track"></span></span>
+                                    </label>
+                                </section>
+                            </div>
+
+                            <div id="extrasVideoPanel" class="hidden space-y-4">
+                                <section class="data-card p-3.5 space-y-3.5">
+                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Interpolate</span>
+                                        <i class="fa-solid fa-film text-nexus-red text-[10px]"></i>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="mini-label">Interpolation model</label>
+                                        <select id="extrasVideoInterpolator" class="flat-input appearance-none cursor-pointer">
+                                            <option>RIFE v4.6</option>
+                                            <option>FILM</option>
+                                            <option>DAIN</option>
+                                            <option>Off</option>
+                                        </select>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="space-y-1.5">
+                                            <span class="mini-label">Target FPS</span>
+                                            <input id="extrasTargetFps" class="flat-input font-mono" type="number" value="30" min="1" max="120">
+                                        </label>
+                                        <label class="space-y-1.5">
+                                            <span class="mini-label">Speed</span>
+                                            <select id="extrasVideoSpeed" class="flat-input appearance-none cursor-pointer"><option>1x</option><option>0.5x</option><option>2x</option></select>
+                                        </label>
+                                    </div>
+                                </section>
+
+                                <section class="data-card p-3.5 space-y-3">
+                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Stabilize</span>
+                                        <i class="fa-solid fa-wave-square text-nexus-red text-[10px]"></i>
+                                    </div>
+                                    <div class="space-y-1">
+                                        <div class="flex justify-between text-[10px] font-mono text-nexus-text"><span>Deflicker</span><span id="extrasDeflickerValue" class="text-nexus-red font-bold">0.35</span></div>
+                                        <input id="extrasDeflickerSlider" type="range" min="0" max="1" value="0.35" step="0.01" oninput="document.getElementById('extrasDeflickerValue').innerText = Number(this.value).toFixed(2)">
+                                    </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">Motion smoothing<span class="toggle-switch"><input id="extrasMotionSmooth" type="checkbox" checked><span class="toggle-track"></span></span></label>
+                                </section>
+
+                                <section class="data-card p-3.5 space-y-3">
+                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Encode</span>
+                                        <i class="fa-solid fa-file-video text-nexus-red text-[10px]"></i>
+                                    </div>
+                                    <select id="extrasVideoEncoder" class="flat-input appearance-none cursor-pointer"><option>MP4 H.264</option><option>WebM VP9</option><option>ProRes 422</option><option>PNG sequence</option></select>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">Pack metadata<span class="toggle-switch"><input id="extrasPackMetadata" type="checkbox" checked><span class="toggle-track"></span></span></label>
+                                </section>
+                            </div>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                            <div class="flex justify-between border border-nexus-border bg-nexus-bg p-2"><span>portrait_0001.png</span><span class="text-nexus-red">Ready</span></div>
-                            <div class="flex justify-between border border-nexus-border bg-nexus-bg p-2"><span>clip_frames/*.png</span><span class="text-nexus-muted">Waiting</span></div>
-                            <div class="flex justify-between border border-nexus-border bg-nexus-bg p-2"><span>merge_preview.webp</span><span class="text-nexus-muted">Waiting</span></div>
+                    </aside>
+
+                    <main class="flex flex-col bg-nexus-bg overflow-hidden">
+                        <div class="h-12 border-b border-nexus-border px-4 flex items-center justify-between bg-zinc-950 shrink-0">
+                            <span class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-clapperboard text-nexus-red"></i> Live Output Preview</span>
+                            <button id="extrasCompareBtn" type="button" onmousedown="showExtrasOriginal(true)" onmouseup="showExtrasOriginal(false)" onmouseleave="showExtrasOriginal(false)" class="hidden px-3 py-1.5 bg-nexus-bg border border-nexus-border hover:border-nexus-red text-[10px] font-bold uppercase text-nexus-muted hover:text-white rounded-sm">
+                                <i class="fa-solid fa-binoculars mr-1"></i> Hold Compare
+                            </button>
                         </div>
-                    </section>
+
+                        <div class="extras-preview-shell flex-1 relative flex items-center justify-center p-6 min-h-[320px]">
+                            <div id="extrasProcessingOverlay" class="hidden absolute inset-0 z-20 bg-zinc-950/95 flex items-center justify-center">
+                                <div class="text-center space-y-4">
+                                    <svg class="w-20 h-20 mx-auto" viewBox="0 0 80 80">
+                                        <circle cx="40" cy="40" r="34" stroke="#27272a" stroke-width="3" fill="none"></circle>
+                                        <circle id="extrasProgressCircle" class="extras-processing-ring" cx="40" cy="40" r="34" stroke="#ff3b3b" stroke-width="3" fill="none"></circle>
+                                    </svg>
+                                    <div>
+                                        <p id="extrasProgressPercent" class="text-xs font-bold text-white font-mono">0%</p>
+                                        <p id="extrasProgressLabel" class="text-[10px] text-nexus-muted font-mono mt-1">Preparing extras pipeline...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="extrasEmptyPreview" class="text-center space-y-3">
+                                <div class="h-12 w-12 rounded-full border border-nexus-border bg-nexus-panel/40 flex items-center justify-center mx-auto text-nexus-muted">
+                                    <i class="fa-solid fa-photo-film"></i>
+                                </div>
+                                <p class="text-xs font-bold text-white">No Output Compiled Yet</p>
+                                <p class="text-[10px] text-nexus-muted max-w-xs">Load an image or video, tune the extras stack, then process it.</p>
+                            </div>
+
+                            <div id="extrasImagePreview" class="hidden relative max-w-full max-h-full">
+                                <img id="extrasImageElement" src="" alt="Extras image preview" class="max-h-[65vh] max-w-full object-contain border border-nexus-border">
+                                <span id="extrasImageBadge" class="absolute bottom-2 left-2 bg-black/75 border border-nexus-border text-[9px] font-mono text-white px-2 py-0.5 rounded-sm">Ready</span>
+                            </div>
+
+                            <div id="extrasVideoPreview" class="hidden relative max-w-full max-h-full">
+                                <video id="extrasVideoElement" src="" controls playsinline loop class="max-h-[65vh] max-w-full object-contain border border-nexus-border"></video>
+                                <span id="extrasVideoBadge" class="absolute bottom-2 left-2 bg-black/75 border border-nexus-border text-[9px] font-mono text-white px-2 py-0.5 rounded-sm">Ready</span>
+                            </div>
+                        </div>
+
+                        <div class="p-3 border-t border-nexus-border bg-zinc-950 flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0">
+                            <span id="extrasStatusText" class="text-[10px] font-mono text-nexus-muted">Extras pipeline ready</span>
+                            <div class="flex gap-2 w-full sm:w-auto">
+                                <button id="extrasClearBtn" type="button" onclick="clearExtrasSource()" class="flat-button hidden px-4 py-2.5 text-xs font-bold uppercase">Clear</button>
+                                <button id="extrasProcessBtn" type="button" onclick="startExtrasProcessing()" class="flex-1 sm:flex-initial px-6 py-2.5 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-xs uppercase tracking-wider rounded-sm transition-all flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-bolt-lightning text-[10px]"></i> Process File
+                                </button>
+                            </div>
+                        </div>
+                    </main>
                 </div>
             </div>
 
@@ -2072,6 +2214,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         };
 
         let galleryItems = [];
+        let extrasMode = localStorage.getItem('nexus_extras_mode') || 'image';
+        let extrasSource = null;
+        let extrasOriginalUrl = '';
+        let extrasProcessedUrl = '';
+        let extrasObjectUrl = '';
+        let extrasProcessing = false;
         let loraLibrary = [];
 
         const presetButtonLabels = {
@@ -2640,9 +2788,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 const media = item.mediaType === 'video'
                     ? `<video src="${url}" muted playsinline class="w-full h-full object-cover"></video><span class="absolute bottom-1 right-1 bg-nexus-panel/90 border border-nexus-border px-1 text-[9px] text-white"><i class="fa-solid fa-film"></i></span>`
                     : `<img src="${url}" draggable="false" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover">`;
-                const dragAttrs = item.mediaType === 'image'
-                    ? `draggable="true" ondragstart="handleGalleryDragStart(event, ${index})" ondragend="handleGalleryDragEnd()"`
-                    : '';
+                const dragAttrs = `draggable="true" ondragstart="handleGalleryDragStart(event, ${index})" ondragend="handleGalleryDragEnd()"`;
                 return `
                     <div role="button" tabindex="0" data-gallery-index="${index}" ${dragAttrs} onclick="openGalleryModal(${index})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openGalleryModal(${index});}" class="relative aspect-square overflow-hidden border ${selected} cursor-pointer hover:opacity-80 transition-opacity bg-nexus-bg text-left">
                         ${media}
@@ -2669,6 +2815,208 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const kind = String(item.media_type || item.mediaType || item.kind || '').toLowerCase();
             const filename = String(item.filename || item.title || item.image || '').toLowerCase();
             return kind.includes('video') || /\.(mp4|webm|mov|mkv)$/.test(filename);
+        }
+
+        function isVideoFile(file) {
+            return !!file && (file.type?.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi)$/i.test(file.name || ''));
+        }
+
+        function updateExtrasModeUi() {
+            const isVideo = extrasMode === 'video';
+            document.getElementById('extrasModeImageBtn')?.classList.toggle('active', !isVideo);
+            document.getElementById('extrasModeVideoBtn')?.classList.toggle('active', isVideo);
+            document.getElementById('extrasImagePanel')?.classList.toggle('hidden', isVideo);
+            document.getElementById('extrasVideoPanel')?.classList.toggle('hidden', !isVideo);
+            const title = document.getElementById('extrasTitle');
+            if (title) title.innerText = isVideo ? 'Extras / Video Post' : 'Extras / Image Tools';
+            const input = document.getElementById('extrasFileInput');
+            if (input) input.accept = isVideo ? 'video/*' : 'image/*';
+            const dropTitle = document.getElementById('extrasDropTitle');
+            if (dropTitle) dropTitle.innerText = isVideo ? 'Drop video file here' : 'Drop image file here';
+            const dropIcon = document.getElementById('extrasDropIcon');
+            if (dropIcon) dropIcon.className = isVideo ? 'fa-solid fa-film text-2xl text-nexus-red' : 'fa-solid fa-cloud-arrow-up text-2xl text-nexus-red';
+            renderExtrasSource();
+        }
+
+        function setExtrasMode(mode, options = {}) {
+            extrasMode = mode === 'video' ? 'video' : 'image';
+            localStorage.setItem('nexus_extras_mode', extrasMode);
+            updateExtrasModeUi();
+            if (!options.quiet) showToast('Extras Mode', extrasMode === 'video' ? 'Video post tools selected.' : 'Image tools selected.');
+        }
+
+        function toggleExtrasGallery() {
+            const sidebar = document.getElementById('rightSidebar');
+            const isGalleryOpen = sidebar && !sidebar.classList.contains('hidden') && activeRightSidebarTab === 'gallery';
+            if (isGalleryOpen) {
+                sidebar.classList.add('hidden');
+                sidebar.classList.remove('lg:flex');
+                isGalleryOpen = false;
+                return;
+            }
+            openGalleryPanel();
+        }
+
+        function triggerExtrasFilePicker() {
+            if (extrasProcessing) return;
+            document.getElementById('extrasFileInput')?.click();
+        }
+
+        function handleExtrasFileInput(event) {
+            const file = event.target?.files?.[0];
+            if (file) loadExtrasFile(file);
+        }
+
+        function handleExtrasDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            document.getElementById('extrasDropzone')?.classList.remove('border-nexus-red');
+
+            const galleryIndex = galleryIndexFromDataTransfer(event.dataTransfer);
+            if (galleryIndex >= 0 && galleryItems[galleryIndex]) {
+                const item = galleryItems[galleryIndex];
+                loadExtrasSource({
+                    src: item.image || item.thumb || '',
+                    title: item.title || item.filename || 'gallery output',
+                    mediaType: isVideoOutput(item) ? 'video' : 'image'
+                });
+                return;
+            }
+
+            const file = [...event.dataTransfer?.files || []].find(item => isImageFile(item) || isVideoFile(item));
+            if (file) loadExtrasFile(file);
+        }
+
+        function loadExtrasFile(file) {
+            const mediaType = isVideoFile(file) ? 'video' : 'image';
+            if (mediaType !== extrasMode) setExtrasMode(mediaType, { quiet: true });
+            if (extrasObjectUrl) URL.revokeObjectURL(extrasObjectUrl);
+            extrasObjectUrl = URL.createObjectURL(file);
+            loadExtrasSource({
+                src: extrasObjectUrl,
+                title: file.name || `${mediaType} file`,
+                mediaType,
+                size: file.size || 0
+            });
+        }
+
+        function loadExtrasSource(source) {
+            if (!source?.src) return;
+            extrasSource = {
+                src: source.src,
+                title: source.title || 'extras source',
+                mediaType: source.mediaType === 'video' ? 'video' : 'image',
+                size: source.size || 0
+            };
+            extrasOriginalUrl = extrasSource.src;
+            extrasProcessedUrl = '';
+            if (extrasSource.mediaType !== extrasMode) setExtrasMode(extrasSource.mediaType, { quiet: true });
+            renderExtrasSource();
+            showToast('Extras Source Loaded', `${extrasSource.title} ready.`);
+        }
+
+        function clearExtrasSource() {
+            if (extrasObjectUrl) URL.revokeObjectURL(extrasObjectUrl);
+            extrasObjectUrl = '';
+            extrasSource = null;
+            extrasOriginalUrl = '';
+            extrasProcessedUrl = '';
+            extrasProcessing = false;
+            renderExtrasSource();
+        }
+
+        function renderExtrasSource() {
+            const hasSource = !!extrasSource?.src;
+            const isVideo = extrasSource?.mediaType === 'video';
+            const dropzone = document.getElementById('extrasDropzone');
+            dropzone?.classList.toggle('is-loaded', hasSource);
+            document.getElementById('extrasDropEmpty')?.classList.toggle('hidden', hasSource);
+            const loaded = document.getElementById('extrasDropLoaded');
+            loaded?.classList.toggle('hidden', !hasSource);
+            loaded?.classList.toggle('flex', hasSource);
+            const loadedName = document.getElementById('extrasLoadedName');
+            if (loadedName) loadedName.innerText = extrasSource?.title || '-';
+
+            document.getElementById('extrasEmptyPreview')?.classList.toggle('hidden', hasSource);
+            document.getElementById('extrasImagePreview')?.classList.toggle('hidden', !hasSource || isVideo);
+            document.getElementById('extrasVideoPreview')?.classList.toggle('hidden', !hasSource || !isVideo);
+            document.getElementById('extrasCompareBtn')?.classList.toggle('hidden', !extrasProcessedUrl);
+            document.getElementById('extrasClearBtn')?.classList.toggle('hidden', !hasSource);
+
+            const image = document.getElementById('extrasImageElement');
+            const video = document.getElementById('extrasVideoElement');
+            if (image) image.src = hasSource && !isVideo ? (extrasProcessedUrl || extrasSource.src) : '';
+            if (video) video.src = hasSource && isVideo ? (extrasProcessedUrl || extrasSource.src) : '';
+
+            const imageBadge = document.getElementById('extrasImageBadge');
+            const videoBadge = document.getElementById('extrasVideoBadge');
+            if (imageBadge) imageBadge.innerText = extrasProcessedUrl ? `${document.getElementById('extrasImageUpscaler')?.value || 'Upscaled'} / ${extrasScaleFactor()}` : 'Source loaded';
+            if (videoBadge) videoBadge.innerText = extrasProcessedUrl ? `${document.getElementById('extrasVideoInterpolator')?.value || 'Interpolated'} / ${document.getElementById('extrasTargetFps')?.value || 30} FPS` : 'Source loaded';
+
+            const status = document.getElementById('extrasStatusText');
+            if (status) status.innerText = hasSource
+                ? `${extrasSource.mediaType === 'video' ? 'Video' : 'Image'} ready: ${extrasSource.title}`
+                : 'Extras pipeline ready';
+        }
+
+        function extrasScaleFactor() {
+            return document.getElementById('extrasScale4Btn')?.classList.contains('bg-nexus-red') ? '4x' : '2x';
+        }
+
+        function selectExtrasScale(factor) {
+            const is4x = factor === '4x';
+            const active = 'flat-button py-2 text-xs font-bold bg-nexus-red text-white border-nexus-red';
+            const inactive = 'flat-button py-2 text-xs font-bold';
+            const scale2 = document.getElementById('extrasScale2Btn');
+            const scale4 = document.getElementById('extrasScale4Btn');
+            if (scale2) scale2.className = is4x ? inactive : active;
+            if (scale4) scale4.className = is4x ? active : inactive;
+            renderExtrasSource();
+        }
+
+        function showExtrasOriginal(active) {
+            if (!extrasSource || !extrasProcessedUrl) return;
+            const src = active ? extrasOriginalUrl : extrasProcessedUrl;
+            const image = document.getElementById('extrasImageElement');
+            const video = document.getElementById('extrasVideoElement');
+            if (extrasSource.mediaType === 'video') {
+                if (video) video.src = src;
+            } else if (image) {
+                image.src = src;
+            }
+        }
+
+        function startExtrasProcessing() {
+            if (!extrasSource?.src) {
+                showToast('Extras Source Required', 'Load an image or video before processing.');
+                return;
+            }
+            if (extrasProcessing) return;
+            extrasProcessing = true;
+            const overlay = document.getElementById('extrasProcessingOverlay');
+            const circle = document.getElementById('extrasProgressCircle');
+            const percent = document.getElementById('extrasProgressPercent');
+            const label = document.getElementById('extrasProgressLabel');
+            overlay?.classList.remove('hidden');
+            let progress = 0;
+            const detail = extrasSource.mediaType === 'video'
+                ? `Interpolating with ${document.getElementById('extrasVideoInterpolator')?.value || 'RIFE'}`
+                : `Upscaling with ${document.getElementById('extrasImageUpscaler')?.value || '4x-UltraSharp'}`;
+            if (label) label.innerText = detail;
+            const timer = setInterval(() => {
+                progress += 12.5;
+                const clamped = Math.min(100, progress);
+                if (circle) circle.style.strokeDashoffset = String(213 - (clamped / 100) * 213);
+                if (percent) percent.innerText = `${Math.round(clamped)}%`;
+                if (clamped >= 100) {
+                    clearInterval(timer);
+                    extrasProcessing = false;
+                    extrasProcessedUrl = extrasOriginalUrl;
+                    overlay?.classList.add('hidden');
+                    renderExtrasSource();
+                    showToast('Extras Complete', extrasSource.mediaType === 'video' ? 'Video post pass completed.' : 'Image extras pass completed.');
+                }
+            }, 120);
         }
 
         function setLinearOutput(item) {
@@ -3092,9 +3440,6 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const profile = modelProfiles[activePreset];
             const isVideo = profile?.type === 'video';
             const videoPanel = document.getElementById('videoSettingsPanel');
-            const imageExtras = document.getElementById('extrasImagePanel');
-            const videoExtras = document.getElementById('extrasVideoPanel');
-            const extrasTitle = document.getElementById('extrasTitle');
             const dimensionsTitle = document.getElementById('dimensionsTitle');
             const extendBtn = document.getElementById('extendCanvasBtn');
             const ltxOnly = activePreset === 'LTX';
@@ -3108,9 +3453,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (ltxVaePanel) ltxVaePanel.classList.toggle('hidden', !ltxOnly);
             if (latentUpscaleWrapper) latentUpscaleWrapper.classList.toggle('hidden', !ltxOnly);
             if (activeAudioWrapper) activeAudioWrapper.classList.toggle('hidden', !ltxOnly);
-            if (imageExtras) imageExtras.classList.toggle('hidden', isVideo);
-            if (videoExtras) videoExtras.classList.toggle('hidden', !isVideo);
-            if (extrasTitle) extrasTitle.innerText = isVideo ? 'Extras / Video Post' : 'Extras / Image Tools';
+            updateExtrasModeUi();
             if (dimensionsTitle) dimensionsTitle.innerText = isVideo ? 'Frame Dimensions' : 'Image Dimensions';
             if (extendBtn) {
                 const canExtend = !!profile?.supportsExtend;
@@ -4658,7 +5001,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function handleGalleryDragStart(event, index) {
             const item = galleryItems[index];
-            if (!item || isVideoOutput(item)) {
+            if (!item) {
                 event.preventDefault();
                 return;
             }
@@ -4666,7 +5009,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             event.dataTransfer.effectAllowed = 'copy';
             event.dataTransfer.setData('application/x-nexus-gallery-index', String(index));
             event.dataTransfer.setData('text/uri-list', item.image || item.thumb || '');
-            event.dataTransfer.setData('text/plain', item.title || item.filename || 'gallery image');
+            event.dataTransfer.setData('text/plain', item.title || item.filename || 'gallery output');
         }
 
         function handleGalleryDragEnd() {
@@ -4811,6 +5154,17 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
 
             if (target === 'extras') {
+                const image = document.getElementById('mainImageDisplay');
+                const video = document.getElementById('mainVideoDisplay');
+                const isVideo = video && !video.classList.contains('hidden') && video.src;
+                const src = isVideo ? video.src : image?.src || '';
+                if (src) {
+                    loadExtrasSource({
+                        src,
+                        title: isVideo ? 'viewer video output' : 'viewer image output',
+                        mediaType: isVideo ? 'video' : 'image'
+                    });
+                }
                 switchActivity('extras', getActivityButton('extras'));
                 showToast("Sent to Extras", sourceActivity === 'img2img' ? "img2img result queued for extras." : "txt2img output queued for extras.");
             }
@@ -5008,6 +5362,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
 
             if (target === 'extras') {
+                loadExtrasSource({
+                    src: item.image || item.thumb || '',
+                    title: item.title || item.filename || 'gallery output',
+                    mediaType: isVideoOutput(item) ? 'video' : 'image'
+                });
                 switchActivity('extras', getActivityButton('extras'));
                 showToast("Sent to Extras", "Gallery item queued for extras.");
             }
@@ -6423,6 +6782,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         // Generate through the embedded backend when available, with a UI-only fallback.
         async function simulateGeneration() {
+            if (currentActivity === 'extras') {
+                startExtrasProcessing();
+                return;
+            }
             const btn = document.getElementById('generateBtnText');
             const overlay = document.getElementById('loadingOverlay');
             
@@ -7183,6 +7546,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         syncSketchColor('#ff3b3b');
         syncInpaintBrushSize(inpaintBrushSize);
         updateInpaintHistoryButtons();
+        updateExtrasModeUi();
         const storedActivity = currentActivity;
         const storedWorkspace = activeWorkspace;
         if (storedActivity === 'txt2img' || storedActivity === 'img2img') {
