@@ -1,0 +1,254 @@
+NEXUS BTA - Image and Video Generation Studio Requirements
+==========================================================
+
+Goal
+----
+Build a local AI studio inspired by InvokeAI, ComfyUI and Forge Neo patterns:
+1. Fast txt2img, img2img, inpaint/outpaint, extras, PNG metadata, checkpoint merge, extensions and settings tabs.
+2. Linear viewer, inpaint canvas and node workflow modes in the txt2img workspace.
+3. Model-aware UI templates for SD 1.5, SDXL, FLUX, QWEN, LUMINA, WAN, ANIMA and LTX.
+4. Compatibility with ComfyUI workflow JSON, embedded workflow metadata, extension bridges and app-mode style simplified workflows.
+5. Runtime controls for modern and older GPUs, with automatic device detection, attention backend selection and manual disable options.
+
+Current Implementation
+----------------------
+1. index.html is the Nexus BTA frontend based on UiCode.txt.
+2. The frontend can still open directly in a browser, but it now connects to the local backend at http://127.0.0.1:7861/api when available.
+3. The backend lives in backend/nexus_backend and uses FastAPI as the Nexus orchestration layer.
+4. The embedded ComfyUI runtime lives in runtime/ComfyUI and is started by the Nexus backend, not by an external ComfyUI install.
+5. The integrated Python/CUDA environment lives in runtime/.venv.
+6. Custom nodes are managed in ./custom_nodes.
+7. ComfyUI workflows are managed in ./workflows/comfyui.
+8. Models are managed in ./models.
+9. Settings include Reload UI, device probing, VRAM policy and attention toggles.
+10. LTX 2.3 core assets have been imported selectively into ./models; optional large EROS/Sulphur model imports are available through scripts/import_ltx23_assets.ps1 flags.
+
+Backend Commands
+----------------
+Bootstrap embedded runtime:
+  powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap_nexus_runtime.ps1 -ProjectRoot D:\NexusBTA -CopyPythonEnv -ImportCustomNodes -ImportWorkflows
+
+Import selective LTX 2.3 assets:
+  powershell -ExecutionPolicy Bypass -File .\scripts\import_ltx23_assets.ps1 -ProjectRoot D:\NexusBTA
+
+Optional large LTX imports:
+  powershell -ExecutionPolicy Bypass -File .\scripts\import_ltx23_assets.ps1 -ProjectRoot D:\NexusBTA -IncludeErosModel
+  powershell -ExecutionPolicy Bypass -File .\scripts\import_ltx23_assets.ps1 -ProjectRoot D:\NexusBTA -IncludeSulphurModel
+
+Start Nexus backend:
+  powershell -ExecutionPolicy Bypass -File .\scripts\run_backend.ps1 -ProjectRoot D:\NexusBTA
+
+Start full app:
+  .\run.bat
+
+Open Nexus UI:
+  http://127.0.0.1:7861/ui
+
+Start/check embedded ComfyUI through Nexus:
+  POST http://127.0.0.1:7861/api/comfy/start
+  GET  http://127.0.0.1:7861/api/health
+
+Nexus Manager
+-------------
+1. The Extensions tab is now the Nexus Manager, with custom UI/UX rather than the ComfyUI Manager interface.
+2. It shows backend state, custom node count, dependency requirement count and workflow count.
+3. It can refresh local custom node metadata from ./custom_nodes.
+4. It can install requirements.txt files for enabled local custom nodes.
+5. Loading a workflow runs compatibility analysis against the embedded ComfyUI object registry.
+6. Missing workflow node classes can be mapped to ComfyUI-Manager cache suggestions when the local manager cache contains matching node metadata.
+7. Workflow load/save buttons are available in the top bar next to Gallery.
+8. Workflow JSON files can be dragged into the app to import.
+9. The UI remains on the Nexus loading gate until the backend is synchronized; it does not fall back to a static HTML-only mode.
+
+Core UI Requirements
+--------------------
+1. Header:
+   - NEXUS BTA branding.
+   - Preset buttons: SD 1.5, SDXL, FLUX, QWEN, LUMINA, WAN, LTX, ANIMA.
+   - Global checkpoint selector.
+   - Gallery/assets sidebar toggle.
+2. Left activity bar:
+   - txt2img.
+   - img2img.
+   - Extras.
+   - PNG Info.
+   - Checkpoint Merge.
+   - Extensions.
+   - Settings.
+3. txt2img workspace:
+   - Generate/cancel button.
+   - Prompt and negative prompt.
+   - LoRA concept selector with search, sort, refresh, folder/tag filters and strength tags.
+   - VAE, text encoder, distilled/variant and precision selectors.
+   - Expandable Distilled LoRA slots below VAE/Text Encoder, including LoRA 1 and LoRA 2 for motion templates such as LTX 2.3.
+   - Model compatibility summary and chips.
+   - Width/height controls, swap and auto detect.
+   - Scheduler, steps, CFG and seed.
+   - Refiner and advanced accordions.
+   - Video/motion accordion for WAN, LTX and adapter routes.
+   - Runtime optimization status.
+   - Linear viewer, inpaint canvas and node workflow sub-tabs.
+   - Inpaint canvas and node workflow support middle-mouse pan, wheel zoom, zoom controls and reset view.
+   - Node workflow nodes can be repositioned directly and connections update with node movement.
+   - Inpaint sketch supports sketch color entry, color picker and canvas color sampling.
+   - Canvas includes an Extend action that is enabled only for templates with compatible extend/outpaint support.
+4. img2img:
+   - Source image drop zone.
+   - Inpaint/outpaint/sketch/reference modes.
+   - Denoise, mask blur, resize mode, mask content and control stack.
+5. Extras:
+   - Image upscale, restore faces, tiled VAE.
+   - Video interpolation, target FPS and deflicker.
+   - Batch queue surface.
+6. PNG Info:
+   - PNG/WebP/video sidecar drop zone.
+   - Prompt, seed, model hash and ComfyUI workflow metadata display.
+   - Send to txt2img, img2img and workflow actions.
+7. Checkpoint Merge:
+   - Model A/B/C selectors.
+   - Weighted sum, add difference, triple sum and block merge methods.
+   - Precision, output format, VAE baking and metadata notes.
+8. Extensions:
+   - ComfyUI workflow loader.
+   - ControlNet suite.
+   - Model manager.
+   - API bridge.
+9. Settings:
+   - Device auto-detection.
+   - VRAM policy: Balanced, Low VRAM, Med VRAM, High VRAM, CPU fallback.
+   - Attention toggles: SageAttention, FlashAttention, xFormers, PyTorch SDPA.
+   - Model path mapping.
+   - API server, extension reload, ComfyUI app mode and gallery metadata toggles.
+   - Reload UI command.
+
+Model Template Requirements
+---------------------------
+SD 1.5:
+  Checkpoint: DreamShaper_v8.safetensors.
+  Native size: 512x768.
+  Scheduler: Euler Ancestral.
+  Steps/CFG: 20 / 7.0.
+  VAE: automatic, vae-ft-mse, kl-f8-anime2 or none.
+  Encoder: CLIP-L.
+  Supports: LoRA, embeddings, ControlNet, xFormers, low VRAM.
+  Video route: AnimateDiff SD 1.5.
+
+SDXL:
+  Checkpoint: RealismEngine_SDXL.safetensors.
+  Native size: 1024x1024.
+  Scheduler: DPM++ 2M Karras.
+  Steps/CFG: 35 / 6.0.
+  VAE: SDXL VAE or automatic.
+  Encoder: CLIP-G + CLIP-L.
+  Supports: SDXL LoRA, refiner, ControlNet XL, high-res workflows.
+
+FLUX:
+  Checkpoint: Flux_Dev_v1.safetensors.
+  Native size: 1024x1024.
+  Scheduler: FlowMatch Euler.
+  Steps/CFG: 25 / 3.5.
+  VAE: flux_ae.safetensors.
+  Encoder: T5-XXL fp8/fp16 plus CLIP-L where required.
+  Supports: distilled variants, GGUF quantization, bf16/fp8 memory modes.
+
+QWEN:
+  Checkpoint: Qwen_Image_Edit_20B.gguf.
+  Native size: 1328x1328.
+  Scheduler: FlowMatch Euler.
+  Steps/CFG: 30 / 4.0.
+  Encoder: Qwen-VL Encoder.
+  Supports: image edit, multimodal prompt editing, GGUF quantized memory options.
+
+LUMINA:
+  Checkpoint: Lumina_Image_2.safetensors.
+  Native size: 1024x1024.
+  Scheduler: FlowMatch Euler.
+  Steps/CFG: 28 / 4.5.
+  Encoder: T5-XXL fp8/fp16.
+  Supports: creative high-resolution image generation and external video handoff.
+
+WAN:
+  Checkpoint: Wan2.1_T2V_14B.gguf.
+  Native size: 832x480.
+  Scheduler: FlowMatch Euler.
+  Steps/CFG: 30 / 5.0.
+  Encoder: T5-XXL fp8/fp16.
+  Supports: text-to-video, image-to-video, GGUF quantization, 81-frame default route.
+
+LTX:
+  Checkpoint: LTX_Video_13B.safetensors.
+  Native size: 768x512.
+  Scheduler: LCM.
+  Steps/CFG: 8 / 3.0.
+  Encoder: T5-XXL fp8 or automatic.
+  Supports: fast latent video, distilled/turbo variants and quick previews.
+
+ANIMA:
+  Checkpoint: AnimaPencil_v1.safetensors.
+  Native size: 1024x576.
+  Scheduler: Euler Ancestral.
+  Steps/CFG: 25 / 7.0.
+  VAE: automatic, kl-f8-anime2 or vae-ft-mse.
+  Encoder: CLIP-L.
+  Supports: anime LoRA stacks, preview workflows and gallery metadata.
+
+ComfyUI Compatibility
+---------------------
+1. Import workflow JSON files.
+2. Export the active UI state as a ComfyUI-style node graph.
+3. Preserve embedded workflow metadata in PNG/WebP outputs.
+4. Support App Mode style simplified interfaces that map to complex node graphs.
+5. Provide extension hooks for custom nodes, ControlNet, IP-Adapter, model manager and API queue submission.
+
+Backend Runtime Requirements
+----------------------------
+1. Python backend with FastAPI or equivalent local server.
+2. PyTorch runtime with CUDA, ROCm, DirectML or CPU fallback depending on platform.
+3. Diffusers/Transformers support for model families that fit the pipeline abstraction.
+4. ComfyUI-compatible workflow executor or bridge for graph execution.
+5. Safetensors, ckpt and GGUF model scanning.
+6. LoRA, LyCORIS, textual inversion and embedding loading where the active model family supports them.
+7. VAE and text encoder override loading.
+8. Video pipeline support for WAN, LTX and adapter-based workflows.
+9. Metadata writer/reader for PNG, WebP and sidecar JSON.
+10. Queue system with progress, cancel, preview and history.
+
+Optimization Requirements
+-------------------------
+1. Auto-detect GPU adapter and choose default runtime profile.
+2. Allow manual disable of xFormers, FlashAttention, SageAttention and PyTorch SDPA.
+3. Attention priority should be SageAttention, FlashAttention, xFormers, PyTorch SDPA, Basic.
+4. xFormers must be optional because compatibility varies by GPU and PyTorch build.
+5. Support fp16, bf16, fp32, fp8 where the model/backend supports them.
+6. Low VRAM mode: sequential CPU offload, VAE tiling, attention slicing and smaller preview batches.
+7. Med VRAM mode: balanced offload and tiled decode.
+8. High VRAM mode: persistent model cache and larger batch sizes.
+9. CPU fallback must keep the UI operational even when generation is unavailable or slow.
+10. Settings must support reload UI without losing saved prompt presets.
+
+Suggested Folder Layout
+-----------------------
+models/
+  checkpoints/
+  vae/
+  loras/
+  text_encoders/
+  controlnet/
+  upscale_models/
+  latent_upscale_models/
+  video/
+workflows/
+  comfyui/
+outputs/
+  images/
+  videos/
+extensions/
+config/
+  settings.json
+  model_templates.json
+
+Reference Features Used
+-----------------------
+1. InvokeAI: local web UI, unified canvas, workflows/nodes, gallery/boards and model management.
+2. ComfyUI: modular node graph, workflow JSON, API/backend focus, app-mode simplified interfaces and multi-media workflows.
+3. Forge Neo: attention backend flags, xFormers/Flash/Sage/PyTorch fallback thinking, command-line/runtime configuration and performance-first defaults.

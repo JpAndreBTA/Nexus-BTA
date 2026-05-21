@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Nexus BTA">
+  <rect width="64" height="64" rx="12" fill="#0f1117"/>
+  <path d="M14 47V17h8l20 18V17h8v30h-8L22 29v18z" fill="#f5f7fb"/>
+  <path d="M14 17h8l28 30h-8z" fill="#ff3b3b" opacity=".92"/>
+  <path d="M10 53h44v4H10z" fill="#ff3b3b"/>
+</svg>

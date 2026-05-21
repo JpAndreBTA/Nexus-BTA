@@ -1,0 +1,58 @@
+# NEXUS BTA backend dependency baseline.
+# The current UI is static in index.html; these packages are for the next backend step.
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+pydantic>=2.8
+python-multipart>=0.0.9
+
+# ComfyUI embedded runtime baseline
+comfyui-workflow-templates==0.9.75
+comfyui-embedded-docs==0.5.0
+comfyui-frontend-package>=1.43
+aiohttp>=3.11.8
+yarl>=1.18.0
+pyyaml>=6.0
+torchsde>=0.2.6
+SQLAlchemy>=2.0
+alembic>=1.13
+filelock>=3.15
+av>=14.2.0
+requests>=2.32
+simpleeval>=1.0
+blake3>=1.0
+
+torch>=2.4
+torchvision>=0.19
+torchaudio>=2.4
+accelerate>=0.33
+diffusers>=0.31
+transformers>=4.44
+safetensors>=0.4.4
+peft>=0.12
+sentencepiece>=0.2
+protobuf>=5.27
+gguf>=0.10
+
+numpy>=1.26
+pillow>=10.4
+opencv-python>=4.10
+opencv-contrib-python>=4.10
+imageio>=2.34
+imageio-ffmpeg>=0.5
+soundfile>=0.13
+piexif>=1.1
+einops>=0.8
+tqdm>=4.66
+psutil>=6.0
+
+# Optional attention/runtime packages, install only when compatible with the GPU and PyTorch build:
+# xformers
+# flash-attn
+# sageattention
+
+# Optional restoration/upscale/video helpers:
+# realesrgan
+# facexlib
+# onnxruntime-gpu

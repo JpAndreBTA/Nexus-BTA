@@ -1,0 +1,154 @@
+{
+  "nexus_bta_base": {
+    "preset": "Qwen",
+    "activity": "img2img",
+    "description": "Nexus-owned Qwen image-edit base workflow. Runtime builders inject Qwen GGUF/UNET, text encoder, VAE and reference image."
+  },
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "models/checkpoints/qwen/select_model.gguf"
+    },
+    "_meta": {
+      "title": "Load Qwen Model"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Qwen Text Encoder"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "Qwen_Image-VAE.safetensors"
+    },
+    "_meta": {
+      "title": "Qwen VAE"
+    }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "reference.png"
+    },
+    "_meta": {
+      "title": "Reference Image"
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeQwenImageEdit",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "prompt": "a woman",
+      "vae": [
+        "3",
+        0
+      ],
+      "image": [
+        "4",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "6": {
+    "class_type": "TextEncodeQwenImageEdit",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "prompt": "blurry, low quality",
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "7": {
+    "class_type": "EmptyQwenImageLayeredLatentImage",
+    "inputs": {
+      "width": 512,
+      "height": 512,
+      "layers": 1,
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "Reference Latent"
+    }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ],
+      "seed": -1,
+      "steps": 4,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.65
+    },
+    "_meta": {
+      "title": "Qwen Edit Sampler"
+    }
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "10": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "9",
+        0
+      ],
+      "filename_prefix": "NEXUS_BTA_QWEN"
+    },
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

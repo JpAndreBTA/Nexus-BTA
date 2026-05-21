@@ -1,0 +1,236 @@
+{
+  "nexus_bta_base": {
+    "preset": "LTX",
+    "activity": "img2img",
+    "description": "Nexus-owned LTX 2.3 512x512 img2vid base workflow. Runtime builders inject selected LTX checkpoint, Gemma text encoder, LoRAs, active audio flag and reference image."
+  },
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "models/checkpoints/ltx/select_ltx23_checkpoint.safetensors"
+    },
+    "_meta": {
+      "title": "Load LTX 2.3 Checkpoint"
+    }
+  },
+  "2": {
+    "class_type": "LTXAVTextEncoderLoader",
+    "inputs": {
+      "text_encoder": "gemma_text_encoder.safetensors",
+      "ckpt_name": "models/checkpoints/ltx/select_ltx23_checkpoint.safetensors",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "LTX Text Encoder"
+    }
+  },
+  "3": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "reference.png"
+    },
+    "_meta": {
+      "title": "Reference Image"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "text": "cinematic motion, smooth camera movement"
+    },
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "text": "low quality, jitter, distorted motion"
+    },
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "6": {
+    "class_type": "PrimitiveNode",
+    "inputs": {
+      "seconds": 4,
+      "fps": 8,
+      "active_audio": true,
+      "width": 512,
+      "height": 512
+    },
+    "_meta": {
+      "title": "Video / Motion Settings"
+    }
+  },
+  "7": {
+    "class_type": "LTXVImgToVideo",
+    "inputs": {
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ],
+      "image": [
+        "3",
+        0
+      ],
+      "width": 512,
+      "height": 512,
+      "length": 33,
+      "batch_size": 1,
+      "strength": 0.85
+    },
+    "_meta": {
+      "title": "Image To Video"
+    }
+  },
+  "8": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler_cfg_pp"
+    },
+    "_meta": {
+      "title": "Sampler"
+    }
+  },
+  "9": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "7",
+        0
+      ],
+      "negative": [
+        "7",
+        1
+      ],
+      "cfg": 1.0
+    },
+    "_meta": {
+      "title": "CFG Guider"
+    }
+  },
+  "10": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "11",
+        0
+      ],
+      "guider": [
+        "9",
+        0
+      ],
+      "sampler": [
+        "8",
+        0
+      ],
+      "sigmas": [
+        "12",
+        0
+      ],
+      "latent_image": [
+        "7",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "LTX Sampler"
+    }
+  },
+  "11": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": -1
+    },
+    "_meta": {
+      "title": "Seed"
+    }
+  },
+  "12": {
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "steps": 8,
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": [
+        "7",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "LTX Scheduler"
+    }
+  },
+  "13": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": [
+        "10",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 16,
+      "temporal_overlap": 4
+    },
+    "_meta": {
+      "title": "Decode Frames"
+    }
+  },
+  "14": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "13",
+        0
+      ],
+      "fps": 8
+    },
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "15": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "14",
+        0
+      ],
+      "filename_prefix": "NEXUS_BTA_LTX23_IMG2VID_512",
+      "format": "mp4",
+      "codec": "h264"
+    },
+    "_meta": {
+      "title": "Save Video"
+    }
+  }
+}

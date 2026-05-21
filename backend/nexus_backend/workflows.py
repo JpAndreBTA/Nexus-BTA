@@ -1,0 +1,2539 @@
+from __future__ import annotations
+
+import json
+import random
+import re
+import shutil
+from copy import deepcopy
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from .config import NexusSettings
+from .dependencies import custom_nodes_for_workflow, install_custom_node_dependencies, manager_suggestions_for_nodes
+from .schemas import GenerateRequest, WorkflowAnalysis, WorkflowSaveRequest, WorkflowSummary
+
+
+SAMPLER_ALIASES = {
+    "Euler Ancestral": "euler_ancestral",
+    "Euler": "euler",
+    "Heun": "heun",
+    "Heun++": "heunpp2",
+    "LMS": "lms",
+    "DPM2": "dpm_2",
+    "DPM2 Ancestral": "dpm_2_ancestral",
+    "DPM Fast": "dpm_fast",
+    "DPM Adaptive": "dpm_adaptive",
+    "DPM++ 2S Ancestral": "dpmpp_2s_ancestral",
+    "DPM++ 2M SDE": "dpmpp_2m_sde",
+    "DPM++ 2M SDE Heun": "dpmpp_2m_sde_heun",
+    "DPM++ 2M": "dpmpp_2m",
+    "DPM++ SDE": "dpmpp_sde",
+    "DPM++ 3M SDE": "dpmpp_3m_sde",
+    "DPM++ 3M SDE GPU": "dpmpp_3m_sde_gpu",
+    "DDIM": "ddim",
+    "UniPC": "uni_pc",
+    "UniPC BH2": "uni_pc_bh2",
+    "LCM": "lcm",
+    "Euler CFG++": "euler_cfg_pp",
+    "ER SDE": "er_sde",
+    "TCD": "tcd",
+    "DEIS": "deis",
+    "IPNDM": "ipndm",
+    "IPNDM V": "ipndm_v",
+    "Restart": "restart",
+    "FlowMatch Euler": "euler",
+}
+
+SCHEDULER_ALIASES = {
+    "Karras": "karras",
+    "Normal": "normal",
+    "Exponential": "exponential",
+    "SGM Uniform": "sgm_uniform",
+    "Simple": "simple",
+    "DDIM Uniform": "ddim_uniform",
+    "Beta": "beta",
+    "Quadratic": "quadratic",
+    "Linear Quadratic": "linear_quadratic",
+    "AYS SD1": "ays_sd1",
+    "AYS SDXL": "ays_sdxl",
+    "AYS SVD": "ays_svd",
+    "GITS": "gits",
+    "Align Your Steps": "align_your_steps",
+}
+
+UI_HELPER_NODE_TYPES = {
+    "Note",
+    "MarkdownNote",
+    "SetNode",
+    "GetNode",
+    "Anything Everywhere",
+    "Combo Clone",
+    "Fast Groups Bypasser (rgthree)",
+    "Fast Groups Muter (rgthree)",
+    "Fast Actions Button (rgthree)",
+}
+
+
+def normalize_sampler(value: str) -> str:
+    return SAMPLER_ALIASES.get(value, value).lower().replace(" ", "_")
+
+
+def normalize_scheduler(value: str) -> str:
+    return SCHEDULER_ALIASES.get(value, value).lower().replace(" ", "_")
+
+
+def workflow_id_from_path(path: Path) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", path.stem).strip("-").lower()
+    return slug or path.stem.lower()
+
+
+class WorkflowRegistry:
+    def __init__(self, settings: NexusSettings):
+        self.settings = settings
+
+    def import_reference_workflows(self) -> int:
+        count = 0
+        self.settings.workflows_dir.mkdir(parents=True, exist_ok=True)
+        for source in self.settings.reference_workflow_sources:
+            if not source.exists():
+                continue
+            for item in source.glob("*.json"):
+                target = self.settings.workflows_dir / item.name
+                if not target.exists():
+                    shutil.copy2(item, target)
+                    count += 1
+        return count
+
+    def list_workflows(self) -> list[WorkflowSummary]:
+        workflows: list[WorkflowSummary] = []
+        roots = [
+            self.settings.project_root / "workflows" / "nexus_base",
+            self.settings.workflows_dir,
+        ]
+        seen: set[Path] = set()
+        for root in roots:
+            if not root.exists():
+                continue
+            for path in sorted(root.glob("*.json"), key=lambda p: p.name.lower()):
+                resolved = path.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                workflows.append(self.summarize(path))
+        return workflows
+
+    def import_workflow_file(self, filename: str, content: bytes) -> WorkflowSummary:
+        self.settings.workflows_dir.mkdir(parents=True, exist_ok=True)
+        return self._write_workflow_file(self.settings.workflows_dir, filename, content)
+
+    def load_workflow_file(self, filename: str, content: bytes) -> WorkflowSummary:
+        target_dir = self.settings.temp_dir / "loaded_workflows"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r"[^a-zA-Z0-9._ -]+", "_", Path(filename).name).strip() or "workflow.json"
+        target = target_dir / safe_name
+        target.write_bytes(content)
+        return self.summarize(target)
+
+    def _write_workflow_file(self, root: Path, filename: str, content: bytes) -> WorkflowSummary:
+        root.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r"[^a-zA-Z0-9._ -]+", "_", Path(filename).name).strip() or "workflow.json"
+        if not safe_name.lower().endswith(".json"):
+            safe_name += ".json"
+        target = root / safe_name
+        stem = target.stem
+        counter = 1
+        while target.exists():
+            target = root / f"{stem}_{counter}.json"
+            counter += 1
+        target.write_bytes(content)
+        return self.summarize(target)
+
+    def save_workflow(self, request: WorkflowSaveRequest) -> WorkflowSummary:
+        self.settings.workflows_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r"[^a-zA-Z0-9._ -]+", "_", request.name).strip("_") or "Nexus_Workflow"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target = self.settings.workflows_dir / f"{safe_name}_{timestamp}.json"
+        payload = request.workflow or {
+            "nexus_bta": {
+                "preset": request.preset,
+                "saved_at": timestamp,
+                "ui_state": request.ui_state,
+            }
+        }
+        target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return self.summarize(target)
+
+    def analyze_workflow(
+        self,
+        workflow: WorkflowSummary,
+        object_info: dict[str, Any] | None = None,
+        install_dependencies: bool = False,
+    ) -> WorkflowAnalysis:
+        object_info = object_info or {}
+        available = set(object_info.keys())
+        missing = sorted({
+            class_type
+            for class_type in workflow.class_types
+            if class_type not in available and not _is_ui_helper_node(class_type)
+        })
+        suggestions = manager_suggestions_for_nodes(self.settings, missing)
+        dependency_targets = custom_nodes_for_workflow(self.settings, workflow.class_types, suggestions)
+        installed: list[str] = []
+        errors: dict[str, str] = {}
+        if install_dependencies and dependency_targets:
+            installed, errors = install_custom_node_dependencies(self.settings, node_names=dependency_targets)
+        return WorkflowAnalysis(
+            workflow=workflow,
+            missing_nodes=missing,
+            available_nodes=len(available),
+            manager_suggestions=suggestions,
+            dependency_targets=dependency_targets,
+            dependencies_installed=installed,
+            dependency_errors=errors,
+            visual_graph=workflow_visual_graph(Path(workflow.path)),
+            workflow_settings=workflow_settings(Path(workflow.path), object_info=object_info),
+        )
+
+    def find(self, workflow_id: str | None, preset: str | None = None) -> Path | None:
+        workflows = self.list_workflows()
+        if workflow_id:
+            for workflow in workflows:
+                if workflow.id == workflow_id:
+                    return Path(workflow.path)
+            temp_dir = self.settings.temp_dir / "loaded_workflows"
+            if temp_dir.exists():
+                for path in temp_dir.glob("*.json"):
+                    if workflow_id_from_path(path) == workflow_id:
+                        return path
+        if preset:
+            preset_lower = preset.lower()
+            preferred = {
+                "ltx": [],
+                "anima": [],
+                "wan": ["wan"],
+                "flux": [],
+                "qwen": [],
+                "lumina": ["lumina"],
+            }.get(preset_lower, [])
+            for token in preferred:
+                for workflow in workflows:
+                    if token in workflow.id:
+                        return Path(workflow.path)
+        return None
+
+    def summarize(self, path: Path) -> WorkflowSummary:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        fmt = detect_workflow_format(data)
+        classes = class_types(data, fmt)
+        tags = sorted(
+            {
+                tag
+                for tag in ["ltx", "anima", "wan", "flux", "qwen", "gguf", "i2v", "t2v"]
+                if tag in path.name.lower() or any(tag in cls.lower() for cls in classes)
+            }
+        )
+        count = len(data.get("nodes", [])) if fmt == "ui" else len(data) if isinstance(data, dict) else 0
+        return WorkflowSummary(
+            id=workflow_id_from_path(path),
+            name=path.stem,
+            path=str(path),
+            format=fmt,
+            node_count=count,
+            class_types=classes,
+            tags=tags,
+        )
+
+    def load_api_workflow(
+        self,
+        path: Path,
+        request: GenerateRequest,
+        object_info: dict[str, Any] | None = None,
+        assets: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        fmt = detect_workflow_format(data)
+        if fmt == "api":
+            api = deepcopy(data)
+            api = {
+                str(node_id): node
+                for node_id, node in api.items()
+                if isinstance(node, dict) and "class_type" in node
+            }
+        elif fmt == "ui":
+            api = convert_ui_to_api(data, object_info or {})
+        else:
+            raise ValueError(f"Unsupported workflow format: {path}")
+        return patch_workflow(api, request, assets=assets)
+
+
+def detect_workflow_format(data: Any) -> str:
+    if isinstance(data, dict) and isinstance(data.get("nodes"), list):
+        return "ui"
+    if isinstance(data, dict) and any(isinstance(v, dict) and "class_type" in v for v in data.values()):
+        return "api"
+    return "unknown"
+
+
+def class_types(data: Any, fmt: str) -> list[str]:
+    if fmt == "ui":
+        ui_nodes = list(data.get("nodes", []) or [])
+        for subgraph in data.get("definitions", {}).get("subgraphs") or []:
+            if isinstance(subgraph, dict):
+                ui_nodes.extend(subgraph.get("nodes") or [])
+        values = [node.get("type") or node.get("class_type") for node in ui_nodes if isinstance(node, dict)]
+    elif fmt == "api":
+        values = [node.get("class_type") for node in data.values() if isinstance(node, dict)]
+    else:
+        values = []
+    unique = []
+    for value in values:
+        if value and value not in unique:
+            unique.append(value)
+    return unique
+
+
+def workflow_visual_graph(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"nodes": [], "links": [], "width": 1300, "height": 720}
+    fmt = detect_workflow_format(data)
+    if fmt == "ui":
+        return _ui_workflow_graph(data)
+    if fmt == "api":
+        return _api_workflow_graph(data)
+    return {"nodes": [], "links": [], "width": 1300, "height": 720}
+
+
+def workflow_settings(path: Path, object_info: dict[str, Any] | None = None) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    fmt = detect_workflow_format(data)
+    sources: list[Any] = [] if fmt == "ui" else [data]
+
+    result: dict[str, Any] = {}
+    text_hints: list[str] = []
+
+    def capture(key: str, value: Any, *, force: bool = False) -> None:
+        lower = key.lower()
+        if isinstance(value, (dict, list)):
+            return
+        text_value = str(value)
+        haystack = f"{lower} {text_value.lower()}"
+        text_hints.append(haystack)
+
+        def set_number(name: str) -> None:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return
+            if name in result and not force:
+                if name == "fps" and 0 < number <= 240 and number > float(result.get(name) or 0):
+                    result[name] = int(number) if number.is_integer() else number
+                return
+            result[name] = int(number) if number.is_integer() else number
+
+        if lower in {"width", "empty_latent_width", "image_width"}:
+            set_number("width")
+        elif lower in {"height", "empty_latent_height", "image_height"}:
+            set_number("height")
+        elif lower in {"steps", "num_steps"}:
+            set_number("steps")
+        elif lower in {"cfg", "cfg_scale", "guidance_scale"}:
+            set_number("cfg")
+        elif lower in {"seed", "noise_seed"}:
+            set_number("seed")
+        elif lower in {"fps", "frame_rate", "framerate"}:
+            set_number("fps")
+        elif lower in {"frames", "num_frames", "frame_count", "frame_number", "frames_number", "num_video_frames", "video_frames", "length"}:
+            set_number("frames")
+        elif lower in {"duration", "seconds", "duration_seconds", "video_seconds"}:
+            set_number("seconds")
+        elif lower in {"active_audio", "audio_enabled", "enable_audio"}:
+            result["active_audio"] = str(value).lower() not in {"false", "0", "off", "none", "no"}
+        elif lower in {"sampler_name", "sampler"} and "sampler" not in result:
+            result["sampler"] = text_value
+        elif lower in {"scheduler", "scheduler_name", "schedule", "schedule_type"} and "scheduler" not in result:
+            result["scheduler"] = text_value
+        elif "vae" in lower and _looks_like_model_file(text_value) and "vae" not in result:
+            result["vae"] = Path(text_value).name
+        elif ("clip" in lower or "encoder" in lower or "text_encoder" in lower) and _looks_like_model_file(text_value) and "text_encoder" not in result:
+            result["text_encoder"] = Path(text_value).name
+        elif "lora" in lower and _looks_like_model_file(text_value):
+            loras = result.setdefault("loras", [])
+            if text_value not in loras:
+                loras.append(Path(text_value).name)
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                capture(str(key), item)
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    def capture_ui_widgets(value: Any) -> None:
+        if not isinstance(value, dict):
+            return
+        ui_nodes = list(value.get("nodes") or [])
+        for subgraph in value.get("definitions", {}).get("subgraphs") or []:
+            if isinstance(subgraph, dict):
+                ui_nodes.extend(subgraph.get("nodes") or [])
+        for node in ui_nodes:
+            if not isinstance(node, dict):
+                continue
+            node_type = str(node.get("type", ""))
+            title = str(node.get("title") or node.get("type") or "").lower()
+            widgets = node.get("widgets_values")
+            if isinstance(widgets, dict):
+                for key, item in widgets.items():
+                    capture(str(key), item)
+                continue
+            if isinstance(widgets, list):
+                order = _known_ui_widget_order(node_type)
+                if order:
+                    for index, item in enumerate(widgets):
+                        key = order[index] if index < len(order) else ""
+                        if key:
+                            force_dimension = "latentvideo" in node_type.lower() and key in {"width", "height", "length"}
+                            capture(key, item, force=force_dimension)
+                            if key == "value":
+                                if "fps" in title or "frame rate" in title:
+                                    capture("fps", item, force=True)
+                                elif "second" in title or "duration" in title:
+                                    capture("seconds", item, force=True)
+                                elif "frame" in title or "length" in title:
+                                    capture("frames", item, force=True)
+                for item in widgets:
+                    if isinstance(item, str) and _looks_like_model_file(item):
+                        clean_name = Path(item.replace("\\", "/")).name
+                        haystack = f"{node_type} {title} {item}".lower()
+                        if "audio" in haystack and "vae" in haystack:
+                            result["audio_vae"] = clean_name
+                        elif "video" in haystack and "vae" in haystack:
+                            result["video_vae"] = clean_name
+                        elif "upscale" in haystack and ("latent" in haystack or "spatial" in haystack):
+                            result["latent_upscale"] = clean_name
+                        elif "vae" in haystack and "vae" not in result:
+                            result["vae"] = clean_name
+                        elif ("clip" in haystack or "encoder" in haystack) and "text_encoder" not in result:
+                            result["text_encoder"] = clean_name
+                walk(widgets)
+                continue
+            if widgets is not None:
+                widget_text = str(widgets)
+                lower_widget = widget_text.lower()
+                haystack = f"{node_type} {title} {lower_widget}".lower()
+                if _looks_like_model_file(widget_text):
+                    clean_name = Path(widget_text.replace("\\", "/")).name
+                    if "audio" in haystack and "vae" in haystack:
+                        result["audio_vae"] = clean_name
+                    elif "video" in haystack and "vae" in haystack:
+                        result["video_vae"] = clean_name
+                    elif "upscale" in haystack and ("latent" in haystack or "spatial" in haystack):
+                        result["latent_upscale"] = clean_name
+                    elif "vae" in haystack and "vae" not in result:
+                        result["vae"] = clean_name
+                    elif ("clip" in haystack or "encoder" in haystack) and "text_encoder" not in result:
+                        result["text_encoder"] = clean_name
+                if "ksamplerselect" in haystack and widget_text:
+                    capture("sampler_name", widgets, force=True)
+                elif "cfgguider" in haystack:
+                    capture("cfg", widgets, force=True)
+                if "fps" in title or "frame rate" in title:
+                    capture("fps", widgets, force=True)
+                elif "second" in title or "duration" in title:
+                    capture("seconds", widgets, force=True)
+                elif "frame" in title or "length" in title:
+                    capture("frames", widgets, force=True)
+
+    def prompt_sources(value: Any) -> list[dict[str, Any]]:
+        prompts: list[dict[str, Any]] = []
+        if isinstance(value, dict):
+            if all(isinstance(item, dict) and "class_type" in item for item in value.values()):
+                prompts.append(value)
+            extra_prompt = value.get("extra", {}).get("prompt")
+            if isinstance(extra_prompt, dict):
+                prompts.append(extra_prompt)
+        return prompts
+
+    def capture_prompt_text(prompt: dict[str, Any]) -> None:
+        for node in prompt.values():
+            if not isinstance(node, dict):
+                continue
+            class_type = str(node.get("class_type") or node.get("type") or "")
+            meta = node.get("_meta") if isinstance(node.get("_meta"), dict) else {}
+            title = str(meta.get("title") or node.get("title") or class_type)
+            haystack = f"{title} {class_type}".lower()
+            if not any(token in haystack for token in ("cliptextencode", "textencode", "prompt")):
+                continue
+            inputs = node.get("inputs") or {}
+            if not isinstance(inputs, dict):
+                continue
+            text = None
+            for key in ("text", "prompt", "positive", "negative"):
+                value = inputs.get(key)
+                if isinstance(value, str) and value.strip():
+                    text = value
+                    break
+            if not text:
+                continue
+            if "negative" in haystack:
+                result["negative_prompt"] = text
+            elif "prompt" not in result:
+                result["prompt"] = text
+
+    def capture_ui_prompt_text(value: Any) -> None:
+        if not isinstance(value, dict):
+            return
+        ui_nodes = list(value.get("nodes") or [])
+        for subgraph in value.get("definitions", {}).get("subgraphs") or []:
+            if isinstance(subgraph, dict):
+                ui_nodes.extend(subgraph.get("nodes") or [])
+        for node in ui_nodes:
+            if not isinstance(node, dict):
+                continue
+            node_type = str(node.get("type", ""))
+            title = str(node.get("title") or node_type)
+            haystack = f"{title} {node_type}".lower()
+            if not any(token in haystack for token in ("cliptextencode", "textencode", "prompt")):
+                continue
+            widgets = node.get("widgets_values")
+            text = None
+            if isinstance(widgets, dict):
+                for key in ("text", "prompt", "positive", "negative"):
+                    if isinstance(widgets.get(key), str) and widgets[key].strip():
+                        text = widgets[key]
+                        break
+            elif isinstance(widgets, list):
+                text = next((item for item in widgets if isinstance(item, str) and item.strip() and not _looks_like_model_file(item)), None)
+            if not text:
+                continue
+            if "negative" in haystack:
+                result["negative_prompt"] = text
+            elif "prompt" not in result:
+                result["prompt"] = text
+
+    def capture_linked_constants(prompt: dict[str, Any]) -> None:
+        for node in prompt.values():
+            if not isinstance(node, dict):
+                continue
+            inputs = node.get("inputs") or {}
+            if not isinstance(inputs, dict):
+                continue
+            for key, item in inputs.items():
+                if not (isinstance(item, list) and item):
+                    continue
+                source = prompt.get(str(item[0]))
+                if not isinstance(source, dict):
+                    continue
+                source_inputs = source.get("inputs") or {}
+                if not isinstance(source_inputs, dict):
+                    continue
+                if key in {"sampler", "sampler_name"} and "sampler_name" in source_inputs:
+                    capture("sampler_name", source_inputs["sampler_name"], force=True)
+                    continue
+                if str(key).lower() not in {
+                    "width",
+                    "height",
+                    "empty_latent_width",
+                    "empty_latent_height",
+                    "steps",
+                    "cfg",
+                    "cfg_scale",
+                    "seed",
+                    "noise_seed",
+                    "fps",
+                    "frame_rate",
+                    "framerate",
+                    "frames",
+                    "num_frames",
+                    "frame_count",
+                    "frames_number",
+                    "length",
+                    "seconds",
+                    "duration",
+                    "duration_seconds",
+                    "video_seconds",
+                }:
+                    continue
+                for constant_key in ("value", "number", "int", "float"):
+                    if constant_key in source_inputs:
+                        capture(str(key), source_inputs[constant_key], force=str(key).lower() in {"fps", "frame_rate", "framerate", "frames", "num_frames", "frame_count", "frames_number", "length"})
+                        break
+
+    if fmt == "ui":
+        capture_ui_widgets(data)
+        capture_ui_prompt_text(data)
+        for prompt in prompt_sources(data):
+            walk(prompt)
+            capture_prompt_text(prompt)
+            capture_linked_constants(prompt)
+    for source in sources:
+        walk(source)
+        capture_ui_widgets(source)
+        for prompt in prompt_sources(source):
+            capture_prompt_text(prompt)
+            capture_linked_constants(prompt)
+    combined = " ".join(text_hints + class_types(data, fmt)).lower()
+    result["is_video"] = any(token in combined for token in ["video", "frames", "fps", "ltx", "wan", "animatediff", "vhs_", "frame_rate"])
+    if "ltx" in combined:
+        result["preset"] = "LTX"
+        result.setdefault("scheduler", "quadratic")
+        result.setdefault("sampler", "euler_cfg_pp")
+    elif "wan" in combined:
+        result["preset"] = "Wan"
+    elif "anima" in combined:
+        result["preset"] = "Anima"
+    elif "sdxl" in combined:
+        result["preset"] = "XL"
+    elif "flux" in combined:
+        result["preset"] = "Flux"
+    elif "qwen" in combined:
+        result["preset"] = "Qwen"
+    elif "lumina" in combined:
+        result["preset"] = "Lumina"
+    if result.get("preset") == "LTX" and result.get("frames") and result.get("fps") and "seconds" not in result:
+        result["seconds"] = round(float(result["frames"]) / max(float(result["fps"]), 1.0), 2)
+    return result
+
+
+def _known_ui_widget_order(node_type: str) -> list[str]:
+    lower = node_type.lower()
+    if "ksamplerselect" in lower:
+        return ["sampler_name"]
+    if "ksampler" in lower:
+        return ["seed", "control_after_generate", "steps", "cfg", "sampler_name", "scheduler", "denoise"]
+    if "cfgguider" in lower:
+        return ["cfg"]
+    if "lora" in lower:
+        return ["lora_name", "strength_model", "strength_clip", "video", "video_to_audio", "audio", "audio_to_video", "other"]
+    if "vaeloader" in lower:
+        return ["vae_name"]
+    if "cliploader" in lower or "textencoderloader" in lower:
+        return ["clip_name", "type", "device"]
+    if "ltxvconditioning" in lower:
+        return ["frame_rate"]
+    if lower == "randomnoise":
+        return ["noise_seed", "control_after_generate"]
+    if lower in {"easy int", "easy float", "intconstant", "floatconstant"}:
+        return ["value"]
+    if "ltxvemptylatentaudio" in lower:
+        return ["frames_number", "frame_rate", "batch_size"]
+    if "emptylatent" in lower or "latentvideo" in lower:
+        return ["width", "height", "length", "batch_size"]
+    if lower == "emptyimage":
+        return ["width", "height", "batch_size", "color"]
+    if "rifeinterpolation" in lower:
+        return ["source_fps", "target_fps", "scale", "model_name", "batch_size", "use_fp16"]
+    if "duallcliploader" in lower:
+        return ["clip_name1", "clip_name2", "type", "device"]
+    if lower in {"unetloader", "diffusionmodelloader", "diffusionmodelloaderkj"}:
+        return ["unet_name", "weight_dtype"]
+    return []
+
+
+def _ui_workflow_graph(data: dict[str, Any]) -> dict[str, Any]:
+    nodes: list[dict[str, Any]] = []
+    for index, node in enumerate(data.get("nodes", []) or []):
+        node_id = str(node.get("id", index))
+        class_type = str(node.get("type") or node.get("class_type") or "Unknown")
+        title = str(node.get("title") or node.get("properties", {}).get("Node name for S&R") or class_type)
+        x, y = _pair(node.get("pos"), (60 + (index % 5) * 260, 80 + (index // 5) * 160))
+        width, height = _pair(node.get("size"), (220, 120))
+        inputs = [str(item.get("name")) for item in node.get("inputs", []) or [] if item.get("name")]
+        outputs = [str(item.get("name")) for item in node.get("outputs", []) or [] if item.get("name")]
+        widgets = _widget_values(node.get("widgets_values"))
+        flags = node.get("flags") or {}
+        note_text = ""
+        if "note" in f"{class_type} {title}".lower() and widgets:
+            note_text = widgets[0].get("value", "")
+        nodes.append(
+            {
+                "id": node_id,
+                "class_type": class_type,
+                "title": title,
+                "x": int(x),
+                "y": int(y),
+                "width": max(190, min(int(width or 220), 340)),
+                "height": max(58, min(int(height or 120), 260)),
+                "inputs": inputs[:10],
+                "outputs": outputs[:8],
+                "widgets": widgets[:8],
+                "color": _safe_hex_color(str(node.get("color") or "")),
+                "bgcolor": _safe_hex_color(str(node.get("bgcolor") or "")),
+                "collapsed": bool(flags.get("collapsed")),
+                "pinned": bool(flags.get("pinned")),
+                "bypassed": int(node.get("mode") or 0) == 4 or bool(flags.get("bypassed")),
+                "mode": int(node.get("mode") or 0),
+                "note": note_text,
+            }
+        )
+
+    links: list[dict[str, Any]] = []
+    for link in data.get("links", []) or []:
+        if isinstance(link, list) and len(link) >= 5:
+            links.append(
+                {
+                    "from_node": str(link[1]),
+                    "from_slot": int(link[2] or 0),
+                    "to_node": str(link[3]),
+                    "to_slot": int(link[4] or 0),
+                    "type": str(link[5]) if len(link) > 5 else "",
+                }
+            )
+
+    groups = _ui_groups(data)
+    return _with_graph_bounds(_resolve_overlaps(nodes), links, groups)
+
+
+def _api_workflow_graph(data: dict[str, Any]) -> dict[str, Any]:
+    node_ids = [
+        str(key)
+        for key, value in data.items()
+        if isinstance(value, dict) and "class_type" in value
+    ]
+    links: list[dict[str, Any]] = []
+    parents_by_node: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
+    for node_id, node in data.items():
+        if not isinstance(node, dict):
+            continue
+        for slot, value in enumerate((node.get("inputs") or {}).values()):
+            if isinstance(value, list) and value:
+                parent_id = str(value[0])
+                links.append({"from_node": parent_id, "from_slot": int(value[1] or 0), "to_node": str(node_id), "to_slot": slot, "type": ""})
+                parents_by_node.setdefault(str(node_id), []).append(parent_id)
+
+    depth: dict[str, int] = {node_id: 0 for node_id in node_ids}
+    for _ in range(len(node_ids)):
+        changed = False
+        for node_id, parents in parents_by_node.items():
+            if parents:
+                next_depth = max(depth.get(parent, 0) + 1 for parent in parents)
+                if next_depth > depth.get(node_id, 0):
+                    depth[node_id] = next_depth
+                    changed = True
+        if not changed:
+            break
+
+    rows_by_depth: dict[int, int] = {}
+    nodes: list[dict[str, Any]] = []
+    for node_id in sorted(node_ids, key=_node_sort_key):
+        node = data.get(node_id, {})
+        class_type = str(node.get("class_type", "Unknown")) if isinstance(node, dict) else "Unknown"
+        title = str(node.get("_meta", {}).get("title") or class_type) if isinstance(node, dict) else class_type
+        current_depth = depth.get(node_id, 0)
+        row = rows_by_depth.get(current_depth, 0)
+        rows_by_depth[current_depth] = row + 1
+        inputs = list((node.get("inputs") or {}).keys()) if isinstance(node, dict) else []
+        widgets = [
+            {"name": str(key), "value": _short_value(value)}
+            for key, value in (node.get("inputs") or {}).items()
+            if not isinstance(value, list)
+        ]
+        nodes.append(
+            {
+                "id": node_id,
+                "class_type": class_type,
+                "title": title,
+                "x": 60 + current_depth * 270,
+                "y": 80 + row * 150,
+                "width": 230,
+                "height": 118,
+                "inputs": [str(item) for item in inputs[:10]],
+                "outputs": [],
+                "widgets": widgets[:8],
+            }
+        )
+    return _with_graph_bounds(_resolve_overlaps(nodes), links)
+
+
+def _organize_nodes(nodes: list[dict[str, Any]], links: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not nodes:
+        return nodes
+    node_by_id = {str(node["id"]): node for node in nodes}
+    parents: dict[str, list[str]] = {node_id: [] for node_id in node_by_id}
+    for link in links:
+        from_id = str(link.get("from_node"))
+        to_id = str(link.get("to_node"))
+        if from_id in node_by_id and to_id in node_by_id:
+            parents.setdefault(to_id, []).append(from_id)
+
+    depth = {node_id: 0 for node_id in node_by_id}
+    for _ in range(len(nodes)):
+        changed = False
+        for node_id, parent_ids in parents.items():
+            if not parent_ids:
+                continue
+            next_depth = max(depth.get(parent_id, 0) + 1 for parent_id in parent_ids)
+            if next_depth > depth[node_id]:
+                depth[node_id] = next_depth
+                changed = True
+        if not changed:
+            break
+
+    rows: dict[int, int] = {}
+    for node in sorted(nodes, key=lambda item: (depth.get(str(item["id"]), 0), int(item.get("y", 0)), int(item.get("x", 0)))):
+        d = depth.get(str(node["id"]), 0)
+        row = rows.get(d, 0)
+        rows[d] = row + 1
+        node["x"] = 60 + d * 300
+        node["y"] = 80 + row * 165
+    return nodes
+
+
+def _resolve_overlaps(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    placed: list[dict[str, Any]] = []
+    for node in sorted(nodes, key=lambda item: (int(item.get("y", 0)), int(item.get("x", 0)), str(item.get("id")))):
+        node["width"] = max(190, min(int(node.get("width") or 220), 420))
+        node["height"] = max(90, min(int(node.get("height") or 120), 360))
+        guard = 0
+        while any(_rects_overlap(node, other) for other in placed) and guard < 120:
+            node["y"] = int(node.get("y") or 0) + 32
+            guard += 1
+        placed.append(node)
+    return nodes
+
+
+def _rects_overlap(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    gap = 18
+    ax, ay = int(a.get("x", 0)), int(a.get("y", 0))
+    aw, ah = int(a.get("width", 220)), int(a.get("height", 120))
+    bx, by = int(b.get("x", 0)), int(b.get("y", 0))
+    bw, bh = int(b.get("width", 220)), int(b.get("height", 120))
+    return ax < bx + bw + gap and ax + aw + gap > bx and ay < by + bh + gap and ay + ah + gap > by
+
+
+def _ui_groups(data: dict[str, Any]) -> list[dict[str, Any]]:
+    groups: list[dict[str, Any]] = []
+    for group in data.get("groups", []) or []:
+        if not isinstance(group, dict):
+            continue
+        x, y, width, height = _quad(group.get("bounding"), (60, 60, 320, 220))
+        groups.append(
+            {
+                "id": str(group.get("id") or len(groups)),
+                "title": str(group.get("title") or "Group"),
+                "x": int(x),
+                "y": int(y),
+                "width": max(160, int(width)),
+                "height": max(100, int(height)),
+                "color": _safe_hex_color(str(group.get("color") or "#3f789e")),
+            }
+        )
+    return groups
+
+
+def _with_graph_bounds(nodes: list[dict[str, Any]], links: list[dict[str, Any]], groups: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    groups = groups or []
+    min_x = min([int(node["x"]) for node in nodes] + [int(group["x"]) for group in groups] or [60])
+    min_y = min([int(node["y"]) for node in nodes] + [int(group["y"]) for group in groups] or [60])
+    shift_x = 60 - min_x if min_x < 40 else 0
+    shift_y = 60 - min_y if min_y < 40 else 0
+    if shift_x or shift_y:
+        for node in nodes:
+            node["x"] = int(node["x"]) + shift_x
+            node["y"] = int(node["y"]) + shift_y
+        for group in groups:
+            group["x"] = int(group["x"]) + shift_x
+            group["y"] = int(group["y"]) + shift_y
+    max_x = max([int(node["x"]) + int(node["width"]) for node in nodes] + [int(group["x"]) + int(group["width"]) for group in groups] or [1100])
+    max_y = max([int(node["y"]) + int(node["height"]) for node in nodes] + [int(group["y"]) + int(group["height"]) for group in groups] or [620])
+    return {
+        "nodes": nodes,
+        "links": links,
+        "groups": groups,
+        "width": max(1300, max_x + 220),
+        "height": max(720, max_y + 180),
+    }
+
+
+def _pair(value: Any, fallback: tuple[float, float]) -> tuple[float, float]:
+    if isinstance(value, dict):
+        values = list(value.values())
+    else:
+        values = value
+    if isinstance(values, (list, tuple)) and len(values) >= 2:
+        try:
+            return float(values[0]), float(values[1])
+        except (TypeError, ValueError):
+            pass
+    return fallback
+
+
+def _quad(value: Any, fallback: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+    if isinstance(value, dict):
+        values = list(value.values())
+    else:
+        values = value
+    if isinstance(values, (list, tuple)) and len(values) >= 4:
+        try:
+            return float(values[0]), float(values[1]), float(values[2]), float(values[3])
+        except (TypeError, ValueError):
+            pass
+    return fallback
+
+
+def _safe_hex_color(value: str) -> str:
+    value = value.strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{3,8}", value):
+        return value
+    return ""
+
+
+def _widget_values(value: Any) -> list[dict[str, str]]:
+    if isinstance(value, dict):
+        return [{"name": str(key), "value": _short_value(item)} for key, item in value.items()]
+    if isinstance(value, list):
+        return [{"name": f"widget {index + 1}", "value": _short_value(item)} for index, item in enumerate(value)]
+    return []
+
+
+def _short_value(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=False)
+    else:
+        text = str(value)
+    return text if len(text) <= 64 else f"{text[:61]}..."
+
+
+def _node_sort_key(value: str) -> tuple[int, str]:
+    return (int(value), value) if value.isdigit() else (10**9, value)
+
+
+def _is_ui_helper_node(class_type: str) -> bool:
+    if class_type in UI_HELPER_NODE_TYPES:
+        return True
+    return bool(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", class_type))
+
+
+def convert_ui_to_api(data: dict[str, Any], object_info: dict[str, Any]) -> dict[str, Any]:
+    links: dict[int, tuple[str, int]] = {}
+    for link in data.get("links", []):
+        if isinstance(link, list) and len(link) >= 6:
+            link_id, origin_id, origin_slot = int(link[0]), str(link[1]), int(link[2])
+            links[link_id] = (origin_id, origin_slot)
+
+    api: dict[str, Any] = {}
+    for node in data.get("nodes", []):
+        node_id = str(node.get("id"))
+        class_type = node.get("type") or node.get("class_type")
+        if not node_id or not class_type:
+            continue
+        if object_info and class_type not in object_info and _is_ui_helper_node(str(class_type)):
+            continue
+        inputs: dict[str, Any] = {}
+        for input_info in node.get("inputs", []) or []:
+            name = input_info.get("name")
+            link = input_info.get("link")
+            if name and link is not None and int(link) in links:
+                origin_id, origin_slot = links[int(link)]
+                inputs[name] = [origin_id, origin_slot]
+
+        widget_values = node.get("widgets_values", [])
+        if isinstance(widget_values, dict):
+            for key, value in widget_values.items():
+                inputs.setdefault(key, value)
+        else:
+            widget_names = _widget_input_names(class_type, object_info)
+            value_iter = iter(widget_values if isinstance(widget_values, list) else [])
+            for name in widget_names:
+                if name in inputs:
+                    continue
+                try:
+                    inputs[name] = next(value_iter)
+                except StopIteration:
+                    break
+
+        api[node_id] = {
+            "class_type": class_type,
+            "inputs": inputs,
+        }
+        title = node.get("title") or node.get("properties", {}).get("Node name for S&R")
+        if title:
+            api[node_id]["_meta"] = {"title": title}
+    return api
+
+
+def _widget_input_names(class_type: str, object_info: dict[str, Any]) -> list[str]:
+    info = object_info.get(class_type, {}).get("input", {}) if object_info else {}
+    names: list[str] = []
+    for group in ["required", "optional"]:
+        values = info.get(group, {})
+        if isinstance(values, dict):
+            names.extend(values.keys())
+    return names
+
+
+def _append_inpaint_mask(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    *,
+    reference_node_id: str,
+    vae_ref: list[Any],
+    sampler_node_id: str,
+    mask_image_name: str | None,
+    start_id: int = 80,
+) -> bool:
+    if not mask_image_name or "inpaint" not in request.img2img.mode.lower():
+        return False
+    mask_loader_id = str(start_id)
+    mask_to_mask_id = str(start_id + 1)
+    encode_id = str(start_id + 2)
+    grow_mask_by = max(0, min(64, int(request.img2img.mask_blur or 0)))
+    workflow[mask_loader_id] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": mask_image_name},
+        "_meta": {"title": "Inpaint Mask"},
+    }
+    workflow[mask_to_mask_id] = {
+        "class_type": "ImageToMask",
+        "inputs": {"image": [mask_loader_id, 0], "channel": "red"},
+        "_meta": {"title": "Mask Channel"},
+    }
+    workflow[encode_id] = {
+        "class_type": "VAEEncodeForInpaint",
+        "inputs": {
+            "pixels": [reference_node_id, 0],
+            "vae": vae_ref,
+            "mask": [mask_to_mask_id, 0],
+            "grow_mask_by": grow_mask_by,
+        },
+        "_meta": {"title": "Encode Reference For Inpaint"},
+    }
+    sampler = workflow.get(sampler_node_id, {})
+    sampler_inputs = sampler.setdefault("inputs", {})
+    sampler_inputs["latent_image"] = [encode_id, 0]
+    return True
+
+
+def _controlnet_can_apply(request: GenerateRequest, controlnet_name: str | None, controlnet_image_name: str | None) -> bool:
+    preset = str(request.preset or "").lower()
+    return bool(
+        request.controlnet.enabled
+        and controlnet_name
+        and controlnet_image_name
+        and preset in {"sd", "sd15", "xl", "sdxl"}
+    )
+
+
+def _append_controlnet_route(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    *,
+    positive_ref: list[Any],
+    negative_ref: list[Any],
+    controlnet_name: str | None,
+    controlnet_image_name: str | None,
+    vae_ref: list[Any] | None = None,
+    start_id: int = 40,
+) -> tuple[list[Any], list[Any], int]:
+    if not _controlnet_can_apply(request, controlnet_name, controlnet_image_name):
+        return positive_ref, negative_ref, start_id
+    load_image_id = str(start_id)
+    image_ref: list[Any] = [load_image_id, 0]
+    next_id = start_id + 1
+    workflow[load_image_id] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": controlnet_image_name},
+        "_meta": {"title": "ControlNet Image"},
+    }
+    control_type = str(request.controlnet.type or "").lower()
+    preprocessor = str(request.controlnet.preprocessor or "auto").lower()
+    if control_type == "canny" and preprocessor not in {"none", "off", "disabled"}:
+        canny_id = str(next_id)
+        next_id += 1
+        workflow[canny_id] = {
+            "class_type": "Canny",
+            "inputs": {
+                "image": image_ref,
+                "low_threshold": max(0.01, min(0.99, float(request.controlnet.low_threshold or 0.4))),
+                "high_threshold": max(0.01, min(0.99, float(request.controlnet.high_threshold or 0.8))),
+            },
+            "_meta": {"title": "Canny Preprocessor"},
+        }
+        image_ref = [canny_id, 0]
+
+    loader_id = str(next_id)
+    apply_id = str(next_id + 1)
+    workflow[loader_id] = {
+        "class_type": "ControlNetLoader",
+        "inputs": {"control_net_name": controlnet_name},
+        "_meta": {"title": "Load ControlNet"},
+    }
+    apply_inputs: dict[str, Any] = {
+        "positive": positive_ref,
+        "negative": negative_ref,
+        "control_net": [loader_id, 0],
+        "image": image_ref,
+        "strength": max(0.0, min(10.0, float(request.controlnet.strength or 0.75))),
+        "start_percent": max(0.0, min(1.0, float(request.controlnet.start_percent or 0.0))),
+        "end_percent": max(0.0, min(1.0, float(request.controlnet.end_percent or 1.0))),
+    }
+    if vae_ref:
+        apply_inputs["vae"] = vae_ref
+    workflow[apply_id] = {
+        "class_type": "ControlNetApplyAdvanced",
+        "inputs": apply_inputs,
+        "_meta": {"title": f"Apply ControlNet {control_type or 'image'}"},
+    }
+    return [apply_id, 0], [apply_id, 1], next_id + 2
+
+
+def build_basic_sd_workflow(
+    request: GenerateRequest,
+    checkpoint_name: str,
+    reference_image_name: str | None = None,
+    mask_image_name: str | None = None,
+    controlnet_name: str | None = None,
+    controlnet_image_name: str | None = None,
+) -> dict[str, Any]:
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    latent_node = ["4", 0]
+    denoise = request.denoise
+    model_ref: list[Any] = ["1", 0]
+    clip_ref: list[Any] = ["1", 1]
+    workflow = {
+        "1": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": {"ckpt_name": checkpoint_name},
+        },
+        "2": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": request.prompt, "clip": clip_ref},
+        },
+        "3": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": request.negative_prompt, "clip": clip_ref},
+        },
+        "4": {
+            "class_type": "EmptyLatentImage",
+            "inputs": {
+                "width": request.width,
+                "height": request.height,
+                "batch_size": max(1, request.batch_size),
+            },
+        },
+        "5": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": seed,
+                "steps": request.steps,
+                "cfg": request.cfg,
+                "sampler_name": normalize_sampler(request.sampler),
+                "scheduler": normalize_scheduler(request.scheduler),
+                "denoise": denoise,
+                "model": model_ref,
+                "positive": ["2", 0],
+                "negative": ["3", 0],
+                "latent_image": latent_node,
+            },
+        },
+        "6": {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["5", 0], "vae": ["1", 2]},
+        },
+        "7": {
+            "class_type": "SaveImage",
+            "inputs": {"filename_prefix": "NEXUS_BTA", "images": ["6", 0]},
+        },
+    }
+    model_ref, clip_ref, _ = _append_lora_chain(workflow, request, ["1", 0], ["1", 1], start_id=20)
+    workflow["2"]["inputs"]["clip"] = clip_ref
+    workflow["3"]["inputs"]["clip"] = clip_ref
+    workflow["5"]["inputs"]["model"] = model_ref
+    positive_ref, negative_ref, _ = _append_controlnet_route(
+        workflow,
+        request,
+        positive_ref=["2", 0],
+        negative_ref=["3", 0],
+        controlnet_name=controlnet_name,
+        controlnet_image_name=controlnet_image_name,
+        vae_ref=["1", 2],
+        start_id=40,
+    )
+    workflow["5"]["inputs"]["positive"] = positive_ref
+    workflow["5"]["inputs"]["negative"] = negative_ref
+    if reference_image_name:
+        denoise = request.img2img.denoise
+        workflow["4"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": reference_image_name},
+        }
+        workflow["8"] = {
+            "class_type": "VAEEncode",
+            "inputs": {"pixels": ["4", 0], "vae": ["1", 2]},
+        }
+        workflow["5"]["inputs"]["latent_image"] = ["8", 0]
+        workflow["5"]["inputs"]["denoise"] = denoise
+        _append_inpaint_mask(
+            workflow,
+            request,
+            reference_node_id="4",
+            vae_ref=["1", 2],
+            sampler_node_id="5",
+            mask_image_name=mask_image_name,
+        )
+    return workflow
+
+
+def build_basic_anima_workflow(
+    request: GenerateRequest,
+    model_name: str,
+    text_encoder_name: str,
+    vae_name: str,
+    reference_image_name: str | None = None,
+    mask_image_name: str | None = None,
+) -> dict[str, Any]:
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    width = max(16, int(request.width))
+    height = max(16, int(request.height))
+    width -= width % 16
+    height -= height % 16
+    positive_inputs: dict[str, Any] = {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0]}
+    if reference_image_name:
+        positive_inputs["image"] = ["10", 0]
+    loader_class = "UnetLoaderGGUF" if model_name.lower().endswith(".gguf") else "UNETLoader"
+    loader_inputs = (
+        {"unet_name": model_name}
+        if loader_class == "UnetLoaderGGUF"
+        else {"unet_name": model_name, "weight_dtype": "default"}
+    )
+    workflow = {
+        "1": {
+            "class_type": loader_class,
+            "inputs": loader_inputs,
+            "_meta": {"title": "Load Anima Model"},
+        },
+        "2": {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": text_encoder_name, "type": "qwen_image", "device": "default"},
+            "_meta": {"title": "Anima / Qwen Text Encoder"},
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": vae_name},
+            "_meta": {"title": "Anima VAE"},
+        },
+        "4": {
+            "class_type": "TextEncodeQwenImageEdit",
+            "inputs": positive_inputs,
+            "_meta": {"title": "Positive Prompt"},
+        },
+        "6": {
+            "class_type": "TextEncodeQwenImageEdit",
+            "inputs": {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0]},
+            "_meta": {"title": "Negative Prompt"},
+        },
+        "5": {
+            "class_type": "EmptySD3LatentImage",
+            "inputs": {
+                "width": width,
+                "height": height,
+                "batch_size": max(1, request.batch_size),
+            },
+            "_meta": {"title": "Anima Latent"},
+        },
+        "7": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": seed,
+                "steps": request.steps,
+                "cfg": request.cfg,
+                "sampler_name": normalize_sampler(request.sampler),
+                "scheduler": normalize_scheduler(request.scheduler),
+                "denoise": request.img2img.denoise if reference_image_name else request.denoise,
+                "model": ["1", 0],
+                "positive": ["4", 0],
+                "negative": ["6", 0],
+                "latent_image": ["5", 0],
+            },
+            "_meta": {"title": "Anima Sampler"},
+        },
+        "8": {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["7", 0], "vae": ["3", 0]},
+            "_meta": {"title": "VAE Decode"},
+        },
+        "9": {
+            "class_type": "SaveImage",
+            "inputs": {"filename_prefix": "NEXUS_BTA_ANIMA", "images": ["8", 0]},
+            "_meta": {"title": "Save Image"},
+        },
+    }
+    model_ref, clip_ref, _ = _append_lora_chain(workflow, request, ["1", 0], ["2", 0], start_id=20)
+    workflow["4"]["inputs"]["clip"] = clip_ref
+    workflow["6"]["inputs"]["clip"] = clip_ref
+    workflow["7"]["inputs"]["model"] = model_ref
+    if reference_image_name:
+        workflow["10"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": reference_image_name},
+            "_meta": {"title": "Reference Image"},
+        }
+        _append_inpaint_mask(
+            workflow,
+            request,
+            reference_node_id="10",
+            vae_ref=["3", 0],
+            sampler_node_id="7",
+            mask_image_name=mask_image_name,
+        )
+    return workflow
+
+
+def build_basic_qwen_image_workflow(
+    request: GenerateRequest,
+    checkpoint_name: str,
+    text_encoder_name: str,
+    vae_name: str,
+    reference_image_name: str | None = None,
+    mask_image_name: str | None = None,
+) -> dict[str, Any]:
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    width = max(16, int(request.width))
+    height = max(16, int(request.height))
+    width -= width % 16
+    height -= height % 16
+    positive_inputs: dict[str, Any]
+    negative_inputs: dict[str, Any]
+    if reference_image_name:
+        positive_inputs = {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0], "image": ["4", 0]}
+        negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0], "image": ["4", 0]}
+    else:
+        positive_inputs = {"clip": ["2", 0], "text": request.prompt}
+        negative_inputs = {"clip": ["2", 0], "text": request.negative_prompt}
+    loader_class = "UnetLoaderGGUF" if checkpoint_name.lower().endswith(".gguf") else "UNETLoader"
+    loader_inputs = (
+        {"unet_name": checkpoint_name}
+        if loader_class == "UnetLoaderGGUF"
+        else {"unet_name": checkpoint_name, "weight_dtype": "default"}
+    )
+    model_ref: list[Any] = ["1", 0]
+    qwen_lora_nodes: dict[str, Any] = {}
+    next_lora_id = 20
+    for lora_name, strength_model, _strength_clip in _active_lora_selections(request):
+        node_id = str(next_lora_id)
+        qwen_lora_nodes[node_id] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": model_ref,
+                "lora_name": lora_name,
+                "strength_model": float(strength_model),
+            },
+            "_meta": {"title": f"QWEN LoRA - {Path(lora_name).name}"},
+        }
+        model_ref = [node_id, 0]
+        next_lora_id += 1
+
+    workflow = {
+        "1": {
+            "class_type": loader_class,
+            "inputs": loader_inputs,
+            "_meta": {"title": "Load QWEN Model"},
+        },
+        "2": {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": text_encoder_name, "type": "qwen_image", "device": "default"},
+            "_meta": {"title": "QWEN Text Encoder"},
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": vae_name},
+            "_meta": {"title": "QWEN VAE"},
+        },
+        "4": {
+            "class_type": "LoadImage",
+            "inputs": {"image": reference_image_name or ""},
+            "_meta": {"title": "Reference Image"},
+        },
+        "5": {
+            "class_type": "TextEncodeQwenImageEdit" if reference_image_name else "CLIPTextEncode",
+            "inputs": positive_inputs,
+            "_meta": {"title": "Positive Prompt"},
+        },
+        "6": {
+            "class_type": "TextEncodeQwenImageEdit" if reference_image_name else "CLIPTextEncode",
+            "inputs": negative_inputs,
+            "_meta": {"title": "Negative Prompt"},
+        },
+        "7": {
+            "class_type": "EmptySD3LatentImage",
+            "inputs": {
+                "width": width,
+                "height": height,
+                "batch_size": max(1, request.batch_size),
+            },
+            "_meta": {"title": "QWEN Latent"},
+        },
+        "8": {
+            "class_type": "ModelSamplingAuraFlow",
+            "inputs": {"model": model_ref, "shift": float((request.video or {}).get("shift") or 3.0)},
+            "_meta": {"title": "QWEN AuraFlow Sampling"},
+        },
+        "10": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": seed,
+                "steps": request.steps,
+                "cfg": request.cfg,
+                "sampler_name": normalize_sampler(request.sampler),
+                "scheduler": normalize_scheduler(request.scheduler),
+                "denoise": request.img2img.denoise if reference_image_name else request.denoise,
+                "model": ["8", 0],
+                "positive": ["5", 0],
+                "negative": ["6", 0],
+                "latent_image": ["7", 0],
+            },
+            "_meta": {"title": "KSampler"},
+        },
+        "11": {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["10", 0], "vae": ["3", 0]},
+            "_meta": {"title": "VAE Decode"},
+        },
+        "12": {
+            "class_type": "SaveImage",
+            "inputs": {"filename_prefix": "NEXUS_BTA_QWEN", "images": ["11", 0]},
+            "_meta": {"title": "Save Image"},
+        },
+    }
+    workflow.update(qwen_lora_nodes)
+    if not reference_image_name:
+        workflow.pop("4", None)
+    else:
+        workflow["7"] = {
+            "class_type": "VAEEncode",
+            "inputs": {"pixels": ["4", 0], "vae": ["3", 0]},
+            "_meta": {"title": "Encode Reference"},
+        }
+        _append_inpaint_mask(
+            workflow,
+            request,
+            reference_node_id="4",
+            vae_ref=["3", 0],
+            sampler_node_id="10",
+            mask_image_name=mask_image_name,
+        )
+    return workflow
+
+
+def build_basic_flux_workflow(
+    request: GenerateRequest,
+    model_name: str,
+    clip_l_name: str,
+    text_encoder_name: str,
+    vae_name: str,
+    reference_image_name: str | None = None,
+    mask_image_name: str | None = None,
+) -> dict[str, Any]:
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    width = max(16, int(request.width))
+    height = max(16, int(request.height))
+    width -= width % 16
+    height -= height % 16
+    sampler = normalize_sampler(request.sampler or "euler")
+    scheduler = normalize_scheduler(request.scheduler or "simple")
+    loader = (
+        {
+            "class_type": "UnetLoaderGGUF",
+            "inputs": {"unet_name": model_name},
+            "_meta": {"title": "Load Flux GGUF Model"},
+        }
+        if model_name.lower().endswith(".gguf")
+        else {
+            "class_type": "UNETLoader",
+            "inputs": {"unet_name": model_name, "weight_dtype": "default"},
+            "_meta": {"title": "Load Flux Model"},
+        }
+    )
+    latent_ref: list[Any] = ["6", 0]
+    denoise = request.img2img.denoise if reference_image_name else request.denoise
+    workflow = {
+        "1": loader,
+        "2": {
+            "class_type": "DualCLIPLoader",
+            "inputs": {
+                "clip_name1": clip_l_name,
+                "clip_name2": text_encoder_name,
+                "type": "flux",
+                "device": "default",
+            },
+            "_meta": {"title": "Flux CLIP-L + T5"},
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": vae_name},
+            "_meta": {"title": "Flux VAE"},
+        },
+        "4": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": request.prompt, "clip": ["2", 0]},
+            "_meta": {"title": "Positive Prompt"},
+        },
+        "5": {
+            "class_type": "ConditioningZeroOut",
+            "inputs": {"conditioning": ["4", 0]},
+            "_meta": {"title": "Flux Empty Negative"},
+        },
+        "6": {
+            "class_type": "EmptySD3LatentImage",
+            "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
+            "_meta": {"title": "Flux Latent"},
+        },
+        "7": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": seed,
+                "steps": max(1, request.steps),
+                "cfg": request.cfg,
+                "sampler_name": sampler,
+                "scheduler": scheduler,
+                "denoise": denoise,
+                "model": ["1", 0],
+                "positive": ["4", 0],
+                "negative": ["5", 0],
+                "latent_image": latent_ref,
+            },
+            "_meta": {"title": "Flux Sampler"},
+        },
+        "8": {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["7", 0], "vae": ["3", 0]},
+            "_meta": {"title": "VAE Decode"},
+        },
+        "9": {
+            "class_type": "SaveImage",
+            "inputs": {"filename_prefix": "NEXUS_BTA_FLUX", "images": ["8", 0]},
+            "_meta": {"title": "Save Image"},
+        },
+    }
+    model_ref, clip_ref, _ = _append_lora_chain(workflow, request, ["1", 0], ["2", 0], start_id=20)
+    workflow["4"]["inputs"]["clip"] = clip_ref
+    workflow["7"]["inputs"]["model"] = model_ref
+    if reference_image_name:
+        workflow["10"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": reference_image_name},
+            "_meta": {"title": "Reference Image"},
+        }
+        workflow["11"] = {
+            "class_type": "VAEEncode",
+            "inputs": {"pixels": ["10", 0], "vae": ["3", 0]},
+            "_meta": {"title": "Encode Reference"},
+        }
+        workflow["7"]["inputs"]["latent_image"] = ["11", 0]
+        _append_inpaint_mask(
+            workflow,
+            request,
+            reference_node_id="10",
+            vae_ref=["3", 0],
+            sampler_node_id="7",
+            mask_image_name=mask_image_name,
+        )
+    return workflow
+
+
+def build_basic_wan_i2video_workflow(
+    request: GenerateRequest,
+    high_model_name: str,
+    low_model_name: str,
+    text_encoder_name: str,
+    vae_name: str,
+    reference_image_name: str | None = None,
+) -> dict[str, Any]:
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    video_options = request.video or {}
+    fps = max(1, int(_number_or_none(video_options.get("fps")) or 24))
+    seconds = _number_or_none(video_options.get("seconds") or video_options.get("duration"))
+    requested_frames = _number_or_none(video_options.get("frames") or video_options.get("length"))
+    if requested_frames:
+        length = max(5, int(round(requested_frames)))
+    elif seconds:
+        length = max(5, int(round(seconds * fps)) + 1)
+    else:
+        length = 49
+    if (length - 1) % 4 != 0:
+        length = (((length - 1) // 4) + 1) * 4 + 1
+
+    width = max(64, int(request.width))
+    height = max(64, int(request.height))
+    width -= width % 16
+    height -= height % 16
+
+    steps = max(2, int(request.steps or 4))
+    cfg = float(request.cfg if request.cfg is not None else 1.0)
+    sampler = normalize_sampler(request.sampler or "euler")
+    scheduler = normalize_scheduler(request.scheduler or "simple")
+    split_step = max(1, min(steps - 1, steps // 2))
+    high_model_ref: list[Any] = ["1", 0]
+    low_model_ref: list[Any] = ["2", 0]
+    wan_lora_nodes: dict[str, Any] = {}
+    next_lora_id = 20
+
+    def wan_loader(model_name: str) -> dict[str, Any]:
+        if model_name.lower().endswith(".gguf"):
+            return {
+                "class_type": "UnetLoaderGGUF",
+                "inputs": {"unet_name": model_name},
+                "_meta": {"title": "Load WAN GGUF Model"},
+            }
+        return {
+            "class_type": "UNETLoader",
+            "inputs": {"unet_name": model_name, "weight_dtype": "default"},
+            "_meta": {"title": "Load WAN Model"},
+        }
+
+    clip_loader = (
+        {
+            "class_type": "CLIPLoaderGGUF",
+            "inputs": {"clip_name": text_encoder_name, "type": "wan"},
+            "_meta": {"title": "WAN UMT5 Encoder"},
+        }
+        if text_encoder_name.lower().endswith(".gguf")
+        else {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": text_encoder_name, "type": "wan", "device": "default"},
+            "_meta": {"title": "WAN UMT5 Encoder"},
+        }
+    )
+
+    for lora_name, strength_model, _strength_clip in _active_lora_selections(request):
+        safe_strength = max(-2.0, min(2.0, float(strength_model)))
+        lora_lower = lora_name.lower()
+        apply_high = "low" not in lora_lower or "high" in lora_lower
+        apply_low = "high" not in lora_lower or "low" in lora_lower
+        if apply_high:
+            node_id = str(next_lora_id)
+            wan_lora_nodes[node_id] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {"model": high_model_ref, "lora_name": lora_name, "strength_model": safe_strength},
+                "_meta": {"title": f"WAN high LoRA - {Path(lora_name).name}"},
+            }
+            high_model_ref = [node_id, 0]
+            next_lora_id += 1
+        if apply_low:
+            node_id = str(next_lora_id)
+            wan_lora_nodes[node_id] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {"model": low_model_ref, "lora_name": lora_name, "strength_model": safe_strength},
+                "_meta": {"title": f"WAN low LoRA - {Path(lora_name).name}"},
+            }
+            low_model_ref = [node_id, 0]
+            next_lora_id += 1
+
+    workflow = {
+        "1": wan_loader(high_model_name),
+        "2": wan_loader(low_model_name),
+        "3": {
+            "class_type": "ModelSamplingSD3",
+            "inputs": {"model": high_model_ref, "shift": float(video_options.get("shift") or 5.0)},
+            "_meta": {"title": "WAN High Noise Shift"},
+        },
+        "4": {
+            "class_type": "ModelSamplingSD3",
+            "inputs": {"model": low_model_ref, "shift": float(video_options.get("shift") or 5.0)},
+            "_meta": {"title": "WAN Low Noise Shift"},
+        },
+        "5": clip_loader,
+        "6": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": vae_name},
+            "_meta": {"title": "WAN VAE"},
+        },
+        "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": ["5", 0], "text": request.prompt},
+            "_meta": {"title": "Positive Prompt"},
+        },
+        "8": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": ["5", 0], "text": request.negative_prompt},
+            "_meta": {"title": "Negative Prompt"},
+        },
+        "10": {
+            "class_type": "WanImageToVideo",
+            "inputs": {
+                "positive": ["7", 0],
+                "negative": ["8", 0],
+                "vae": ["6", 0],
+                "width": width,
+                "height": height,
+                "length": length,
+                "batch_size": max(1, request.batch_size),
+            },
+            "_meta": {"title": "WAN Image To Video"},
+        },
+        "11": {
+            "class_type": "KSamplerAdvanced",
+            "inputs": {
+                "model": ["3", 0],
+                "add_noise": "enable",
+                "noise_seed": seed,
+                "steps": steps,
+                "cfg": cfg,
+                "sampler_name": sampler,
+                "scheduler": scheduler,
+                "positive": ["10", 0],
+                "negative": ["10", 1],
+                "latent_image": ["10", 2],
+                "start_at_step": 0,
+                "end_at_step": split_step,
+                "return_with_leftover_noise": "enable",
+            },
+            "_meta": {"title": "WAN High Noise Sampler"},
+        },
+        "12": {
+            "class_type": "KSamplerAdvanced",
+            "inputs": {
+                "model": ["4", 0],
+                "add_noise": "disable",
+                "noise_seed": 0,
+                "steps": steps,
+                "cfg": cfg,
+                "sampler_name": sampler,
+                "scheduler": scheduler,
+                "positive": ["10", 0],
+                "negative": ["10", 1],
+                "latent_image": ["11", 0],
+                "start_at_step": split_step,
+                "end_at_step": steps,
+                "return_with_leftover_noise": "disable",
+            },
+            "_meta": {"title": "WAN Low Noise Sampler"},
+        },
+        "13": {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["12", 0], "vae": ["6", 0]},
+            "_meta": {"title": "Decode Frames"},
+        },
+        "14": {
+            "class_type": "CreateVideo",
+            "inputs": {"images": ["13", 0], "fps": float(fps)},
+            "_meta": {"title": "Create Video"},
+        },
+        "15": {
+            "class_type": "SaveVideo",
+            "inputs": {
+                "video": ["14", 0],
+                "filename_prefix": "NEXUS_BTA_WAN22_I2V_512",
+                "format": "mp4",
+                "codec": "h264",
+            },
+            "_meta": {"title": "Save Video"},
+        },
+    }
+
+    if reference_image_name:
+        workflow["9"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": reference_image_name},
+            "_meta": {"title": "Reference Image"},
+        }
+        workflow["10"]["inputs"]["start_image"] = ["9", 0]
+    workflow.update(wan_lora_nodes)
+    return workflow
+
+
+def _append_lora_chain(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    model_ref: list[Any],
+    clip_ref: list[Any],
+    *,
+    start_id: int,
+) -> tuple[list[Any], list[Any], int]:
+    next_id = start_id
+    for lora_name, strength_model, strength_clip in _active_lora_selections(request):
+        node_id = str(next_id)
+        workflow[node_id] = {
+            "class_type": "LoraLoader",
+            "inputs": {
+                "model": model_ref,
+                "clip": clip_ref,
+                "lora_name": lora_name,
+                "strength_model": strength_model,
+                "strength_clip": strength_clip,
+            },
+            "_meta": {"title": f"LoRA - {Path(lora_name).name}"},
+        }
+        model_ref = [node_id, 0]
+        clip_ref = [node_id, 1]
+        next_id += 1
+    return model_ref, clip_ref, next_id
+
+
+def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, float]]:
+    selections: list[tuple[str, float, float]] = []
+    for item in request.loras:
+        if not isinstance(item, dict):
+            continue
+        raw_name = item.get("relative_name") or item.get("relative_path") or item.get("lora_name") or item.get("name")
+        name = _normalize_lora_name(raw_name)
+        if not name or not _lora_is_compatible_with_preset(name, request.preset):
+            continue
+        strength_model = _number_or_none(item.get("strength_model", item.get("strength", 1.0))) or 1.0
+        strength_clip = _number_or_none(item.get("strength_clip", item.get("clip_strength", 0.0))) or 0.0
+        selections.append((name, float(strength_model), float(strength_clip)))
+    for item in request.distilled_loras:
+        raw_name = getattr(item, "name", "")
+        name = _normalize_lora_name(raw_name)
+        if not name or not _lora_is_compatible_with_preset(name, request.preset):
+            continue
+        strength_model = _number_or_none(getattr(item, "strength", 1.0)) or 1.0
+        selections.append((name, float(strength_model), 0.0))
+    return selections
+
+
+def _normalize_lora_name(value: Any) -> str:
+    name = str(value or "").strip().replace("/", "\\")
+    if not name or name.lower() in {"none", "automatic", "auto"}:
+        return ""
+    lower = name.lower()
+    for prefix in ("loras\\", "models\\loras\\", ".\\models\\loras\\"):
+        if lower.startswith(prefix):
+            name = name[len(prefix) :]
+            break
+    return name
+
+
+def _lora_is_compatible_with_preset(name: str, preset: str) -> bool:
+    parts = [part.lower() for part in name.replace("/", "\\").split("\\") if part]
+    if len(parts) < 2:
+        return True
+    folder = parts[0]
+    known = {
+        "sd15": {"sd", "sd15", "sd1", "sd1.5", "stable-diffusion"},
+        "xl": {"xl", "sdxl", "illustrious", "ilustrous", "wai", "pony"},
+        "qwen": {"qwen"},
+        "anima": {"anima"},
+        "ltx": {"ltx", "ltx2", "ltx23", "ltxv"},
+        "wan": {"wan"},
+        "flux": {"flux"},
+        "lumina": {"lumina"},
+    }
+    preset_key = str(preset or "").lower()
+    preset_key = {"sd": "sd15", "sd 1.5": "sd15", "sdxl": "xl"}.get(preset_key, preset_key)
+    all_known = set().union(*known.values())
+    if folder not in all_known:
+        return True
+    return folder in known.get(preset_key, {folder})
+
+
+def build_basic_ltx_img2video_workflow(
+    request: GenerateRequest,
+    checkpoint_name: str,
+    text_encoder_name: str,
+    reference_image_name: str,
+    audio_vae_name: str | None = None,
+) -> dict[str, Any]:
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    video_options = request.video or {}
+    active_audio = video_options.get("active_audio", True)
+    if isinstance(active_audio, str):
+        active_audio = active_audio.lower() not in {"false", "0", "off", "none", "no"}
+    active_audio = bool(active_audio and audio_vae_name)
+    fps = max(1, int(_number_or_none(video_options.get("fps")) or 8))
+    seconds = max(0.25, float(_number_or_none(video_options.get("seconds") or video_options.get("duration")) or 4.0))
+    raw_frames = int(round(seconds * fps))
+    length = max(9, raw_frames + 1)
+    if (length - 1) % 8 != 0:
+        length = (((length - 1) // 8) + 1) * 8 + 1
+    width = max(64, int(request.width))
+    height = max(64, int(request.height))
+    width -= width % 32
+    height -= height % 32
+    sampler = normalize_sampler(request.sampler or "euler_cfg_pp")
+    if sampler == "euler_ancestral":
+        sampler = "euler_cfg_pp"
+    ltx_model_ref: list[Any] = ["1", 0]
+    ltx_lora_nodes: dict[str, Any] = {}
+    next_lora_id = 30
+    for lora_name, strength_model, _strength_clip in _active_lora_selections(request):
+        if not lora_name.lower().startswith(("ltx", "ltx2", "ltx23", "ltxv")):
+            continue
+        node_id = str(next_lora_id)
+        safe_strength = max(-2.0, min(2.0, float(strength_model)))
+        ltx_lora_nodes[node_id] = {
+            "class_type": "LTX2LoraLoaderAdvanced",
+            "inputs": {
+                "lora_name": lora_name,
+                "model": ltx_model_ref,
+                "strength_model": safe_strength,
+                "video": max(0.0, min(1.0, safe_strength)),
+                "video_to_audio": max(0.0, min(1.0, safe_strength)) if active_audio else 0.0,
+                "audio": max(0.0, min(1.0, safe_strength)) if active_audio else 0.0,
+                "audio_to_video": max(0.0, min(1.0, safe_strength)) if active_audio else 0.0,
+                "other": max(0.0, min(1.0, safe_strength)),
+            },
+            "_meta": {"title": f"LTX LoRA - {Path(lora_name).name}"},
+        }
+        ltx_model_ref = [node_id, 0]
+        next_lora_id += 1
+
+    sampler_latent_ref: list[Any] = ["7", 2]
+    scheduler_latent_ref: list[Any] = sampler_latent_ref
+    decode_latent_ref: list[Any] = ["12", 0]
+    create_video_inputs: dict[str, Any] = {"images": ["13", 0], "fps": float(fps)}
+
+    audio_nodes: dict[str, Any] = {}
+    if active_audio and audio_vae_name:
+        audio_nodes = {
+            "16": {
+                "class_type": "VAELoader",
+                "inputs": {"vae_name": audio_vae_name},
+                "_meta": {"title": "Load LTX Audio VAE"},
+            },
+            "17": {
+                "class_type": "LTXVEmptyLatentAudio",
+                "inputs": {
+                    "frames_number": length,
+                    "frame_rate": int(fps),
+                    "batch_size": max(1, request.batch_size),
+                    "audio_vae": ["16", 0],
+                },
+                "_meta": {"title": "Empty LTX Audio Latent"},
+            },
+            "18": {
+                "class_type": "LTXVConcatAVLatent",
+                "inputs": {"video_latent": ["7", 2], "audio_latent": ["17", 0]},
+                "_meta": {"title": "Merge Video + Audio Latents"},
+            },
+            "19": {
+                "class_type": "LTXVSeparateAVLatent",
+                "inputs": {"av_latent": ["12", 0]},
+                "_meta": {"title": "Separate Video + Audio Latents"},
+            },
+            "20": {
+                "class_type": "LTXVAudioVAEDecode",
+                "inputs": {"samples": ["19", 1], "audio_vae": ["16", 0]},
+                "_meta": {"title": "Decode LTX Audio"},
+            },
+        }
+        sampler_latent_ref = ["18", 0]
+        scheduler_latent_ref = ["18", 0]
+        decode_latent_ref = ["19", 0]
+        create_video_inputs["audio"] = ["20", 0]
+
+    workflow = {
+        "1": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": {"ckpt_name": checkpoint_name},
+            "_meta": {"title": "Load LTX 2.3 Checkpoint"},
+        },
+        "2": {
+            "class_type": "LTXAVTextEncoderLoader",
+            "inputs": {"text_encoder": text_encoder_name, "ckpt_name": checkpoint_name, "device": "default"},
+            "_meta": {"title": "LTX Text Encoder"},
+        },
+        "3": {
+            "class_type": "LoadImage",
+            "inputs": {"image": reference_image_name},
+            "_meta": {"title": "Reference Image"},
+        },
+        "4": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": ["2", 0], "text": request.prompt},
+            "_meta": {"title": "Positive Prompt"},
+        },
+        "5": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": ["2", 0], "text": request.negative_prompt},
+            "_meta": {"title": "Negative Prompt"},
+        },
+        "6": {
+            "class_type": "LTXVConditioning",
+            "inputs": {"positive": ["4", 0], "negative": ["5", 0], "frame_rate": float(fps)},
+            "_meta": {"title": "LTX Frame Rate Conditioning"},
+        },
+        "7": {
+            "class_type": "LTXVImgToVideo",
+            "inputs": {
+                "positive": ["6", 0],
+                "negative": ["6", 1],
+                "vae": ["1", 2],
+                "image": ["3", 0],
+                "width": width,
+                "height": height,
+                "length": length,
+                "batch_size": max(1, request.batch_size),
+                "strength": float(video_options.get("motion_strength") or request.img2img.denoise or 0.85),
+            },
+            "_meta": {"title": "Image To Video"},
+        },
+        "8": {
+            "class_type": "RandomNoise",
+            "inputs": {"noise_seed": seed},
+            "_meta": {"title": "Seed"},
+        },
+        "9": {
+            "class_type": "KSamplerSelect",
+            "inputs": {"sampler_name": sampler},
+            "_meta": {"title": "Sampler"},
+        },
+        "10": {
+            "class_type": "LTXVScheduler",
+            "inputs": {
+                "steps": max(1, request.steps),
+                "max_shift": float(video_options.get("max_shift") or 2.05),
+                "base_shift": float(video_options.get("base_shift") or 0.95),
+                "stretch": True,
+                "terminal": float(video_options.get("terminal") or 0.1),
+                "latent": scheduler_latent_ref,
+            },
+            "_meta": {"title": "LTX Scheduler"},
+        },
+        "11": {
+            "class_type": "CFGGuider",
+            "inputs": {"model": ltx_model_ref, "positive": ["7", 0], "negative": ["7", 1], "cfg": request.cfg},
+            "_meta": {"title": "CFG Guider"},
+        },
+        "12": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["8", 0],
+                "guider": ["11", 0],
+                "sampler": ["9", 0],
+                "sigmas": ["10", 0],
+                "latent_image": sampler_latent_ref,
+            },
+            "_meta": {"title": "LTX Sampler"},
+        },
+        "13": {
+            "class_type": "VAEDecodeTiled",
+            "inputs": {
+                "samples": decode_latent_ref,
+                "vae": ["1", 2],
+                "tile_size": 512,
+                "overlap": 64,
+                "temporal_size": 16,
+                "temporal_overlap": 4,
+            },
+            "_meta": {"title": "Decode Frames"},
+        },
+        "14": {
+            "class_type": "CreateVideo",
+            "inputs": create_video_inputs,
+            "_meta": {"title": "Create Video"},
+        },
+        "15": {
+            "class_type": "SaveVideo",
+            "inputs": {
+                "video": ["14", 0],
+                "filename_prefix": "NEXUS_BTA_LTX23_IMG2VID_512",
+                "format": "mp4",
+                "codec": "h264",
+            },
+            "_meta": {"title": "Save Video"},
+        },
+    }
+    workflow.update(audio_nodes)
+    workflow.update(ltx_lora_nodes)
+    return workflow
+
+
+def patch_workflow(
+    api: dict[str, Any],
+    request: GenerateRequest,
+    assets: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    sampler = normalize_sampler(request.sampler)
+    scheduler = normalize_scheduler(request.scheduler)
+    assets = assets or {}
+    model_name = assets.get("primary_model") or request.model_name or Path(request.model_path or "").name
+    video_options = request.video or {}
+    preset = request.preset.lower()
+    fps_value = _number_or_none(video_options.get("fps"))
+    seconds_value = _number_or_none(video_options.get("seconds") or video_options.get("duration"))
+    frames_value = _number_or_none(video_options.get("frames"))
+    motion_strength_value = _number_or_none(video_options.get("motion_strength"))
+    shift_value = _number_or_none(video_options.get("shift"))
+    max_shift_value = _number_or_none(video_options.get("max_shift"))
+    base_shift_value = _number_or_none(video_options.get("base_shift"))
+    terminal_value = _number_or_none(video_options.get("terminal"))
+    if preset == "ltx" and seconds_value and fps_value:
+        frames_value = max(1, round(seconds_value * fps_value))
+
+    positive_patched = False
+    lora_slot = 0
+
+    def set_input_or_linked(inputs: dict[str, Any], key: str, value: Any) -> None:
+        current = inputs.get(key)
+        if isinstance(current, list) and current:
+            source = api.get(str(current[0]))
+            if isinstance(source, dict):
+                source_inputs = source.setdefault("inputs", {})
+                if isinstance(source_inputs, dict):
+                    for constant_key in ("value", "number", "int", "float"):
+                        if constant_key in source_inputs:
+                            source_inputs[constant_key] = value
+                            return
+        inputs[key] = value
+
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type", ""))
+        class_lower = class_type.lower()
+        inputs = node.setdefault("inputs", {})
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+
+        if model_name:
+            for key in ["ckpt_name", "unet_name"]:
+                if key in inputs:
+                    inputs[key] = model_name
+
+        for key, value in list(inputs.items()):
+            if isinstance(value, str) and _looks_like_model_file(value):
+                replacement, lora_slot = _replacement_for_model_input(
+                    key=key,
+                    value=value,
+                    class_type=class_type,
+                    title=title,
+                    assets=assets,
+                    lora_slot=lora_slot,
+                )
+                if replacement:
+                    inputs[key] = replacement
+
+        if "text" in inputs and ("textencode" in class_lower or "conditioning" in class_lower or "prompt" in title):
+            is_negative = "negative" in title or "negative" in class_lower
+            if is_negative:
+                inputs["text"] = request.negative_prompt
+            elif not positive_patched:
+                inputs["text"] = request.prompt
+                positive_patched = True
+        elif "text" in inputs:
+            if "negative" in title or "negative" in class_lower:
+                inputs["text"] = request.negative_prompt
+            elif "positive" in title or "positive" in class_lower:
+                inputs["text"] = request.prompt
+
+        for key in ["width", "empty_latent_width"]:
+            if key in inputs:
+                set_input_or_linked(inputs, key, request.width)
+        for key in ["height", "empty_latent_height"]:
+            if key in inputs:
+                set_input_or_linked(inputs, key, request.height)
+        for key in ["seed", "noise_seed"]:
+            if key in inputs:
+                set_input_or_linked(inputs, key, seed)
+        if "steps" in inputs:
+            set_input_or_linked(inputs, "steps", request.steps)
+        if "cfg" in inputs:
+            set_input_or_linked(inputs, "cfg", request.cfg)
+        if "sampler_name" in inputs:
+            inputs["sampler_name"] = sampler
+        if "scheduler" in inputs:
+            inputs["scheduler"] = scheduler
+        if "denoise" in inputs:
+            inputs["denoise"] = request.img2img.denoise if request.activity == "img2img" else request.denoise
+        if assets.get("mask_image") and "image" in inputs and ("mask" in title or "mask" in class_lower):
+            inputs["image"] = assets["mask_image"]
+        elif assets.get("reference_image") and "image" in inputs and ("loadimage" in class_lower or "image" in title):
+            inputs["image"] = assets["reference_image"]
+        if "batch_size" in inputs:
+            set_input_or_linked(inputs, "batch_size", max(1, request.batch_size))
+        for key in ["fps", "frame_rate", "framerate"]:
+            if key in inputs and fps_value is not None:
+                set_input_or_linked(inputs, key, fps_value)
+        for key in ["seconds", "duration", "duration_seconds", "video_seconds"]:
+            if key in inputs and seconds_value is not None:
+                set_input_or_linked(inputs, key, seconds_value)
+        for key in ["frames", "num_frames", "frame_count", "frames_number", "length"]:
+            if key in inputs and frames_value is not None:
+                set_input_or_linked(inputs, key, max(1, round(frames_value)))
+        for key in ["motion_strength", "strength"]:
+            if key in inputs and motion_strength_value is not None and ("motion" in title or "video" in title or "ltx" in class_lower or "i2v" in title):
+                set_input_or_linked(inputs, key, motion_strength_value)
+        if "shift" in inputs and shift_value is not None:
+            set_input_or_linked(inputs, "shift", shift_value)
+        if "max_shift" in inputs and max_shift_value is not None:
+            set_input_or_linked(inputs, "max_shift", max_shift_value)
+        if "base_shift" in inputs and base_shift_value is not None:
+            set_input_or_linked(inputs, "base_shift", base_shift_value)
+        if "terminal" in inputs and terminal_value is not None:
+            set_input_or_linked(inputs, "terminal", terminal_value)
+
+    _apply_side_menu_loras(api, request)
+    _ensure_controlnet_route(api, request, assets)
+    _ensure_inpaint_mask_route(api, request, assets)
+    return api
+
+
+def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> None:
+    selections = _active_lora_selections(request)
+    if not selections:
+        return
+
+    existing_nodes = [
+        (str(node_id), node)
+        for node_id, node in api.items()
+        if isinstance(node, dict)
+        and "lora" in str(node.get("class_type", "")).lower()
+        and isinstance(node.get("inputs"), dict)
+        and "lora_name" in node["inputs"]
+    ]
+    for (_node_id, node), (lora_name, strength_model, strength_clip) in zip(existing_nodes, selections):
+        inputs = node.setdefault("inputs", {})
+        inputs["lora_name"] = lora_name
+        if "strength_model" in inputs:
+            inputs["strength_model"] = strength_model
+        elif "strength" in inputs:
+            inputs["strength"] = strength_model
+        if "strength_clip" in inputs:
+            inputs["strength_clip"] = strength_clip
+    for _node_id, node in existing_nodes[len(selections) :]:
+        inputs = node.setdefault("inputs", {})
+        if "strength_model" in inputs:
+            inputs["strength_model"] = 0.0
+        elif "strength" in inputs:
+            inputs["strength"] = 0.0
+        if "strength_clip" in inputs:
+            inputs["strength_clip"] = 0.0
+    if len(existing_nodes) >= len(selections):
+        return
+    if existing_nodes:
+        selections = selections[len(existing_nodes) :]
+
+    target_refs = _model_input_refs(api)
+    if not target_refs:
+        return
+    original_model_ref = target_refs[0]
+    model_only_lora = request.preset.lower() in {"anima", "flux", "ltx", "qwen", "wan"}
+    clip_ref = None if model_only_lora else _find_clip_ref_for_lora(api, original_model_ref)
+    model_ref = list(original_model_ref)
+    final_clip_ref = list(clip_ref) if clip_ref else None
+    next_id = _next_api_node_id(api)
+
+    for lora_name, strength_model, strength_clip in selections:
+        node_id = str(next_id)
+        if final_clip_ref:
+            api[node_id] = {
+                "class_type": "LoraLoader",
+                "inputs": {
+                    "model": model_ref,
+                    "clip": final_clip_ref,
+                    "lora_name": lora_name,
+                    "strength_model": strength_model,
+                    "strength_clip": strength_clip,
+                },
+                "_meta": {"title": f"LoRA - {Path(lora_name).name}"},
+            }
+            model_ref = [node_id, 0]
+            final_clip_ref = [node_id, 1]
+        else:
+            api[node_id] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": model_ref,
+                    "lora_name": lora_name,
+                    "strength_model": strength_model,
+                },
+                "_meta": {"title": f"LoRA - {Path(lora_name).name}"},
+            }
+            model_ref = [node_id, 0]
+        next_id += 1
+
+    _replace_model_refs(api, original_model_ref, model_ref)
+    if clip_ref and final_clip_ref:
+        _replace_clip_refs(api, clip_ref, final_clip_ref)
+
+
+def _model_input_refs(api: dict[str, Any]) -> list[list[Any]]:
+    refs: list[list[Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        if "lora" in class_lower:
+            continue
+        inputs = node.get("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        value = inputs.get("model")
+        if isinstance(value, list) and value:
+            key = tuple(value)
+            if key not in seen:
+                refs.append(list(value))
+                seen.add(key)
+    return refs
+
+
+def _find_clip_ref_for_lora(api: dict[str, Any], model_ref: list[Any]) -> list[Any] | None:
+    if model_ref and str(model_ref[0]) in api:
+        source = api.get(str(model_ref[0]))
+        class_lower = str(source.get("class_type", "")).lower() if isinstance(source, dict) else ""
+        if "checkpointloader" in class_lower:
+            return [str(model_ref[0]), 1]
+        if "loraloader" in class_lower:
+            return [str(model_ref[0]), 1]
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        if "cliploader" in class_lower or "dualcliploader" in class_lower:
+            return [str(node_id), 0]
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        clip_input = node.get("inputs", {}).get("clip")
+        if isinstance(clip_input, list) and clip_input:
+            return list(clip_input)
+    return None
+
+
+def _replace_model_refs(api: dict[str, Any], old_ref: list[Any], new_ref: list[Any]) -> None:
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        if "lora" in str(node.get("class_type", "")).lower():
+            continue
+        inputs = node.get("inputs", {})
+        if isinstance(inputs, dict) and inputs.get("model") == old_ref:
+            inputs["model"] = list(new_ref)
+
+
+def _replace_clip_refs(api: dict[str, Any], old_ref: list[Any], new_ref: list[Any]) -> None:
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        if "lora" in str(node.get("class_type", "")).lower():
+            continue
+        inputs = node.get("inputs", {})
+        if isinstance(inputs, dict) and inputs.get("clip") == old_ref:
+            inputs["clip"] = list(new_ref)
+
+
+def _ensure_inpaint_mask_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, str]) -> None:
+    if request.activity != "img2img" or "inpaint" not in request.img2img.mode.lower():
+        return
+    mask_image_name = assets.get("mask_image")
+    if not mask_image_name:
+        return
+    if any(str(node.get("class_type", "")).lower() == "vaeencodeforinpaint" for node in api.values() if isinstance(node, dict)):
+        return
+
+    sampler_node_id = _find_sampler_node_id(api)
+    if not sampler_node_id:
+        return
+    reference_node_id = _find_reference_image_node_id(api, assets.get("reference_image"))
+    if not reference_node_id:
+        reference_node_id = _add_load_image_node(api, assets.get("reference_image"), "Reference Image")
+    vae_ref = _find_vae_ref(api)
+    if not reference_node_id or not vae_ref:
+        return
+
+    _append_inpaint_mask(
+        api,
+        request,
+        reference_node_id=reference_node_id,
+        vae_ref=vae_ref,
+        sampler_node_id=sampler_node_id,
+        mask_image_name=mask_image_name,
+        start_id=_next_api_node_id(api),
+    )
+
+
+def _ensure_controlnet_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, str]) -> None:
+    controlnet_name = assets.get("controlnet_model")
+    controlnet_image_name = assets.get("controlnet_image")
+    if not _controlnet_can_apply(request, controlnet_name, controlnet_image_name):
+        return
+
+    loader_id = None
+    for node_id, node in api.items():
+        if isinstance(node, dict) and str(node.get("class_type", "")).lower() == "controlnetloader":
+            loader_id = str(node_id)
+            node.setdefault("inputs", {})["control_net_name"] = controlnet_name
+            node.pop("bypassed", None)
+            break
+
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        if class_lower not in {"controlnetapply", "controlnetapplyadvanced"}:
+            continue
+        inputs = node.setdefault("inputs", {})
+        if loader_id:
+            inputs["control_net"] = [loader_id, 0]
+        control_image_id = _find_controlnet_image_node_id(api)
+        if not control_image_id:
+            control_image_id = _add_load_image_node(api, controlnet_image_name, "ControlNet Image")
+        if control_image_id:
+            inputs["image"] = [control_image_id, 0]
+        inputs["strength"] = max(0.0, min(10.0, float(request.controlnet.strength or 0.75)))
+        if "start_percent" in inputs:
+            inputs["start_percent"] = max(0.0, min(1.0, float(request.controlnet.start_percent or 0.0)))
+        if "end_percent" in inputs:
+            inputs["end_percent"] = max(0.0, min(1.0, float(request.controlnet.end_percent or 1.0)))
+        node.pop("bypassed", None)
+        return
+
+    sampler_node_id = _find_sampler_node_id(api)
+    if not sampler_node_id:
+        return
+    sampler = api.get(sampler_node_id, {})
+    sampler_inputs = sampler.get("inputs", {}) if isinstance(sampler, dict) else {}
+    positive_ref = sampler_inputs.get("positive")
+    negative_ref = sampler_inputs.get("negative")
+    if not isinstance(positive_ref, list) or not isinstance(negative_ref, list):
+        return
+    positive_ref, negative_ref, _ = _append_controlnet_route(
+        api,
+        request,
+        positive_ref=list(positive_ref),
+        negative_ref=list(negative_ref),
+        controlnet_name=controlnet_name,
+        controlnet_image_name=controlnet_image_name,
+        vae_ref=_find_vae_ref(api),
+        start_id=_next_api_node_id(api),
+    )
+    sampler_inputs["positive"] = positive_ref
+    sampler_inputs["negative"] = negative_ref
+
+
+def _find_controlnet_image_node_id(api: dict[str, Any]) -> str | None:
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("class_type", "")).lower() != "loadimage":
+            continue
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        if "control" in title:
+            return str(node_id)
+    return None
+
+
+def _next_api_node_id(api: dict[str, Any]) -> int:
+    numeric_ids = [int(key) for key in api.keys() if str(key).isdigit()]
+    return max(numeric_ids, default=79) + 1
+
+
+def _find_sampler_node_id(api: dict[str, Any]) -> str | None:
+    for node_id, node in api.items():
+        if isinstance(node, dict) and str(node.get("class_type", "")).lower() == "ksampler":
+            return str(node_id)
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs", {})
+        class_lower = str(node.get("class_type", "")).lower()
+        if isinstance(inputs, dict) and "latent_image" in inputs and "sampler" in class_lower:
+            return str(node_id)
+    return None
+
+
+def _find_reference_image_node_id(api: dict[str, Any], reference_image_name: str | None) -> str | None:
+    reference_lower = str(reference_image_name or "").lower()
+    fallback: str | None = None
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        if class_lower != "loadimage":
+            continue
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        image_name = str(node.get("inputs", {}).get("image", "")).lower()
+        if "mask" in title:
+            continue
+        if reference_lower and image_name == reference_lower:
+            return str(node_id)
+        if "reference" in title or "input" in title or "image" in title:
+            fallback = fallback or str(node_id)
+    return fallback
+
+
+def _add_load_image_node(api: dict[str, Any], image_name: str | None, title: str) -> str | None:
+    if not image_name:
+        return None
+    node_id = str(_next_api_node_id(api))
+    api[node_id] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": image_name},
+        "_meta": {"title": title},
+    }
+    return node_id
+
+
+def _find_vae_ref(api: dict[str, Any]) -> list[Any] | None:
+    for node_id, node in api.items():
+        if isinstance(node, dict) and str(node.get("class_type", "")).lower() == "vaeloader":
+            return [str(node_id), 0]
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        vae_input = node.get("inputs", {}).get("vae")
+        if isinstance(vae_input, list) and vae_input:
+            return vae_input
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        if "checkpointloader" in class_lower:
+            return [str(node_id), 2]
+    return None
+
+
+def _number_or_none(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _looks_like_model_file(value: str) -> bool:
+    lower = value.lower().strip()
+    return lower.endswith((".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf", ".onnx"))
+
+
+def _replacement_for_model_input(
+    key: str,
+    value: str,
+    class_type: str,
+    title: str,
+    assets: dict[str, str],
+    lora_slot: int,
+) -> tuple[str | None, int]:
+    haystack = " ".join([key, value, class_type, title]).lower()
+    if "high" in haystack and "wan" in haystack and assets.get("wan_high_model"):
+        return assets["wan_high_model"], lora_slot
+    if "low" in haystack and "wan" in haystack and assets.get("wan_low_model"):
+        return assets["wan_low_model"], lora_slot
+    if ("clip_l" in haystack or key == "clip_name1") and assets.get("flux_clip_l"):
+        return assets["flux_clip_l"], lora_slot
+    if "upscale" in haystack and assets.get("latent_upscale"):
+        return assets["latent_upscale"], lora_slot
+    if "audio" in haystack and "vae" in haystack and assets.get("audio_vae"):
+        return assets["audio_vae"], lora_slot
+    if ("tae" in haystack or "preview" in haystack) and assets.get("preview_vae"):
+        return assets["preview_vae"], lora_slot
+    if "vae" in haystack and assets.get("video_vae"):
+        return assets["video_vae"], lora_slot
+    if "vae" in haystack and assets.get("vae"):
+        return assets["vae"], lora_slot
+    if ("projection" in haystack or "proj" in haystack) and assets.get("text_projection"):
+        return assets["text_projection"], lora_slot
+    if ("clip" in haystack or "text" in haystack or "gemma" in haystack) and assets.get("text_encoder"):
+        return assets["text_encoder"], lora_slot
+    if "lora" in haystack:
+        lora_slot += 1
+        if "ic" in haystack and assets.get("ic_lora"):
+            return assets["ic_lora"], lora_slot
+        if lora_slot == 1 and assets.get("distilled_lora_1"):
+            return assets["distilled_lora_1"], lora_slot
+        if assets.get("distilled_lora_2"):
+            return assets["distilled_lora_2"], lora_slot
+    if any(token in haystack for token in ["unet", "model", "checkpoint", "gguf", "diffusion"]):
+        if assets.get("primary_model"):
+            return assets["primary_model"], lora_slot
+    return None, lora_slot

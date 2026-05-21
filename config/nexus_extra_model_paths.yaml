@@ -1,0 +1,9 @@
+nexus_bta_flexible_unet_roots:
+  base_path: ..
+  is_default: true
+  controlnet: |
+    models/controlnet
+  diffusion_models: |
+    models/checkpoints
+    models/unet
+    models/diffusion_models

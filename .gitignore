@@ -1,0 +1,55 @@
+# Runtime and generated data
+runtime/
+models/
+output/
+input/
+temp/
+user/
+custom_nodes/
+test-results/
+
+# Third-party/imported ComfyUI workflows. Keep only Nexus-owned base workflows.
+workflows/comfyui/
+!workflows/nexus_base/
+!workflows/nexus_base/*.json
+
+# Local configuration and caches
+config/nexus_settings.json
+.serena/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Logs and large media artifacts
+*.log
+*.tmp
+*.part
+temp_*
+*.bak
+*.mp4
+*.webm
+*.mov
+*.mkv
+*.avi
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+
+# Model weights and binary assets
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.gguf
+*.onnx
+
+# Local editor state
+.idea/
+.vscode/
+*.swp
+*.swo

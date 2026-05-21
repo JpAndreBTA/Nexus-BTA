@@ -1,0 +1,141 @@
+{
+  "nexus_bta_base": {
+    "preset": "Anima",
+    "activity": "txt2img",
+    "description": "Nexus-owned Anima base workflow with Qwen-image style text encoder/VAE support. Runtime builders inject compatible Anima checkpoint, text encoder, VAE and optional LoRAs."
+  },
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "models/checkpoints/anima/select_model.gguf"
+    },
+    "_meta": {
+      "title": "Load Anima Model"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Qwen Text Encoder"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "Qwen_Image-VAE.safetensors"
+    },
+    "_meta": {
+      "title": "Qwen / Anima VAE"
+    }
+  },
+  "4": {
+    "class_type": "TextEncodeQwenImageEdit",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "prompt": "a woman",
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeQwenImageEdit",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "prompt": "low quality, blurry, malformed",
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "6": {
+    "class_type": "EmptyQwenImageLayeredLatentImage",
+    "inputs": {
+      "width": 512,
+      "height": 512,
+      "layers": 1,
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "Layered Latent"
+    }
+  },
+  "7": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "latent_image": [
+        "6",
+        0
+      ],
+      "seed": -1,
+      "steps": 16,
+      "cfg": 4.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    },
+    "_meta": {
+      "title": "Anima Sampler"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "NEXUS_BTA_ANIMA"
+    },
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}
