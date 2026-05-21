@@ -143,6 +143,60 @@
             outline: 1px solid rgba(255, 59, 59, 0.55);
         }
 
+        .ltx-director-timeline {
+            --ltx-duration: 8;
+            --ltx-px-per-second: 120px;
+        }
+
+        .ltx-director-scale {
+            width: max(100%, calc(var(--ltx-duration) * var(--ltx-px-per-second)));
+        }
+
+        .ltx-director-ruler {
+            background-image:
+                linear-gradient(to right, rgba(255,255,255,0.12) 1px, transparent 1px),
+                linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px);
+            background-size: var(--ltx-px-per-second) 100%, calc(var(--ltx-px-per-second) / 4) 100%;
+        }
+
+        .ltx-director-segment,
+        .ltx-director-audio {
+            position: absolute;
+            top: 12px;
+            height: calc(100% - 24px);
+            min-width: 48px;
+            user-select: none;
+        }
+
+        .ltx-director-segment.is-selected,
+        .ltx-director-audio.is-selected {
+            border-color: #ff3b3b !important;
+            outline: 1px solid rgba(255, 59, 59, 0.9);
+            outline-offset: 0;
+        }
+
+        .ltx-director-handle {
+            position: absolute;
+            top: 0;
+            width: 10px;
+            height: 100%;
+            cursor: ew-resize;
+            z-index: 3;
+        }
+
+        .ltx-director-handle.left { left: -5px; }
+        .ltx-director-handle.right { right: -5px; }
+
+        .ltx-director-audio-wave {
+            background:
+                linear-gradient(90deg, transparent 0 4%, rgba(52, 211, 153, 0.75) 4% 7%, transparent 7% 10%),
+                linear-gradient(90deg, transparent 0 11%, rgba(52, 211, 153, 0.45) 11% 15%, transparent 15% 20%),
+                linear-gradient(90deg, transparent 0 24%, rgba(52, 211, 153, 0.9) 24% 30%, transparent 30% 38%),
+                linear-gradient(90deg, transparent 0 44%, rgba(52, 211, 153, 0.55) 44% 52%, transparent 52% 60%),
+                linear-gradient(90deg, transparent 0 68%, rgba(52, 211, 153, 0.8) 68% 75%, transparent 75% 82%),
+                #10251b;
+        }
+
         #loraGrid {
             --lora-card-width: clamp(154px, calc((100% - 70px) / 6), 188px);
             grid-template-columns: repeat(auto-fill, minmax(var(--lora-card-width), 1fr)) !important;
@@ -1485,6 +1539,9 @@
             <div id="workspaceSwitcher" class="h-12 border-b border-nexus-border flex items-center px-4 justify-between bg-nexus-panel shrink-0">
                 <div class="w-[116px] shrink-0"></div>
                 <div class="flex gap-1 bg-nexus-bg p-1 rounded-sm border border-nexus-border">
+                    <button onclick="switchView('director')" id="tab-director" class="workspace-tab flex items-center gap-2 px-4 py-1.5 text-xs font-semibold text-nexus-muted hover:text-white transition-all border border-transparent">
+                        <i class="fa-solid fa-clapperboard"></i> LTX 2.3 Director
+                    </button>
                     <button onclick="switchView('viewer')" id="tab-viewer" class="workspace-tab active flex items-center gap-2 px-4 py-1.5 text-xs font-semibold text-black bg-white rounded-sm transition-all border border-transparent">
                         <i class="fa-regular fa-image"></i> Linear Viewer
                     </button>
@@ -1502,6 +1559,165 @@
                 </button>
             </div>
             <div id="workflowTabBar" class="hidden h-9 border-b border-nexus-border bg-nexus-panel px-3 items-end gap-1 overflow-x-auto workflow-tabs shrink-0"></div>
+
+            <!-- View 0: LTX 2.3 Director Suite -->
+            <div id="view-director" class="hidden flex-1 bg-nexus-bg overflow-hidden">
+                <input id="ltxDirectorImageInput" type="file" accept="image/*" multiple class="hidden">
+                <input id="ltxDirectorAudioInput" type="file" accept="audio/*" multiple class="hidden">
+                <div class="flex-1 min-w-0 flex flex-col xl:flex-row overflow-hidden">
+                    <section class="flex-1 min-w-0 flex flex-col border-r border-nexus-border bg-nexus-bg">
+                        <div class="px-4 py-2 border-b border-nexus-border bg-zinc-950 flex items-center justify-between gap-4 text-[10px] font-mono shrink-0">
+                            <div class="flex flex-wrap gap-3 min-w-0">
+                                <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-indigo-400"></span>model</span>
+                                <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-400"></span>clip</span>
+                                <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-pink-400"></span>audio_vae</span>
+                                <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-violet-400"></span>optional_latent</span>
+                            </div>
+                            <span class="hidden lg:block text-nexus-red font-bold tracking-wider uppercase">LTX Director Engine Map</span>
+                            <div class="flex flex-wrap justify-end gap-3 min-w-0">
+                                <span class="flex items-center gap-1.5">model<span class="h-2 w-2 rounded-full bg-indigo-400"></span></span>
+                                <span class="flex items-center gap-1.5">positive<span class="h-2 w-2 rounded-full bg-orange-400"></span></span>
+                                <span class="flex items-center gap-1.5">video_latent<span class="h-2 w-2 rounded-full bg-pink-400"></span></span>
+                                <span class="flex items-center gap-1.5">combined_audio<span class="h-2 w-2 rounded-full bg-emerald-400"></span></span>
+                            </div>
+                        </div>
+
+                        <div class="p-3 border-b border-nexus-border bg-nexus-panel/45 grid grid-cols-2 md:grid-cols-5 gap-3 shrink-0">
+                            <label class="bg-zinc-950 border border-nexus-border p-2 rounded-sm space-y-1">
+                                <span class="mini-label">Duration</span>
+                                <div class="flex items-center gap-2">
+                                    <input id="ltxDirectorDuration" type="number" min="0.5" step="0.25" class="w-full bg-transparent text-white text-xs font-mono font-bold outline-none" value="12.00">
+                                    <span class="text-[8px] text-nexus-muted">sec</span>
+                                </div>
+                            </label>
+                            <label class="bg-zinc-950 border border-nexus-border p-2 rounded-sm space-y-1">
+                                <span class="mini-label">Frame Rate</span>
+                                <div class="flex items-center gap-2">
+                                    <input id="ltxDirectorFps" type="number" min="1" max="240" step="1" class="w-full bg-transparent text-white text-xs font-mono font-bold outline-none" value="24">
+                                    <span class="text-[8px] text-nexus-muted">fps</span>
+                                </div>
+                            </label>
+                            <label class="bg-zinc-950 border border-nexus-border p-2 rounded-sm space-y-1">
+                                <span class="mini-label">Custom Width</span>
+                                <div class="flex items-center gap-2">
+                                    <input id="ltxDirectorWidth" type="number" min="0" step="32" class="w-full bg-transparent text-white text-xs font-mono font-bold outline-none" value="1024">
+                                    <span class="text-[8px] text-nexus-muted">px</span>
+                                </div>
+                            </label>
+                            <label class="bg-zinc-950 border border-nexus-border p-2 rounded-sm space-y-1">
+                                <span class="mini-label">Custom Height</span>
+                                <div class="flex items-center gap-2">
+                                    <input id="ltxDirectorHeight" type="number" min="0" step="32" class="w-full bg-transparent text-white text-xs font-mono font-bold outline-none" value="576">
+                                    <span class="text-[8px] text-nexus-muted">px</span>
+                                </div>
+                            </label>
+                            <label class="bg-zinc-950 border border-nexus-border p-2 rounded-sm space-y-1 col-span-2 md:col-span-1">
+                                <span class="mini-label">Resize Method</span>
+                                <select id="ltxDirectorResizeMethod" class="w-full bg-transparent text-white text-[11px] font-bold outline-none cursor-pointer">
+                                    <option value="maintain aspect ratio">Maintain aspect ratio</option>
+                                    <option value="crop">Crop</option>
+                                    <option value="stretch to fit">Stretch to fit</option>
+                                    <option value="pad">Pad</option>
+                                </select>
+                            </label>
+                        </div>
+
+                        <div class="px-4 py-2 bg-nexus-panel/70 border-b border-nexus-border flex items-center justify-between gap-3 shrink-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="button" onclick="openLtxDirectorImagePicker()" class="flat-button text-[10px] font-bold uppercase flex items-center gap-1.5"><i class="fa-solid fa-plus text-nexus-red"></i>Add Image</button>
+                                <button type="button" onclick="addLtxDirectorTextSegment()" class="flat-button text-[10px] font-bold uppercase flex items-center gap-1.5"><i class="fa-solid fa-font text-nexus-red"></i>Add Text</button>
+                                <button type="button" onclick="openLtxDirectorAudioPicker()" class="flat-button text-[10px] font-bold uppercase flex items-center gap-1.5"><i class="fa-solid fa-music text-nexus-red"></i>Add Audio</button>
+                                <button type="button" onclick="deleteLtxDirectorSelection()" class="flat-button text-[10px] font-bold uppercase flex items-center gap-1.5 text-nexus-muted hover:text-nexus-red"><i class="fa-regular fa-trash-can"></i>Delete</button>
+                            </div>
+                            <div class="relative flex items-center gap-2">
+                                <button id="ltxDirectorCustomAudioBtn" type="button" onclick="toggleLtxDirectorCustomAudio()" class="flat-button text-[10px] font-mono uppercase">Custom Audio: <span id="ltxDirectorAudioStateLabel" class="text-nexus-red font-bold">OFF</span></button>
+                                <button type="button" onclick="toggleLtxDirectorSettings()" class="w-8 h-8 flex items-center justify-center bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Timeline settings"><i class="fa-solid fa-gear text-xs"></i></button>
+                                <div id="ltxDirectorSettingsPanel" class="hidden absolute right-0 top-10 z-30 w-72 bg-zinc-950 border border-nexus-border p-3 rounded-sm space-y-3">
+                                    <div class="flex justify-between items-center">
+                                        <span class="mini-label">Timeline Settings</span>
+                                        <button type="button" onclick="toggleLtxDirectorSettings(false)" class="text-nexus-muted hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="space-y-1"><span class="mini-label">Display</span><select id="ltxDirectorDisplayMode" class="flat-input"><option value="seconds">Seconds</option><option value="frames">Frames</option></select></label>
+                                        <label class="space-y-1"><span class="mini-label">Epsilon</span><input id="ltxDirectorEpsilon" type="number" min="0.0001" max="0.99" step="0.0001" value="0.001" class="flat-input font-mono"></label>
+                                        <label class="space-y-1"><span class="mini-label">Divisible By</span><input id="ltxDirectorDivisibleBy" type="number" min="1" max="256" step="1" value="32" class="flat-input font-mono"></label>
+                                        <label class="space-y-1"><span class="mini-label">Img CRF</span><input id="ltxDirectorImgCompression" type="number" min="0" max="100" step="1" value="18" class="flat-input font-mono"></label>
+                                    </div>
+                                    <button type="button" onclick="fitLtxDirectorTimeline()" class="flat-button w-full text-[10px] uppercase font-bold">Fit Timeline To Media</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="ltxDirectorTimeline" class="ltx-director-timeline flex-1 overflow-auto bg-[#08090d] relative" style="--ltx-duration: 12; --ltx-px-per-second: 120px;">
+                            <div id="ltxDirectorTimelineScale" class="ltx-director-scale min-h-full relative">
+                                <div id="ltxDirectorPlayhead" class="absolute top-0 bottom-0 w-px bg-nexus-red z-20 pointer-events-none" style="left:0"></div>
+                                <div id="ltxDirectorRuler" class="ltx-director-ruler h-8 border-b border-nexus-border bg-zinc-950 sticky top-0 z-10"></div>
+                                <div class="h-[190px] border-b border-nexus-border/70 relative bg-[#0b0d12]" id="ltxDirectorVideoTrack">
+                                    <span class="absolute left-3 top-2 text-[9px] font-mono text-nexus-muted uppercase z-10">Video Keyframes Track</span>
+                                    <div id="ltxDirectorSegmentsLayer" class="absolute inset-0 top-6"></div>
+                                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none text-[10px] font-mono text-nexus-muted" id="ltxDirectorVideoEmpty">Drop images here or press Add Image</div>
+                                </div>
+                                <div class="h-[120px] border-b border-nexus-border/70 relative bg-[#070b09]" id="ltxDirectorAudioTrack">
+                                    <span class="absolute left-3 top-2 text-[9px] font-mono text-nexus-muted uppercase z-10">Audio Waveform Track</span>
+                                    <div id="ltxDirectorAudioLayer" class="absolute inset-0 top-6"></div>
+                                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none text-[10px] font-mono text-nexus-muted" id="ltxDirectorAudioEmpty">Drop audio here for custom lip-sync</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-zinc-950 border-b border-nexus-border flex flex-col lg:flex-row gap-3 lg:items-center justify-between shrink-0">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <button id="ltxDirectorPlayBtn" type="button" onclick="toggleLtxDirectorPlayback()" class="h-8 w-8 bg-nexus-red hover:bg-nexus-darkRed text-white rounded-sm flex items-center justify-center" title="Play timeline"><i id="ltxDirectorPlayIcon" class="fa-solid fa-play text-xs"></i></button>
+                                <button type="button" onclick="resetLtxDirectorPlayback()" class="h-8 w-8 bg-zinc-900 border border-nexus-border text-nexus-muted hover:text-white rounded-sm flex items-center justify-center" title="Reset playhead"><i class="fa-solid fa-rotate-left text-xs"></i></button>
+                                <span class="text-[10px] font-mono text-nexus-muted truncate"><strong id="ltxDirectorTracker" class="text-white">0.00s</strong> Start: <span id="ltxDirectorStartLabel">0.00</span> | End: <span id="ltxDirectorEndLabel">4.00</span></span>
+                            </div>
+                            <div class="flex items-center gap-3 min-w-[280px]">
+                                <span class="text-[10px] font-bold text-white shrink-0">Guide Strength</span>
+                                <input id="ltxDirectorGuideStrength" type="range" min="0" max="2" step="0.05" value="1" class="modern-slider flex-1">
+                                <span id="ltxDirectorGuideStrengthValue" class="text-[10px] font-mono text-nexus-red font-bold w-10 text-right">1.00</span>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-nexus-panel/45 space-y-2 shrink-0">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="mini-label">Prompt For Selected Segment</span>
+                                <span id="ltxDirectorSelectionMeta" class="text-[10px] font-mono text-nexus-muted">Segment #1</span>
+                            </div>
+                            <textarea id="ltxDirectorPrompt" rows="3" class="w-full bg-zinc-950 border border-nexus-border p-3 text-xs text-white placeholder-zinc-600 outline-none focus:border-nexus-red resize-none" placeholder="Enter prompt for the selected image or text segment..."></textarea>
+                        </div>
+                    </section>
+
+                    <aside class="w-full xl:w-[360px] 2xl:w-[420px] bg-zinc-950 flex flex-col border-t xl:border-t-0 border-nexus-border shrink-0">
+                        <div class="h-12 border-b border-nexus-border px-4 flex items-center justify-between">
+                            <span class="text-xs font-bold text-white uppercase flex items-center gap-2"><i class="fa-solid fa-clapperboard text-nexus-red"></i>Live Director Preview</span>
+                            <span id="ltxDirectorRenderStatus" class="hidden text-[10px] font-mono px-2 py-0.5 bg-nexus-red/10 border border-nexus-red/30 text-nexus-red">COMPILING</span>
+                        </div>
+                        <div class="flex-1 min-h-[260px] bg-black relative flex items-center justify-center p-4">
+                            <div id="ltxDirectorRenderLoader" class="hidden absolute inset-0 z-20 bg-zinc-950/95 flex flex-col items-center justify-center gap-3">
+                                <div class="w-44 h-1.5 bg-nexus-border overflow-hidden"><div id="ltxDirectorRenderBar" class="h-full bg-nexus-red w-0 transition-all"></div></div>
+                                <span id="ltxDirectorRenderStep" class="text-[10px] font-mono text-nexus-muted">Compiling sequence...</span>
+                            </div>
+                            <div id="ltxDirectorPreviewFrame" class="w-full aspect-video border border-nexus-border bg-nexus-bg flex items-center justify-center overflow-hidden relative">
+                                <img id="ltxDirectorPreviewImage" src="" alt="Director preview" class="hidden w-full h-full object-cover">
+                                <div id="ltxDirectorPreviewFallback" class="text-center px-6">
+                                    <i class="fa-solid fa-film text-2xl text-nexus-red"></i>
+                                    <p class="text-[11px] text-nexus-muted mt-3 font-mono">Timeline preview</p>
+                                </div>
+                                <div class="absolute bottom-0 left-0 right-0 bg-black/70 px-3 py-2 text-[9px] font-mono text-nexus-muted">
+                                    <span id="ltxDirectorPreviewMeta">1024x576 @ 24fps | 12.00s</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-3 border-t border-nexus-border flex flex-col gap-2">
+                            <button type="button" onclick="startLtxDirectorRender()" class="w-full py-3 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-xs uppercase tracking-wider rounded-sm flex items-center justify-center gap-2"><i class="fa-solid fa-circle-play"></i>Render Sequenced Video</button>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button type="button" onclick="exportLtxDirectorMetadata()" class="flat-button text-[10px] font-bold uppercase">Export Metadata</button>
+                                <button type="button" onclick="sendLtxDirectorToImg2Img()" class="flat-button text-[10px] font-bold uppercase">Send to img2img</button>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
 
             <!-- View 1: Linear Viewer (Standard Gen) -->
             <div id="view-viewer" class="flex-1 flex flex-col items-center justify-center p-6 relative overflow-auto">
@@ -2264,6 +2480,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             workflow: { x: 0, y: 0, scale: 1 }
         };
 
+        const LTX_DIRECTOR_STORAGE_KEY = 'nexus_ltx_director_state_v1';
+        const LTX_DIRECTOR_MIN_SECONDS = 0.25;
+        const LTX_DIRECTOR_PIXELS_PER_SECOND = 120;
+        let ltxDirectorState = loadLtxDirectorState();
+        let ltxDirectorDrag = null;
+        let ltxDirectorPlaybackTimer = null;
+        let ltxDirectorRenderTimer = null;
+
         let galleryItems = [];
         let extrasMode = localStorage.getItem('nexus_extras_mode') || 'image';
         let extrasSource = null;
@@ -2308,8 +2532,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 folder: './models/checkpoints/sd15',
                 checkpoint: 'DreamShaper_v8.safetensors',
                 models: ['DreamShaper_v8.safetensors', 'RealisticVision_v6.safetensors', 'Anything_v5.safetensors'],
-                width: 512,
-                height: 512,
+                width: 1024,
+                height: 576,
                 steps: 20,
                 cfg: 7,
                 sampler: 'Euler Ancestral',
@@ -2500,8 +2724,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 distilledRoute: 'LTX 2.3 route commonly uses distilled LoRA 1 and distilled LoRA 2 together.',
                 summary: 'LTX template favors fast latent video, short step counts and low CFG defaults.',
                 chips: ['LTX 2.3', 'Video', 'Distilled', 'Fast'],
-                video: 'LTX 2.3 route enabled: 97 frames, 24 FPS, 4s latent video.',
-                videoSettings: { frames: 97, fps: 24, seconds: 4 }
+                video: 'LTX 2.3 Director route enabled: 289 frames, 24 FPS, 12s keyframed timeline.',
+                videoSettings: { frames: 289, fps: 24, seconds: 12 }
             },
             Anima: {
                 template: 'ANIMA_PORTRAIT',
@@ -2533,7 +2757,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         };
 
         if (!modelProfiles[activePreset]) activePreset = 'Anima';
-        if (!['viewer', 'canvas', 'workflow'].includes(activeWorkspace)) activeWorkspace = 'viewer';
+        if (!['director', 'viewer', 'canvas', 'workflow'].includes(activeWorkspace)) activeWorkspace = 'viewer';
         if (!['txt2img', 'img2img', 'extras', 'pnginfo', 'merge', 'extensions', 'settings'].includes(currentActivity)) currentActivity = 'txt2img';
 
         function escapeHtml(value) {
@@ -3931,6 +4155,848 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 event.preventDefault();
                 zoomLinearViewer(event.deltaY < 0 ? 0.1 : -0.1);
             }, { passive: false });
+        }
+
+        function createDefaultLtxDirectorState() {
+            return {
+                duration: 12,
+                fps: 24,
+                width: 1024,
+                height: 576,
+                resizeMethod: 'maintain aspect ratio',
+                displayMode: 'seconds',
+                epsilon: 0.001,
+                divisibleBy: 32,
+                imgCompression: 18,
+                customAudio: false,
+                currentTime: 0,
+                selectedType: 'segment',
+                selectedId: 'ltx-seg-1',
+                segments: [
+                    {
+                        id: 'ltx-seg-1',
+                        type: 'image',
+                        start: 0,
+                        length: 4,
+                        prompt: 'masterpiece, highly detailed, a conductor dramatically waving arms to the symphonic music, classical orchestra setting, warm lighting',
+                        guideStrength: 1,
+                        title: 'Segment #1',
+                        imageSrc: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80',
+                        imageFile: '',
+                        imageB64: ''
+                    },
+                    {
+                        id: 'ltx-seg-2',
+                        type: 'image',
+                        start: 4,
+                        length: 3.5,
+                        prompt: 'cut to a close up of the conductor dramatically waving arms, focused expression, cinematic lighting',
+                        guideStrength: 0.85,
+                        title: 'Segment #2',
+                        imageSrc: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80',
+                        imageFile: '',
+                        imageB64: ''
+                    },
+                    {
+                        id: 'ltx-seg-3',
+                        type: 'text',
+                        start: 7.5,
+                        length: 4.5,
+                        prompt: 'the giant dragon breathes fire over a beautiful field, epic cinematic fantasy motion',
+                        guideStrength: 1.25,
+                        title: 'Segment #3',
+                        imageSrc: '',
+                        imageFile: '',
+                        imageB64: ''
+                    }
+                ],
+                audioSegments: []
+            };
+        }
+
+        function loadLtxDirectorState() {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(LTX_DIRECTOR_STORAGE_KEY) || 'null');
+                if (parsed?.segments?.length) return { ...createDefaultLtxDirectorState(), ...parsed };
+            } catch (error) {
+                console.info('Could not load LTX Director state.', error);
+            }
+            return createDefaultLtxDirectorState();
+        }
+
+        function persistLtxDirectorState() {
+            try {
+                localStorage.setItem(LTX_DIRECTOR_STORAGE_KEY, JSON.stringify(ltxDirectorState));
+            } catch (error) {
+                console.info('Could not persist LTX Director state.', error);
+            }
+        }
+
+        function ltxDirectorSeconds(value) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : 0;
+        }
+
+        function ltxDirectorClamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        function ltxDirectorSnap(value) {
+            return Math.max(0, Math.round(Number(value || 0) * 100) / 100);
+        }
+
+        function ltxDirectorSortedSegments() {
+            return [...(ltxDirectorState.segments || [])].sort((a, b) => Number(a.start || 0) - Number(b.start || 0));
+        }
+
+        function ltxDirectorSortedAudio() {
+            return [...(ltxDirectorState.audioSegments || [])].sort((a, b) => Number(a.start || 0) - Number(b.start || 0));
+        }
+
+        function ltxDirectorSelectedSegment() {
+            return ltxDirectorState.segments.find(segment => segment.id === ltxDirectorState.selectedId) || ltxDirectorState.segments[0] || null;
+        }
+
+        function ltxDirectorSelectedAudio() {
+            return ltxDirectorState.audioSegments.find(segment => segment.id === ltxDirectorState.selectedId) || null;
+        }
+
+        function ltxDirectorEnd(item) {
+            return Number(item?.start || 0) + Number(item?.length || 0);
+        }
+
+        function ltxDirectorDurationEnd() {
+            const mediaEnd = Math.max(
+                0,
+                ...ltxDirectorSortedSegments().map(ltxDirectorEnd),
+                ...ltxDirectorSortedAudio().map(ltxDirectorEnd)
+            );
+            return Math.max(Number(ltxDirectorState.duration || 0), mediaEnd);
+        }
+
+        function ltxDirectorSecondsToFrames(seconds) {
+            return Math.max(0, Math.round(Number(seconds || 0) * Math.max(1, Number(ltxDirectorState.fps || 24))));
+        }
+
+        function ltxDirectorFramesToSeconds(frames) {
+            return Number(frames || 0) / Math.max(1, Number(ltxDirectorState.fps || 24));
+        }
+
+        function ltxDirectorDisplayTime(seconds) {
+            if (ltxDirectorState.displayMode === 'frames') return `${ltxDirectorSecondsToFrames(seconds)}f`;
+            return `${Number(seconds || 0).toFixed(2)}s`;
+        }
+
+        function ltxDirectorTimelinePixel(seconds) {
+            return Math.round(Number(seconds || 0) * LTX_DIRECTOR_PIXELS_PER_SECOND);
+        }
+
+        function ltxDirectorPromptSnippet(prompt) {
+            const text = String(prompt || '').trim() || 'empty prompt';
+            return text.length > 42 ? `${text.slice(0, 42)}...` : text;
+        }
+
+        function ltxDirectorWaveformPeaks(seedText = '') {
+            const peaks = [];
+            let seed = [...String(seedText || 'audio')].reduce((sum, char) => sum + char.charCodeAt(0), 17);
+            for (let i = 0; i < 48; i += 1) {
+                seed = (seed * 9301 + 49297) % 233280;
+                peaks.push(Number((0.18 + (seed / 233280) * 0.78).toFixed(3)));
+            }
+            return peaks;
+        }
+
+        function ltxDirectorReadFileAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('File read failed.'));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function syncLtxDirectorToSideControls(options = {}) {
+            const silent = !!options.silent;
+            const duration = Math.max(0.5, Number(ltxDirectorState.duration || 12));
+            const fps = Math.max(1, Number(ltxDirectorState.fps || 24));
+            const width = Math.max(0, Math.round(Number(ltxDirectorState.width || 0)));
+            const height = Math.max(0, Math.round(Number(ltxDirectorState.height || 0)));
+            const secondsInput = document.getElementById('secondsInput');
+            const fpsInput = document.getElementById('fpsInput');
+            const framesInput = document.getElementById('framesInput');
+            const activeAudioToggle = document.getElementById('activeAudioToggle');
+            if (secondsInput && document.activeElement !== secondsInput) secondsInput.value = duration.toFixed(2).replace(/\.00$/, '');
+            if (fpsInput && document.activeElement !== fpsInput) fpsInput.value = String(fps);
+            if (framesInput && document.activeElement !== framesInput) framesInput.value = String(alignedVideoFrames('LTX', duration, fps));
+            if (activeAudioToggle) activeAudioToggle.checked = !!ltxDirectorState.customAudio;
+            if (width || height) setDimensions(width || 1024, height || 576);
+            if (!silent) updateWorkflowPreview();
+        }
+
+        function syncLtxDirectorFromControls() {
+            ltxDirectorState.duration = Math.max(0.5, Number(document.getElementById('ltxDirectorDuration')?.value || ltxDirectorState.duration || 12));
+            ltxDirectorState.fps = Math.max(1, Math.round(Number(document.getElementById('ltxDirectorFps')?.value || ltxDirectorState.fps || 24)));
+            ltxDirectorState.width = Math.max(0, Math.round(Number(document.getElementById('ltxDirectorWidth')?.value || ltxDirectorState.width || 1024)));
+            ltxDirectorState.height = Math.max(0, Math.round(Number(document.getElementById('ltxDirectorHeight')?.value || ltxDirectorState.height || 576)));
+            ltxDirectorState.resizeMethod = document.getElementById('ltxDirectorResizeMethod')?.value || ltxDirectorState.resizeMethod;
+            ltxDirectorState.displayMode = document.getElementById('ltxDirectorDisplayMode')?.value || ltxDirectorState.displayMode;
+            ltxDirectorState.epsilon = Math.max(0.0001, Number(document.getElementById('ltxDirectorEpsilon')?.value || ltxDirectorState.epsilon || 0.001));
+            ltxDirectorState.divisibleBy = Math.max(1, Math.round(Number(document.getElementById('ltxDirectorDivisibleBy')?.value || ltxDirectorState.divisibleBy || 32)));
+            ltxDirectorState.imgCompression = Math.max(0, Math.round(Number(document.getElementById('ltxDirectorImgCompression')?.value || ltxDirectorState.imgCompression || 18)));
+            ltxDirectorState.currentTime = ltxDirectorClamp(Number(ltxDirectorState.currentTime || 0), 0, ltxDirectorState.duration);
+            persistLtxDirectorState();
+            syncLtxDirectorToSideControls({ silent: true });
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+        }
+
+        function updateLtxDirectorInputs() {
+            const mappings = {
+                ltxDirectorDuration: Number(ltxDirectorState.duration || 12).toFixed(2),
+                ltxDirectorFps: Math.round(Number(ltxDirectorState.fps || 24)),
+                ltxDirectorWidth: Math.round(Number(ltxDirectorState.width || 1024)),
+                ltxDirectorHeight: Math.round(Number(ltxDirectorState.height || 576)),
+                ltxDirectorEpsilon: ltxDirectorState.epsilon || 0.001,
+                ltxDirectorDivisibleBy: ltxDirectorState.divisibleBy || 32,
+                ltxDirectorImgCompression: ltxDirectorState.imgCompression || 18
+            };
+            Object.entries(mappings).forEach(([id, value]) => {
+                const element = document.getElementById(id);
+                if (element && document.activeElement !== element) element.value = value;
+            });
+            setSelectValue('ltxDirectorResizeMethod', ltxDirectorState.resizeMethod || 'maintain aspect ratio');
+            setSelectValue('ltxDirectorDisplayMode', ltxDirectorState.displayMode || 'seconds');
+        }
+
+        function renderLtxDirectorRuler() {
+            const ruler = document.getElementById('ltxDirectorRuler');
+            if (!ruler) return;
+            const duration = Math.max(0.5, Number(ltxDirectorState.duration || 12));
+            const tickStep = duration > 18 ? 2 : duration > 8 ? 1.5 : 0.5;
+            const ticks = [];
+            for (let time = 0; time <= duration + 0.001; time += tickStep) {
+                ticks.push(`<span class="absolute top-1 text-[9px] font-mono ${Math.abs(time - duration) < 0.001 ? 'text-nexus-red font-bold' : 'text-nexus-muted'}" style="left:${ltxDirectorTimelinePixel(time)}px">${ltxDirectorDisplayTime(time)}</span>`);
+            }
+            ruler.innerHTML = ticks.join('');
+        }
+
+        function renderLtxDirector() {
+            const timeline = document.getElementById('ltxDirectorTimeline');
+            const scale = document.getElementById('ltxDirectorTimelineScale');
+            const segmentsLayer = document.getElementById('ltxDirectorSegmentsLayer');
+            const audioLayer = document.getElementById('ltxDirectorAudioLayer');
+            if (!timeline || !scale || !segmentsLayer || !audioLayer) return;
+            ltxDirectorState.duration = ltxDirectorDurationEnd();
+            timeline.style.setProperty('--ltx-duration', String(ltxDirectorState.duration));
+            timeline.style.setProperty('--ltx-px-per-second', `${LTX_DIRECTOR_PIXELS_PER_SECOND}px`);
+            scale.style.minWidth = `${ltxDirectorTimelinePixel(ltxDirectorState.duration)}px`;
+            updateLtxDirectorInputs();
+            renderLtxDirectorRuler();
+
+            const selectedSegment = ltxDirectorSelectedSegment();
+            const selectedAudio = ltxDirectorSelectedAudio();
+            const segmentHtml = ltxDirectorSortedSegments().map((segment, index) => {
+                const left = ltxDirectorTimelinePixel(segment.start);
+                const width = Math.max(48, ltxDirectorTimelinePixel(segment.length));
+                const selected = segment.id === ltxDirectorState.selectedId && ltxDirectorState.selectedType === 'segment';
+                const media = segment.type === 'text'
+                    ? `<div class="w-full h-full bg-[#06131a] flex items-center justify-center px-4 text-center text-[11px] font-bold text-white">${escapeHtml(ltxDirectorPromptSnippet(segment.prompt))}</div>`
+                    : `<img src="${escapeHtml(segment.imageSrc || segment.imageB64 || '')}" alt="LTX keyframe" class="w-full h-full object-cover">`;
+                return `
+                    <article class="ltx-director-segment ${selected ? 'is-selected' : ''} bg-zinc-950 border border-nexus-border rounded-sm overflow-hidden cursor-grab group" data-ltx-segment-id="${escapeHtml(segment.id)}" style="left:${left}px;width:${width}px;">
+                        <span class="ltx-director-handle left" data-ltx-handle="left"></span>
+                        <span class="ltx-director-handle right" data-ltx-handle="right"></span>
+                        <div class="h-[70%] bg-black relative overflow-hidden">
+                            ${media}
+                            <span class="absolute bottom-1 left-1 bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-white">${ltxDirectorDisplayTime(segment.start)} - ${ltxDirectorDisplayTime(ltxDirectorEnd(segment))}</span>
+                        </div>
+                        <div class="h-[30%] px-2 py-1 overflow-hidden">
+                            <p class="text-[10px] font-bold text-white truncate">${escapeHtml(segment.title || `Segment #${index + 1}`)}</p>
+                            <p class="text-[9px] font-mono text-nexus-muted truncate">${escapeHtml(ltxDirectorPromptSnippet(segment.prompt))}</p>
+                        </div>
+                    </article>
+                `;
+            }).join('');
+            segmentsLayer.innerHTML = segmentHtml;
+
+            audioLayer.innerHTML = ltxDirectorSortedAudio().map(audio => {
+                const left = ltxDirectorTimelinePixel(audio.start);
+                const width = Math.max(48, ltxDirectorTimelinePixel(audio.length));
+                const selected = audio.id === ltxDirectorState.selectedId && ltxDirectorState.selectedType === 'audio';
+                return `
+                    <article class="ltx-director-audio ${selected ? 'is-selected' : ''} ltx-director-audio-wave border border-emerald-500/40 rounded-sm cursor-grab overflow-hidden" data-ltx-audio-id="${escapeHtml(audio.id)}" style="left:${left}px;width:${width}px;opacity:${ltxDirectorState.customAudio ? 1 : 0.35};pointer-events:${ltxDirectorState.customAudio ? 'auto' : 'auto'};">
+                        <span class="ltx-director-handle left" data-ltx-handle="left"></span>
+                        <span class="ltx-director-handle right" data-ltx-handle="right"></span>
+                        <div class="absolute inset-x-0 top-2 h-10 flex items-end gap-px px-2">
+                            ${(audio.waveformPeaks || []).slice(0, 64).map(peak => `<span class="flex-1 bg-emerald-400/80" style="height:${Math.round(Number(peak || 0.2) * 100)}%"></span>`).join('')}
+                        </div>
+                        <span class="absolute top-1 left-2 right-2 text-[9px] font-mono text-emerald-200 truncate">${escapeHtml(audio.fileName || 'custom-audio.wav')}</span>
+                        <span class="absolute bottom-1 left-2 bg-black/60 px-1 text-[8px] font-mono text-emerald-200">${ltxDirectorDisplayTime(audio.start)} - ${ltxDirectorDisplayTime(ltxDirectorEnd(audio))}</span>
+                    </article>
+                `;
+            }).join('');
+
+            document.getElementById('ltxDirectorVideoEmpty')?.classList.toggle('hidden', ltxDirectorState.segments.length > 0);
+            document.getElementById('ltxDirectorAudioEmpty')?.classList.toggle('hidden', ltxDirectorState.audioSegments.length > 0);
+            document.getElementById('ltxDirectorAudioStateLabel').innerText = ltxDirectorState.customAudio ? 'ON' : 'OFF';
+            document.getElementById('ltxDirectorCustomAudioBtn')?.classList.toggle('border-nexus-red', !!ltxDirectorState.customAudio);
+            updateLtxDirectorSelectionPanel(selectedSegment, selectedAudio);
+            updateLtxDirectorPreview();
+            updateLtxDirectorPlayhead();
+            persistLtxDirectorState();
+        }
+
+        function updateLtxDirectorSelectionPanel(selectedSegment = ltxDirectorSelectedSegment(), selectedAudio = ltxDirectorSelectedAudio()) {
+            const prompt = document.getElementById('ltxDirectorPrompt');
+            const guide = document.getElementById('ltxDirectorGuideStrength');
+            const guideValue = document.getElementById('ltxDirectorGuideStrengthValue');
+            const startLabel = document.getElementById('ltxDirectorStartLabel');
+            const endLabel = document.getElementById('ltxDirectorEndLabel');
+            const meta = document.getElementById('ltxDirectorSelectionMeta');
+            if (ltxDirectorState.selectedType === 'audio' && selectedAudio) {
+                if (prompt && document.activeElement !== prompt) prompt.value = `File: ${selectedAudio.fileName || 'custom audio'}\nLength: ${Number(selectedAudio.length || 0).toFixed(2)}s  Trim-in: ${Number(selectedAudio.trimStart || 0).toFixed(2)}s`;
+                if (prompt) prompt.disabled = true;
+                if (guide) guide.disabled = true;
+                if (startLabel) startLabel.innerText = Number(selectedAudio.start || 0).toFixed(2);
+                if (endLabel) endLabel.innerText = ltxDirectorEnd(selectedAudio).toFixed(2);
+                if (meta) meta.innerText = selectedAudio.fileName || 'Audio segment';
+                return;
+            }
+            if (prompt) {
+                prompt.disabled = false;
+                if (selectedSegment && document.activeElement !== prompt) prompt.value = selectedSegment.prompt || '';
+            }
+            if (guide) {
+                guide.disabled = false;
+                guide.value = Number(selectedSegment?.guideStrength ?? 1);
+            }
+            if (guideValue) guideValue.innerText = Number(selectedSegment?.guideStrength ?? 1).toFixed(2);
+            if (startLabel) startLabel.innerText = Number(selectedSegment?.start || 0).toFixed(2);
+            if (endLabel) endLabel.innerText = ltxDirectorEnd(selectedSegment).toFixed(2);
+            if (meta) meta.innerText = selectedSegment?.title || 'No segment selected';
+        }
+
+        function updateLtxDirectorPreview() {
+            const segment = ltxDirectorSortedSegments().find(item => ltxDirectorState.currentTime >= item.start && ltxDirectorState.currentTime <= ltxDirectorEnd(item))
+                || ltxDirectorSelectedSegment();
+            const image = document.getElementById('ltxDirectorPreviewImage');
+            const fallback = document.getElementById('ltxDirectorPreviewFallback');
+            if (image) {
+                const source = segment?.imageSrc || segment?.imageB64 || '';
+                image.classList.toggle('hidden', !source);
+                image.src = source || '';
+            }
+            if (fallback) fallback.classList.toggle('hidden', !!(segment?.imageSrc || segment?.imageB64));
+            const meta = document.getElementById('ltxDirectorPreviewMeta');
+            if (meta) meta.innerText = `${ltxDirectorState.width}x${ltxDirectorState.height} @ ${ltxDirectorState.fps}fps | ${Number(ltxDirectorState.duration).toFixed(2)}s`;
+        }
+
+        function updateLtxDirectorPlayhead() {
+            const playhead = document.getElementById('ltxDirectorPlayhead');
+            const tracker = document.getElementById('ltxDirectorTracker');
+            if (playhead) playhead.style.left = `${ltxDirectorTimelinePixel(ltxDirectorState.currentTime || 0)}px`;
+            if (tracker) tracker.innerText = ltxDirectorDisplayTime(ltxDirectorState.currentTime || 0);
+            updateLtxDirectorPreview();
+        }
+
+        function selectLtxDirectorItem(type, id) {
+            if (ltxDirectorPlaybackTimer) toggleLtxDirectorPlayback(false);
+            ltxDirectorState.selectedType = type;
+            ltxDirectorState.selectedId = id;
+            const item = type === 'audio' ? ltxDirectorSelectedAudio() : ltxDirectorSelectedSegment();
+            if (item) ltxDirectorState.currentTime = Number(item.start || 0);
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+        }
+
+        function openLtxDirectorImagePicker() {
+            document.getElementById('ltxDirectorImageInput')?.click();
+        }
+
+        function openLtxDirectorAudioPicker() {
+            document.getElementById('ltxDirectorAudioInput')?.click();
+        }
+
+        async function addLtxDirectorImageFiles(files) {
+            const images = [...(files || [])].filter(file => file.type?.startsWith('image/'));
+            if (!images.length) return;
+            for (const file of images) {
+                const dataUrl = await ltxDirectorReadFileAsDataUrl(file);
+                const start = Math.max(0, ...ltxDirectorState.segments.map(ltxDirectorEnd));
+                const length = Math.min(4, Math.max(1, ltxDirectorState.duration - start || 4));
+                const id = `ltx-seg-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+                ltxDirectorState.segments.push({
+                    id,
+                    type: 'image',
+                    start,
+                    length,
+                    prompt: file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ') || 'new image keyframe',
+                    guideStrength: 1,
+                    title: `Segment #${ltxDirectorState.segments.length + 1}`,
+                    imageSrc: dataUrl,
+                    imageB64: dataUrl,
+                    imageFile: file.name
+                });
+                ltxDirectorState.selectedType = 'segment';
+                ltxDirectorState.selectedId = id;
+            }
+            fitLtxDirectorTimeline({ quiet: true });
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+            showToast("Director Images Added", `${images.length} keyframe image${images.length === 1 ? '' : 's'} linked to the LTX timeline.`);
+        }
+
+        function addLtxDirectorTextSegment() {
+            const start = Math.max(0, ...ltxDirectorState.segments.map(ltxDirectorEnd));
+            const length = Math.min(3, Math.max(1, ltxDirectorState.duration - start || 3));
+            const id = `ltx-seg-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            ltxDirectorState.segments.push({
+                id,
+                type: 'text',
+                start,
+                length,
+                prompt: 'new text-only motion beat',
+                guideStrength: 1,
+                title: `Segment #${ltxDirectorState.segments.length + 1}`,
+                imageSrc: '',
+                imageB64: '',
+                imageFile: ''
+            });
+            ltxDirectorState.selectedType = 'segment';
+            ltxDirectorState.selectedId = id;
+            fitLtxDirectorTimeline({ quiet: true });
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+            showToast("Text Segment Added", "A prompt-only Director beat was added.");
+        }
+
+        async function addLtxDirectorAudioFiles(files) {
+            const audios = [...(files || [])].filter(file => file.type?.startsWith('audio/') || /\.(wav|mp3|flac|ogg|m4a)$/i.test(file.name));
+            if (!audios.length) return;
+            for (const file of audios) {
+                const dataUrl = await ltxDirectorReadFileAsDataUrl(file);
+                const start = Math.max(0, ...ltxDirectorState.audioSegments.map(ltxDirectorEnd));
+                const length = Math.min(Math.max(2, ltxDirectorState.duration - start), ltxDirectorState.duration || 8);
+                const id = `ltx-audio-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+                ltxDirectorState.audioSegments.push({
+                    id,
+                    type: 'audio',
+                    start,
+                    length,
+                    trimStart: 0,
+                    audioDurationFrames: ltxDirectorSecondsToFrames(length),
+                    audioFile: file.name,
+                    fileName: file.name,
+                    audioB64: dataUrl,
+                    waveformPeaks: ltxDirectorWaveformPeaks(file.name)
+                });
+                ltxDirectorState.selectedType = 'audio';
+                ltxDirectorState.selectedId = id;
+            }
+            ltxDirectorState.customAudio = true;
+            fitLtxDirectorTimeline({ quiet: true });
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+            showToast("Custom Audio Added", `${audios.length} audio clip${audios.length === 1 ? '' : 's'} synced with the Director timeline.`);
+        }
+
+        function toggleLtxDirectorCustomAudio(force = null) {
+            ltxDirectorState.customAudio = force === null ? !ltxDirectorState.customAudio : !!force;
+            renderLtxDirector();
+            syncLtxDirectorToSideControls({ silent: true });
+            syncLtxDirectorWorkflowGraph(false);
+            showToast(ltxDirectorState.customAudio ? "Audio Enabled" : "Audio Disabled", ltxDirectorState.customAudio ? "Custom audio will be encoded into combined_audio." : "Director will ignore custom audio clips.");
+        }
+
+        function toggleLtxDirectorSettings(force = null) {
+            const panel = document.getElementById('ltxDirectorSettingsPanel');
+            if (!panel) return;
+            const shouldShow = force === null ? panel.classList.contains('hidden') : !!force;
+            panel.classList.toggle('hidden', !shouldShow);
+        }
+
+        function fitLtxDirectorTimeline(options = {}) {
+            const end = Math.max(0.5, ...ltxDirectorState.segments.map(ltxDirectorEnd), ...ltxDirectorState.audioSegments.map(ltxDirectorEnd));
+            ltxDirectorState.duration = Math.max(end, Number(ltxDirectorState.duration || 0));
+            const input = document.getElementById('ltxDirectorDuration');
+            if (input) input.value = ltxDirectorState.duration.toFixed(2);
+            syncLtxDirectorToSideControls({ silent: true });
+            persistLtxDirectorState();
+            if (!options.quiet) showToast("Timeline Fitted", `Duration adjusted to ${ltxDirectorState.duration.toFixed(2)}s.`);
+        }
+
+        function deleteLtxDirectorSelection() {
+            if (ltxDirectorState.selectedType === 'audio') {
+                ltxDirectorState.audioSegments = ltxDirectorState.audioSegments.filter(item => item.id !== ltxDirectorState.selectedId);
+                ltxDirectorState.selectedType = 'segment';
+                ltxDirectorState.selectedId = ltxDirectorState.segments[0]?.id || '';
+                renderLtxDirector();
+                syncLtxDirectorWorkflowGraph(false);
+                showToast("Audio Removed", "Selected audio clip was removed.");
+                return;
+            }
+            if (ltxDirectorState.segments.length <= 1) {
+                showToast("Director Needs A Segment", "At least one image or text segment must remain.");
+                return;
+            }
+            ltxDirectorState.segments = ltxDirectorState.segments.filter(item => item.id !== ltxDirectorState.selectedId);
+            ltxDirectorState.segments.forEach((segment, index) => { segment.title = `Segment #${index + 1}`; });
+            ltxDirectorState.selectedId = ltxDirectorState.segments[0]?.id || '';
+            ltxDirectorState.selectedType = 'segment';
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+            showToast("Segment Deleted", "Selected Director segment was removed.");
+        }
+
+        function updateLtxDirectorPrompt(value) {
+            if (ltxDirectorState.selectedType !== 'segment') return;
+            const segment = ltxDirectorSelectedSegment();
+            if (!segment) return;
+            segment.prompt = value;
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+        }
+
+        function updateLtxDirectorGuideStrength(value) {
+            const segment = ltxDirectorSelectedSegment();
+            if (!segment) return;
+            segment.guideStrength = Number(value || 1);
+            document.getElementById('ltxDirectorGuideStrengthValue').innerText = Number(segment.guideStrength).toFixed(2);
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+        }
+
+        function toggleLtxDirectorPlayback(force = null) {
+            const shouldPlay = force === null ? !ltxDirectorPlaybackTimer : !!force;
+            const icon = document.getElementById('ltxDirectorPlayIcon');
+            if (!shouldPlay) {
+                if (ltxDirectorPlaybackTimer) clearInterval(ltxDirectorPlaybackTimer);
+                ltxDirectorPlaybackTimer = null;
+                if (icon) icon.className = 'fa-solid fa-play text-xs';
+                return;
+            }
+            if (ltxDirectorPlaybackTimer) clearInterval(ltxDirectorPlaybackTimer);
+            if (icon) icon.className = 'fa-solid fa-pause text-xs';
+            ltxDirectorPlaybackTimer = setInterval(() => {
+                ltxDirectorState.currentTime += 0.24;
+                if (ltxDirectorState.currentTime > ltxDirectorState.duration) ltxDirectorState.currentTime = 0;
+                updateLtxDirectorPlayhead();
+            }, 240);
+        }
+
+        function resetLtxDirectorPlayback() {
+            toggleLtxDirectorPlayback(false);
+            ltxDirectorState.currentTime = 0;
+            updateLtxDirectorPlayhead();
+        }
+
+        function beginLtxDirectorDrag(event, type) {
+            const target = event.target.closest(type === 'audio' ? '[data-ltx-audio-id]' : '[data-ltx-segment-id]');
+            if (!target) return;
+            event.preventDefault();
+            const id = type === 'audio' ? target.dataset.ltxAudioId : target.dataset.ltxSegmentId;
+            selectLtxDirectorItem(type, id);
+            const item = type === 'audio' ? ltxDirectorSelectedAudio() : ltxDirectorSelectedSegment();
+            if (!item) return;
+            ltxDirectorDrag = {
+                type,
+                id,
+                mode: event.target.dataset.ltxHandle ? `resize-${event.target.dataset.ltxHandle}` : 'move',
+                startX: event.clientX,
+                originalStart: Number(item.start || 0),
+                originalLength: Number(item.length || 1)
+            };
+        }
+
+        function moveLtxDirectorDrag(event) {
+            if (!ltxDirectorDrag) return;
+            event.preventDefault();
+            const item = ltxDirectorDrag.type === 'audio' ? ltxDirectorSelectedAudio() : ltxDirectorSelectedSegment();
+            if (!item) return;
+            const delta = (event.clientX - ltxDirectorDrag.startX) / LTX_DIRECTOR_PIXELS_PER_SECOND;
+            const originalEnd = ltxDirectorDrag.originalStart + ltxDirectorDrag.originalLength;
+            if (ltxDirectorDrag.mode === 'move') {
+                item.start = ltxDirectorSnap(Math.max(0, ltxDirectorDrag.originalStart + delta));
+            } else if (ltxDirectorDrag.mode === 'resize-left') {
+                const nextStart = ltxDirectorClamp(ltxDirectorDrag.originalStart + delta, 0, originalEnd - LTX_DIRECTOR_MIN_SECONDS);
+                item.start = ltxDirectorSnap(nextStart);
+                item.length = ltxDirectorSnap(originalEnd - item.start);
+            } else if (ltxDirectorDrag.mode === 'resize-right') {
+                item.length = ltxDirectorSnap(Math.max(LTX_DIRECTOR_MIN_SECONDS, ltxDirectorDrag.originalLength + delta));
+            }
+            if (item.start + item.length > ltxDirectorState.duration) ltxDirectorState.duration = ltxDirectorSnap(item.start + item.length);
+            if (ltxDirectorDrag.type === 'audio') item.audioDurationFrames = ltxDirectorSecondsToFrames(item.length);
+            ltxDirectorState.currentTime = item.start;
+            renderLtxDirector();
+        }
+
+        function endLtxDirectorDrag() {
+            if (!ltxDirectorDrag) return;
+            ltxDirectorDrag = null;
+            persistLtxDirectorState();
+            syncLtxDirectorToSideControls({ silent: true });
+            syncLtxDirectorWorkflowGraph(false);
+        }
+
+        function serializeLtxDirectorState() {
+            const fps = Math.max(1, Math.round(Number(ltxDirectorState.fps || 24)));
+            const durationSeconds = Math.max(0.5, Number(ltxDirectorState.duration || 12));
+            const sortedSegments = ltxDirectorSortedSegments();
+            const sortedAudio = ltxDirectorSortedAudio();
+            const prompts = sortedSegments.map(segment => String(segment.prompt || '').trim() || 'director timeline segment');
+            const segmentLengths = sortedSegments.map(segment => Math.max(1, Math.round(Number(segment.length || LTX_DIRECTOR_MIN_SECONDS) * fps)));
+            const guideStrength = sortedSegments
+                .filter(segment => segment.type === 'image')
+                .map(segment => Number(segment.guideStrength ?? 1).toFixed(2));
+            const timelineData = {
+                segments: sortedSegments.map(segment => ({
+                    id: segment.id,
+                    start: Math.max(0, Math.round(Number(segment.start || 0) * fps)),
+                    length: Math.max(1, Math.round(Number(segment.length || LTX_DIRECTOR_MIN_SECONDS) * fps)),
+                    prompt: String(segment.prompt || '').trim() || 'director timeline segment',
+                    type: segment.type || 'image',
+                    imageFile: segment.imageFile || '',
+                    imageB64: segment.imageB64 || '',
+                    guideStrength: Number(segment.guideStrength ?? 1)
+                })),
+                audioSegments: sortedAudio.map(audio => ({
+                    id: audio.id,
+                    type: 'audio',
+                    start: Math.max(0, Math.round(Number(audio.start || 0) * fps)),
+                    length: Math.max(1, Math.round(Number(audio.length || LTX_DIRECTOR_MIN_SECONDS) * fps)),
+                    trimStart: Math.max(0, Math.round(Number(audio.trimStart || 0) * fps)),
+                    audioDurationFrames: Math.max(1, Math.round(Number(audio.length || LTX_DIRECTOR_MIN_SECONDS) * fps)),
+                    audioFile: audio.audioFile || audio.fileName || '',
+                    fileName: audio.fileName || audio.audioFile || '',
+                    audioB64: audio.audioB64 || '',
+                    waveformPeaks: audio.waveformPeaks || []
+                }))
+            };
+            return {
+                duration_seconds: Number(durationSeconds.toFixed(2)),
+                duration_frames: Math.max(1, Math.round(durationSeconds * fps)),
+                frame_rate: fps,
+                custom_width: Math.max(0, Math.round(Number(ltxDirectorState.width || 0))),
+                custom_height: Math.max(0, Math.round(Number(ltxDirectorState.height || 0))),
+                resize_method: ltxDirectorState.resizeMethod || 'maintain aspect ratio',
+                display_mode: ltxDirectorState.displayMode || 'seconds',
+                epsilon: Number(ltxDirectorState.epsilon || 0.001),
+                divisible_by: Math.max(1, Math.round(Number(ltxDirectorState.divisibleBy || 32))),
+                img_compression: Math.max(0, Math.round(Number(ltxDirectorState.imgCompression || 18))),
+                use_custom_audio: !!ltxDirectorState.customAudio,
+                timeline_data: timelineData,
+                timeline_data_json: JSON.stringify(timelineData),
+                local_prompts: prompts.join(' | '),
+                segment_lengths: segmentLengths.join(','),
+                guide_strength: guideStrength.join(',')
+            };
+        }
+
+        function buildLtxDirectorApiWorkflow(payload = null) {
+            const director = serializeLtxDirectorState();
+            const selectedOption = document.getElementById('modelSelect')?.selectedOptions?.[0];
+            const checkpointName = selectedOption?.dataset?.model || payload?.model_name || 'select_ltx23_checkpoint.safetensors';
+            const rawTextEncoder = document.getElementById('textEncoderSelect')?.value || '';
+            const rawAudioVae = document.getElementById('audioVaeSelect')?.value || '';
+            const textEncoder = /\.(safetensors|ckpt|pt|pth|bin|gguf)$/i.test(rawTextEncoder) ? rawTextEncoder : 'gemma_text_encoder.safetensors';
+            const audioVae = /\.(safetensors|ckpt|pt|pth|bin)$/i.test(rawAudioVae) ? rawAudioVae : 'ltx_audio_vae.safetensors';
+            const guideScale = Number(ltxDirectorSelectedSegment()?.guideStrength ?? 1);
+            const createVideoInputs = { images: ['15', 0], fps: director.frame_rate, audio: ['20', 0] };
+            return {
+                '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: checkpointName }, _meta: { title: 'Load LTX 2.3 Checkpoint' } },
+                '2': { class_type: 'LTXAVTextEncoderLoader', inputs: { text_encoder: textEncoder, ckpt_name: checkpointName, device: 'default' }, _meta: { title: 'LTX Text Encoder' } },
+                '3': { class_type: 'VAELoader', inputs: { vae_name: audioVae === 'Automatic' ? 'ltx_audio_vae.safetensors' : audioVae }, _meta: { title: 'Load LTX Audio VAE' } },
+                '4': {
+                    class_type: 'LTXDirector',
+                    inputs: {
+                        model: ['1', 0],
+                        clip: ['2', 0],
+                        audio_vae: ['3', 0],
+                        global_prompt: payload?.prompt || director.local_prompts,
+                        duration_frames: director.duration_frames,
+                        duration_seconds: director.duration_seconds,
+                        timeline_data: director.timeline_data_json,
+                        local_prompts: director.local_prompts,
+                        segment_lengths: director.segment_lengths,
+                        epsilon: director.epsilon,
+                        guide_strength: director.guide_strength,
+                        use_custom_audio: director.use_custom_audio,
+                        frame_rate: director.frame_rate,
+                        display_mode: director.display_mode,
+                        custom_width: director.custom_width,
+                        custom_height: director.custom_height,
+                        resize_method: director.resize_method,
+                        divisible_by: director.divisible_by,
+                        img_compression: director.img_compression
+                    },
+                    _meta: { title: 'LTX Director' }
+                },
+                '5': { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['4', 1] }, _meta: { title: 'Negative From Director Positive' } },
+                '6': { class_type: 'LTXVConditioning', inputs: { positive: ['4', 1], negative: ['5', 0], frame_rate: ['4', 5] }, _meta: { title: 'LTX Frame Rate Conditioning' } },
+                '7': { class_type: 'LTXDirectorGuide', inputs: { positive: ['6', 0], negative: ['6', 1], vae: ['1', 2], latent: ['4', 2], guide_data: ['4', 4], scale_by: Math.max(0.01, guideScale), upscale_method: 'bicubic' }, _meta: { title: 'Apply Director Guides' } },
+                '8': { class_type: 'LTXVConcatAVLatent', inputs: { video_latent: ['7', 2], audio_latent: ['4', 3] }, _meta: { title: 'Merge Video + Audio Latents' } },
+                '9': { class_type: 'RandomNoise', inputs: { noise_seed: payload?.seed ?? document.getElementById('seedInput')?.value ?? -1 }, _meta: { title: 'Seed' } },
+                '10': { class_type: 'KSamplerSelect', inputs: { sampler_name: normalizeSamplerForWorkflow(payload?.sampler || document.getElementById('samplingMethodSelect')?.value || 'Euler CFG++') }, _meta: { title: 'Sampler' } },
+                '11': { class_type: 'LTXVScheduler', inputs: { steps: payload?.steps || document.getElementById('stepsSlider')?.value || 8, max_shift: 2.05, base_shift: 0.95, stretch: true, terminal: 0.1, latent: ['8', 0] }, _meta: { title: 'LTX Scheduler' } },
+                '12': { class_type: 'CFGGuider', inputs: { model: ['4', 0], positive: ['7', 0], negative: ['7', 1], cfg: payload?.cfg || document.getElementById('cfgSlider')?.value || 1 }, _meta: { title: 'CFG Guider' } },
+                '13': { class_type: 'SamplerCustomAdvanced', inputs: { noise: ['9', 0], guider: ['12', 0], sampler: ['10', 0], sigmas: ['11', 0], latent_image: ['8', 0] }, _meta: { title: 'LTX Sampler' } },
+                '14': { class_type: 'LTXVSeparateAVLatent', inputs: { av_latent: ['13', 0] }, _meta: { title: 'Separate Video + Audio Latents' } },
+                '15': { class_type: 'VAEDecodeTiled', inputs: { samples: ['14', 0], vae: ['1', 2], tile_size: 512, overlap: 64, temporal_size: 16, temporal_overlap: 4 }, _meta: { title: 'Decode Frames' } },
+                '20': { class_type: 'LTXVAudioVAEDecode', inputs: { samples: ['14', 1], audio_vae: ['3', 0] }, _meta: { title: 'Decode LTX Audio' } },
+                '21': { class_type: 'CreateVideo', inputs: createVideoInputs, _meta: { title: 'Create Video' } },
+                '22': { class_type: 'SaveVideo', inputs: { video: ['21', 0], filename_prefix: 'NEXUS_BTA_LTX23_DIRECTOR', format: 'mp4', codec: 'h264' }, _meta: { title: 'Save Sequenced Video' } }
+            };
+        }
+
+        function normalizeSamplerForWorkflow(value) {
+            const map = { 'Euler CFG++': 'euler_cfg_pp', 'ER SDE': 'er_sde', 'Euler': 'euler', 'LCM': 'lcm', 'FlowMatch Euler': 'euler' };
+            return map[value] || String(value || 'euler_cfg_pp').toLowerCase().replace(/\s+/g, '_');
+        }
+
+        function buildLtxDirectorVisualGraph() {
+            const director = serializeLtxDirectorState();
+            return {
+                nodes: [
+                    { id: 'ltx_model', class_type: 'CheckpointLoaderSimple', title: 'Load LTX 2.3 Checkpoint', x: 60, y: 150, width: 250, height: 110, inputs: [], outputs: ['MODEL', 'CLIP', 'VAE'], widgets: [{ name: 'ckpt_name', value: document.getElementById('modelSelect')?.selectedOptions?.[0]?.dataset?.model || 'select_ltx23_checkpoint.safetensors' }], color: '#1f3b63' },
+                    { id: 'ltx_clip', class_type: 'LTXAVTextEncoderLoader', title: 'LTX Text Encoder', x: 60, y: 320, width: 260, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'text_encoder', value: document.getElementById('textEncoderSelect')?.value || 'gemma_text_encoder.safetensors' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
+                    { id: 'ltx_audio_vae', class_type: 'VAELoader', title: 'Audio VAE', x: 60, y: 490, width: 240, height: 104, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('audioVaeSelect')?.value || 'ltx_audio_vae.safetensors' }], color: '#62305a' },
+                    { id: 'ltx_director', class_type: 'LTXDirector', title: 'LTX Director Suite', x: 420, y: 170, width: 360, height: 260, inputs: ['model', 'clip', 'audio_vae', 'optional_latent'], outputs: ['model', 'positive', 'video_latent', 'audio_latent', 'guide_data', 'frame_rate', 'combined_audio'], widgets: [
+                        { name: 'duration_seconds', value: director.duration_seconds },
+                        { name: 'duration_frames', value: director.duration_frames },
+                        { name: 'timeline_data', value: director.timeline_data_json },
+                        { name: 'local_prompts', value: director.local_prompts },
+                        { name: 'segment_lengths', value: director.segment_lengths },
+                        { name: 'guide_strength', value: director.guide_strength }
+                    ], color: '#7f1d1d' },
+                    { id: 'ltx_conditioning', class_type: 'LTXVConditioning', title: 'Frame Rate Conditioning', x: 860, y: 110, width: 260, height: 118, inputs: ['positive', 'negative', 'frame_rate'], outputs: ['positive', 'negative'], widgets: [{ name: 'frame_rate', value: director.frame_rate }], color: '#1f5f3a' },
+                    { id: 'ltx_guide', class_type: 'LTXDirectorGuide', title: 'Apply Director Guides', x: 860, y: 290, width: 270, height: 150, inputs: ['positive', 'negative', 'vae', 'latent', 'guide_data'], outputs: ['positive', 'negative', 'latent'], widgets: [{ name: 'scale_by', value: Number(ltxDirectorSelectedSegment()?.guideStrength ?? 1).toFixed(2) }, { name: 'upscale_method', value: 'bicubic' }], color: '#5a4320' },
+                    { id: 'ltx_sampler', class_type: 'SamplerCustomAdvanced', title: 'LTX Sampler', x: 1210, y: 230, width: 285, height: 170, inputs: ['noise', 'guider', 'sampler', 'sigmas', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'steps', value: document.getElementById('stepsSlider')?.value || 8 }, { name: 'cfg', value: document.getElementById('cfgSlider')?.value || 1 }], color: '#ff3b3b' },
+                    { id: 'ltx_decode', class_type: 'VAEDecodeTiled', title: 'Decode Frames', x: 1580, y: 190, width: 250, height: 120, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [{ name: 'tile_size', value: 512 }], color: '#62305a' },
+                    { id: 'ltx_video', class_type: 'CreateVideo', title: 'Create Video + Audio', x: 1880, y: 190, width: 250, height: 118, inputs: ['images', 'audio', 'fps'], outputs: ['VIDEO'], widgets: [{ name: 'fps', value: director.frame_rate }], color: '#164e63' },
+                    { id: 'ltx_save', class_type: 'SaveVideo', title: 'Save Sequenced Video', x: 2180, y: 190, width: 230, height: 110, inputs: ['video'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA_LTX23_DIRECTOR' }], color: '#3f3f46' }
+                ],
+                links: [
+                    { from_node: 'ltx_model', from_slot: 0, to_node: 'ltx_director', to_slot: 0, type: 'MODEL' },
+                    { from_node: 'ltx_clip', from_slot: 0, to_node: 'ltx_director', to_slot: 1, type: 'CLIP' },
+                    { from_node: 'ltx_audio_vae', from_slot: 0, to_node: 'ltx_director', to_slot: 2, type: 'VAE' },
+                    { from_node: 'ltx_director', from_slot: 1, to_node: 'ltx_conditioning', to_slot: 0, type: 'CONDITIONING' },
+                    { from_node: 'ltx_director', from_slot: 5, to_node: 'ltx_conditioning', to_slot: 2, type: 'FLOAT' },
+                    { from_node: 'ltx_conditioning', from_slot: 0, to_node: 'ltx_guide', to_slot: 0, type: 'CONDITIONING' },
+                    { from_node: 'ltx_conditioning', from_slot: 1, to_node: 'ltx_guide', to_slot: 1, type: 'CONDITIONING' },
+                    { from_node: 'ltx_model', from_slot: 2, to_node: 'ltx_guide', to_slot: 2, type: 'VAE' },
+                    { from_node: 'ltx_director', from_slot: 2, to_node: 'ltx_guide', to_slot: 3, type: 'LATENT' },
+                    { from_node: 'ltx_director', from_slot: 4, to_node: 'ltx_guide', to_slot: 4, type: 'GUIDE_DATA' },
+                    { from_node: 'ltx_guide', from_slot: 2, to_node: 'ltx_sampler', to_slot: 4, type: 'LATENT' },
+                    { from_node: 'ltx_sampler', from_slot: 0, to_node: 'ltx_decode', to_slot: 0, type: 'LATENT' },
+                    { from_node: 'ltx_model', from_slot: 2, to_node: 'ltx_decode', to_slot: 1, type: 'VAE' },
+                    { from_node: 'ltx_decode', from_slot: 0, to_node: 'ltx_video', to_slot: 0, type: 'IMAGE' },
+                    { from_node: 'ltx_video', from_slot: 0, to_node: 'ltx_save', to_slot: 0, type: 'VIDEO' }
+                ],
+                groups: [{ id: 'ltx-director-suite', title: 'LTX 2.3 Director Suite', x: 30, y: 70, width: 2440, height: 560, color: '#ff3b3b' }],
+                width: 2520,
+                height: 720
+            };
+        }
+
+        function syncLtxDirectorWorkflowGraph(center = false) {
+            if (activePreset !== 'LTX' || activeWorkspace !== 'director') return;
+            activeWorkflowId = null;
+            activeWorkflowAnalysis = null;
+            activeWorkflowGraph = buildLtxDirectorVisualGraph();
+            activeWorkflowLinks = activeWorkflowGraph.links || [];
+            selectedWorkflowNodeId = null;
+            pendingWorkflowConnection = null;
+            renderWorkflowGraph(activeWorkflowGraph, center);
+            renderManagerPanel();
+            renderWorkflowTabs();
+        }
+
+        function activateLtxDirectorSuite() {
+            if (activePreset !== 'LTX') applyModelProfile('LTX', false, false);
+            ltxDirectorState.fps = Number(document.getElementById('fpsInput')?.value || ltxDirectorState.fps || 24);
+            ltxDirectorState.width = Number(document.getElementById('widthInput')?.value || ltxDirectorState.width || 1024);
+            ltxDirectorState.height = Number(document.getElementById('heightInput')?.value || ltxDirectorState.height || 576);
+            syncLtxDirectorToSideControls({ silent: true });
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(true);
+        }
+
+        function startLtxDirectorRender() {
+            if (ltxDirectorRenderTimer) return;
+            const loader = document.getElementById('ltxDirectorRenderLoader');
+            const status = document.getElementById('ltxDirectorRenderStatus');
+            const bar = document.getElementById('ltxDirectorRenderBar');
+            const step = document.getElementById('ltxDirectorRenderStep');
+            loader?.classList.remove('hidden');
+            status?.classList.remove('hidden');
+            let progress = 0;
+            ltxDirectorRenderTimer = setInterval(() => {
+                progress += 10;
+                if (bar) bar.style.width = `${Math.min(100, progress)}%`;
+                if (step) step.innerText = `Denoising Step ${Math.min(8, Math.max(1, Math.ceil(progress / 12.5)))}/8...`;
+                if (progress >= 100) {
+                    clearInterval(ltxDirectorRenderTimer);
+                    ltxDirectorRenderTimer = null;
+                    loader?.classList.add('hidden');
+                    status?.classList.add('hidden');
+                    showToast("Director Render Ready", "LTX Director workflow compiled. Use Generate for backend execution.");
+                }
+            }, 180);
+        }
+
+        function exportLtxDirectorMetadata() {
+            const payload = serializeLtxDirectorState();
+            console.info('LTX Director metadata', payload);
+            showToast("Director Metadata", `${payload.timeline_data.segments.length} segments / ${payload.timeline_data.audioSegments.length} audio clips ready.`);
+        }
+
+        function sendLtxDirectorToImg2Img() {
+            const segment = ltxDirectorSelectedSegment();
+            if (segment?.imageB64) {
+                setReferenceImageSource(segment.imageB64, segment.imageFile || segment.title || 'Director keyframe', { autoSize: false });
+            }
+            switchActivity('img2img', getActivityButton('img2img'));
+            showToast("Sent To img2img", "Selected Director keyframe is now the img2img reference.");
+        }
+
+        function initLtxDirectorEvents() {
+            document.getElementById('ltxDirectorImageInput')?.addEventListener('change', event => {
+                addLtxDirectorImageFiles(event.target.files);
+                event.target.value = '';
+            });
+            document.getElementById('ltxDirectorAudioInput')?.addEventListener('change', event => {
+                addLtxDirectorAudioFiles(event.target.files);
+                event.target.value = '';
+            });
+            ['ltxDirectorDuration', 'ltxDirectorFps', 'ltxDirectorWidth', 'ltxDirectorHeight', 'ltxDirectorResizeMethod', 'ltxDirectorDisplayMode', 'ltxDirectorEpsilon', 'ltxDirectorDivisibleBy', 'ltxDirectorImgCompression'].forEach(id => {
+                const element = document.getElementById(id);
+                if (element) element.addEventListener('input', syncLtxDirectorFromControls);
+                if (element) element.addEventListener('change', syncLtxDirectorFromControls);
+            });
+            document.getElementById('ltxDirectorPrompt')?.addEventListener('input', event => updateLtxDirectorPrompt(event.target.value));
+            document.getElementById('ltxDirectorGuideStrength')?.addEventListener('input', event => updateLtxDirectorGuideStrength(event.target.value));
+            document.getElementById('ltxDirectorVideoTrack')?.addEventListener('pointerdown', event => beginLtxDirectorDrag(event, 'segment'));
+            document.getElementById('ltxDirectorAudioTrack')?.addEventListener('pointerdown', event => beginLtxDirectorDrag(event, 'audio'));
+            document.addEventListener('pointermove', moveLtxDirectorDrag);
+            document.addEventListener('pointerup', endLtxDirectorDrag);
+            const directorView = document.getElementById('view-director');
+            directorView?.addEventListener('dragover', event => {
+                const hasMedia = [...event.dataTransfer?.items || []].some(item => item.kind === 'file' && (item.type?.startsWith('image/') || item.type?.startsWith('audio/')));
+                if (hasMedia) {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'copy';
+                }
+            });
+            directorView?.addEventListener('drop', event => {
+                const files = [...event.dataTransfer?.files || []];
+                const imageFiles = files.filter(file => file.type?.startsWith('image/'));
+                const audioFiles = files.filter(file => file.type?.startsWith('audio/') || /\.(wav|mp3|flac|ogg|m4a)$/i.test(file.name));
+                if (imageFiles.length || audioFiles.length) {
+                    event.preventDefault();
+                    addLtxDirectorImageFiles(imageFiles);
+                    addLtxDirectorAudioFiles(audioFiles);
+                }
+            });
         }
 
         function workflowDomId(nodeId) {
@@ -5926,7 +6992,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function hideAllMainViews() {
-            ['viewer', 'canvas', 'workflow', 'img2img', 'extras', 'pnginfo', 'merge', 'extensions', 'settings'].forEach(id => {
+            ['director', 'viewer', 'canvas', 'workflow', 'img2img', 'extras', 'pnginfo', 'merge', 'extensions', 'settings'].forEach(id => {
                 const view = document.getElementById('view-' + id);
                 if (!view) return;
                 view.classList.add('hidden');
@@ -5953,6 +7019,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 currentActivity = 'txt2img';
                 localStorage.setItem('nexus_current_activity', currentActivity);
             }
+            if (viewId === 'director') {
+                currentActivity = 'txt2img';
+                localStorage.setItem('nexus_current_activity', currentActivity);
+                setActiveActivityButton(getActivityButton('txt2img'));
+            }
             if (viewId === 'canvas' && currentActivity !== 'img2img') {
                 currentActivity = 'img2img';
                 localStorage.setItem('nexus_current_activity', currentActivity);
@@ -5968,12 +7039,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             });
             
             const activeTab = document.getElementById('tab-' + viewId);
-            activeTab.className = "workspace-tab active flex items-center gap-2 px-4 py-1.5 text-xs font-semibold text-black bg-white rounded-sm transition-all border border-nexus-border";
+            if (activeTab) activeTab.className = "workspace-tab active flex items-center gap-2 px-4 py-1.5 text-xs font-semibold text-black bg-white rounded-sm transition-all border border-nexus-border";
 
             hideAllMainViews();
             const view = document.getElementById('view-' + viewId);
+            if (!view) return;
             view.classList.remove('hidden');
-            if (viewId === 'viewer') view.classList.add('flex');
+            if (viewId === 'viewer' || viewId === 'director') view.classList.add('flex');
+            if (viewId === 'director') activateLtxDirectorSuite();
             updateSidePanelForActivity();
             if (viewId === 'canvas' && currentActivity === 'img2img') {
                 ensureInpaintWorkflowMode();
@@ -6993,7 +8066,28 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     precision: document.getElementById('precisionSelect')?.value || 'Auto'
                 }
             };
-            if (activeWorkflowId && activeWorkflowGraph?.nodes?.length) {
+            if (activeWorkspace === 'director') {
+                const director = serializeLtxDirectorState();
+                payload.activity = 'txt2img';
+                payload.workspace = 'director';
+                payload.preset = 'LTX';
+                payload.template = 'LTX_DIRECTOR_SUITE';
+                payload.workflow_id = null;
+                payload.prompt = director.local_prompts;
+                payload.width = director.custom_width || payload.width;
+                payload.height = director.custom_height || payload.height;
+                payload.video = {
+                    ...payload.video,
+                    frames: alignedVideoFrames('LTX', director.duration_seconds, director.frame_rate),
+                    fps: director.frame_rate,
+                    seconds: director.duration_seconds,
+                    duration: director.duration_seconds,
+                    active_audio: director.use_custom_audio,
+                    director_timeline: true
+                };
+                payload.director = director;
+                payload.workflow_override = buildLtxDirectorApiWorkflow(payload);
+            } else if (activeWorkflowId && activeWorkflowGraph?.nodes?.length) {
                 payload.workflow_override = visualGraphToWorkflow(activeWorkflowGraph);
             }
             return payload;
@@ -7826,6 +8920,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         document.querySelectorAll('.attention-toggle').forEach(input => {
             input.addEventListener('change', syncRuntimeBadges);
         });
+        initLtxDirectorEvents();
+        renderLtxDirector();
         initLinearViewerZoom();
         initPanZoomSurface('canvas');
         initPanZoomSurface('workflow');

@@ -130,6 +130,7 @@ class GenerateRequest(BaseModel):
     img2img: Img2ImgSettings = Field(default_factory=Img2ImgSettings)
     controlnet: ControlNetSettings = Field(default_factory=ControlNetSettings)
     video: dict[str, Any] = Field(default_factory=dict)
+    director: dict[str, Any] = Field(default_factory=dict)
     runtime: RuntimeOptions = Field(default_factory=RuntimeOptions)
 
 

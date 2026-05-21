@@ -336,9 +336,9 @@ def workflow_settings(path: Path, object_info: dict[str, Any] | None = None) -> 
                 return
             result[name] = int(number) if number.is_integer() else number
 
-        if lower in {"width", "empty_latent_width", "image_width"}:
+        if lower in {"width", "empty_latent_width", "image_width", "custom_width"}:
             set_number("width")
-        elif lower in {"height", "empty_latent_height", "image_height"}:
+        elif lower in {"height", "empty_latent_height", "image_height", "custom_height"}:
             set_number("height")
         elif lower in {"steps", "num_steps"}:
             set_number("steps")
@@ -348,7 +348,7 @@ def workflow_settings(path: Path, object_info: dict[str, Any] | None = None) -> 
             set_number("seed")
         elif lower in {"fps", "frame_rate", "framerate"}:
             set_number("fps")
-        elif lower in {"frames", "num_frames", "frame_count", "frame_number", "frames_number", "num_video_frames", "video_frames", "length"}:
+        elif lower in {"frames", "num_frames", "frame_count", "frame_number", "frames_number", "num_video_frames", "video_frames", "length", "duration_frames"}:
             set_number("frames")
         elif lower in {"duration", "seconds", "duration_seconds", "video_seconds"}:
             set_number("seconds")
@@ -606,6 +606,25 @@ def _known_ui_widget_order(node_type: str) -> list[str]:
     lower = node_type.lower()
     if "qwen" in lower and "textencode" in lower:
         return ["prompt"]
+    if lower == "ltxdirector":
+        return [
+            "global_prompt",
+            "duration_frames",
+            "duration_seconds",
+            "timeline_data",
+            "local_prompts",
+            "segment_lengths",
+            "epsilon",
+            "guide_strength",
+            "use_custom_audio",
+            "frame_rate",
+            "display_mode",
+            "custom_width",
+            "custom_height",
+            "resize_method",
+            "divisible_by",
+            "img_compression",
+        ]
     if "textencode" in lower or "cliptext" in lower:
         return ["text"]
     if "ksamplerselect" in lower:
@@ -2054,6 +2073,7 @@ def patch_workflow(
     assets = assets or {}
     model_name = assets.get("primary_model") or request.model_name or Path(request.model_path or "").name
     video_options = request.video or {}
+    director_options = request.director or {}
     preset = request.preset.lower()
     fps_value = _number_or_none(video_options.get("fps"))
     seconds_value = _number_or_none(video_options.get("seconds") or video_options.get("duration"))
@@ -2089,6 +2109,32 @@ def patch_workflow(
         class_lower = class_type.lower()
         inputs = node.setdefault("inputs", {})
         title = str(node.get("_meta", {}).get("title", "")).lower()
+
+        if class_lower == "ltxdirector" and director_options:
+            timeline_data = director_options.get("timeline_data_json")
+            if not timeline_data and isinstance(director_options.get("timeline_data"), dict):
+                timeline_data = json.dumps(director_options["timeline_data"])
+            director_patch = {
+                "global_prompt": request.prompt,
+                "duration_frames": director_options.get("duration_frames"),
+                "duration_seconds": director_options.get("duration_seconds"),
+                "timeline_data": timeline_data,
+                "local_prompts": director_options.get("local_prompts"),
+                "segment_lengths": director_options.get("segment_lengths"),
+                "epsilon": director_options.get("epsilon"),
+                "guide_strength": director_options.get("guide_strength"),
+                "use_custom_audio": director_options.get("use_custom_audio"),
+                "frame_rate": director_options.get("frame_rate") or fps_value,
+                "display_mode": director_options.get("display_mode"),
+                "custom_width": director_options.get("custom_width") or request.width,
+                "custom_height": director_options.get("custom_height") or request.height,
+                "resize_method": director_options.get("resize_method"),
+                "divisible_by": director_options.get("divisible_by"),
+                "img_compression": director_options.get("img_compression"),
+            }
+            for key, value in director_patch.items():
+                if value is not None and value != "":
+                    inputs[key] = value
 
         if model_name:
             for key in ["ckpt_name", "unet_name"]:
