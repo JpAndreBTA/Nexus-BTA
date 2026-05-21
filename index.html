@@ -1430,27 +1430,29 @@
                 </div>
 
                 <!-- Main Display Image -->
-                <div class="relative max-w-full max-h-full flex items-center justify-center group">
+                <div class="relative max-w-full max-h-full flex items-center justify-center">
                     <div id="linearEmptyState" class="border border-dashed border-nexus-border bg-nexus-panel/40 px-8 py-10 text-center rounded-sm">
                         <i class="fa-regular fa-image text-2xl text-nexus-muted"></i>
                         <p class="text-xs text-nexus-muted mt-3 font-mono">No output loaded</p>
                         <p class="text-[10px] text-nexus-muted mt-1">Generated files appear from ./output</p>
                     </div>
-                    <button id="clearLinearOutputBtn" type="button" onclick="clearLinearOutput()" class="hidden absolute top-3 right-3 z-20 w-8 h-8 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm backdrop-blur" title="Clear Linear View">
-                        <i class="fa-solid fa-xmark text-xs"></i>
-                    </button>
-                    <img id="mainImageDisplay" src="" alt="Generated Output" class="hidden max-h-[75vh] object-contain border border-nexus-border transition-transform duration-150 shadow-xl origin-center">
-                    <video id="mainVideoDisplay" src="" controls loop class="hidden max-h-[75vh] object-contain border border-nexus-border transition-transform duration-150 shadow-xl origin-center"></video>
-                    
-                    <!-- Quick Actions Hover Bar -->
-                    <div class="absolute bottom-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 bg-nexus-panel/90 border border-nexus-border p-1.5 rounded-sm backdrop-blur">
-                        <button id="sendToImg2ImgBtn" onclick="sendViewerTo('img2img')" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Send to img2img"><i class="fa-solid fa-share-from-square"></i></button>
-                        <button id="sendToExtrasBtn" onclick="sendViewerTo('extras')" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Send to extras"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
-                        <button onclick="zoomLinearViewer(-0.15)" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Zoom out"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
-                        <button onclick="resetLinearViewerZoom()" class="min-w-10 h-8 px-2 flex items-center justify-center text-[10px] font-mono text-white bg-nexus-bg rounded-sm" title="Reset zoom"><span id="linearZoomLabel">100%</span></button>
-                        <button onclick="zoomLinearViewer(0.15)" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Zoom in"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
-                        <button onclick="toggleLinearFullscreen()" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Fullscreen"><i class="fa-solid fa-expand"></i></button>
-                        <button class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-nexus-red bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Download"><i class="fa-solid fa-download"></i></button>
+                    <div id="linearMediaShell" class="hidden relative max-w-full max-h-[75vh] items-center justify-center group origin-center transition-transform duration-150">
+                        <button id="clearLinearOutputBtn" type="button" onclick="clearLinearOutput()" class="hidden absolute top-3 right-3 z-20 w-8 h-8 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm backdrop-blur" title="Clear Linear View">
+                            <i class="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                        <img id="mainImageDisplay" src="" alt="Generated Output" class="hidden max-w-full max-h-[75vh] object-contain border border-nexus-border shadow-xl">
+                        <video id="mainVideoDisplay" src="" controls loop class="hidden max-w-full max-h-[75vh] object-contain border border-nexus-border shadow-xl"></video>
+
+                        <!-- Quick Actions Hover Bar -->
+                        <div class="absolute left-1/2 bottom-4 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 bg-nexus-panel/90 border border-nexus-border p-1.5 rounded-sm backdrop-blur">
+                            <button id="sendToImg2ImgBtn" onclick="sendViewerTo('img2img')" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Send to img2img"><i class="fa-solid fa-share-from-square"></i></button>
+                            <button id="sendToExtrasBtn" onclick="sendViewerTo('extras')" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Send to extras"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
+                            <button onclick="zoomLinearViewer(-0.15)" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Zoom out"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+                            <button onclick="resetLinearViewerZoom()" class="min-w-10 h-8 px-2 flex items-center justify-center text-[10px] font-mono text-white bg-nexus-bg rounded-sm" title="Reset zoom"><span id="linearZoomLabel">100%</span></button>
+                            <button onclick="zoomLinearViewer(0.15)" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Zoom in"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+                            <button onclick="toggleLinearFullscreen()" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Fullscreen"><i class="fa-solid fa-expand"></i></button>
+                            <button class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-nexus-red bg-nexus-bg hover:bg-nexus-hover rounded-sm" title="Download"><i class="fa-solid fa-download"></i></button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2035,7 +2037,6 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let backendWorkflows = [];
         let backendCustomNodes = [];
         let backendDependencies = {};
-        let galleryPollTimer = null;
         let gallerySyncInFlight = false;
         let galleryLastSignature = '';
         let activeWorkflowId = null;
@@ -2650,10 +2651,18 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }).join('');
         }
 
-        function outputUrlFromBackend(value) {
+        function appendUrlVersion(url, version) {
+            if (!url || !version || String(url).startsWith('data:')) return url;
+            const normalizedVersion = String(Math.round(Number(version) * 1000) || version);
+            const separator = String(url).includes('?') ? '&' : '?';
+            return `${url}${separator}v=${encodeURIComponent(normalizedVersion)}`;
+        }
+
+        function outputUrlFromBackend(value, options = {}) {
             if (!value) return '';
-            if (value.startsWith('/outputs') || value.startsWith('/model-assets')) return `http://127.0.0.1:7861${value}`;
-            return value;
+            let url = value;
+            if (value.startsWith('/outputs') || value.startsWith('/model-assets')) url = `http://127.0.0.1:7861${value}`;
+            return value.includes('/outputs/') ? appendUrlVersion(url, options.version) : url;
         }
 
         function isVideoOutput(item) {
@@ -2663,6 +2672,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function setLinearOutput(item) {
+            const shell = document.getElementById('linearMediaShell');
             const image = document.getElementById('mainImageDisplay');
             const video = document.getElementById('mainVideoDisplay');
             const empty = document.getElementById('linearEmptyState');
@@ -2671,6 +2681,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const isVideo = item && isVideoOutput(item);
 
             if (empty) empty.classList.toggle('hidden', !!mediaUrl);
+            if (shell) {
+                shell.classList.toggle('hidden', !mediaUrl);
+                shell.classList.toggle('flex', !!mediaUrl);
+            }
             if (clearButton) {
                 clearButton.classList.toggle('hidden', !mediaUrl);
                 clearButton.classList.toggle('flex', !!mediaUrl);
@@ -2693,14 +2707,15 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function galleryItemKey(item) {
-            return String(item?.path || item?.filename || item?.image || item?.thumb || item?.title || '').toLowerCase();
+            return String(item?.path || item?.filename || item?.image || item?.thumb || item?.title || '').split('?')[0].toLowerCase();
         }
 
         function normalizeGalleryItem(item) {
+            const modified = Number(item.modified || Date.now() / 1000);
             return {
                 title: item.title || item.filename || 'Generated output',
-                image: outputUrlFromBackend(item.image || item.url || ''),
-                thumb: outputUrlFromBackend(item.thumb || item.image || item.url || ''),
+                image: outputUrlFromBackend(item.image || item.url || '', { version: modified }),
+                thumb: outputUrlFromBackend(item.thumb || item.image || item.url || '', { version: modified }),
                 prompt: item.prompt || '',
                 negative: item.negative || '',
                 model: item.model || '',
@@ -2717,7 +2732,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 path: item.path || item.filename || item.path || '',
                 workflow: item.workflow_id || item.workflow || '',
                 mediaType: isVideoOutput(item) ? 'video' : 'image',
-                modified: Number(item.modified || Date.now() / 1000)
+                modified
             };
         }
 
@@ -2760,13 +2775,6 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             } finally {
                 gallerySyncInFlight = false;
             }
-        }
-
-        function startGalleryLiveSync() {
-            if (galleryPollTimer) return;
-            galleryPollTimer = setInterval(() => {
-                if (!document.hidden) syncGalleryFromBackend({ quiet: true });
-            }, 2500);
         }
 
         function renderAssetCounts() {
@@ -2813,7 +2821,6 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 backendCustomNodes = customNodes;
                 backendDependencies = dependencies;
                 backendGalleryToItems(gallery, { preferNewest: true, force: true });
-                startGalleryLiveSync();
                 renderAssetCounts();
                 renderManagerPanel();
                 if (!activeWorkflowId) {
@@ -3267,12 +3274,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function applyLinearViewerZoom() {
-            const image = document.getElementById('mainImageDisplay');
-            const video = document.getElementById('mainVideoDisplay');
+            const shell = document.getElementById('linearMediaShell');
             const label = document.getElementById('linearZoomLabel');
             const transform = `scale(${viewerZoom})`;
-            if (image) image.style.transform = transform;
-            if (video) video.style.transform = transform;
+            if (shell) shell.style.transform = transform;
             if (label) label.innerText = `${Math.round(viewerZoom * 100)}%`;
         }
 
@@ -3299,8 +3304,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const view = document.getElementById('view-viewer');
             if (!view) return;
             view.addEventListener('wheel', event => {
-                if (document.getElementById('mainImageDisplay')?.classList.contains('hidden')
-                    && document.getElementById('mainVideoDisplay')?.classList.contains('hidden')) {
+                if (document.getElementById('linearMediaShell')?.classList.contains('hidden')) {
                     return;
                 }
                 event.preventDefault();
@@ -6355,8 +6359,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (!outputs.length) return;
             const newItems = outputs.map((output, index) => normalizeGalleryItem({
                 title: output.filename || `Nexus output ${index + 1}`,
-                image: outputUrlFromBackend(output.url),
-                thumb: outputUrlFromBackend(output.url),
+                image: output.url,
+                thumb: output.url,
                 prompt: payload.prompt,
                 negative: payload.negative_prompt,
                 model: payload.model_name,

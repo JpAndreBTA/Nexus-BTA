@@ -299,6 +299,8 @@ def extract_outputs(history_item: dict[str, Any]) -> list[dict[str, Any]]:
                     continue
                 subfolder = item.get("subfolder", "")
                 output_type = item.get("type", "output")
+                if output_type != "output":
+                    continue
                 relative_path = f"{subfolder.strip('/')}/{filename}" if subfolder else filename
                 safe_relative_path = relative_path.replace("\\", "/")
                 url = f"/outputs/{quote(safe_relative_path, safe='/')}"

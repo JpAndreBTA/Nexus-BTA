@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import re
 import shutil
 import uuid
@@ -126,6 +127,11 @@ def _write_input_data_image(value: str, prefix: str) -> str:
     return filename
 
 
+def _output_relative_from_url(value: str) -> str:
+    relative = value.split("/outputs/", 1)[1].split("?", 1)[0].split("#", 1)[0]
+    return unquote(relative).lstrip("/\\")
+
+
 def _prepare_reference_image(request: GenerateRequest) -> str | None:
     value = (request.img2img.reference_image or "").strip()
     if request.activity != "img2img" or not value:
@@ -136,7 +142,7 @@ def _prepare_reference_image(request: GenerateRequest) -> str | None:
 
     source: Path | None = None
     if value.startswith("/outputs/") or "/outputs/" in value:
-        relative = unquote(value.split("/outputs/", 1)[1]).lstrip("/\\")
+        relative = _output_relative_from_url(value)
         source = (settings.output_dir / relative).resolve()
     else:
         candidate = Path(value)
@@ -177,7 +183,7 @@ def _prepare_controlnet_image(request: GenerateRequest) -> str | None:
 
     source: Path | None = None
     if value.startswith("/outputs/") or "/outputs/" in value:
-        relative = unquote(value.split("/outputs/", 1)[1]).lstrip("/\\")
+        relative = _output_relative_from_url(value)
         source = (settings.output_dir / relative).resolve()
     else:
         candidate = Path(value)
@@ -284,7 +290,37 @@ def _cleanup_generation_temp() -> None:
                 shutil.rmtree(item, ignore_errors=True)
             else:
                 item.unlink(missing_ok=True)
+    _cleanup_local_app_temp()
     cleanup_embedded_comfy_artifacts()
+
+
+def _cleanup_local_app_temp() -> None:
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if not local_appdata:
+        return
+    temp_root = Path(local_appdata) / "Temp"
+    if not temp_root.exists():
+        return
+
+    safe_patterns = (
+        "nexus_*",
+        "NexusBTA*",
+        "nexus-bta*",
+        "ComfyUI*",
+        "comfyui*",
+    )
+    for pattern in safe_patterns:
+        for path in temp_root.glob(pattern):
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            if not resolved.is_relative_to(temp_root.resolve()):
+                continue
+            if resolved.is_dir():
+                shutil.rmtree(resolved, ignore_errors=True)
+            elif resolved.is_file():
+                resolved.unlink(missing_ok=True)
 
 
 def cleanup_embedded_comfy_artifacts() -> None:
