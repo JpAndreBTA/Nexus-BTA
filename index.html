@@ -595,6 +595,47 @@
         </div>
     </div>
 
+    <!-- Embedding Selector Modal -->
+    <div id="embeddingModal" class="fixed inset-0 z-[105] hidden flex items-center justify-center bg-black/80 backdrop-blur-sm transition-all">
+        <div class="bg-nexus-panel border border-nexus-border w-[760px] max-w-[92vw] h-[70vh] max-h-[760px] flex flex-col rounded-sm overflow-hidden">
+            <div class="h-12 border-b border-nexus-border px-4 flex items-center justify-between bg-nexus-bg shrink-0 select-none">
+                <span class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-fingerprint text-nexus-red"></i> Select Embedding
+                </span>
+                <button onclick="closeEmbeddingModal()" class="text-nexus-muted hover:text-nexus-red transition-colors text-sm" title="Close embeddings">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="p-3 border-b border-nexus-border bg-zinc-900 space-y-2 shrink-0">
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-nexus-muted text-xs"></i>
+                        <input id="embeddingSearchInput" type="text" placeholder="Search embeddings by name, folder, family..." class="w-full bg-nexus-bg border border-nexus-border rounded-sm py-2 pl-9 pr-3 text-xs text-white outline-none focus:border-nexus-red transition-colors">
+                    </div>
+                    <button type="button" onclick="refreshEmbeddingCatalog()" class="px-4 py-2 bg-nexus-bg border border-nexus-border hover:border-nexus-red hover:text-white text-nexus-muted font-bold text-xs uppercase tracking-wider rounded-sm transition-all shrink-0 flex items-center gap-1.5">
+                        <i class="fa-solid fa-arrow-rotate-right"></i> Refresh
+                    </button>
+                </div>
+                <div class="flex items-center justify-between gap-3 text-[10px] font-mono">
+                    <span id="embeddingTargetLabel" class="text-nexus-muted">Target: positive prompt</span>
+                    <span id="embeddingCompatibilityLabel" class="text-nexus-red">Checking compatibility...</span>
+                </div>
+            </div>
+            <div id="embeddingUnsupportedState" class="hidden flex-1 items-center justify-center bg-nexus-bg p-6 text-center">
+                <div class="max-w-md">
+                    <i class="fa-solid fa-ban text-3xl text-nexus-red"></i>
+                    <p class="text-sm font-bold text-white mt-4">Embeddings unavailable for this route</p>
+                    <p id="embeddingUnsupportedText" class="text-xs text-nexus-muted mt-2 leading-5">This preset uses a non-SD text encoder.</p>
+                </div>
+            </div>
+            <div id="embeddingGrid" class="flex-1 overflow-y-auto p-3 bg-nexus-bg grid grid-cols-1 sm:grid-cols-2 gap-2 content-start"></div>
+            <div class="p-3 border-t border-nexus-border bg-nexus-bg flex items-center justify-between shrink-0 select-none">
+                <span id="embeddingResultCount" class="text-[10px] font-mono text-nexus-muted">0 embeddings</span>
+                <button onclick="closeEmbeddingModal()" class="px-4 py-1.5 border border-nexus-border text-nexus-muted hover:bg-zinc-900 hover:text-white text-xs font-bold uppercase tracking-wider rounded-sm transition-all">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Gallery Preview Modal -->
     <div id="galleryModal" class="fixed inset-0 z-[110] hidden flex items-center justify-center bg-black/85 backdrop-blur-sm">
         <div class="bg-nexus-panel border border-nexus-border w-[80vw] max-w-[1500px] h-[80vh] max-h-[92vh] flex flex-col rounded-sm overflow-hidden">
@@ -947,9 +988,19 @@
                             <i class="fa-solid fa-wand-magic-sparkles hover:text-nexus-red cursor-pointer" title="Enhance Prompt"></i>
                         </div>
                     </div>
-                    <textarea id="posPrompt" rows="4" class="w-full bg-nexus-bg border border-nexus-border rounded-sm p-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-nexus-red resize-none" placeholder="Masterpiece, best quality, highly detailed, cinematic landscape..."></textarea>
+                    <div class="relative">
+                        <textarea id="posPrompt" rows="4" class="w-full bg-nexus-bg border border-nexus-border rounded-sm p-2 pr-10 pb-8 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-nexus-red resize-none" placeholder="Masterpiece, best quality, highly detailed, cinematic landscape..."></textarea>
+                        <button id="positiveEmbeddingBtn" type="button" onclick="openEmbeddingModal('positive')" class="absolute bottom-2 right-2 h-6 px-2 bg-nexus-panel border border-nexus-border text-[9px] font-bold text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm transition-colors" title="Add embedding to positive prompt">
+                            <i class="fa-solid fa-fingerprint text-nexus-red mr-1"></i> Emb
+                        </button>
+                    </div>
                     
-                    <textarea id="negPrompt" rows="2" class="w-full bg-nexus-bg border border-nexus-border rounded-sm p-2 text-xs text-nexus-muted placeholder-zinc-600 focus:outline-none focus:border-nexus-red resize-none" placeholder="Negative prompt: worst quality, blurry, deformed..."></textarea>
+                    <div class="relative">
+                        <textarea id="negPrompt" rows="2" class="w-full bg-nexus-bg border border-nexus-border rounded-sm p-2 pr-10 pb-8 text-xs text-nexus-muted placeholder-zinc-600 focus:outline-none focus:border-nexus-red resize-none" placeholder="Negative prompt: worst quality, blurry, deformed..."></textarea>
+                        <button id="negativeEmbeddingBtn" type="button" onclick="openEmbeddingModal('negative')" class="absolute bottom-2 right-2 h-6 px-2 bg-nexus-panel border border-nexus-border text-[9px] font-bold text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm transition-colors" title="Add embedding to negative prompt">
+                            <i class="fa-solid fa-fingerprint text-nexus-red mr-1"></i> Emb
+                        </button>
+                    </div>
 
                     <div id="referenceImagePanel" class="hidden relative border border-dashed border-nexus-border bg-nexus-bg rounded-sm p-2 text-center cursor-pointer hover:border-nexus-red transition-colors">
                         <button id="clearReferenceImageBtn" type="button" class="hidden absolute top-1.5 right-1.5 z-10 w-6 h-6 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm" title="Clear reference image">
@@ -2220,6 +2271,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let extrasProcessedUrl = '';
         let extrasObjectUrl = '';
         let extrasProcessing = false;
+        let activeEmbeddingTarget = 'positive';
+        let embeddingSearchQuery = '';
         let loraLibrary = [];
 
         const presetButtonLabels = {
@@ -2819,6 +2872,199 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function isVideoFile(file) {
             return !!file && (file.type?.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi)$/i.test(file.name || ''));
+        }
+
+        function activeModelHaystack() {
+            const option = document.getElementById('modelSelect')?.selectedOptions?.[0];
+            const profile = modelProfiles[activePreset] || {};
+            return [
+                activePreset,
+                profile.type,
+                profile.checkpoint,
+                option?.textContent,
+                option?.dataset?.model,
+                option?.dataset?.preset,
+                option?.dataset?.category
+            ].filter(Boolean).join(' ').toLowerCase();
+        }
+
+        function embeddingSupportForActiveRoute() {
+            const haystack = activeModelHaystack();
+            if (activePreset === 'Wan' || activePreset === 'LTX' || /wan|ltx|video/.test(haystack)) {
+                return {
+                    supported: false,
+                    family: 'video',
+                    label: 'WAN/LTX video encoders do not use classic textual inversion embeddings.'
+                };
+            }
+            if (activePreset === 'XL' || /sdxl|pony|illustrious|illustrous|illust/i.test(haystack)) {
+                return {
+                    supported: true,
+                    family: 'sdxl',
+                    label: /pony/i.test(haystack)
+                        ? 'Pony is treated as SDXL-compatible.'
+                        : /illust/i.test(haystack)
+                            ? 'Illustrious is treated as SDXL-compatible.'
+                            : 'SDXL-compatible embeddings enabled.'
+                };
+            }
+            if (activePreset === 'SD' || /sd15|sd 1|sd-1|1\.5|realisticvision|dreamshaper|anything/i.test(haystack)) {
+                return { supported: true, family: 'sd15', label: 'SD 1.5-compatible embeddings enabled.' };
+            }
+            return {
+                supported: false,
+                family: 'other',
+                label: 'Embeddings are enabled only for SD 1.5, SDXL, Pony and Illustrious routes.'
+            };
+        }
+
+        function embeddingTokenFor(item) {
+            const filename = String(item?.name || '').replace(/\.(safetensors|pt|bin|ckpt)$/i, '');
+            return `embedding:${filename}`;
+        }
+
+        function embeddingMatchesActiveRoute(item, support = embeddingSupportForActiveRoute()) {
+            if (!support.supported) return false;
+            const haystack = [
+                item.name,
+                item.folder,
+                item.relative_path,
+                item.category,
+                ...(item.tags || [])
+            ].join(' ').toLowerCase();
+            const isSdxlHint = /sdxl|xl|pony|illustrious|illustrous|illust/.test(haystack);
+            const isSd15Hint = /sd15|sd-?1|1\.5|easynegative|badhand/.test(haystack);
+            if (support.family === 'sdxl' && isSd15Hint && !isSdxlHint) return false;
+            if (support.family === 'sd15' && isSdxlHint) return false;
+            return true;
+        }
+
+        function filteredEmbeddings() {
+            const support = embeddingSupportForActiveRoute();
+            const query = embeddingSearchQuery.trim().toLowerCase();
+            const embeddings = backendCatalog?.categories?.embeddings || [];
+            return embeddings
+                .filter(item => embeddingMatchesActiveRoute(item, support))
+                .filter(item => {
+                    if (!query) return true;
+                    return [item.name, item.folder, item.relative_path, ...(item.tags || [])]
+                        .join(' ')
+                        .toLowerCase()
+                        .includes(query);
+                })
+                .sort((a, b) => String(a.folder || '').localeCompare(String(b.folder || '')) || String(a.name || '').localeCompare(String(b.name || '')));
+        }
+
+        function updateEmbeddingButtonState() {
+            const support = embeddingSupportForActiveRoute();
+            ['positiveEmbeddingBtn', 'negativeEmbeddingBtn'].forEach(id => {
+                const button = document.getElementById(id);
+                if (!button) return;
+                button.classList.toggle('opacity-50', !support.supported);
+                button.title = support.supported ? 'Add embedding to prompt' : support.label;
+            });
+        }
+
+        function renderEmbeddingModal() {
+            const support = embeddingSupportForActiveRoute();
+            const targetLabel = document.getElementById('embeddingTargetLabel');
+            const compatLabel = document.getElementById('embeddingCompatibilityLabel');
+            const unsupported = document.getElementById('embeddingUnsupportedState');
+            const unsupportedText = document.getElementById('embeddingUnsupportedText');
+            const grid = document.getElementById('embeddingGrid');
+            const count = document.getElementById('embeddingResultCount');
+
+            if (targetLabel) targetLabel.innerText = `Target: ${activeEmbeddingTarget === 'negative' ? 'negative prompt' : 'positive prompt'}`;
+            if (compatLabel) compatLabel.innerText = support.label;
+            unsupported?.classList.toggle('hidden', support.supported);
+            unsupported?.classList.toggle('flex', !support.supported);
+            if (unsupportedText) unsupportedText.innerText = support.label;
+            grid?.classList.toggle('hidden', !support.supported);
+
+            const items = filteredEmbeddings();
+            if (count) count.innerText = support.supported ? `${items.length} embeddings` : '0 compatible embeddings';
+            if (!grid || !support.supported) return;
+            if (!items.length) {
+                grid.innerHTML = `
+                    <div class="sm:col-span-2 border border-dashed border-nexus-border bg-nexus-panel/50 p-6 text-center rounded-sm">
+                        <i class="fa-solid fa-fingerprint text-2xl text-nexus-muted"></i>
+                        <p class="text-xs font-bold text-white mt-3">No compatible embeddings found</p>
+                        <p class="text-[10px] text-nexus-muted mt-1">Put Textual Inversion files under ./models/embeddings, then refresh.</p>
+                    </div>
+                `;
+                return;
+            }
+            grid.innerHTML = items.map(item => {
+                const token = embeddingTokenFor(item);
+                const tags = [item.folder, item.extension?.replace('.', ''), ...(item.tags || [])]
+                    .filter(Boolean)
+                    .slice(0, 4);
+                return `
+                    <button type="button" onclick="insertEmbeddingToken(${jsString(token)})" class="text-left border border-nexus-border bg-nexus-panel hover:border-nexus-red hover:bg-zinc-900 rounded-sm p-3 transition-colors">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <p class="text-xs font-bold text-white truncate">${escapeHtml(item.name || token)}</p>
+                                <p class="text-[10px] font-mono text-nexus-red mt-1 truncate">${escapeHtml(token)}</p>
+                            </div>
+                            <i class="fa-solid fa-plus text-nexus-muted text-xs mt-0.5"></i>
+                        </div>
+                        <div class="flex flex-wrap gap-1 mt-2">
+                            ${tags.map(tag => `<span class="text-[9px] font-mono border border-nexus-border bg-nexus-bg text-nexus-muted px-1.5 py-0.5 rounded-sm">${escapeHtml(tag)}</span>`).join('')}
+                        </div>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function openEmbeddingModal(target = 'positive') {
+            activeEmbeddingTarget = target === 'negative' ? 'negative' : 'positive';
+            embeddingSearchQuery = '';
+            const search = document.getElementById('embeddingSearchInput');
+            if (search) search.value = '';
+            renderEmbeddingModal();
+            document.getElementById('embeddingModal')?.classList.remove('hidden');
+        }
+
+        function closeEmbeddingModal() {
+            document.getElementById('embeddingModal')?.classList.add('hidden');
+        }
+
+        async function refreshEmbeddingCatalog() {
+            if (!backendOnline) {
+                showToast('Backend Offline', 'Start Nexus backend before refreshing embeddings.');
+                return;
+            }
+            try {
+                backendCatalog = await nexusFetch('/models');
+                applyBackendCatalog(backendCatalog);
+                renderEmbeddingModal();
+                showToast('Embeddings Refreshed', 'Scanned ./models/embeddings.');
+            } catch (error) {
+                showToast('Embedding Refresh Failed', error.message.slice(0, 140));
+            }
+        }
+
+        function insertTextAtCursor(textarea, text) {
+            const start = textarea.selectionStart ?? textarea.value.length;
+            const end = textarea.selectionEnd ?? textarea.value.length;
+            const before = textarea.value.slice(0, start);
+            const after = textarea.value.slice(end);
+            const needsPrefix = before.trim() && !/[\s,(]$/.test(before) ? ', ' : '';
+            const needsSuffix = after.trim() && !/^[\s,)]/.test(after) ? ', ' : '';
+            textarea.value = `${before}${needsPrefix}${text}${needsSuffix}${after}`;
+            const cursor = before.length + needsPrefix.length + text.length;
+            textarea.focus();
+            textarea.setSelectionRange(cursor, cursor);
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        function insertEmbeddingToken(token) {
+            const textarea = document.getElementById(activeEmbeddingTarget === 'negative' ? 'negPrompt' : 'posPrompt');
+            if (!textarea) return;
+            insertTextAtCursor(textarea, token);
+            updateWorkflowPreview();
+            closeEmbeddingModal();
+            showToast('Embedding Added', `${token} inserted into ${activeEmbeddingTarget} prompt.`);
         }
 
         function updateExtrasModeUi() {
@@ -3454,6 +3700,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (latentUpscaleWrapper) latentUpscaleWrapper.classList.toggle('hidden', !ltxOnly);
             if (activeAudioWrapper) activeAudioWrapper.classList.toggle('hidden', !ltxOnly);
             updateExtrasModeUi();
+            updateEmbeddingButtonState();
             if (dimensionsTitle) dimensionsTitle.innerText = isVideo ? 'Frame Dimensions' : 'Image Dimensions';
             if (extendBtn) {
                 const canExtend = !!profile?.supportsExtend;
@@ -5550,11 +5797,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (modalId === 'galleryModal') closeGalleryModal();
             if (modalId === 'civitaiModal') window.NexusCivitai?.close?.();
             if (modalId === 'loadPromptModal') closeLoadPromptModal();
+            if (modalId === 'embeddingModal') closeEmbeddingModal();
             if (modalId === 'civitaiMediaModal') window.NexusCivitai?.closeMedia?.();
         }
 
         function topOpenModalId() {
-            return ['civitaiMediaModal', 'galleryModal', 'civitaiModal', 'loraModal', 'loadPromptModal']
+            return ['civitaiMediaModal', 'galleryModal', 'civitaiModal', 'embeddingModal', 'loraModal', 'loadPromptModal']
                 .find(id => {
                     const modal = document.getElementById(id);
                     return modal && !modal.classList.contains('hidden');
@@ -5562,7 +5810,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         document.addEventListener('mousedown', event => {
-            const modal = event.target.closest('#loraModal, #galleryModal, #civitaiModal, #loadPromptModal, #civitaiMediaModal');
+            const modal = event.target.closest('#loraModal, #embeddingModal, #galleryModal, #civitaiModal, #loadPromptModal, #civitaiMediaModal');
             if (!modal || event.target !== modal) return;
             closeModalById(modal.id);
         });
@@ -7323,6 +7571,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         document.getElementById('controlNetStrengthSlider')?.addEventListener('input', handleControlNetUiChange);
         document.getElementById('controlNetStartInput')?.addEventListener('input', handleControlNetUiChange);
         document.getElementById('controlNetEndInput')?.addEventListener('input', handleControlNetUiChange);
+        document.getElementById('embeddingSearchInput')?.addEventListener('input', event => {
+            embeddingSearchQuery = event.target.value || '';
+            renderEmbeddingModal();
+        });
         ['framesInput', 'fpsInput', 'secondsInput'].forEach(id => {
             const element = document.getElementById(id);
             const sync = () => {
@@ -7547,6 +7799,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         syncInpaintBrushSize(inpaintBrushSize);
         updateInpaintHistoryButtons();
         updateExtrasModeUi();
+        updateEmbeddingButtonState();
         const storedActivity = currentActivity;
         const storedWorkspace = activeWorkspace;
         if (storedActivity === 'txt2img' || storedActivity === 'img2img') {
