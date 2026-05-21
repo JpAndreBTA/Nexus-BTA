@@ -3056,12 +3056,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             textarea.focus();
             textarea.setSelectionRange(cursor, cursor);
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         function insertEmbeddingToken(token) {
             const textarea = document.getElementById(activeEmbeddingTarget === 'negative' ? 'negPrompt' : 'posPrompt');
             if (!textarea) return;
             insertTextAtCursor(textarea, token);
+            syncPromptTextWidgetsFromSideMenu();
             updateWorkflowPreview();
             closeEmbeddingModal();
             showToast('Embedding Added', `${token} inserted into ${activeEmbeddingTarget} prompt.`);
@@ -3738,6 +3740,42 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
         }
 
+        function isWorkflowPromptNode(node) {
+            const text = `${node?.title || ''} ${node?.class_type || ''}`.toLowerCase();
+            return !text.includes('note') && (
+                text.includes('textencode') ||
+                text.includes('cliptext') ||
+                text.includes('prompt')
+            );
+        }
+
+        function syncPromptTextWidgetsFromSideMenu() {
+            if (!activeWorkflowGraph?.nodes) return;
+            const positiveText = document.getElementById('posPrompt')?.value || '';
+            const negativeText = document.getElementById('negPrompt')?.value || '';
+            let firstPositivePatched = false;
+            activeWorkflowGraph.nodes.forEach(node => {
+                if (!isWorkflowPromptNode(node)) return;
+                const haystack = `${node.title || ''} ${node.class_type || ''}`.toLowerCase();
+                const isNegative = haystack.includes('negative');
+                const shouldPatchPositive = !isNegative && (haystack.includes('positive') || !firstPositivePatched);
+                if (!isNegative && !shouldPatchPositive) return;
+                const nextValue = isNegative ? negativeText : positiveText;
+                if (!isNegative) firstPositivePatched = true;
+                let patched = false;
+                (node.widgets || []).forEach(widget => {
+                    const key = String(widget.name || '').toLowerCase().replace(/\s+/g, '_');
+                    if (['text', 'prompt', 'positive', 'negative', 'widget_1'].includes(key)) {
+                        widget.value = nextValue;
+                        patched = true;
+                    }
+                });
+                if (!patched) {
+                    node.widgets = [{ name: 'text', value: nextValue }, ...(node.widgets || [])];
+                }
+            });
+        }
+
         function syncGraphWidgetsFromSideMenu() {
             if (!activeWorkflowGraph?.nodes) return;
             const selectedModelName = document.getElementById('modelSelect')?.selectedOptions?.[0]?.dataset?.model || '';
@@ -3778,6 +3816,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 controlnet_type: document.getElementById('controlNetTypeSelect')?.value,
                 controlnet_strength: document.getElementById('controlNetStrengthSlider')?.value
             };
+            syncPromptTextWidgetsFromSideMenu();
             activeWorkflowGraph.nodes.forEach(node => {
                 const role = workflowNodeRole(node);
                 const title = `${node.title || ''} ${node.class_type || ''}`.toLowerCase();
@@ -3826,15 +3865,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             document.querySelectorAll('[id^="workflowNegativeTextarea_"]').forEach(textarea => {
                 if (document.activeElement !== textarea) textarea.value = document.getElementById('negPrompt')?.value || '';
             });
-            if (activeWorkflowGraph?.nodes) {
-                activeWorkflowGraph.nodes.forEach(node => {
-                    const title = `${node.title || ''} ${node.class_type || ''}`.toLowerCase();
-                    if (!title.includes('negative')) return;
-                    (node.widgets || []).forEach(widget => {
-                        if (String(widget.name || '').toLowerCase() === 'text') widget.value = document.getElementById('negPrompt')?.value || '';
-                    });
-                });
-            }
+            syncPromptTextWidgetsFromSideMenu();
 
             const seedValue = document.getElementById('seedInput')?.value || '-1';
             const stepsValue = document.getElementById('stepsSlider')?.value || profile.steps;
@@ -3926,6 +3957,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function syncWorkflowPrompt(value) {
             const prompt = document.getElementById('posPrompt');
             if (prompt) prompt.value = value;
+            syncPromptTextWidgetsFromSideMenu();
             updateWorkflowPreview();
         }
 
@@ -4150,7 +4182,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function updateWorkflowWidget(nodeId, index, value) {
             const node = workflowNodeById(nodeId);
-            if (!node?.widgets?.[index]) return;
+            if (!node) return;
+            if (!node.widgets) node.widgets = [];
+            if (!node.widgets[index]) node.widgets[index] = { name: 'text', value: '' };
             node.widgets[index].value = value;
             const widgetKey = String(node.widgets[index].name || '').toLowerCase();
             const nodeText = `${node.title || ''} ${node.class_type || ''}`.toLowerCase();
@@ -4159,6 +4193,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 const target = document.getElementById(targetId);
                 if (target && document.activeElement !== target) target.value = value;
             }
+            syncPromptTextWidgetsFromSideMenu();
             syncKnownWidgetToSide(node.widgets[index].name, value);
             updateRangeLabel('steps');
             updateRangeLabel('cfg');
@@ -4282,8 +4317,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 const value = isNegative
                     ? (node.widgets?.find(widget => String(widget.name).toLowerCase() === 'text')?.value || document.getElementById('negPrompt')?.value || 'worst quality, low quality, blurry, deformed')
                     : (document.getElementById('posPrompt')?.value || 'Cinematic landscape...');
+                const textWidgetIndex = Math.max(0, (node.widgets || []).findIndex(widget => ['text', 'prompt', 'positive', 'negative', 'widget 1', 'widget_1'].includes(String(widget.name || '').toLowerCase())));
                 return `
-                    <textarea id="${escapeHtml(textareaId)}" oninput="${isNegative ? `document.getElementById('negPrompt').value = this.value; updateWorkflowWidget(${jsString(node.id)}, 0, this.value);` : 'syncWorkflowPrompt(this.value)'}" rows="3" class="w-full bg-nexus-bg border border-nexus-border text-[9px] text-white p-1 rounded-sm resize-none">${escapeHtml(value)}</textarea>
+                    <textarea id="${escapeHtml(textareaId)}" oninput="${isNegative ? `document.getElementById('negPrompt').value = this.value; updateWorkflowWidget(${jsString(node.id)}, ${textWidgetIndex}, this.value);` : 'syncWorkflowPrompt(this.value)'}" rows="3" class="w-full bg-nexus-bg border border-nexus-border text-[9px] text-white p-1 rounded-sm resize-none">${escapeHtml(value)}</textarea>
                     <div class="flex justify-between items-center pt-1 gap-2">
                         <div class="flex items-center gap-1.5 min-w-0">
                             <button type="button" onclick="workflowPortClick(event, ${jsString(node.id)}, 'input', 'clip')" class="workflow-port w-2.5 h-2.5 rounded-full bg-zinc-500 hover:bg-nexus-red border border-black" title="Connect CLIP"></button>
@@ -6866,6 +6902,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function collectGenerationPayload() {
+            syncPromptTextWidgetsFromSideMenu();
+            syncGraphWidgetsFromSideMenu();
             const profile = modelProfiles[activePreset] || {};
             const modelSelect = document.getElementById('modelSelect');
             const selectedOption = modelSelect?.selectedOptions?.[0];

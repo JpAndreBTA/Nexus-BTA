@@ -604,6 +604,10 @@ def workflow_settings(path: Path, object_info: dict[str, Any] | None = None) -> 
 
 def _known_ui_widget_order(node_type: str) -> list[str]:
     lower = node_type.lower()
+    if "qwen" in lower and "textencode" in lower:
+        return ["prompt"]
+    if "textencode" in lower or "cliptext" in lower:
+        return ["text"]
     if "ksamplerselect" in lower:
         return ["sampler_name"]
     if "ksampler" in lower:
@@ -966,6 +970,9 @@ def _widget_input_names(class_type: str, object_info: dict[str, Any]) -> list[st
         values = info.get(group, {})
         if isinstance(values, dict):
             names.extend(values.keys())
+    for name in _known_ui_widget_order(class_type):
+        if name not in names:
+            names.append(name)
     return names
 
 

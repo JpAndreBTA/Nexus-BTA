@@ -232,6 +232,7 @@ models/
   checkpoints/
   vae/
   loras/
+  embeddings/
   text_encoders/
   controlnet/
   upscale_models/
@@ -246,6 +247,15 @@ extensions/
 config/
   settings.json
   model_templates.json
+
+Model Asset Download Requirements
+---------------------------------
+1. Downloadable model and adapter recommendations live in requirements/model_assets.md.
+2. LoRA, LyCORIS and distilled LoRA files must remain under ./models/loras and should be grouped by model family.
+3. Textual inversion and embedding files must remain under ./models/embeddings.
+4. SD 1.5, SDXL, Pony and Illustrious routes support classic textual inversion tokens in the prompt text.
+5. WAN 2.2 and LTX 2.3 routes use video-specific text encoders, VAEs and distilled LoRA assets instead of classic textual inversion.
+6. Model weights, LoRAs, embeddings and generated outputs must stay ignored by git.
 
 Reference Features Used
 -----------------------
