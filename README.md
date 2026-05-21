@@ -2,6 +2,28 @@
 
 Nexus BTA is a local AI image and video studio built around an embedded ComfyUI runtime. It gives you one focused interface for SD 1.5, SDXL, Flux, Qwen, Lumina, WAN 2.2, LTX 2.3, Anima, LoRAs, ControlNet, inpaint, img2img, txt2img, and short video workflows.
 
+New here? Start with `run.bat`, open the UI, pick a model tab, write a simple prompt, and generate. Nexus is designed to keep the heavy ComfyUI wiring available when you need it, while keeping the everyday controls close at hand.
+
+## First Look
+
+The `examples/` folder includes quick visual references for the main workspaces.
+
+![Nexus BTA main interface](examples/Ui_layout.png)
+
+The main layout keeps model presets, generation controls, the viewer, workflow tabs, and the gallery in one focused workspace.
+
+![Inpaint workspace](examples/Inpaint_layout.png)
+
+Use the inpaint canvas to load a reference, paint masks, undo/redo brush edits, and send gallery images directly into the canvas.
+
+![Node workflow workspace](examples/Node_Workflow_layout.png)
+
+Switch to Node Workflow when you want to inspect or tune the generated Comfy graph without leaving Nexus.
+
+![Civitai browser modal](examples/Civitai_Modal.png)
+
+The Civitai modal helps browse models, download assets, and route them into the right Nexus model folders.
+
 ## Why It Feels Fast
 
 - One launcher: `run.bat` starts Nexus and the embedded ComfyUI runtime.

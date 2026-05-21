@@ -38,6 +38,12 @@ temp_*
 *.jpeg
 *.webp
 *.gif
+!examples/
+!examples/*.png
+!examples/*.jpg
+!examples/*.jpeg
+!examples/*.webp
+!examples/*.gif
 
 # Model weights and binary assets
 *.safetensors
