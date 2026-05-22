@@ -175,6 +175,43 @@
             outline-offset: 0;
         }
 
+        .ltx-director-reference {
+            position: absolute;
+            top: 12px;
+            height: calc(100% - 24px);
+            min-width: 92px;
+            user-select: none;
+        }
+
+        .ltx-director-reference.is-selected {
+            border-color: #ff3b3b !important;
+            outline: 1px solid rgba(255, 59, 59, 0.9);
+            outline-offset: 0;
+        }
+
+        .ltx-info-field {
+            background: #08090d;
+            border: 1px solid #27272a;
+            padding: 0.5rem;
+            border-radius: 2px;
+        }
+
+        .sidebar-resize-handle {
+            width: 5px;
+            cursor: col-resize;
+            background: transparent;
+            border-left: 1px solid transparent;
+            border-right: 1px solid transparent;
+            flex-shrink: 0;
+            transition: background-color 120ms ease, border-color 120ms ease;
+        }
+
+        .sidebar-resize-handle:hover,
+        .sidebar-resize-handle.is-dragging {
+            background: rgba(255, 59, 59, 0.18);
+            border-color: rgba(255, 59, 59, 0.45);
+        }
+
         .ltx-director-handle {
             position: absolute;
             top: 0;
@@ -1017,14 +1054,19 @@
         </nav>
 
         <!-- 2. LEFT CONTROL PANEL (Parameters) -->
-        <aside class="w-[340px] bg-nexus-panel border-r border-nexus-border flex flex-col shrink-0">
+        <aside id="leftSidebar" class="w-[340px] bg-nexus-panel border-r border-nexus-border flex flex-col shrink-0" style="width:340px;">
             
             <!-- Global Generate Button (Flat Design) -->
             <div class="p-3 border-b border-nexus-border bg-nexus-panel">
-                <button onclick="simulateGeneration()" class="w-full h-12 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-sm tracking-wider uppercase transition-colors flex items-center justify-center gap-2 rounded-sm active:scale-[0.98]">
+                <div class="flex gap-2">
+                <button onclick="simulateGeneration()" class="flex-1 h-12 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-sm tracking-wider uppercase transition-colors flex items-center justify-center gap-2 rounded-sm active:scale-[0.98]">
                     <i class="fa-solid fa-play"></i>
                     <span id="generateBtnText">Generate</span>
                 </button>
+                <button id="leftSidebarToggleBtn" type="button" onclick="toggleLeftSidebar()" class="h-12 w-11 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center justify-center" title="Hide left side menu">
+                    <i id="leftSidebarToggleIcon" class="fa-solid fa-panel-left"></i>
+                </button>
+                </div>
             </div>
 
             <!-- Scrollable Params -->
@@ -1531,6 +1573,10 @@
 
             </div>
         </aside>
+        <div id="leftSidebarResizeHandle" class="sidebar-resize-handle hidden lg:block" title="Resize left side menu"></div>
+        <button id="leftSidebarRevealBtn" type="button" onclick="toggleLeftSidebar(false)" class="hidden h-12 w-8 self-start mt-3 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-r-sm shrink-0" title="Show left side menu">
+            <i class="fa-solid fa-panel-left"></i>
+        </button>
 
         <!-- 3. CENTRAL WORKSPACE -->
         <main class="flex-1 flex flex-col bg-nexus-bg min-w-0 relative">
@@ -1562,7 +1608,8 @@
 
             <!-- View 0: LTX 2.3 Director Suite -->
             <div id="view-director" class="hidden flex-1 bg-nexus-bg overflow-hidden">
-                <input id="ltxDirectorImageInput" type="file" accept="image/*" multiple class="hidden">
+                <input id="ltxDirectorImageInput" type="file" accept="image/*,video/*" multiple class="hidden">
+                <input id="ltxDirectorMultiImageInput" type="file" accept="image/*" multiple class="hidden">
                 <input id="ltxDirectorAudioInput" type="file" accept="audio/*" multiple class="hidden">
                 <div class="flex-1 min-w-0 flex flex-col xl:flex-row overflow-hidden">
                     <section class="flex-1 min-w-0 flex flex-col border-r border-nexus-border bg-nexus-bg">
@@ -1627,6 +1674,7 @@
                                 <button type="button" onclick="openLtxDirectorImagePicker()" class="flat-button text-[10px] font-bold uppercase flex items-center gap-1.5"><i class="fa-solid fa-plus text-nexus-red"></i>Add Image</button>
                                 <button type="button" onclick="addLtxDirectorTextSegment()" class="flat-button text-[10px] font-bold uppercase flex items-center gap-1.5"><i class="fa-solid fa-font text-nexus-red"></i>Add Text</button>
                                 <button type="button" onclick="openLtxDirectorAudioPicker()" class="flat-button text-[10px] font-bold uppercase flex items-center gap-1.5"><i class="fa-solid fa-music text-nexus-red"></i>Add Audio</button>
+                                <button id="ltxDirectorReferenceModeBtn" type="button" onclick="toggleLtxDirectorReferenceMode()" class="flat-button text-[10px] font-bold uppercase flex items-center gap-1.5"><i class="fa-regular fa-images text-nexus-red"></i>Multi Image Load</button>
                                 <button type="button" onclick="deleteLtxDirectorSelection()" class="flat-button text-[10px] font-bold uppercase flex items-center gap-1.5 text-nexus-muted hover:text-nexus-red"><i class="fa-regular fa-trash-can"></i>Delete</button>
                             </div>
                             <div class="relative flex items-center gap-2">
@@ -1653,7 +1701,7 @@
                                 <div id="ltxDirectorPlayhead" class="absolute top-0 bottom-0 w-px bg-nexus-red z-20 pointer-events-none" style="left:0"></div>
                                 <div id="ltxDirectorRuler" class="ltx-director-ruler h-8 border-b border-nexus-border bg-zinc-950 sticky top-0 z-10"></div>
                                 <div class="h-[190px] border-b border-nexus-border/70 relative bg-[#0b0d12]" id="ltxDirectorVideoTrack">
-                                    <span class="absolute left-3 top-2 text-[9px] font-mono text-nexus-muted uppercase z-10">Video Keyframes Track</span>
+                                    <span id="ltxDirectorVideoTrackLabel" class="absolute left-3 top-2 text-[9px] font-mono text-nexus-muted uppercase z-10">Video Keyframes Track</span>
                                     <div id="ltxDirectorSegmentsLayer" class="absolute inset-0 top-6"></div>
                                     <div class="absolute inset-0 flex items-center justify-center pointer-events-none text-[10px] font-mono text-nexus-muted" id="ltxDirectorVideoEmpty">Drop images here or press Add Image</div>
                                 </div>
@@ -1687,12 +1735,16 @@
                         </div>
                     </section>
 
-                    <aside class="w-full xl:w-[360px] 2xl:w-[420px] bg-zinc-950 flex flex-col border-t xl:border-t-0 border-nexus-border shrink-0">
-                        <div class="h-12 border-b border-nexus-border px-4 flex items-center justify-between">
-                            <span class="text-xs font-bold text-white uppercase flex items-center gap-2"><i class="fa-solid fa-clapperboard text-nexus-red"></i>Live Director Preview</span>
+                    <div id="ltxDirectorInspectorResizeHandle" class="sidebar-resize-handle hidden xl:block" title="Resize Director right panel"></div>
+                    <aside id="ltxDirectorInspector" class="w-full xl:w-[360px] 2xl:w-[420px] bg-zinc-950 flex flex-col border-t xl:border-t-0 border-nexus-border shrink-0" style="width:420px;">
+                        <div class="h-12 border-b border-nexus-border px-3 flex items-center justify-between gap-2">
+                            <div class="flex bg-nexus-bg border border-nexus-border p-1 rounded-sm">
+                                <button id="ltxDirectorPreviewTab" type="button" onclick="setLtxDirectorInspectorTab('preview')" class="px-3 py-1.5 text-[10px] font-bold uppercase text-black bg-white rounded-sm">Live Director Preview</button>
+                                <button id="ltxDirectorInfoTab" type="button" onclick="setLtxDirectorInspectorTab('info')" class="px-3 py-1.5 text-[10px] font-bold uppercase text-nexus-muted hover:text-white">Info</button>
+                            </div>
                             <span id="ltxDirectorRenderStatus" class="hidden text-[10px] font-mono px-2 py-0.5 bg-nexus-red/10 border border-nexus-red/30 text-nexus-red">COMPILING</span>
                         </div>
-                        <div class="flex-1 min-h-[260px] bg-black relative flex items-center justify-center p-4">
+                        <div id="ltxDirectorPreviewPane" class="flex-1 min-h-[260px] bg-black relative flex items-center justify-center p-4">
                             <div id="ltxDirectorRenderLoader" class="hidden absolute inset-0 z-20 bg-zinc-950/95 flex flex-col items-center justify-center gap-3">
                                 <div class="w-44 h-1.5 bg-nexus-border overflow-hidden"><div id="ltxDirectorRenderBar" class="h-full bg-nexus-red w-0 transition-all"></div></div>
                                 <span id="ltxDirectorRenderStep" class="text-[10px] font-mono text-nexus-muted">Compiling sequence...</span>
@@ -1708,6 +1760,7 @@
                                 </div>
                             </div>
                         </div>
+                        <div id="ltxDirectorInfoPane" class="hidden flex-1 min-h-[260px] overflow-y-auto p-3 space-y-3 bg-zinc-950"></div>
                         <div class="p-3 border-t border-nexus-border flex flex-col gap-2">
                             <button type="button" onclick="startLtxDirectorRender()" class="w-full py-3 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-xs uppercase tracking-wider rounded-sm flex items-center justify-center gap-2"><i class="fa-solid fa-circle-play"></i>Render Sequenced Video</button>
                             <div class="grid grid-cols-2 gap-2">
@@ -2354,7 +2407,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         </main>
 
         <!-- 4. RIGHT SIDEBAR (Adjusts: Nodes, Gallery & Assets) - Collapsible -->
-        <aside id="rightSidebar" class="hidden lg:flex w-[280px] bg-nexus-panel border-l border-nexus-border flex-col shrink-0 transition-all duration-300">
+        <div id="rightSidebarResizeHandle" class="sidebar-resize-handle hidden lg:block" title="Resize right side menu"></div>
+        <aside id="rightSidebar" class="hidden lg:flex w-[280px] bg-nexus-panel border-l border-nexus-border flex-col shrink-0 transition-all duration-300" style="width:280px;">
             <!-- Header -->
             <div class="p-3 border-b border-nexus-border flex justify-between items-center">
                 <div class="flex gap-3 text-xs font-bold uppercase tracking-wider">
@@ -2480,13 +2534,22 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             workflow: { x: 0, y: 0, scale: 1 }
         };
 
-        const LTX_DIRECTOR_STORAGE_KEY = 'nexus_ltx_director_state_v1';
+        const LTX_DIRECTOR_STORAGE_KEY = 'nexus_ltx_director_state_v2';
         const LTX_DIRECTOR_MIN_SECONDS = 0.25;
         const LTX_DIRECTOR_PIXELS_PER_SECOND = 120;
         let ltxDirectorState = loadLtxDirectorState();
         let ltxDirectorDrag = null;
+        let ltxDirectorReferenceDrag = null;
         let ltxDirectorPlaybackTimer = null;
         let ltxDirectorRenderTimer = null;
+        let ltxDirectorInspectorTab = localStorage.getItem('nexus_ltx_director_inspector_tab') || 'preview';
+        const sidebarLayout = {
+            leftWidth: Math.max(260, Math.min(520, Number(localStorage.getItem('nexus_left_sidebar_width') || 340))),
+            rightWidth: Math.max(240, Math.min(520, Number(localStorage.getItem('nexus_right_sidebar_width') || 280))),
+            directorInspectorWidth: Math.max(320, Math.min(640, Number(localStorage.getItem('nexus_ltx_director_inspector_width') || 420))),
+            leftCollapsed: localStorage.getItem('nexus_left_sidebar_collapsed') === 'true'
+        };
+        let sidebarResizeDrag = null;
 
         let galleryItems = [];
         let extrasMode = localStorage.getItem('nexus_extras_mode') || 'image';
@@ -2695,7 +2758,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 videoSettings: { frames: 49, fps: 24, seconds: 2 }
             },
             LTX: {
-                template: 'LTX_LATENT_VIDEO',
+                template: 'LTX_DIRECTOR_SUITE',
                 type: 'video',
                 folder: './models/checkpoints/ltx',
                 checkpoint: 'LTX_Video_13B.safetensors',
@@ -2709,13 +2772,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 scheduler: 'Quadratic',
                 schedulers: ['Quadratic', 'Normal', 'Simple', 'Linear Quadratic'],
                 vae: ['Automatic', 'None'],
-                encoder: ['T5-XXL fp8', 'Automatic'],
+                encoder: ['gemma-3-12b-it-heretic-v2_nvfp4.safetensors', 'ltx-2.3_text_projection_bf16.safetensors', 'Automatic'],
                 variants: ['Distilled', 'Turbo', 'Base'],
                 precision: ['Auto', 'bf16', 'fp16'],
                 refiners: ['Off', 'Temporal upscale pass'],
                 motionAdapters: ['LTX latent video', 'LTX image-to-video', 'None'],
-                videoVae: ['Automatic', 'ltxv_2.3_vae.safetensors', 'ltx_video_vae.safetensors', 'None'],
-                audioVae: ['Automatic', 'ltxv_2.3_audio_vae.safetensors', 'ltx_audio_vae.safetensors', 'None'],
+                videoVae: ['Automatic', 'LTX23_video_vae_bf16.safetensors', 'taeltx2_3.safetensors', 'None'],
+                audioVae: ['Automatic', 'LTX23_audio_vae_bf16.safetensors', 'None'],
                 latentUpscaleModels: ['Automatic', 'ltx_spatial_upscaler.safetensors', 'latent_upscale_ltx.safetensors', 'None'],
                 supportsExtend: false,
                 supportsControlNet: false,
@@ -3937,7 +4000,23 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
 
             updateControlNetUi();
+            updateDirectorTabVisibility();
             updateSidePanelForActivity();
+        }
+
+        function isLtxDirectorTemplateActive() {
+            const profile = modelProfiles[activePreset];
+            return activePreset === 'LTX' && profile?.template === 'LTX_DIRECTOR_SUITE';
+        }
+
+        function updateDirectorTabVisibility() {
+            const tab = document.getElementById('tab-director');
+            const visible = isLtxDirectorTemplateActive();
+            tab?.classList.toggle('hidden', !visible);
+            if (!visible && activeWorkspace === 'director') {
+                activeWorkspace = 'viewer';
+                localStorage.setItem('nexus_active_workspace', activeWorkspace);
+            }
         }
 
         function updateSidePanelForActivity() {
@@ -4171,53 +4250,24 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 customAudio: false,
                 currentTime: 0,
                 selectedType: 'segment',
-                selectedId: 'ltx-seg-1',
-                segments: [
-                    {
-                        id: 'ltx-seg-1',
-                        type: 'image',
-                        start: 0,
-                        length: 4,
-                        prompt: 'masterpiece, highly detailed, a conductor dramatically waving arms to the symphonic music, classical orchestra setting, warm lighting',
-                        guideStrength: 1,
-                        title: 'Segment #1',
-                        imageSrc: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80',
-                        imageFile: '',
-                        imageB64: ''
-                    },
-                    {
-                        id: 'ltx-seg-2',
-                        type: 'image',
-                        start: 4,
-                        length: 3.5,
-                        prompt: 'cut to a close up of the conductor dramatically waving arms, focused expression, cinematic lighting',
-                        guideStrength: 0.85,
-                        title: 'Segment #2',
-                        imageSrc: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80',
-                        imageFile: '',
-                        imageB64: ''
-                    },
-                    {
-                        id: 'ltx-seg-3',
-                        type: 'text',
-                        start: 7.5,
-                        length: 4.5,
-                        prompt: 'the giant dragon breathes fire over a beautiful field, epic cinematic fantasy motion',
-                        guideStrength: 1.25,
-                        title: 'Segment #3',
-                        imageSrc: '',
-                        imageFile: '',
-                        imageB64: ''
-                    }
-                ],
-                audioSegments: []
+                selectedId: '',
+                referenceMode: false,
+                segments: [],
+                audioSegments: [],
+                referenceImages: []
             };
         }
 
         function loadLtxDirectorState() {
             try {
                 const parsed = JSON.parse(localStorage.getItem(LTX_DIRECTOR_STORAGE_KEY) || 'null');
-                if (parsed?.segments?.length) return { ...createDefaultLtxDirectorState(), ...parsed };
+                if (parsed && (Array.isArray(parsed.segments) || Array.isArray(parsed.audioSegments) || Array.isArray(parsed.referenceImages))) {
+                    const state = { ...createDefaultLtxDirectorState(), ...parsed };
+                    state.segments = Array.isArray(state.segments) ? state.segments : [];
+                    state.audioSegments = Array.isArray(state.audioSegments) ? state.audioSegments : [];
+                    state.referenceImages = Array.isArray(state.referenceImages) ? state.referenceImages : [];
+                    return state;
+                }
             } catch (error) {
                 console.info('Could not load LTX Director state.', error);
             }
@@ -4261,6 +4311,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             return ltxDirectorState.audioSegments.find(segment => segment.id === ltxDirectorState.selectedId) || null;
         }
 
+        function ltxDirectorSelectedReference() {
+            return (ltxDirectorState.referenceImages || []).find(item => item.id === ltxDirectorState.selectedId) || null;
+        }
+
         function ltxDirectorEnd(item) {
             return Number(item?.start || 0) + Number(item?.length || 0);
         }
@@ -4269,7 +4323,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const mediaEnd = Math.max(
                 0,
                 ...ltxDirectorSortedSegments().map(ltxDirectorEnd),
-                ...ltxDirectorSortedAudio().map(ltxDirectorEnd)
+                ...ltxDirectorSortedAudio().map(ltxDirectorEnd),
+                ...(ltxDirectorState.referenceImages || []).map(ltxDirectorEnd)
             );
             return Math.max(Number(ltxDirectorState.duration || 0), mediaEnd);
         }
@@ -4304,6 +4359,38 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 peaks.push(Number((0.18 + (seed / 233280) * 0.78).toFixed(3)));
             }
             return peaks;
+        }
+
+        function ltxDirectorSpokenWords(text = '') {
+            const matches = [...String(text || '').matchAll(/"([^"]*)"|'([^']*)'|\u201c([^\u201d]*)\u201d|\u2018([^\u2019]*)\u2019/g)];
+            const quoted = matches.map(match => match.slice(1).find(Boolean) || '').join(' ');
+            return quoted.trim() ? quoted.trim().split(/\s+/).length : 0;
+        }
+
+        function ltxDirectorSpeechStats(text = '', additionalTime = 0) {
+            const words = ltxDirectorSpokenWords(text);
+            const fps = Math.max(1, Number(ltxDirectorState.fps || 24));
+            const extra = Math.max(0, Number(additionalTime || 0));
+            const estimate = wpm => {
+                if (!words && !extra) return { seconds: 0, frames: 0 };
+                const seconds = (words / wpm) * 60 + extra;
+                return { seconds, frames: Math.ceil(seconds * fps) };
+            };
+            return { words, additionalTime: extra, slow: estimate(100), average: estimate(130), fast: estimate(160) };
+        }
+
+        function ltxDirectorEnsureSegmentMetadata(segment) {
+            if (!segment) return null;
+            if (!segment.crop) segment.crop = { x: 0, y: 0, w: 1, h: 1 };
+            if (!segment.cameraKeyframes) {
+                segment.cameraKeyframes = [
+                    { time: Number(segment.start || 0), zoom: 1, panX: 0, panY: 0 },
+                    { time: ltxDirectorEnd(segment), zoom: 1, panX: 0, panY: 0 }
+                ];
+            }
+            if (segment.speechAdditionalTime === undefined) segment.speechAdditionalTime = 0;
+            if (!segment.speechText && segment.type === 'text') segment.speechText = segment.prompt || '';
+            return segment;
         }
 
         function ltxDirectorReadFileAsDataUrl(file) {
@@ -4395,13 +4482,36 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
             const selectedSegment = ltxDirectorSelectedSegment();
             const selectedAudio = ltxDirectorSelectedAudio();
+            const selectedReference = ltxDirectorSelectedReference();
+            const references = ltxDirectorState.referenceImages || [];
+            document.getElementById('ltxDirectorVideoTrackLabel').innerText = ltxDirectorState.referenceMode ? 'Reference Image Order Track' : 'Video Keyframes Track';
+            document.getElementById('ltxDirectorReferenceModeBtn')?.classList.toggle('border-nexus-red', !!ltxDirectorState.referenceMode);
+            const referenceHtml = references.map((item, index) => {
+                const left = ltxDirectorTimelinePixel(item.start ?? index * Math.max(0.5, Number(item.length || 1)));
+                const width = Math.max(92, ltxDirectorTimelinePixel(item.length || 1.25));
+                const selected = item.id === ltxDirectorState.selectedId && ltxDirectorState.selectedType === 'reference';
+                return `
+                    <article class="ltx-director-reference ${selected ? 'is-selected' : ''} bg-zinc-950 border border-nexus-border rounded-sm overflow-hidden cursor-grab group" data-ltx-reference-id="${escapeHtml(item.id)}" style="left:${left}px;width:${width}px;">
+                        <div class="h-[72%] bg-black relative overflow-hidden">
+                            <img src="${escapeHtml(item.imageSrc || item.imageB64 || '')}" alt="Reference image ${index + 1}" class="w-full h-full object-cover">
+                            <span class="absolute bottom-1 left-1 bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-white">#${index + 1} / ${ltxDirectorDisplayTime(item.start || 0)}</span>
+                        </div>
+                        <div class="h-[28%] px-2 py-1 overflow-hidden">
+                            <p class="text-[10px] font-bold text-white truncate">${escapeHtml(item.title || `Reference #${index + 1}`)}</p>
+                            <p class="text-[9px] font-mono text-nexus-muted truncate">duration ${Number(item.length || 1).toFixed(2)}s</p>
+                        </div>
+                    </article>
+                `;
+            }).join('');
             const segmentHtml = ltxDirectorSortedSegments().map((segment, index) => {
                 const left = ltxDirectorTimelinePixel(segment.start);
                 const width = Math.max(48, ltxDirectorTimelinePixel(segment.length));
                 const selected = segment.id === ltxDirectorState.selectedId && ltxDirectorState.selectedType === 'segment';
                 const media = segment.type === 'text'
                     ? `<div class="w-full h-full bg-[#06131a] flex items-center justify-center px-4 text-center text-[11px] font-bold text-white">${escapeHtml(ltxDirectorPromptSnippet(segment.prompt))}</div>`
-                    : `<img src="${escapeHtml(segment.imageSrc || segment.imageB64 || '')}" alt="LTX keyframe" class="w-full h-full object-cover">`;
+                    : segment.type === 'video'
+                        ? `<video src="${escapeHtml(segment.videoSrc || '')}" class="w-full h-full object-cover" muted playsinline></video>`
+                        : `<img src="${escapeHtml(segment.imageSrc || segment.imageB64 || '')}" alt="LTX keyframe" class="w-full h-full object-cover">`;
                 return `
                     <article class="ltx-director-segment ${selected ? 'is-selected' : ''} bg-zinc-950 border border-nexus-border rounded-sm overflow-hidden cursor-grab group" data-ltx-segment-id="${escapeHtml(segment.id)}" style="left:${left}px;width:${width}px;">
                         <span class="ltx-director-handle left" data-ltx-handle="left"></span>
@@ -4417,7 +4527,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     </article>
                 `;
             }).join('');
-            segmentsLayer.innerHTML = segmentHtml;
+            segmentsLayer.innerHTML = ltxDirectorState.referenceMode ? referenceHtml : segmentHtml;
 
             audioLayer.innerHTML = ltxDirectorSortedAudio().map(audio => {
                 const left = ltxDirectorTimelinePixel(audio.start);
@@ -4436,27 +4546,41 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 `;
             }).join('');
 
-            document.getElementById('ltxDirectorVideoEmpty')?.classList.toggle('hidden', ltxDirectorState.segments.length > 0);
+            const videoEmpty = document.getElementById('ltxDirectorVideoEmpty');
+            if (videoEmpty) videoEmpty.innerText = ltxDirectorState.referenceMode ? 'Drop multiple reference images or press Multi Image Load' : 'Drop images/video here or press Add Image';
+            document.getElementById('ltxDirectorVideoEmpty')?.classList.toggle('hidden', ltxDirectorState.referenceMode ? references.length > 0 : ltxDirectorState.segments.length > 0);
             document.getElementById('ltxDirectorAudioEmpty')?.classList.toggle('hidden', ltxDirectorState.audioSegments.length > 0);
             document.getElementById('ltxDirectorAudioStateLabel').innerText = ltxDirectorState.customAudio ? 'ON' : 'OFF';
             document.getElementById('ltxDirectorCustomAudioBtn')?.classList.toggle('border-nexus-red', !!ltxDirectorState.customAudio);
-            updateLtxDirectorSelectionPanel(selectedSegment, selectedAudio);
+            updateLtxDirectorSelectionPanel(selectedSegment, selectedAudio, selectedReference);
             updateLtxDirectorPreview();
+            renderLtxDirectorInfoPanel();
             updateLtxDirectorPlayhead();
             persistLtxDirectorState();
         }
 
-        function updateLtxDirectorSelectionPanel(selectedSegment = ltxDirectorSelectedSegment(), selectedAudio = ltxDirectorSelectedAudio()) {
+        function updateLtxDirectorSelectionPanel(selectedSegment = ltxDirectorSelectedSegment(), selectedAudio = ltxDirectorSelectedAudio(), selectedReference = ltxDirectorSelectedReference()) {
             const prompt = document.getElementById('ltxDirectorPrompt');
             const guide = document.getElementById('ltxDirectorGuideStrength');
             const guideValue = document.getElementById('ltxDirectorGuideStrengthValue');
             const startLabel = document.getElementById('ltxDirectorStartLabel');
             const endLabel = document.getElementById('ltxDirectorEndLabel');
             const meta = document.getElementById('ltxDirectorSelectionMeta');
+            if (ltxDirectorState.selectedType === 'reference' && selectedReference) {
+                if (prompt && document.activeElement !== prompt) prompt.value = `Reference: ${selectedReference.fileName || selectedReference.title || 'image'}\nOrder: ${(ltxDirectorState.referenceImages || []).findIndex(item => item.id === selectedReference.id) + 1}\nDuration: ${Number(selectedReference.length || 0).toFixed(2)}s`;
+                if (prompt) prompt.disabled = true;
+                if (guide) guide.disabled = true;
+                if (guideValue) guideValue.innerText = Number(selectedReference.strength ?? 1).toFixed(2);
+                if (startLabel) startLabel.innerText = Number(selectedReference.start || 0).toFixed(2);
+                if (endLabel) endLabel.innerText = ltxDirectorEnd(selectedReference).toFixed(2);
+                if (meta) meta.innerText = selectedReference.title || 'Reference image';
+                return;
+            }
             if (ltxDirectorState.selectedType === 'audio' && selectedAudio) {
                 if (prompt && document.activeElement !== prompt) prompt.value = `File: ${selectedAudio.fileName || 'custom audio'}\nLength: ${Number(selectedAudio.length || 0).toFixed(2)}s  Trim-in: ${Number(selectedAudio.trimStart || 0).toFixed(2)}s`;
                 if (prompt) prompt.disabled = true;
                 if (guide) guide.disabled = true;
+                if (guideValue) guideValue.innerText = '1.00';
                 if (startLabel) startLabel.innerText = Number(selectedAudio.start || 0).toFixed(2);
                 if (endLabel) endLabel.innerText = ltxDirectorEnd(selectedAudio).toFixed(2);
                 if (meta) meta.innerText = selectedAudio.fileName || 'Audio segment';
@@ -4464,10 +4588,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             if (prompt) {
                 prompt.disabled = false;
-                if (selectedSegment && document.activeElement !== prompt) prompt.value = selectedSegment.prompt || '';
+                if (document.activeElement !== prompt) prompt.value = selectedSegment?.prompt || '';
             }
             if (guide) {
-                guide.disabled = false;
+                guide.disabled = !selectedSegment;
                 guide.value = Number(selectedSegment?.guideStrength ?? 1);
             }
             if (guideValue) guideValue.innerText = Number(selectedSegment?.guideStrength ?? 1).toFixed(2);
@@ -4479,14 +4603,15 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function updateLtxDirectorPreview() {
             const segment = ltxDirectorSortedSegments().find(item => ltxDirectorState.currentTime >= item.start && ltxDirectorState.currentTime <= ltxDirectorEnd(item))
                 || ltxDirectorSelectedSegment();
+            const reference = ltxDirectorState.selectedType === 'reference' ? ltxDirectorSelectedReference() : null;
             const image = document.getElementById('ltxDirectorPreviewImage');
             const fallback = document.getElementById('ltxDirectorPreviewFallback');
             if (image) {
-                const source = segment?.imageSrc || segment?.imageB64 || '';
+                const source = reference?.imageSrc || reference?.imageB64 || segment?.imageSrc || segment?.imageB64 || '';
                 image.classList.toggle('hidden', !source);
                 image.src = source || '';
             }
-            if (fallback) fallback.classList.toggle('hidden', !!(segment?.imageSrc || segment?.imageB64));
+            if (fallback) fallback.classList.toggle('hidden', !!(reference?.imageSrc || reference?.imageB64 || segment?.imageSrc || segment?.imageB64));
             const meta = document.getElementById('ltxDirectorPreviewMeta');
             if (meta) meta.innerText = `${ltxDirectorState.width}x${ltxDirectorState.height} @ ${ltxDirectorState.fps}fps | ${Number(ltxDirectorState.duration).toFixed(2)}s`;
         }
@@ -4503,8 +4628,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (ltxDirectorPlaybackTimer) toggleLtxDirectorPlayback(false);
             ltxDirectorState.selectedType = type;
             ltxDirectorState.selectedId = id;
-            const item = type === 'audio' ? ltxDirectorSelectedAudio() : ltxDirectorSelectedSegment();
+            const item = type === 'audio' ? ltxDirectorSelectedAudio() : type === 'reference' ? ltxDirectorSelectedReference() : ltxDirectorSelectedSegment();
             if (item) ltxDirectorState.currentTime = Number(item.start || 0);
+            if (type !== 'reference') ltxDirectorState.referenceMode = false;
             renderLtxDirector();
             syncLtxDirectorWorkflowGraph(false);
         }
@@ -4515,6 +4641,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function openLtxDirectorAudioPicker() {
             document.getElementById('ltxDirectorAudioInput')?.click();
+        }
+
+        function openLtxDirectorMultiImagePicker() {
+            document.getElementById('ltxDirectorMultiImageInput')?.click();
         }
 
         async function addLtxDirectorImageFiles(files) {
@@ -4535,7 +4665,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     title: `Segment #${ltxDirectorState.segments.length + 1}`,
                     imageSrc: dataUrl,
                     imageB64: dataUrl,
-                    imageFile: file.name
+                    imageFile: file.name,
+                    crop: { x: 0, y: 0, w: 1, h: 1 },
+                    cameraKeyframes: []
                 });
                 ltxDirectorState.selectedType = 'segment';
                 ltxDirectorState.selectedId = id;
@@ -4544,6 +4676,91 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             renderLtxDirector();
             syncLtxDirectorWorkflowGraph(false);
             showToast("Director Images Added", `${images.length} keyframe image${images.length === 1 ? '' : 's'} linked to the LTX timeline.`);
+        }
+
+        async function addLtxDirectorVideoFiles(files) {
+            const videos = [...(files || [])].filter(file => file.type?.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(file.name));
+            if (!videos.length) return;
+            for (const file of videos) {
+                const dataUrl = await ltxDirectorReadFileAsDataUrl(file);
+                const start = Math.max(0, ...ltxDirectorState.segments.map(ltxDirectorEnd));
+                const length = Math.min(5, Math.max(1, ltxDirectorState.duration - start || 5));
+                const id = `ltx-video-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+                ltxDirectorState.segments.push({
+                    id,
+                    type: 'video',
+                    start,
+                    length,
+                    prompt: file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ') || 'loaded video motion source',
+                    guideStrength: 1,
+                    title: `Video #${ltxDirectorState.segments.length + 1}`,
+                    imageSrc: '',
+                    imageB64: '',
+                    imageFile: '',
+                    videoSrc: dataUrl,
+                    videoFile: file.name,
+                    loadVideo: {
+                        start_time: 0,
+                        end_time: length,
+                        duration: length,
+                        start_frame: 0,
+                        end_frame: ltxDirectorSecondsToFrames(length),
+                        duration_frames: ltxDirectorSecondsToFrames(length),
+                        resize_method: ltxDirectorState.resizeMethod || 'maintain aspect ratio',
+                        crop_x: 0,
+                        crop_y: 0,
+                        crop_w: 1,
+                        crop_h: 1
+                    },
+                    crop: { x: 0, y: 0, w: 1, h: 1 },
+                    cameraKeyframes: []
+                });
+                ltxDirectorState.selectedType = 'segment';
+                ltxDirectorState.selectedId = id;
+            }
+            fitLtxDirectorTimeline({ quiet: true });
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+            showToast("Director Video Added", `${videos.length} Load Video UI source${videos.length === 1 ? '' : 's'} linked.`);
+        }
+
+        async function addLtxDirectorReferenceImageFiles(files) {
+            const images = [...(files || [])].filter(file => file.type?.startsWith('image/'));
+            if (!images.length) return;
+            ltxDirectorState.referenceMode = true;
+            for (const file of images) {
+                const dataUrl = await ltxDirectorReadFileAsDataUrl(file);
+                const index = (ltxDirectorState.referenceImages || []).length;
+                const length = 1.25;
+                const id = `ltx-ref-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+                ltxDirectorState.referenceImages.push({
+                    id,
+                    type: 'reference',
+                    start: ltxDirectorSnap(index * length),
+                    length,
+                    strength: 1,
+                    title: `Reference #${index + 1}`,
+                    imageSrc: dataUrl,
+                    imageB64: dataUrl,
+                    fileName: file.name,
+                    crop: { x: 0, y: 0, w: 1, h: 1 }
+                });
+                ltxDirectorState.selectedType = 'reference';
+                ltxDirectorState.selectedId = id;
+            }
+            fitLtxDirectorTimeline({ quiet: true });
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+            showToast("Multi Image Loader", `${images.length} reference image${images.length === 1 ? '' : 's'} loaded for LTX Sequencer.`);
+        }
+
+        function toggleLtxDirectorReferenceMode(force = null) {
+            ltxDirectorState.referenceMode = force === null ? !ltxDirectorState.referenceMode : !!force;
+            if (ltxDirectorState.referenceMode && !(ltxDirectorState.referenceImages || []).length) {
+                openLtxDirectorMultiImagePicker();
+            }
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
         }
 
         function addLtxDirectorTextSegment() {
@@ -4560,7 +4777,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 title: `Segment #${ltxDirectorState.segments.length + 1}`,
                 imageSrc: '',
                 imageB64: '',
-                imageFile: ''
+                imageFile: '',
+                speechText: '"new text-only motion beat"',
+                speechAdditionalTime: 0,
+                crop: { x: 0, y: 0, w: 1, h: 1 },
+                cameraKeyframes: []
             });
             ltxDirectorState.selectedType = 'segment';
             ltxDirectorState.selectedId = id;
@@ -4616,7 +4837,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function fitLtxDirectorTimeline(options = {}) {
-            const end = Math.max(0.5, ...ltxDirectorState.segments.map(ltxDirectorEnd), ...ltxDirectorState.audioSegments.map(ltxDirectorEnd));
+            const end = Math.max(0.5, ...ltxDirectorState.segments.map(ltxDirectorEnd), ...ltxDirectorState.audioSegments.map(ltxDirectorEnd), ...(ltxDirectorState.referenceImages || []).map(ltxDirectorEnd));
             ltxDirectorState.duration = Math.max(end, Number(ltxDirectorState.duration || 0));
             const input = document.getElementById('ltxDirectorDuration');
             if (input) input.value = ltxDirectorState.duration.toFixed(2);
@@ -4626,6 +4847,19 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function deleteLtxDirectorSelection() {
+            if (ltxDirectorState.selectedType === 'reference') {
+                ltxDirectorState.referenceImages = (ltxDirectorState.referenceImages || []).filter(item => item.id !== ltxDirectorState.selectedId);
+                ltxDirectorState.referenceImages.forEach((item, index) => {
+                    item.title = `Reference #${index + 1}`;
+                    item.start = ltxDirectorSnap(index * Number(item.length || 1.25));
+                });
+                ltxDirectorState.selectedId = ltxDirectorState.referenceImages[0]?.id || ltxDirectorState.segments[0]?.id || '';
+                ltxDirectorState.selectedType = ltxDirectorState.referenceImages[0]?.id ? 'reference' : 'segment';
+                renderLtxDirector();
+                syncLtxDirectorWorkflowGraph(false);
+                showToast("Reference Removed", "Selected Multi Image Loader reference was removed.");
+                return;
+            }
             if (ltxDirectorState.selectedType === 'audio') {
                 ltxDirectorState.audioSegments = ltxDirectorState.audioSegments.filter(item => item.id !== ltxDirectorState.selectedId);
                 ltxDirectorState.selectedType = 'segment';
@@ -4633,10 +4867,6 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 renderLtxDirector();
                 syncLtxDirectorWorkflowGraph(false);
                 showToast("Audio Removed", "Selected audio clip was removed.");
-                return;
-            }
-            if (ltxDirectorState.segments.length <= 1) {
-                showToast("Director Needs A Segment", "At least one image or text segment must remain.");
                 return;
             }
             ltxDirectorState.segments = ltxDirectorState.segments.filter(item => item.id !== ltxDirectorState.selectedId);
@@ -4653,6 +4883,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const segment = ltxDirectorSelectedSegment();
             if (!segment) return;
             segment.prompt = value;
+            if (segment.type === 'text') segment.speechText = value;
             renderLtxDirector();
             syncLtxDirectorWorkflowGraph(false);
         }
@@ -4691,6 +4922,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function beginLtxDirectorDrag(event, type) {
+            if (type === 'segment' && ltxDirectorState.referenceMode) {
+                beginLtxDirectorReferenceDrag(event);
+                return;
+            }
             const target = event.target.closest(type === 'audio' ? '[data-ltx-audio-id]' : '[data-ltx-segment-id]');
             if (!target) return;
             event.preventDefault();
@@ -4738,11 +4973,276 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             syncLtxDirectorWorkflowGraph(false);
         }
 
+        function beginLtxDirectorReferenceDrag(event) {
+            const target = event.target.closest('[data-ltx-reference-id]');
+            if (!target) return;
+            event.preventDefault();
+            const id = target.dataset.ltxReferenceId;
+            const index = (ltxDirectorState.referenceImages || []).findIndex(item => item.id === id);
+            if (index < 0) return;
+            selectLtxDirectorItem('reference', id);
+            ltxDirectorReferenceDrag = {
+                id,
+                index,
+                startX: event.clientX
+            };
+        }
+
+        function moveLtxDirectorReferenceDrag(event) {
+            if (!ltxDirectorReferenceDrag) return;
+            event.preventDefault();
+        }
+
+        function endLtxDirectorReferenceDrag(event) {
+            if (!ltxDirectorReferenceDrag) return;
+            const references = ltxDirectorState.referenceImages || [];
+            const originalIndex = references.findIndex(item => item.id === ltxDirectorReferenceDrag.id);
+            if (originalIndex >= 0) {
+                const deltaSlots = Math.round((event.clientX - ltxDirectorReferenceDrag.startX) / Math.max(90, LTX_DIRECTOR_PIXELS_PER_SECOND * 0.9));
+                const nextIndex = ltxDirectorClamp(originalIndex + deltaSlots, 0, references.length - 1);
+                if (nextIndex !== originalIndex) {
+                    const [item] = references.splice(originalIndex, 1);
+                    references.splice(nextIndex, 0, item);
+                }
+                references.forEach((item, index) => {
+                    item.title = `Reference #${index + 1}`;
+                    item.start = ltxDirectorSnap(index * Number(item.length || 1.25));
+                });
+            }
+            ltxDirectorReferenceDrag = null;
+            persistLtxDirectorState();
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+        }
+
+        function setLtxDirectorInspectorTab(tab = 'preview') {
+            ltxDirectorInspectorTab = tab === 'info' ? 'info' : 'preview';
+            localStorage.setItem('nexus_ltx_director_inspector_tab', ltxDirectorInspectorTab);
+            document.getElementById('ltxDirectorPreviewPane')?.classList.toggle('hidden', ltxDirectorInspectorTab !== 'preview');
+            document.getElementById('ltxDirectorPreviewPane')?.classList.toggle('flex', ltxDirectorInspectorTab === 'preview');
+            document.getElementById('ltxDirectorInfoPane')?.classList.toggle('hidden', ltxDirectorInspectorTab !== 'info');
+            const activeClass = 'px-3 py-1.5 text-[10px] font-bold uppercase text-black bg-white rounded-sm';
+            const inactiveClass = 'px-3 py-1.5 text-[10px] font-bold uppercase text-nexus-muted hover:text-white';
+            const previewTab = document.getElementById('ltxDirectorPreviewTab');
+            const infoTab = document.getElementById('ltxDirectorInfoTab');
+            if (previewTab) previewTab.className = ltxDirectorInspectorTab === 'preview' ? activeClass : inactiveClass;
+            if (infoTab) infoTab.className = ltxDirectorInspectorTab === 'info' ? activeClass : inactiveClass;
+            renderLtxDirectorInfoPanel();
+        }
+
+        function ltxDirectorNumberField(label, field, value, attrs = '') {
+            return `<label class="ltx-info-field space-y-1"><span class="mini-label">${escapeHtml(label)}</span><input data-ltx-info="${escapeHtml(field)}" type="number" value="${escapeHtml(value)}" ${attrs} oninput="updateLtxDirectorInfoField(this)" class="flat-input font-mono"></label>`;
+        }
+
+        function renderLtxDirectorInfoPanel() {
+            const pane = document.getElementById('ltxDirectorInfoPane');
+            if (!pane) return;
+            if (ltxDirectorInspectorTab !== 'info') return;
+            const segment = ltxDirectorSelectedSegment();
+            const audio = ltxDirectorSelectedAudio();
+            const reference = ltxDirectorSelectedReference();
+            let html = '';
+            if (ltxDirectorState.selectedType === 'reference' && reference) {
+                html = `
+                    <section class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold uppercase text-white">Multi Image Loader</span>
+                            <span class="text-[10px] font-mono text-nexus-red">Reference #${(ltxDirectorState.referenceImages || []).findIndex(item => item.id === reference.id) + 1}</span>
+                        </div>
+                        <div class="aspect-video bg-black border border-nexus-border overflow-hidden"><img src="${escapeHtml(reference.imageSrc || reference.imageB64 || '')}" class="w-full h-full object-cover" alt="reference"></div>
+                        <div class="grid grid-cols-2 gap-2">
+                            ${ltxDirectorNumberField('Duration', 'reference.length', Number(reference.length || 1.25).toFixed(2), 'min="0.25" step="0.05"')}
+                            ${ltxDirectorNumberField('Strength', 'reference.strength', Number(reference.strength ?? 1).toFixed(2), 'min="0" max="1" step="0.01"')}
+                        </div>
+                        <button type="button" onclick="promoteLtxDirectorReferenceToSegment()" class="flat-button w-full text-[10px] font-bold uppercase">Send Reference To Timeline</button>
+                        <p class="text-[10px] text-nexus-muted font-mono">Synced with MultiImageLoader.image_paths and LTXSequencer insert_second/strength widgets.</p>
+                    </section>
+                `;
+            } else if (ltxDirectorState.selectedType === 'audio' && audio) {
+                html = `
+                    <section class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold uppercase text-white">Custom Audio</span>
+                            <span class="text-[10px] font-mono text-emerald-300">${escapeHtml(audio.fileName || 'audio')}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            ${ltxDirectorNumberField('Start', 'audio.start', Number(audio.start || 0).toFixed(2), 'min="0" step="0.05"')}
+                            ${ltxDirectorNumberField('Length', 'audio.length', Number(audio.length || 1).toFixed(2), 'min="0.25" step="0.05"')}
+                            ${ltxDirectorNumberField('Trim In', 'audio.trimStart', Number(audio.trimStart || 0).toFixed(2), 'min="0" step="0.05"')}
+                            ${ltxDirectorNumberField('Frames', 'audio.audioDurationFrames', Math.max(1, Math.round(audio.audioDurationFrames || ltxDirectorSecondsToFrames(audio.length))), 'min="1" step="1"')}
+                        </div>
+                        <p class="text-[10px] text-nexus-muted font-mono">When Custom Audio is ON, this maps to Director audioSegments and combined_audio.</p>
+                    </section>
+                `;
+            } else if (segment) {
+                ltxDirectorEnsureSegmentMetadata(segment);
+                const stats = ltxDirectorSpeechStats(segment.speechText || segment.prompt || '', segment.speechAdditionalTime || 0);
+                const crop = segment.loadVideo ? {
+                    x: segment.loadVideo.crop_x ?? segment.crop?.x ?? 0,
+                    y: segment.loadVideo.crop_y ?? segment.crop?.y ?? 0,
+                    w: segment.loadVideo.crop_w ?? segment.crop?.w ?? 1,
+                    h: segment.loadVideo.crop_h ?? segment.crop?.h ?? 1
+                } : (segment.crop || { x: 0, y: 0, w: 1, h: 1 });
+                const cameraStart = segment.cameraKeyframes?.[0] || { zoom: 1, panX: 0, panY: 0 };
+                const cameraEnd = segment.cameraKeyframes?.[1] || { zoom: 1, panX: 0, panY: 0 };
+                html = `
+                    <section class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold uppercase text-white">${segment.type === 'video' ? 'Load Video UI' : segment.type === 'text' ? 'Text Segment' : 'Image Segment'}</span>
+                            <span class="text-[10px] font-mono text-nexus-red">${escapeHtml(segment.title || segment.id)}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            ${ltxDirectorNumberField('Start', 'segment.start', Number(segment.start || 0).toFixed(2), 'min="0" step="0.05"')}
+                            ${ltxDirectorNumberField('Duration', 'segment.length', Number(segment.length || 1).toFixed(2), 'min="0.25" step="0.05"')}
+                            ${ltxDirectorNumberField('Guide Strength', 'segment.guideStrength', Number(segment.guideStrength ?? 1).toFixed(2), 'min="0" max="2" step="0.05"')}
+                            ${ltxDirectorNumberField('Insert Frame', 'segment.insertFrame', ltxDirectorSecondsToFrames(segment.start || 0), 'min="0" step="1"')}
+                        </div>
+                        ${segment.type === 'text' ? `
+                            <div class="ltx-info-field space-y-2">
+                                <div class="flex items-center justify-between"><span class="mini-label">Speech Length Calculator</span><span class="text-[10px] font-mono text-nexus-red">${stats.words} words</span></div>
+                                <textarea data-ltx-info="segment.speechText" rows="3" oninput="updateLtxDirectorInfoField(this)" class="w-full bg-zinc-950 border border-nexus-border p-2 text-xs text-white outline-none focus:border-nexus-red resize-none">${escapeHtml(segment.speechText || segment.prompt || '')}</textarea>
+                                <div class="grid grid-cols-2 gap-2">${ltxDirectorNumberField('Additional Time', 'segment.speechAdditionalTime', Number(segment.speechAdditionalTime || 0).toFixed(1), 'min="0" step="0.1"')}<div class="ltx-info-field"><span class="mini-label">Average</span><p class="text-sm font-mono text-white">${stats.average.seconds.toFixed(1)}s</p><p class="text-[10px] text-nexus-muted">${stats.average.frames} frames</p></div></div>
+                                <div class="grid grid-cols-3 gap-2 text-[10px] font-mono"><div class="bg-nexus-bg border border-nexus-border p-2"><span class="text-nexus-muted">Slow</span><p>${stats.slow.seconds.toFixed(1)}s</p></div><div class="bg-nexus-bg border border-nexus-border p-2"><span class="text-nexus-muted">Avg</span><p>${stats.average.seconds.toFixed(1)}s</p></div><div class="bg-nexus-bg border border-nexus-border p-2"><span class="text-nexus-muted">Fast</span><p>${stats.fast.seconds.toFixed(1)}s</p></div></div>
+                            </div>
+                        ` : ''}
+                        ${segment.type === 'video' ? `
+                            <div class="ltx-info-field space-y-2">
+                                <span class="mini-label">Load Video UI Trim</span>
+                                <div class="grid grid-cols-2 gap-2">
+                                    ${ltxDirectorNumberField('Start Time', 'video.start_time', Number(segment.loadVideo?.start_time || 0).toFixed(2), 'min="0" step="0.01"')}
+                                    ${ltxDirectorNumberField('End Time', 'video.end_time', Number(segment.loadVideo?.end_time || segment.length || 0).toFixed(2), 'min="0" step="0.01"')}
+                                    ${ltxDirectorNumberField('Start Frame', 'video.start_frame', Math.round(segment.loadVideo?.start_frame || 0), 'min="0" step="1"')}
+                                    ${ltxDirectorNumberField('Duration Frames', 'video.duration_frames', Math.max(1, Math.round(segment.loadVideo?.duration_frames || ltxDirectorSecondsToFrames(segment.length))), 'min="1" step="1"')}
+                                </div>
+                            </div>
+                        ` : ''}
+                        <div class="ltx-info-field space-y-2">
+                            <div class="flex items-center justify-between"><span class="mini-label">Crop Mode / Camera Keyframes</span><span class="text-[10px] font-mono text-nexus-muted">normalized</span></div>
+                            <label class="space-y-1 block"><span class="mini-label">Crop Mode</span><select data-ltx-info="segment.resizeMethod" onchange="updateLtxDirectorInfoField(this)" class="flat-input"><option value="maintain aspect ratio" ${segment.resizeMethod === 'maintain aspect ratio' ? 'selected' : ''}>Maintain aspect ratio</option><option value="crop" ${segment.resizeMethod === 'crop' ? 'selected' : ''}>Crop</option><option value="stretch to fit" ${segment.resizeMethod === 'stretch to fit' ? 'selected' : ''}>Stretch to fit</option><option value="pad" ${segment.resizeMethod === 'pad' ? 'selected' : ''}>Pad</option></select></label>
+                            <div class="grid grid-cols-4 gap-2">
+                                ${ltxDirectorNumberField('X', 'segment.crop.x', Number(crop.x || 0).toFixed(3), 'min="0" max="1" step="0.001"')}
+                                ${ltxDirectorNumberField('Y', 'segment.crop.y', Number(crop.y || 0).toFixed(3), 'min="0" max="1" step="0.001"')}
+                                ${ltxDirectorNumberField('W', 'segment.crop.w', Number(crop.w ?? 1).toFixed(3), 'min="0.001" max="1" step="0.001"')}
+                                ${ltxDirectorNumberField('H', 'segment.crop.h', Number(crop.h ?? 1).toFixed(3), 'min="0.001" max="1" step="0.001"')}
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                ${ltxDirectorNumberField('Start Zoom', 'camera.startZoom', Number(cameraStart.zoom || 1).toFixed(2), 'min="0.25" step="0.05"')}
+                                ${ltxDirectorNumberField('End Zoom', 'camera.endZoom', Number(cameraEnd.zoom || 1).toFixed(2), 'min="0.25" step="0.05"')}
+                                ${ltxDirectorNumberField('Start Pan X', 'camera.startPanX', Number(cameraStart.panX || 0).toFixed(2), 'step="0.05"')}
+                                ${ltxDirectorNumberField('End Pan X', 'camera.endPanX', Number(cameraEnd.panX || 0).toFixed(2), 'step="0.05"')}
+                            </div>
+                        </div>
+                    </section>
+                `;
+            } else {
+                html = '<div class="h-full min-h-[240px] flex items-center justify-center text-center text-[11px] text-nexus-muted font-mono px-6">Select an image, text, video, audio or reference item to inspect synced node settings.</div>';
+            }
+            pane.innerHTML = html;
+        }
+
+        function updateLtxDirectorInfoField(element) {
+            if (!element) return;
+            const field = element.dataset.ltxInfo;
+            const value = element.type === 'number' ? Number(element.value || 0) : element.value;
+            const segment = ltxDirectorSelectedSegment();
+            const audio = ltxDirectorSelectedAudio();
+            const reference = ltxDirectorSelectedReference();
+            if (field?.startsWith('reference.') && reference) {
+                reference[field.split('.')[1]] = field.endsWith('length') || field.endsWith('strength') ? Number(value) : value;
+                (ltxDirectorState.referenceImages || []).forEach((item, index) => { item.start = ltxDirectorSnap(index * Number(item.length || 1.25)); });
+            } else if (field?.startsWith('audio.') && audio) {
+                const key = field.split('.')[1];
+                audio[key] = Number(value);
+                if (key === 'length') audio.audioDurationFrames = ltxDirectorSecondsToFrames(audio.length);
+                if (key === 'audioDurationFrames') audio.length = ltxDirectorFramesToSeconds(audio.audioDurationFrames);
+            } else if (field?.startsWith('segment.') && segment) {
+                ltxDirectorEnsureSegmentMetadata(segment);
+                const key = field.replace('segment.', '');
+                if (key === 'speechText') {
+                    segment.speechText = String(value || '');
+                    segment.prompt = segment.speechText;
+                } else if (key === 'resizeMethod') {
+                    segment.resizeMethod = String(value || 'maintain aspect ratio');
+                    if (segment.loadVideo) segment.loadVideo.resize_method = segment.resizeMethod;
+                } else if (key.startsWith('crop.')) {
+                    const cropKey = key.split('.')[1];
+                    segment.crop[cropKey] = ltxDirectorClamp(Number(value), cropKey === 'w' || cropKey === 'h' ? 0.001 : 0, 1);
+                    if (segment.loadVideo) {
+                        segment.loadVideo[`crop_${cropKey}`] = segment.crop[cropKey];
+                    }
+                } else if (key === 'insertFrame') {
+                    segment.start = ltxDirectorFramesToSeconds(Number(value));
+                } else {
+                    segment[key] = Number(value);
+                    if (key === 'length' && segment.loadVideo) {
+                        segment.loadVideo.duration = Number(segment.length || 0);
+                        segment.loadVideo.end_time = Number(segment.loadVideo.start_time || 0) + Number(segment.length || 0);
+                        segment.loadVideo.duration_frames = ltxDirectorSecondsToFrames(segment.length);
+                        segment.loadVideo.end_frame = ltxDirectorSecondsToFrames(segment.loadVideo.end_time);
+                    }
+                }
+            } else if (field?.startsWith('video.') && segment?.loadVideo) {
+                const key = field.split('.')[1];
+                segment.loadVideo[key] = Number(value);
+                if (key === 'start_time') segment.loadVideo.start_frame = ltxDirectorSecondsToFrames(value);
+                if (key === 'end_time') {
+                    segment.loadVideo.end_frame = ltxDirectorSecondsToFrames(value);
+                    segment.loadVideo.duration = Math.max(0, Number(segment.loadVideo.end_time || 0) - Number(segment.loadVideo.start_time || 0));
+                    segment.length = Math.max(LTX_DIRECTOR_MIN_SECONDS, Number(segment.loadVideo.duration || segment.length || 1));
+                }
+                if (key === 'duration_frames') {
+                    segment.loadVideo.duration = ltxDirectorFramesToSeconds(value);
+                    segment.length = Math.max(LTX_DIRECTOR_MIN_SECONDS, Number(segment.loadVideo.duration || segment.length || 1));
+                }
+            } else if (field?.startsWith('camera.') && segment) {
+                ltxDirectorEnsureSegmentMetadata(segment);
+                const first = segment.cameraKeyframes[0];
+                const last = segment.cameraKeyframes[1];
+                if (field === 'camera.startZoom') first.zoom = Number(value);
+                if (field === 'camera.endZoom') last.zoom = Number(value);
+                if (field === 'camera.startPanX') first.panX = Number(value);
+                if (field === 'camera.endPanX') last.panX = Number(value);
+                first.time = Number(segment.start || 0);
+                last.time = ltxDirectorEnd(segment);
+            }
+            fitLtxDirectorTimeline({ quiet: true });
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+        }
+
+        function promoteLtxDirectorReferenceToSegment() {
+            const reference = ltxDirectorSelectedReference();
+            if (!reference) return;
+            const start = Math.max(0, ...ltxDirectorState.segments.map(ltxDirectorEnd));
+            const id = `ltx-seg-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            ltxDirectorState.segments.push({
+                id,
+                type: 'image',
+                start,
+                length: Number(reference.length || 1.25),
+                prompt: reference.fileName?.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ') || 'reference keyframe',
+                guideStrength: Number(reference.strength ?? 1),
+                title: `Segment #${ltxDirectorState.segments.length + 1}`,
+                imageSrc: reference.imageSrc || reference.imageB64 || '',
+                imageB64: reference.imageB64 || reference.imageSrc || '',
+                imageFile: reference.fileName || '',
+                crop: reference.crop || { x: 0, y: 0, w: 1, h: 1 },
+                cameraKeyframes: []
+            });
+            ltxDirectorState.referenceMode = false;
+            ltxDirectorState.selectedType = 'segment';
+            ltxDirectorState.selectedId = id;
+            fitLtxDirectorTimeline({ quiet: true });
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+        }
+
         function serializeLtxDirectorState() {
             const fps = Math.max(1, Math.round(Number(ltxDirectorState.fps || 24)));
             const durationSeconds = Math.max(0.5, Number(ltxDirectorState.duration || 12));
             const sortedSegments = ltxDirectorSortedSegments();
             const sortedAudio = ltxDirectorSortedAudio();
+            const references = [...(ltxDirectorState.referenceImages || [])];
             const prompts = sortedSegments.map(segment => String(segment.prompt || '').trim() || 'director timeline segment');
             const segmentLengths = sortedSegments.map(segment => Math.max(1, Math.round(Number(segment.length || LTX_DIRECTOR_MIN_SECONDS) * fps)));
             const guideStrength = sortedSegments
@@ -4757,7 +5257,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     type: segment.type || 'image',
                     imageFile: segment.imageFile || '',
                     imageB64: segment.imageB64 || '',
-                    guideStrength: Number(segment.guideStrength ?? 1)
+                    videoFile: segment.videoFile || '',
+                    videoB64: segment.videoSrc || '',
+                    guideStrength: Number(segment.guideStrength ?? 1),
+                    speechText: segment.speechText || '',
+                    speechAdditionalTime: Number(segment.speechAdditionalTime || 0),
+                    crop: segment.crop || { x: 0, y: 0, w: 1, h: 1 },
+                    cameraKeyframes: segment.cameraKeyframes || [],
+                    loadVideo: segment.loadVideo || null
                 })),
                 audioSegments: sortedAudio.map(audio => ({
                     id: audio.id,
@@ -4770,7 +5277,38 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     fileName: audio.fileName || audio.audioFile || '',
                     audioB64: audio.audioB64 || '',
                     waveformPeaks: audio.waveformPeaks || []
-                }))
+                })),
+                referenceMode: !!ltxDirectorState.referenceMode,
+                referenceImages: references.map((item, index) => ({
+                    id: item.id,
+                    index,
+                    type: 'reference',
+                    start: Math.max(0, Math.round(Number(item.start || 0) * fps)),
+                    length: Math.max(1, Math.round(Number(item.length || LTX_DIRECTOR_MIN_SECONDS) * fps)),
+                    insert_second: Number(item.start || 0),
+                    insert_frame: Math.max(0, Math.round(Number(item.start || 0) * fps)),
+                    strength: Number(item.strength ?? 1),
+                    imageFile: item.fileName || '',
+                    imageB64: item.imageB64 || item.imageSrc || '',
+                    crop: item.crop || { x: 0, y: 0, w: 1, h: 1 }
+                })),
+                ltxSequencer: {
+                    num_images: Math.min(50, references.length),
+                    insert_mode: 'seconds',
+                    frame_rate: fps,
+                    inserts: references.slice(0, 50).map((item, index) => ({
+                        image: index + 1,
+                        insert_frame: Math.max(0, Math.round(Number(item.start || 0) * fps)),
+                        insert_second: Number(item.start || 0),
+                        strength: Number(item.strength ?? 1)
+                    }))
+                },
+                speechLength: sortedSegments
+                    .filter(segment => segment.type === 'text')
+                    .map(segment => ({ id: segment.id, text: segment.speechText || segment.prompt || '', additional_time: Number(segment.speechAdditionalTime || 0), stats: ltxDirectorSpeechStats(segment.speechText || segment.prompt || '', segment.speechAdditionalTime || 0) })),
+                loadVideo: sortedSegments
+                    .filter(segment => segment.type === 'video')
+                    .map(segment => ({ id: segment.id, video: segment.videoFile || '', ...(segment.loadVideo || {}) }))
             };
             return {
                 duration_seconds: Number(durationSeconds.toFixed(2)),
@@ -4788,24 +5326,27 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 timeline_data_json: JSON.stringify(timelineData),
                 local_prompts: prompts.join(' | '),
                 segment_lengths: segmentLengths.join(','),
-                guide_strength: guideStrength.join(',')
+                guide_strength: guideStrength.join(','),
+                multi_image_paths: references.map(item => item.fileName || item.title || item.id).join('\n')
             };
         }
 
         function buildLtxDirectorApiWorkflow(payload = null) {
             const director = serializeLtxDirectorState();
             const selectedOption = document.getElementById('modelSelect')?.selectedOptions?.[0];
-            const checkpointName = selectedOption?.dataset?.model || payload?.model_name || 'select_ltx23_checkpoint.safetensors';
+            const checkpointName = comfyCheckpointNameFromSelection(selectedOption, payload);
             const rawTextEncoder = document.getElementById('textEncoderSelect')?.value || '';
             const rawAudioVae = document.getElementById('audioVaeSelect')?.value || '';
-            const textEncoder = /\.(safetensors|ckpt|pt|pth|bin|gguf)$/i.test(rawTextEncoder) ? rawTextEncoder : 'gemma_text_encoder.safetensors';
-            const audioVae = /\.(safetensors|ckpt|pt|pth|bin)$/i.test(rawAudioVae) ? rawAudioVae : 'ltx_audio_vae.safetensors';
+            const textEncoder = /\.(safetensors|ckpt|pt|pth|bin|gguf)$/i.test(rawTextEncoder) ? rawTextEncoder : 'gemma-3-12b-it-heretic-v2_nvfp4.safetensors';
+            const audioVae = /\.(safetensors|ckpt|pt|pth|bin)$/i.test(rawAudioVae) ? rawAudioVae : 'LTX23_audio_vae_bf16.safetensors';
             const guideScale = Number(ltxDirectorSelectedSegment()?.guideStrength ?? 1);
-            const createVideoInputs = { images: ['15', 0], fps: director.frame_rate, audio: ['20', 0] };
+            const createVideoInputs = director.use_custom_audio
+                ? { images: ['15', 0], fps: director.frame_rate, audio: ['4', 6] }
+                : { images: ['15', 0], fps: director.frame_rate };
             return {
                 '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: checkpointName }, _meta: { title: 'Load LTX 2.3 Checkpoint' } },
                 '2': { class_type: 'LTXAVTextEncoderLoader', inputs: { text_encoder: textEncoder, ckpt_name: checkpointName, device: 'default' }, _meta: { title: 'LTX Text Encoder' } },
-                '3': { class_type: 'VAELoader', inputs: { vae_name: audioVae === 'Automatic' ? 'ltx_audio_vae.safetensors' : audioVae }, _meta: { title: 'Load LTX Audio VAE' } },
+                '3': { class_type: 'VAELoader', inputs: { vae_name: audioVae === 'Automatic' ? 'LTX23_audio_vae_bf16.safetensors' : audioVae }, _meta: { title: 'Load LTX Audio VAE' } },
                 '4': {
                     class_type: 'LTXDirector',
                     inputs: {
@@ -4853,13 +5394,22 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             return map[value] || String(value || 'euler_cfg_pp').toLowerCase().replace(/\s+/g, '_');
         }
 
+        function comfyCheckpointNameFromSelection(option, payload = null) {
+            const rawPath = option?.value || payload?.model_path || '';
+            const normalized = String(rawPath || '').replace(/\\/g, '/');
+            const marker = '/models/checkpoints/';
+            const markerIndex = normalized.toLowerCase().lastIndexOf(marker);
+            if (markerIndex >= 0) return normalized.slice(markerIndex + marker.length).replace(/\//g, '\\');
+            return option?.dataset?.model || payload?.model_name || 'ltx\\10Eros_v1-fp8mixed_learned.safetensors';
+        }
+
         function buildLtxDirectorVisualGraph() {
             const director = serializeLtxDirectorState();
             return {
                 nodes: [
-                    { id: 'ltx_model', class_type: 'CheckpointLoaderSimple', title: 'Load LTX 2.3 Checkpoint', x: 60, y: 150, width: 250, height: 110, inputs: [], outputs: ['MODEL', 'CLIP', 'VAE'], widgets: [{ name: 'ckpt_name', value: document.getElementById('modelSelect')?.selectedOptions?.[0]?.dataset?.model || 'select_ltx23_checkpoint.safetensors' }], color: '#1f3b63' },
-                    { id: 'ltx_clip', class_type: 'LTXAVTextEncoderLoader', title: 'LTX Text Encoder', x: 60, y: 320, width: 260, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'text_encoder', value: document.getElementById('textEncoderSelect')?.value || 'gemma_text_encoder.safetensors' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
-                    { id: 'ltx_audio_vae', class_type: 'VAELoader', title: 'Audio VAE', x: 60, y: 490, width: 240, height: 104, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('audioVaeSelect')?.value || 'ltx_audio_vae.safetensors' }], color: '#62305a' },
+                    { id: 'ltx_model', class_type: 'CheckpointLoaderSimple', title: 'Load LTX 2.3 Checkpoint', x: 60, y: 150, width: 250, height: 110, inputs: [], outputs: ['MODEL', 'CLIP', 'VAE'], widgets: [{ name: 'ckpt_name', value: comfyCheckpointNameFromSelection(document.getElementById('modelSelect')?.selectedOptions?.[0]) }], color: '#1f3b63' },
+                    { id: 'ltx_clip', class_type: 'LTXAVTextEncoderLoader', title: 'LTX Text Encoder', x: 60, y: 320, width: 260, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'text_encoder', value: document.getElementById('textEncoderSelect')?.value || 'gemma-3-12b-it-heretic-v2_nvfp4.safetensors' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
+                    { id: 'ltx_audio_vae', class_type: 'VAELoader', title: 'Audio VAE', x: 60, y: 490, width: 240, height: 104, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('audioVaeSelect')?.value || 'LTX23_audio_vae_bf16.safetensors' }], color: '#62305a' },
                     { id: 'ltx_director', class_type: 'LTXDirector', title: 'LTX Director Suite', x: 420, y: 170, width: 360, height: 260, inputs: ['model', 'clip', 'audio_vae', 'optional_latent'], outputs: ['model', 'positive', 'video_latent', 'audio_latent', 'guide_data', 'frame_rate', 'combined_audio'], widgets: [
                         { name: 'duration_seconds', value: director.duration_seconds },
                         { name: 'duration_frames', value: director.duration_frames },
@@ -4868,6 +5418,40 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                         { name: 'segment_lengths', value: director.segment_lengths },
                         { name: 'guide_strength', value: director.guide_strength }
                     ], color: '#7f1d1d' },
+                    { id: 'ltx_multi_image_loader', class_type: 'MultiImageLoader', title: 'Multi Image Loader', x: 420, y: 500, width: 330, height: 170, inputs: [], outputs: ['multi_output', 'image_1..50'], widgets: [
+                        { name: 'image_paths', value: director.multi_image_paths },
+                        { name: 'width', value: director.custom_width },
+                        { name: 'height', value: director.custom_height },
+                        { name: 'interpolation', value: 'lanczos' },
+                        { name: 'resize_method', value: director.resize_method === 'maintain aspect ratio' ? 'keep proportion' : director.resize_method.replace('stretch to fit', 'stretch') },
+                        { name: 'multiple_of', value: director.divisible_by },
+                        { name: 'img_compression', value: director.img_compression }
+                    ], color: '#123b3a' },
+                    { id: 'ltx_sequencer', class_type: 'LTXSequencer', title: 'LTX Sequencer References', x: 860, y: 500, width: 330, height: 210, inputs: ['positive', 'negative', 'vae', 'latent', 'multi_input'], outputs: ['positive', 'negative', 'latent'], widgets: [
+                        { name: 'num_images', value: director.timeline_data.ltxSequencer.num_images },
+                        { name: 'insert_mode', value: director.timeline_data.ltxSequencer.insert_mode },
+                        { name: 'frame_rate', value: director.timeline_data.ltxSequencer.frame_rate },
+                        ...director.timeline_data.ltxSequencer.inserts.slice(0, 8).flatMap(item => [
+                            { name: `insert_second_${item.image}`, value: item.insert_second.toFixed(2) },
+                            { name: `strength_${item.image}`, value: item.strength.toFixed(2) }
+                        ])
+                    ], color: '#164e63' },
+                    { id: 'ltx_speech_length', class_type: 'SpeechLengthCalculator', title: 'Speech Length Calculator', x: 60, y: 650, width: 280, height: 170, inputs: ['text_input'], outputs: ['slow_frame_count', 'average_frame_count', 'fast_frame_count', 'text'], widgets: [
+                        { name: 'text', value: director.timeline_data.speechLength[0]?.text || '' },
+                        { name: 'fps', value: director.frame_rate },
+                        { name: 'additional_time', value: director.timeline_data.speechLength[0]?.additional_time || 0 }
+                    ], color: '#3b255f' },
+                    { id: 'ltx_load_video_ui', class_type: 'LoadVideoUI', title: 'Load Video UI / Crop', x: 1230, y: 500, width: 330, height: 210, inputs: [], outputs: ['images', 'audio', 'duration', 'frame_count'], widgets: [
+                        { name: 'video', value: director.timeline_data.loadVideo[0]?.video || '' },
+                        { name: 'start_time', value: director.timeline_data.loadVideo[0]?.start_time || 0 },
+                        { name: 'end_time', value: director.timeline_data.loadVideo[0]?.end_time || 0 },
+                        { name: 'duration', value: director.timeline_data.loadVideo[0]?.duration || 0 },
+                        { name: 'resize_method', value: director.resize_method },
+                        { name: 'crop_x', value: director.timeline_data.loadVideo[0]?.crop_x ?? 0 },
+                        { name: 'crop_y', value: director.timeline_data.loadVideo[0]?.crop_y ?? 0 },
+                        { name: 'crop_w', value: director.timeline_data.loadVideo[0]?.crop_w ?? 1 },
+                        { name: 'crop_h', value: director.timeline_data.loadVideo[0]?.crop_h ?? 1 }
+                    ], color: '#5a4320' },
                     { id: 'ltx_conditioning', class_type: 'LTXVConditioning', title: 'Frame Rate Conditioning', x: 860, y: 110, width: 260, height: 118, inputs: ['positive', 'negative', 'frame_rate'], outputs: ['positive', 'negative'], widgets: [{ name: 'frame_rate', value: director.frame_rate }], color: '#1f5f3a' },
                     { id: 'ltx_guide', class_type: 'LTXDirectorGuide', title: 'Apply Director Guides', x: 860, y: 290, width: 270, height: 150, inputs: ['positive', 'negative', 'vae', 'latent', 'guide_data'], outputs: ['positive', 'negative', 'latent'], widgets: [{ name: 'scale_by', value: Number(ltxDirectorSelectedSegment()?.guideStrength ?? 1).toFixed(2) }, { name: 'upscale_method', value: 'bicubic' }], color: '#5a4320' },
                     { id: 'ltx_sampler', class_type: 'SamplerCustomAdvanced', title: 'LTX Sampler', x: 1210, y: 230, width: 285, height: 170, inputs: ['noise', 'guider', 'sampler', 'sigmas', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'steps', value: document.getElementById('stepsSlider')?.value || 8 }, { name: 'cfg', value: document.getElementById('cfgSlider')?.value || 1 }], color: '#ff3b3b' },
@@ -4879,6 +5463,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { from_node: 'ltx_model', from_slot: 0, to_node: 'ltx_director', to_slot: 0, type: 'MODEL' },
                     { from_node: 'ltx_clip', from_slot: 0, to_node: 'ltx_director', to_slot: 1, type: 'CLIP' },
                     { from_node: 'ltx_audio_vae', from_slot: 0, to_node: 'ltx_director', to_slot: 2, type: 'VAE' },
+                    { from_node: 'ltx_multi_image_loader', from_slot: 0, to_node: 'ltx_sequencer', to_slot: 4, type: 'IMAGE' },
+                    { from_node: 'ltx_director', from_slot: 1, to_node: 'ltx_sequencer', to_slot: 0, type: 'CONDITIONING' },
+                    { from_node: 'ltx_model', from_slot: 2, to_node: 'ltx_sequencer', to_slot: 2, type: 'VAE' },
+                    { from_node: 'ltx_director', from_slot: 2, to_node: 'ltx_sequencer', to_slot: 3, type: 'LATENT' },
                     { from_node: 'ltx_director', from_slot: 1, to_node: 'ltx_conditioning', to_slot: 0, type: 'CONDITIONING' },
                     { from_node: 'ltx_director', from_slot: 5, to_node: 'ltx_conditioning', to_slot: 2, type: 'FLOAT' },
                     { from_node: 'ltx_conditioning', from_slot: 0, to_node: 'ltx_guide', to_slot: 0, type: 'CONDITIONING' },
@@ -4892,9 +5480,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { from_node: 'ltx_decode', from_slot: 0, to_node: 'ltx_video', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'ltx_video', from_slot: 0, to_node: 'ltx_save', to_slot: 0, type: 'VIDEO' }
                 ],
-                groups: [{ id: 'ltx-director-suite', title: 'LTX 2.3 Director Suite', x: 30, y: 70, width: 2440, height: 560, color: '#ff3b3b' }],
+                groups: [{ id: 'ltx-director-suite', title: 'LTX 2.3 Director Suite', x: 30, y: 70, width: 2440, height: 790, color: '#ff3b3b' }],
                 width: 2520,
-                height: 720
+                height: 900
             };
         }
 
@@ -4961,7 +5549,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function initLtxDirectorEvents() {
             document.getElementById('ltxDirectorImageInput')?.addEventListener('change', event => {
-                addLtxDirectorImageFiles(event.target.files);
+                const files = [...(event.target.files || [])];
+                addLtxDirectorImageFiles(files);
+                addLtxDirectorVideoFiles(files);
+                event.target.value = '';
+            });
+            document.getElementById('ltxDirectorMultiImageInput')?.addEventListener('change', event => {
+                addLtxDirectorReferenceImageFiles(event.target.files);
                 event.target.value = '';
             });
             document.getElementById('ltxDirectorAudioInput')?.addEventListener('change', event => {
@@ -4978,10 +5572,22 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             document.getElementById('ltxDirectorVideoTrack')?.addEventListener('pointerdown', event => beginLtxDirectorDrag(event, 'segment'));
             document.getElementById('ltxDirectorAudioTrack')?.addEventListener('pointerdown', event => beginLtxDirectorDrag(event, 'audio'));
             document.addEventListener('pointermove', moveLtxDirectorDrag);
-            document.addEventListener('pointerup', endLtxDirectorDrag);
+            document.addEventListener('pointermove', moveLtxDirectorReferenceDrag);
+            document.addEventListener('pointerup', event => {
+                endLtxDirectorDrag();
+                endLtxDirectorReferenceDrag(event);
+            });
+            document.addEventListener('keydown', event => {
+                const target = event.target instanceof Element ? event.target : null;
+                const editable = target?.closest('input, textarea, select, [contenteditable="true"]');
+                if (activeWorkspace === 'director' && (event.key === 'Delete' || event.key === 'Backspace') && !editable) {
+                    event.preventDefault();
+                    deleteLtxDirectorSelection();
+                }
+            });
             const directorView = document.getElementById('view-director');
             directorView?.addEventListener('dragover', event => {
-                const hasMedia = [...event.dataTransfer?.items || []].some(item => item.kind === 'file' && (item.type?.startsWith('image/') || item.type?.startsWith('audio/')));
+                const hasMedia = [...event.dataTransfer?.items || []].some(item => item.kind === 'file' && (item.type?.startsWith('image/') || item.type?.startsWith('audio/') || item.type?.startsWith('video/')));
                 if (hasMedia) {
                     event.preventDefault();
                     event.dataTransfer.dropEffect = 'copy';
@@ -4991,12 +5597,16 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 const files = [...event.dataTransfer?.files || []];
                 const imageFiles = files.filter(file => file.type?.startsWith('image/'));
                 const audioFiles = files.filter(file => file.type?.startsWith('audio/') || /\.(wav|mp3|flac|ogg|m4a)$/i.test(file.name));
-                if (imageFiles.length || audioFiles.length) {
+                const videoFiles = files.filter(file => file.type?.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(file.name));
+                if (imageFiles.length || audioFiles.length || videoFiles.length) {
                     event.preventDefault();
-                    addLtxDirectorImageFiles(imageFiles);
+                    if (ltxDirectorState.referenceMode) addLtxDirectorReferenceImageFiles(imageFiles);
+                    else addLtxDirectorImageFiles(imageFiles);
                     addLtxDirectorAudioFiles(audioFiles);
+                    addLtxDirectorVideoFiles(videoFiles);
                 }
             });
+            setLtxDirectorInspectorTab(ltxDirectorInspectorTab);
         }
 
         function workflowDomId(nodeId) {
@@ -7015,6 +7625,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         // View switcher (Center tabs)
         function switchView(viewId) {
+            updateDirectorTabVisibility();
+            if (viewId === 'director' && !isLtxDirectorTemplateActive()) {
+                showToast("Director Suite Hidden", "Select the LTX_DIRECTOR_SUITE template to open the LTX 2.3 Director tab.");
+                viewId = 'viewer';
+            }
             if (!['txt2img', 'img2img'].includes(currentActivity)) {
                 currentActivity = 'txt2img';
                 localStorage.setItem('nexus_current_activity', currentActivity);
@@ -7185,10 +7800,80 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 sidebar.classList.add('hidden');
                 sidebar.classList.remove('lg:flex');
             }
+            applySidebarLayout();
         }
 
         function toggleGallery() {
             toggleAdjusts();
+        }
+
+        function applySidebarLayout() {
+            const left = document.getElementById('leftSidebar');
+            const leftHandle = document.getElementById('leftSidebarResizeHandle');
+            const leftReveal = document.getElementById('leftSidebarRevealBtn');
+            const leftIcon = document.getElementById('leftSidebarToggleIcon');
+            if (left) {
+                left.style.width = `${sidebarLayout.leftWidth}px`;
+                left.classList.toggle('hidden', !!sidebarLayout.leftCollapsed);
+                left.classList.toggle('flex', !sidebarLayout.leftCollapsed);
+            }
+            leftHandle?.classList.toggle('hidden', !!sidebarLayout.leftCollapsed);
+            leftReveal?.classList.toggle('hidden', !sidebarLayout.leftCollapsed);
+            if (leftIcon) leftIcon.className = sidebarLayout.leftCollapsed ? 'fa-solid fa-panel-left-open' : 'fa-solid fa-panel-left';
+            const right = document.getElementById('rightSidebar');
+            const rightHandle = document.getElementById('rightSidebarResizeHandle');
+            if (right) right.style.width = `${sidebarLayout.rightWidth}px`;
+            rightHandle?.classList.toggle('hidden', !right || right.classList.contains('hidden'));
+            const directorInspector = document.getElementById('ltxDirectorInspector');
+            if (directorInspector) directorInspector.style.width = `${sidebarLayout.directorInspectorWidth}px`;
+        }
+
+        function toggleLeftSidebar(force = null) {
+            sidebarLayout.leftCollapsed = force === null ? !sidebarLayout.leftCollapsed : !!force;
+            localStorage.setItem('nexus_left_sidebar_collapsed', String(sidebarLayout.leftCollapsed));
+            applySidebarLayout();
+        }
+
+        function beginSidebarResize(event, side) {
+            event.preventDefault();
+            sidebarResizeDrag = {
+                side,
+                startX: event.clientX,
+                startWidth: side === 'left' ? sidebarLayout.leftWidth : side === 'directorRight' ? sidebarLayout.directorInspectorWidth : sidebarLayout.rightWidth
+            };
+            event.currentTarget?.classList.add('is-dragging');
+        }
+
+        function moveSidebarResize(event) {
+            if (!sidebarResizeDrag) return;
+            event.preventDefault();
+            const delta = event.clientX - sidebarResizeDrag.startX;
+            if (sidebarResizeDrag.side === 'left') {
+                sidebarLayout.leftWidth = Math.max(260, Math.min(560, sidebarResizeDrag.startWidth + delta));
+                localStorage.setItem('nexus_left_sidebar_width', String(sidebarLayout.leftWidth));
+            } else if (sidebarResizeDrag.side === 'right') {
+                sidebarLayout.rightWidth = Math.max(240, Math.min(560, sidebarResizeDrag.startWidth - delta));
+                localStorage.setItem('nexus_right_sidebar_width', String(sidebarLayout.rightWidth));
+            } else if (sidebarResizeDrag.side === 'directorRight') {
+                sidebarLayout.directorInspectorWidth = Math.max(320, Math.min(680, sidebarResizeDrag.startWidth - delta));
+                localStorage.setItem('nexus_ltx_director_inspector_width', String(sidebarLayout.directorInspectorWidth));
+            }
+            applySidebarLayout();
+        }
+
+        function endSidebarResize() {
+            if (!sidebarResizeDrag) return;
+            document.querySelectorAll('.sidebar-resize-handle').forEach(handle => handle.classList.remove('is-dragging'));
+            sidebarResizeDrag = null;
+        }
+
+        function initSidebarResize() {
+            document.getElementById('leftSidebarResizeHandle')?.addEventListener('pointerdown', event => beginSidebarResize(event, 'left'));
+            document.getElementById('rightSidebarResizeHandle')?.addEventListener('pointerdown', event => beginSidebarResize(event, 'right'));
+            document.getElementById('ltxDirectorInspectorResizeHandle')?.addEventListener('pointerdown', event => beginSidebarResize(event, 'directorRight'));
+            document.addEventListener('pointermove', moveSidebarResize);
+            document.addEventListener('pointerup', endSidebarResize);
+            applySidebarLayout();
         }
 
         function openGalleryPanel() {
@@ -7199,12 +7884,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 sidebar.classList.add('hidden');
                 sidebar.classList.remove('lg:flex');
                 isGalleryOpen = false;
+                applySidebarLayout();
                 return;
             }
             isGalleryOpen = true;
             sidebar.classList.remove('hidden');
             sidebar.classList.add('lg:flex');
             switchSidebarTab('gallery');
+            applySidebarLayout();
             syncGalleryFromBackend({ quiet: true });
         }
 
@@ -8920,6 +9607,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         document.querySelectorAll('.attention-toggle').forEach(input => {
             input.addEventListener('change', syncRuntimeBadges);
         });
+        initSidebarResize();
         initLtxDirectorEvents();
         renderLtxDirector();
         initLinearViewerZoom();

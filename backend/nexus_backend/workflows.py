@@ -2143,6 +2143,8 @@ def patch_workflow(
 
         for key, value in list(inputs.items()):
             if isinstance(value, str) and _looks_like_model_file(value):
+                if class_lower == "ltxavtextencoderloader" and key == "ckpt_name":
+                    continue
                 replacement, lora_slot = _replacement_for_model_input(
                     key=key,
                     value=value,
@@ -2566,8 +2568,10 @@ def _replacement_for_model_input(
         return assets["flux_clip_l"], lora_slot
     if "upscale" in haystack and assets.get("latent_upscale"):
         return assets["latent_upscale"], lora_slot
-    if "audio" in haystack and "vae" in haystack and assets.get("audio_vae"):
-        return assets["audio_vae"], lora_slot
+    if "audio" in haystack and "vae" in haystack:
+        if assets.get("audio_vae"):
+            return assets["audio_vae"], lora_slot
+        return None, lora_slot
     if ("tae" in haystack or "preview" in haystack) and assets.get("preview_vae"):
         return assets["preview_vae"], lora_slot
     if "vae" in haystack and assets.get("video_vae"):
