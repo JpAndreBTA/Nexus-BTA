@@ -151,12 +151,39 @@ def scan_custom_nodes(settings: NexusSettings, include_references: bool = False)
                     name=child.name,
                     path=str(child),
                     enabled=enabled,
+                    version=_custom_node_version(child),
                     tags=tags,
                     python_files=py_files,
                 )
             )
     nodes.sort(key=lambda item: item.name.lower())
     return nodes
+
+
+def _custom_node_version(path: Path) -> str:
+    git_dir = path / ".git"
+    head_path = git_dir / "HEAD"
+    try:
+        if head_path.exists():
+            head = head_path.read_text(encoding="utf-8", errors="ignore").strip()
+            if head.startswith("ref:"):
+                ref = head.split(":", 1)[1].strip()
+                commit_path = git_dir / ref
+                commit = commit_path.read_text(encoding="utf-8", errors="ignore").strip() if commit_path.exists() else ""
+                branch = Path(ref).name
+                return f"{branch}@{commit[:7]}" if commit else branch
+            if head:
+                return head[:7]
+    except Exception:
+        pass
+    for marker in ("pyproject.toml", "package.json", "requirements.txt"):
+        candidate = path / marker
+        if candidate.exists():
+            try:
+                return f"{marker}:{_iso_mtime(candidate)[:10]}"
+            except Exception:
+                return marker
+    return ""
 
 
 def ensure_model_tree(settings: NexusSettings) -> list[str]:

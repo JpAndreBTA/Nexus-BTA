@@ -32,6 +32,7 @@ from .schemas import (
     GenerateRequest,
     GenerateResponse,
     ImportRequest,
+    DistilledLoraSelection,
     RuntimeHealth,
     WorkflowSaveRequest,
 )
@@ -127,6 +128,128 @@ def _write_input_data_image(value: str, prefix: str) -> str:
     return filename
 
 
+def _write_input_data_audio(value: str, prefix: str) -> str:
+    settings.input_dir.mkdir(parents=True, exist_ok=True)
+    match = re.match(r"data:audio/([a-zA-Z0-9.+-]+);base64,(.+)", value, flags=re.DOTALL)
+    if not match:
+        raise ValueError("Invalid audio data URL.")
+    mime = match.group(1).lower()
+    ext = {
+        "mpeg": "mp3",
+        "mp3": "mp3",
+        "wav": "wav",
+        "wave": "wav",
+        "x-wav": "wav",
+        "flac": "flac",
+        "ogg": "ogg",
+        "webm": "webm",
+        "mp4": "m4a",
+        "aac": "aac",
+    }.get(mime, "wav")
+    filename = f"{prefix}_{uuid.uuid4().hex[:10]}.{ext}"
+    target = settings.input_dir / filename
+    target.write_bytes(base64.b64decode(match.group(2)))
+    return filename
+
+
+def _audio_key(value: object) -> str:
+    text = str(value or "").strip().replace("\\", "/")
+    return text.rsplit("/", 1)[-1].lower()
+
+
+def _materialize_ltx_director_audio(prompt: dict[str, Any]) -> None:
+    replacements: dict[str, str] = {}
+    for node in prompt.values():
+        if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "ltxdirector":
+            continue
+        inputs = node.setdefault("inputs", {})
+        raw_timeline = inputs.get("timeline_data")
+        if not isinstance(raw_timeline, str) or not raw_timeline.strip():
+            continue
+        try:
+            timeline = json.loads(raw_timeline)
+        except json.JSONDecodeError:
+            continue
+        audio_segments = timeline.get("audioSegments")
+        if not isinstance(audio_segments, list):
+            continue
+        changed = False
+        for segment in audio_segments:
+            if not isinstance(segment, dict):
+                continue
+            audio_b64 = str(segment.get("audioB64") or "")
+            if not audio_b64.startswith("data:audio/"):
+                continue
+            old_names = [
+                segment.get("audioFile"),
+                segment.get("fileName"),
+                segment.get("title"),
+            ]
+            filename = _write_input_data_audio(audio_b64, "nexus_director_audio")
+            for old_name in old_names:
+                if old_name:
+                    replacements[str(old_name).strip().lower()] = filename
+                    replacements[_audio_key(old_name)] = filename
+            segment["audioFile"] = filename
+            segment["fileName"] = filename
+            segment["audioB64"] = ""
+            changed = True
+        if changed:
+            inputs["timeline_data"] = json.dumps(timeline, ensure_ascii=False, separators=(",", ":"))
+
+    if not replacements:
+        return
+    fallback = next(iter(replacements.values())) if len(set(replacements.values())) == 1 else None
+    for node in prompt.values():
+        if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "loadaudioui":
+            continue
+        inputs = node.setdefault("inputs", {})
+        current = inputs.get("audio")
+        replacement = replacements.get(str(current or "").strip().lower()) or replacements.get(_audio_key(current))
+        if replacement:
+            inputs["audio"] = replacement
+        elif fallback and not current:
+            inputs["audio"] = fallback
+
+
+def _normalize_lora_key(value: object) -> str:
+    text = str(value or "").strip().replace("/", "\\").lower()
+    for prefix in ("models\\loras\\", "loras\\", ".\\models\\loras\\"):
+        if text.startswith(prefix):
+            text = text[len(prefix) :]
+            break
+    if text.startswith("ltx2\\"):
+        text = "ltx\\" + text.split("\\", 1)[1]
+    if "\\" not in text and text.startswith(("ltx", "singularity")):
+        text = f"ltx\\{text}"
+    return text
+
+
+def _ensure_ltx_default_distilled_loras(request: GenerateRequest, assets: dict[str, str]) -> None:
+    if request.preset.lower() != "ltx":
+        return
+    existing = {
+        _normalize_lora_key(getattr(item, "name", ""))
+        for item in request.distilled_loras
+        if _normalize_lora_key(getattr(item, "name", ""))
+        and _normalize_lora_key(getattr(item, "name", "")) not in {"none", "automatic", "auto"}
+    }
+    additions: list[DistilledLoraSelection] = []
+    default_strengths = {
+        "distilled_lora_1": 0.35,
+        "distilled_lora_2": 0.50,
+    }
+    for key in ("distilled_lora_1", "distilled_lora_2"):
+        name = assets.get(key)
+        normalized = _normalize_lora_key(name)
+        if not normalized or normalized in existing:
+            continue
+        existing.add(normalized)
+        additions.append(DistilledLoraSelection(name=name, strength=default_strengths[key]))
+    if additions:
+        request.distilled_loras.extend(additions)
+
+
 def _output_relative_from_url(value: str) -> str:
     relative = value.split("/outputs/", 1)[1].split("?", 1)[0].split("#", 1)[0]
     return unquote(relative).lstrip("/\\")
@@ -220,6 +343,10 @@ def _generation_metadata(request: GenerateRequest) -> dict[str, Any]:
         "height": request.height,
         "workflow_id": request.workflow_id or "Default",
         "loras": request.loras,
+        "distilled_loras": [item.model_dump(mode="json") for item in request.distilled_loras],
+        "video": request.video,
+        "vae": request.vae,
+        "text_encoder": request.text_encoder,
         "controlnet": controlnet,
     }
 
@@ -278,7 +405,7 @@ def _read_output_metadata(path: Path) -> dict[str, Any]:
 
 
 def _cleanup_generation_temp() -> None:
-    for pattern in ("nexus_reference_*", "nexus_mask_*", "nexus_controlnet_*"):
+    for pattern in ("nexus_reference_*", "nexus_mask_*", "nexus_controlnet_*", "nexus_director_audio_*"):
         for path in settings.input_dir.glob(pattern):
             if path.is_file():
                 path.unlink(missing_ok=True)
@@ -707,6 +834,21 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if job_id:
             _update_generation_job(job_id, {"status": "preparing", "progress": 5, "message": "Resolving selected models and template assets"})
         assets = resolve_generation_assets(settings, request)
+        _ensure_ltx_default_distilled_loras(request, assets)
+        if request.preset.lower() == "ltx":
+            missing_ltx_assets: list[str] = []
+            if not assets.get("text_encoder"):
+                missing_ltx_assets.append("Gemma text encoder")
+            if not assets.get("text_projection"):
+                missing_ltx_assets.append("LTX 2.3 text projection")
+            if not (assets.get("video_vae") or assets.get("vae")):
+                missing_ltx_assets.append("LTX 2.3 video VAE")
+            if not assets.get("audio_vae"):
+                missing_ltx_assets.append("LTX 2.3 audio VAE")
+            if not assets.get("latent_upscale"):
+                missing_ltx_assets.append("LTX 2.3 latent upscale model")
+            if missing_ltx_assets:
+                raise ValueError("LTX 2.3 missing required assets: " + ", ".join(missing_ltx_assets) + ".")
         reference_image_name = _prepare_reference_image(request)
         mask_image_name = _prepare_mask_image(request)
         controlnet_image_name = _prepare_controlnet_image(request)
@@ -757,11 +899,17 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     reference_image_name=reference_image_name,
                 )
             elif request.preset.lower() == "ltx":
-                if not reference_image_name:
-                    raise ValueError("LTX default generation requires a reference image for img2vid.")
                 text_encoder_name = assets.get("text_encoder")
                 if not text_encoder_name:
                     raise ValueError("LTX requires a Gemma text encoder in models/text_encoders.")
+                if not assets.get("text_projection"):
+                    raise ValueError("LTX 2.3 requires ltx-2.3 text projection in models/text_encoders or models/checkpoints.")
+                if not (assets.get("video_vae") or assets.get("vae")):
+                    raise ValueError("LTX 2.3 requires the video VAE in models/vae; Automatic cannot fall back to None.")
+                if not assets.get("audio_vae"):
+                    raise ValueError("LTX 2.3 requires the audio VAE in models/vae, even when audio output is disabled.")
+                if not assets.get("latent_upscale"):
+                    raise ValueError("LTX 2.3 requires the latent upscale model in models/latent_upscale_models.")
                 if checkpoint_name.lower().endswith(".gguf"):
                     raise ValueError("LTX img2vid default requires an LTX checkpoint file. GGUF workflows can still be loaded explicitly.")
                 prompt = build_basic_ltx_img2video_workflow(
@@ -769,7 +917,10 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     checkpoint_name,
                     text_encoder_name,
                     reference_image_name,
+                    text_projection_name=assets.get("text_projection"),
                     audio_vae_name=assets.get("audio_vae"),
+                    video_vae_name=assets.get("video_vae") or assets.get("vae"),
+                    latent_upscale_name=assets.get("latent_upscale"),
                 )
             elif request.preset.lower() == "wan":
                 high_model_name = assets.get("wan_high_model")
@@ -838,7 +989,10 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     mask_image_name=mask_image_name,
                     controlnet_name=assets.get("controlnet_model"),
                     controlnet_image_name=assets.get("controlnet_image"),
+                    vae_name=assets.get("vae"),
                 )
+
+        _materialize_ltx_director_audio(prompt)
 
         def progress_callback(update: dict[str, Any]) -> None:
             if job_id:

@@ -52,6 +52,7 @@ class CustomNodeSummary(BaseModel):
     name: str
     path: str
     enabled: bool = True
+    version: str = ""
     tags: list[str] = Field(default_factory=list)
     python_files: int = 0
 

@@ -36,6 +36,7 @@ SAMPLER_ALIASES = {
     "UniPC BH2": "uni_pc_bh2",
     "LCM": "lcm",
     "Euler CFG++": "euler_cfg_pp",
+    "Euler Ancestral CFG++": "euler_ancestral_cfg_pp",
     "ER SDE": "er_sde",
     "TCD": "tcd",
     "DEIS": "deis",
@@ -73,6 +74,13 @@ UI_HELPER_NODE_TYPES = {
     "Fast Groups Muter (rgthree)",
     "Fast Actions Button (rgthree)",
 }
+
+LTX_OMNICINE_LORA_NAME = "ltx\\Singularity LTX-2.3  OmniCine Preview v0.1.safetensors"
+LTX_OMNICINE_DEFAULT_STRENGTH = 0.75
+LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH = 0.35
+LTX_DISTILLED_384_DEFAULT_STRENGTH = 0.50
+LTX_DISTILLED_8_STEP_SIGMAS = "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+LTX_UPSCALE_REFINER_SIGMAS = "0.85, 0.7250, 0.4219, 0.0"
 
 
 def normalize_sampler(value: str) -> str:
@@ -354,6 +362,8 @@ def workflow_settings(path: Path, object_info: dict[str, Any] | None = None) -> 
             set_number("seconds")
         elif lower in {"active_audio", "audio_enabled", "enable_audio"}:
             result["active_audio"] = str(value).lower() not in {"false", "0", "off", "none", "no"}
+        elif lower in {"omnicine", "omnicine_enabled"}:
+            result["omnicine_enabled"] = str(value).lower() not in {"false", "0", "off", "none", "no"}
         elif lower in {"sampler_name", "sampler"} and "sampler" not in result:
             result["sampler"] = text_value
         elif lower in {"scheduler", "scheduler_name", "schedule", "schedule_type"} and "scheduler" not in result:
@@ -1117,12 +1127,14 @@ def build_basic_sd_workflow(
     mask_image_name: str | None = None,
     controlnet_name: str | None = None,
     controlnet_image_name: str | None = None,
+    vae_name: str | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     latent_node = ["4", 0]
     denoise = request.denoise
     model_ref: list[Any] = ["1", 0]
     clip_ref: list[Any] = ["1", 1]
+    vae_ref: list[Any] = ["30", 0] if vae_name else ["1", 2]
     workflow = {
         "1": {
             "class_type": "CheckpointLoaderSimple",
@@ -1161,13 +1173,19 @@ def build_basic_sd_workflow(
         },
         "6": {
             "class_type": "VAEDecode",
-            "inputs": {"samples": ["5", 0], "vae": ["1", 2]},
+            "inputs": {"samples": ["5", 0], "vae": vae_ref},
         },
         "7": {
             "class_type": "SaveImage",
             "inputs": {"filename_prefix": "NEXUS_BTA", "images": ["6", 0]},
         },
     }
+    if vae_name:
+        workflow["30"] = {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": vae_name},
+            "_meta": {"title": "Side Menu VAE"},
+        }
     model_ref, clip_ref, _ = _append_lora_chain(workflow, request, ["1", 0], ["1", 1], start_id=20)
     workflow["2"]["inputs"]["clip"] = clip_ref
     workflow["3"]["inputs"]["clip"] = clip_ref
@@ -1179,7 +1197,7 @@ def build_basic_sd_workflow(
         negative_ref=["3", 0],
         controlnet_name=controlnet_name,
         controlnet_image_name=controlnet_image_name,
-        vae_ref=["1", 2],
+        vae_ref=vae_ref,
         start_id=40,
     )
     workflow["5"]["inputs"]["positive"] = positive_ref
@@ -1192,7 +1210,7 @@ def build_basic_sd_workflow(
         }
         workflow["8"] = {
             "class_type": "VAEEncode",
-            "inputs": {"pixels": ["4", 0], "vae": ["1", 2]},
+            "inputs": {"pixels": ["4", 0], "vae": vae_ref},
         }
         workflow["5"]["inputs"]["latent_image"] = ["8", 0]
         workflow["5"]["inputs"]["denoise"] = denoise
@@ -1200,7 +1218,7 @@ def build_basic_sd_workflow(
             workflow,
             request,
             reference_node_id="4",
-            vae_ref=["1", 2],
+            vae_ref=vae_ref,
             sampler_node_id="5",
             mask_image_name=mask_image_name,
         )
@@ -1795,23 +1813,54 @@ def _append_lora_chain(
 
 def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, float]]:
     selections: list[tuple[str, float, float]] = []
-    for item in request.loras:
-        if not isinstance(item, dict):
-            continue
-        raw_name = item.get("relative_name") or item.get("relative_path") or item.get("lora_name") or item.get("name")
-        name = _normalize_lora_name(raw_name)
-        if not name or not _lora_is_compatible_with_preset(name, request.preset):
-            continue
-        strength_model = _number_or_none(item.get("strength_model", item.get("strength", 1.0))) or 1.0
-        strength_clip = _number_or_none(item.get("strength_clip", item.get("clip_strength", 0.0))) or 0.0
-        selections.append((name, float(strength_model), float(strength_clip)))
-    for item in request.distilled_loras:
-        raw_name = getattr(item, "name", "")
-        name = _normalize_lora_name(raw_name)
-        if not name or not _lora_is_compatible_with_preset(name, request.preset):
-            continue
-        strength_model = _number_or_none(getattr(item, "strength", 1.0)) or 1.0
-        selections.append((name, float(strength_model), 0.0))
+    seen: set[str] = set()
+
+    def append_selection(name: str, strength_model: float, strength_clip: float = 0.0) -> None:
+        normalized = _normalize_lora_name(name)
+        if request.preset.lower() == "ltx" and "\\" not in normalized and normalized.lower().startswith(("ltx", "singularity")):
+            normalized = f"ltx\\{normalized}"
+        if not normalized or not _lora_is_compatible_with_preset(normalized, request.preset):
+            return
+        key = normalized.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        selections.append((normalized, float(strength_model), float(strength_clip)))
+
+    def append_user_loras() -> None:
+        for item in request.loras:
+            if not isinstance(item, dict):
+                continue
+            raw_name = item.get("relative_name") or item.get("relative_path") or item.get("lora_name") or item.get("name")
+            name = _normalize_lora_name(raw_name)
+            if not name or not _lora_is_compatible_with_preset(name, request.preset):
+                continue
+            strength_model = _number_or_none(item.get("strength_model", item.get("strength", 1.0))) or 1.0
+            strength_clip = _number_or_none(item.get("strength_clip", item.get("clip_strength", 0.0))) or 0.0
+            append_selection(name, float(strength_model), float(strength_clip))
+
+    def append_distilled_loras() -> None:
+        for item in request.distilled_loras:
+            raw_name = getattr(item, "name", "")
+            name = _normalize_lora_name(raw_name)
+            if not name or not _lora_is_compatible_with_preset(name, request.preset):
+                continue
+            strength_model = _number_or_none(getattr(item, "strength", 1.0)) or 1.0
+            append_selection(name, float(strength_model), 0.0)
+
+    if request.preset.lower() == "ltx":
+        append_distilled_loras()
+        append_user_loras()
+    else:
+        append_user_loras()
+        append_distilled_loras()
+    video_options = request.video or {}
+    omnicine_enabled = video_options.get("omnicine_enabled", True)
+    if isinstance(omnicine_enabled, str):
+        omnicine_enabled = omnicine_enabled.lower() not in {"false", "0", "off", "none", "no"}
+    if request.preset.lower() == "ltx" and omnicine_enabled is not False:
+        raw_name = video_options.get("omnicine_lora") or LTX_OMNICINE_LORA_NAME
+        append_selection(str(raw_name), LTX_OMNICINE_DEFAULT_STRENGTH, 0.0)
     return selections
 
 
@@ -1824,6 +1873,8 @@ def _normalize_lora_name(value: Any) -> str:
         if lower.startswith(prefix):
             name = name[len(prefix) :]
             break
+    if name.lower().startswith("ltx2\\"):
+        name = "ltx\\" + name.split("\\", 1)[1]
     return name
 
 
@@ -1850,16 +1901,40 @@ def _lora_is_compatible_with_preset(name: str, preset: str) -> bool:
     return folder in known.get(preset_key, {folder})
 
 
+def _effective_ltx_lora_strength(checkpoint_name: str, lora_name: str, requested_strength: float) -> float:
+    strength = max(-2.0, min(2.0, float(requested_strength)))
+    lower = lora_name.lower()
+    checkpoint_lower = checkpoint_name.lower()
+    if "distill" not in lower and "distilled" not in lower:
+        return strength
+
+    recommended = LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH if "condsafe" in lower else LTX_DISTILLED_384_DEFAULT_STRENGTH
+    already_fast = any(token in checkpoint_lower for token in ("lightspeed", "lightning", "turbo", "distill", "distilled"))
+    if already_fast:
+        recommended *= 0.5
+    if strength >= 0.95:
+        return recommended
+    return min(strength, recommended)
+
+
+def _ltx_lora_prefers_advanced_loader(lora_name: str) -> bool:
+    lower = lora_name.lower()
+    return "singularity" in lower or "omnicine" in lower
+
+
 def build_basic_ltx_img2video_workflow(
     request: GenerateRequest,
     checkpoint_name: str,
     text_encoder_name: str,
     reference_image_name: str,
+    text_projection_name: str | None = None,
     audio_vae_name: str | None = None,
+    video_vae_name: str | None = None,
+    latent_upscale_name: str | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     video_options = request.video or {}
-    active_audio = video_options.get("active_audio", True)
+    active_audio = video_options.get("active_audio", False)
     if isinstance(active_audio, str):
         active_audio = active_audio.lower() not in {"false", "0", "off", "none", "no"}
     active_audio = bool(active_audio and audio_vae_name)
@@ -1869,45 +1944,70 @@ def build_basic_ltx_img2video_workflow(
     length = max(9, raw_frames + 1)
     if (length - 1) % 8 != 0:
         length = (((length - 1) // 8) + 1) * 8 + 1
-    width = max(64, int(request.width))
-    height = max(64, int(request.height))
-    width -= width % 32
-    height -= height % 32
-    sampler = normalize_sampler(request.sampler or "euler_cfg_pp")
+    final_width = max(64, int(request.width))
+    final_height = max(64, int(request.height))
+    final_width -= final_width % 32
+    final_height -= final_height % 32
+    sampler = normalize_sampler(request.sampler or "euler_ancestral_cfg_pp")
     if sampler == "euler_ancestral":
-        sampler = "euler_cfg_pp"
+        sampler = "euler_ancestral_cfg_pp"
+    steps = max(8, int(request.steps or 8))
+    img_compression = max(0, min(100, int(_number_or_none(video_options.get("img_compression")) or 18)))
+    use_latent_upscale = bool(latent_upscale_name)
+    width = final_width
+    height = final_height
+    if use_latent_upscale:
+        half_width = final_width // 2
+        half_height = final_height // 2
+        width = max(64, half_width - (half_width % 32))
+        height = max(64, half_height - (half_height % 32))
     ltx_model_ref: list[Any] = ["1", 0]
+    video_vae_ref: list[Any] = ["21", 0] if video_vae_name else ["1", 2]
     ltx_lora_nodes: dict[str, Any] = {}
-    next_lora_id = 30
+    next_lora_id = 40
     for lora_name, strength_model, _strength_clip in _active_lora_selections(request):
         if not lora_name.lower().startswith(("ltx", "ltx2", "ltx23", "ltxv")):
             continue
         node_id = str(next_lora_id)
-        safe_strength = max(-2.0, min(2.0, float(strength_model)))
-        ltx_lora_nodes[node_id] = {
-            "class_type": "LTX2LoraLoaderAdvanced",
-            "inputs": {
-                "lora_name": lora_name,
-                "model": ltx_model_ref,
-                "strength_model": safe_strength,
-                "video": max(0.0, min(1.0, safe_strength)),
-                "video_to_audio": max(0.0, min(1.0, safe_strength)) if active_audio else 0.0,
-                "audio": max(0.0, min(1.0, safe_strength)) if active_audio else 0.0,
-                "audio_to_video": max(0.0, min(1.0, safe_strength)) if active_audio else 0.0,
-                "other": max(0.0, min(1.0, safe_strength)),
-            },
-            "_meta": {"title": f"LTX LoRA - {Path(lora_name).name}"},
-        }
+        safe_strength = _effective_ltx_lora_strength(checkpoint_name, lora_name, strength_model)
+        if _ltx_lora_prefers_advanced_loader(lora_name):
+            ltx_lora_nodes[node_id] = {
+                "class_type": "LTX2LoraLoaderAdvanced",
+                "inputs": {
+                    "lora_name": lora_name,
+                    "model": ltx_model_ref,
+                    "strength_model": safe_strength,
+                    "video": max(0.0, min(1.0, safe_strength)),
+                    "video_to_audio": max(0.0, min(1.0, safe_strength)) if active_audio else 0.0,
+                    "audio": max(0.0, min(1.0, safe_strength)) if active_audio else 0.0,
+                    "audio_to_video": max(0.0, min(1.0, safe_strength)) if active_audio else 0.0,
+                    "other": max(0.0, min(1.0, safe_strength)),
+                },
+                "_meta": {"title": f"LTX Omni/Motion LoRA - {Path(lora_name).name}"},
+            }
+        else:
+            ltx_lora_nodes[node_id] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": ltx_model_ref,
+                    "lora_name": lora_name,
+                    "strength_model": safe_strength,
+                },
+                "_meta": {"title": f"LTX LoRA - {Path(lora_name).name}"},
+            }
         ltx_model_ref = [node_id, 0]
         next_lora_id += 1
 
-    sampler_latent_ref: list[Any] = ["7", 2]
+    text_to_video = request.activity == "txt2img" and not (reference_image_name or "").strip()
+    sampler_latent_ref: list[Any] = ["7", 2] if not text_to_video else ["7", 0]
     scheduler_latent_ref: list[Any] = sampler_latent_ref
     decode_latent_ref: list[Any] = ["12", 0]
     create_video_inputs: dict[str, Any] = {"images": ["13", 0], "fps": float(fps)}
+    has_audio_context = bool(audio_vae_name)
+    first_audio_latent_ref: list[Any] | None = None
 
     audio_nodes: dict[str, Any] = {}
-    if active_audio and audio_vae_name:
+    if has_audio_context:
         audio_nodes = {
             "16": {
                 "class_type": "VAELoader",
@@ -1926,7 +2026,7 @@ def build_basic_ltx_img2video_workflow(
             },
             "18": {
                 "class_type": "LTXVConcatAVLatent",
-                "inputs": {"video_latent": ["7", 2], "audio_latent": ["17", 0]},
+                "inputs": {"video_latent": ["7", 0] if text_to_video else ["7", 2], "audio_latent": ["17", 0]},
                 "_meta": {"title": "Merge Video + Audio Latents"},
             },
             "19": {
@@ -1934,16 +2034,142 @@ def build_basic_ltx_img2video_workflow(
                 "inputs": {"av_latent": ["12", 0]},
                 "_meta": {"title": "Separate Video + Audio Latents"},
             },
-            "20": {
-                "class_type": "LTXVAudioVAEDecode",
-                "inputs": {"samples": ["19", 1], "audio_vae": ["16", 0]},
-                "_meta": {"title": "Decode LTX Audio"},
-            },
         }
         sampler_latent_ref = ["18", 0]
         scheduler_latent_ref = ["18", 0]
+        first_audio_latent_ref = ["19", 1]
         decode_latent_ref = ["19", 0]
-        create_video_inputs["audio"] = ["20", 0]
+
+    video_vae_nodes: dict[str, Any] = {}
+    if video_vae_name:
+        video_vae_nodes["21"] = {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": video_vae_name},
+            "_meta": {"title": "Load LTX Video VAE"},
+        }
+
+    preprocess_nodes: dict[str, Any] = {}
+    reference_image_ref: list[Any] = ["3", 0]
+    if not text_to_video:
+        preprocess_nodes["22"] = {
+            "class_type": "LTXVPreprocess",
+            "inputs": {"image": ["3", 0], "img_compression": img_compression},
+            "_meta": {"title": "LTX Reference Preprocess"},
+        }
+        reference_image_ref = ["22", 0]
+
+    latent_upscale_nodes: dict[str, Any] = {}
+    if use_latent_upscale:
+        latent_upscale_nodes["23"] = {
+            "class_type": "LatentUpscaleModelLoader",
+            "inputs": {"model_name": latent_upscale_name},
+            "_meta": {"title": "Load LTX Latent Upscaler"},
+        }
+        latent_upscale_nodes["24"] = {
+            "class_type": "LTXVLatentUpsampler",
+            "inputs": {"samples": decode_latent_ref, "upscale_model": ["23", 0], "vae": video_vae_ref},
+            "_meta": {"title": "LTX Latent Upscale"},
+        }
+        refiner_latent_ref: list[Any] = ["24", 0]
+        if not text_to_video:
+            latent_upscale_nodes["25"] = {
+                "class_type": "LTXVImgToVideoConditionOnly",
+                "inputs": {
+                    "vae": video_vae_ref,
+                    "image": reference_image_ref,
+                    "latent": ["24", 0],
+                    "strength": float(video_options.get("upscale_condition_strength") or 1.0),
+                },
+                "_meta": {"title": "Reapply Reference After Latent Upscale"},
+            }
+            refiner_latent_ref = ["25", 0]
+        if first_audio_latent_ref:
+            latent_upscale_nodes["30"] = {
+                "class_type": "LTXVConcatAVLatent",
+                "inputs": {"video_latent": refiner_latent_ref, "audio_latent": first_audio_latent_ref},
+                "_meta": {"title": "Recombine AV Latent For Upscale Refiner"},
+            }
+            refiner_latent_ref = ["30", 0]
+        latent_upscale_nodes["26"] = {
+            "class_type": "RandomNoise",
+            "inputs": {"noise_seed": seed + 1 if seed < 2**32 - 1 else seed},
+            "_meta": {"title": "Upscale Refiner Seed"},
+        }
+        latent_upscale_nodes["27"] = {
+            "class_type": "ManualSigmas",
+            "inputs": {"sigmas": LTX_UPSCALE_REFINER_SIGMAS},
+            "_meta": {"title": "Official LTX 2.3 Upscale Refiner Sigmas"},
+        }
+        latent_upscale_nodes["28"] = {
+            "class_type": "CFGGuider",
+            "inputs": {
+                "model": ltx_model_ref,
+                "positive": ["6", 0] if text_to_video else ["7", 0],
+                "negative": ["6", 1] if text_to_video else ["7", 1],
+                "cfg": request.cfg,
+            },
+            "_meta": {"title": "Upscale Refiner CFG Guider"},
+        }
+        latent_upscale_nodes["31"] = {
+            "class_type": "KSamplerSelect",
+            "inputs": {"sampler_name": "euler_cfg_pp"},
+            "_meta": {"title": "Official LTX Upscale Refiner Sampler Select"},
+        }
+        latent_upscale_nodes["29"] = {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["26", 0],
+                "guider": ["28", 0],
+                "sampler": ["31", 0],
+                "sigmas": ["27", 0],
+                "latent_image": refiner_latent_ref,
+            },
+            "_meta": {"title": "LTX Upscale Refiner Sampler"},
+        }
+        if first_audio_latent_ref:
+            latent_upscale_nodes["32"] = {
+                "class_type": "LTXVSeparateAVLatent",
+                "inputs": {"av_latent": ["29", 0]},
+                "_meta": {"title": "Separate Refined AV Latents"},
+            }
+            decode_latent_ref = ["32", 0]
+            first_audio_latent_ref = ["32", 1]
+        else:
+            decode_latent_ref = ["29", 0]
+
+    if active_audio and first_audio_latent_ref:
+        audio_nodes["20"] = {
+            "class_type": "LTXVAudioVAEDecode",
+            "inputs": {"samples": first_audio_latent_ref, "audio_vae": ["16", 0]},
+            "_meta": {"title": "Decode LTX Audio"},
+        }
+        audio_nodes["33"] = {
+            "class_type": "AudioVolumeNormalization",
+            "inputs": {"audio": ["20", 0], "target_level": -14.0},
+            "_meta": {"title": "Normalize LTX Audio Output"},
+        }
+        create_video_inputs["audio"] = ["33", 0]
+
+    sigma_node: dict[str, Any]
+    if steps == 8:
+        sigma_node = {
+            "class_type": "ManualSigmas",
+            "inputs": {"sigmas": LTX_DISTILLED_8_STEP_SIGMAS},
+            "_meta": {"title": "Official LTX 2.3 8-Step Sigmas"},
+        }
+    else:
+        sigma_node = {
+            "class_type": "LTXVScheduler",
+            "inputs": {
+                "steps": steps,
+                "max_shift": float(video_options.get("max_shift") or 2.05),
+                "base_shift": float(video_options.get("base_shift") or 0.95),
+                "stretch": True,
+                "terminal": float(video_options.get("terminal") or 0.1),
+                "latent": scheduler_latent_ref,
+            },
+            "_meta": {"title": "LTX Scheduler"},
+        }
 
     workflow = {
         "1": {
@@ -1953,7 +2179,7 @@ def build_basic_ltx_img2video_workflow(
         },
         "2": {
             "class_type": "LTXAVTextEncoderLoader",
-            "inputs": {"text_encoder": text_encoder_name, "ckpt_name": checkpoint_name, "device": "default"},
+            "inputs": {"text_encoder": text_encoder_name, "ckpt_name": text_projection_name or checkpoint_name, "device": "cpu"},
             "_meta": {"title": "LTX Text Encoder"},
         },
         "3": {
@@ -1977,19 +2203,28 @@ def build_basic_ltx_img2video_workflow(
             "_meta": {"title": "LTX Frame Rate Conditioning"},
         },
         "7": {
-            "class_type": "LTXVImgToVideo",
-            "inputs": {
-                "positive": ["6", 0],
-                "negative": ["6", 1],
-                "vae": ["1", 2],
-                "image": ["3", 0],
-                "width": width,
-                "height": height,
-                "length": length,
-                "batch_size": max(1, request.batch_size),
-                "strength": float(video_options.get("motion_strength") or request.img2img.denoise or 0.85),
-            },
-            "_meta": {"title": "Image To Video"},
+            "class_type": "EmptyLTXVLatentVideo" if text_to_video else "LTXVImgToVideo",
+            "inputs": (
+                {
+                    "width": width,
+                    "height": height,
+                    "length": length,
+                    "batch_size": max(1, request.batch_size),
+                }
+                if text_to_video
+                else {
+                    "positive": ["6", 0],
+                    "negative": ["6", 1],
+                    "vae": video_vae_ref,
+                    "image": reference_image_ref,
+                    "width": width,
+                    "height": height,
+                    "length": length,
+                    "batch_size": max(1, request.batch_size),
+                    "strength": float(video_options.get("motion_strength") or request.img2img.denoise or 0.85),
+                }
+            ),
+            "_meta": {"title": "Text To Video Latent" if text_to_video else "Image To Video"},
         },
         "8": {
             "class_type": "RandomNoise",
@@ -2002,20 +2237,16 @@ def build_basic_ltx_img2video_workflow(
             "_meta": {"title": "Sampler"},
         },
         "10": {
-            "class_type": "LTXVScheduler",
-            "inputs": {
-                "steps": max(1, request.steps),
-                "max_shift": float(video_options.get("max_shift") or 2.05),
-                "base_shift": float(video_options.get("base_shift") or 0.95),
-                "stretch": True,
-                "terminal": float(video_options.get("terminal") or 0.1),
-                "latent": scheduler_latent_ref,
-            },
-            "_meta": {"title": "LTX Scheduler"},
+            **sigma_node,
         },
         "11": {
             "class_type": "CFGGuider",
-            "inputs": {"model": ltx_model_ref, "positive": ["7", 0], "negative": ["7", 1], "cfg": request.cfg},
+            "inputs": {
+                "model": ltx_model_ref,
+                "positive": ["6", 0] if text_to_video else ["7", 0],
+                "negative": ["6", 1] if text_to_video else ["7", 1],
+                "cfg": request.cfg,
+            },
             "_meta": {"title": "CFG Guider"},
         },
         "12": {
@@ -2030,14 +2261,16 @@ def build_basic_ltx_img2video_workflow(
             "_meta": {"title": "LTX Sampler"},
         },
         "13": {
-            "class_type": "VAEDecodeTiled",
+            "class_type": "LTXVTiledVAEDecode",
             "inputs": {
-                "samples": decode_latent_ref,
-                "vae": ["1", 2],
-                "tile_size": 512,
-                "overlap": 64,
-                "temporal_size": 16,
-                "temporal_overlap": 4,
+                "vae": video_vae_ref,
+                "latents": decode_latent_ref,
+                "horizontal_tiles": 2,
+                "vertical_tiles": 2,
+                "overlap": 6,
+                "last_frame_fix": False,
+                "working_device": "auto",
+                "working_dtype": "auto",
             },
             "_meta": {"title": "Decode Frames"},
         },
@@ -2057,9 +2290,17 @@ def build_basic_ltx_img2video_workflow(
             "_meta": {"title": "Save Video"},
         },
     }
+    workflow.update(video_vae_nodes)
+    workflow.update(preprocess_nodes)
     workflow.update(audio_nodes)
+    workflow.update(latent_upscale_nodes)
     workflow.update(ltx_lora_nodes)
     return workflow
+
+
+def _selected_text(value: Any) -> str:
+    text = str(value or "").strip()
+    return "" if text.lower() in {"", "automatic", "auto", "none"} else text
 
 
 def patch_workflow(
@@ -2102,6 +2343,35 @@ def patch_workflow(
                             return
         inputs[key] = value
 
+    def patch_side_menu_asset_inputs(inputs: dict[str, Any], class_lower: str, title: str) -> None:
+        haystack = " ".join([class_lower, title]).lower()
+        if "vae_name" in inputs:
+            if "audio" in haystack and assets.get("audio_vae"):
+                inputs["vae_name"] = assets["audio_vae"]
+            elif ("preview" in haystack or "tae" in haystack) and assets.get("preview_vae"):
+                inputs["vae_name"] = assets["preview_vae"]
+            elif ("video" in haystack or "ltx" in haystack) and assets.get("video_vae"):
+                inputs["vae_name"] = assets["video_vae"]
+            elif assets.get("vae"):
+                inputs["vae_name"] = assets["vae"]
+            elif assets.get("video_vae"):
+                inputs["vae_name"] = assets["video_vae"]
+        if "text_encoder" in inputs and assets.get("text_encoder"):
+            inputs["text_encoder"] = assets["text_encoder"]
+        if "clip_name1" in inputs and assets.get("flux_clip_l"):
+            inputs["clip_name1"] = assets["flux_clip_l"]
+        if "clip_name2" in inputs and assets.get("text_encoder"):
+            inputs["clip_name2"] = assets["text_encoder"]
+        if "clip_name" in inputs:
+            if ("clip_l" in haystack or "clip-l" in haystack) and assets.get("flux_clip_l"):
+                inputs["clip_name"] = assets["flux_clip_l"]
+            elif assets.get("text_encoder"):
+                inputs["clip_name"] = assets["text_encoder"]
+        if "unet_name" in inputs and assets.get("primary_model"):
+            inputs["unet_name"] = assets["primary_model"]
+        if "model_name" in inputs and assets.get("primary_model"):
+            inputs["model_name"] = assets["primary_model"]
+
     for node in api.values():
         if not isinstance(node, dict):
             continue
@@ -2139,7 +2409,24 @@ def patch_workflow(
         if model_name:
             for key in ["ckpt_name", "unet_name"]:
                 if key in inputs:
+                    if preset == "ltx" and class_lower == "ltxavtextencoderloader" and key == "ckpt_name":
+                        continue
                     inputs[key] = model_name
+            if "unet_name" in inputs:
+                if str(model_name).lower().endswith(".gguf"):
+                    node["class_type"] = "UnetLoaderGGUF"
+                    inputs.pop("weight_dtype", None)
+                elif class_lower == "unetloadergguf":
+                    node["class_type"] = "UNETLoader"
+                    inputs.setdefault("weight_dtype", "default")
+
+        if preset == "ltx" and class_lower == "ltxavtextencoderloader":
+            if assets.get("text_encoder"):
+                inputs["text_encoder"] = assets["text_encoder"]
+            if assets.get("text_projection"):
+                inputs["ckpt_name"] = assets["text_projection"]
+
+        patch_side_menu_asset_inputs(inputs, class_lower, title)
 
         for key, value in list(inputs.items()):
             if isinstance(value, str) and _looks_like_model_file(value):
@@ -2168,6 +2455,15 @@ def patch_workflow(
                 inputs["text"] = request.negative_prompt
             elif "positive" in title or "positive" in class_lower:
                 inputs["text"] = request.prompt
+        if "prompt" in inputs and ("textencode" in class_lower or "conditioning" in class_lower or "prompt" in title):
+            is_negative = "negative" in title or "negative" in class_lower
+            if is_negative:
+                inputs["prompt"] = request.negative_prompt
+            elif not positive_patched:
+                inputs["prompt"] = request.prompt
+                positive_patched = True
+            elif "positive" in title:
+                inputs["prompt"] = request.prompt
 
         for key in ["width", "empty_latent_width"]:
             if key in inputs:
@@ -2177,12 +2473,23 @@ def patch_workflow(
                 set_input_or_linked(inputs, key, request.height)
         for key in ["seed", "noise_seed"]:
             if key in inputs:
+                if (
+                    preset == "ltx"
+                    and key == "noise_seed"
+                    and ("refiner" in title or "upscale" in title)
+                    and isinstance(inputs.get(key), (int, float))
+                    and int(inputs[key]) != int(seed)
+                ):
+                    continue
                 set_input_or_linked(inputs, key, seed)
         if "steps" in inputs:
-            set_input_or_linked(inputs, "steps", request.steps)
+            set_input_or_linked(inputs, "steps", max(8, int(request.steps or 8)) if preset == "ltx" else request.steps)
         if "cfg" in inputs:
             set_input_or_linked(inputs, "cfg", request.cfg)
         if "sampler_name" in inputs:
+            if preset == "ltx" and ("refiner" in title or "upscale" in title):
+                inputs["sampler_name"] = "euler_cfg_pp"
+                continue
             inputs["sampler_name"] = sampler
         if "scheduler" in inputs:
             inputs["scheduler"] = scheduler
@@ -2199,6 +2506,8 @@ def patch_workflow(
                 set_input_or_linked(inputs, key, fps_value)
         for key in ["seconds", "duration", "duration_seconds", "video_seconds"]:
             if key in inputs and seconds_value is not None:
+                if key == "duration" and class_lower in {"loadaudioui", "emptyaudio", "trimaudioduration"}:
+                    continue
                 set_input_or_linked(inputs, key, seconds_value)
         for key in ["frames", "num_frames", "frame_count", "frames_number", "length"]:
             if key in inputs and frames_value is not None:
@@ -2225,6 +2534,46 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
     selections = _active_lora_selections(request)
     if not selections:
         return
+    is_ltx = request.preset.lower() == "ltx"
+    checkpoint_name = request.model_name or Path(request.model_path or "").name
+    audio_value = (request.director or {}).get("use_custom_audio")
+    if audio_value is None:
+        audio_value = (request.video or {}).get("active_audio")
+    if isinstance(audio_value, str):
+        audio_active = audio_value.lower() not in {"false", "0", "off", "none", "no"}
+    else:
+        audio_active = bool(audio_value)
+
+    def ltx_audio_strength(strength: float) -> float:
+        return max(0.0, min(1.0, abs(float(strength)))) if audio_active else 0.0
+
+    def patch_ltx2_lora_inputs(inputs: dict[str, Any], strength_model: float) -> None:
+        routed_strength = max(0.0, min(1.0, abs(float(strength_model))))
+        inputs["video"] = routed_strength
+        inputs["video_to_audio"] = ltx_audio_strength(strength_model)
+        inputs["audio"] = ltx_audio_strength(strength_model)
+        inputs["audio_to_video"] = ltx_audio_strength(strength_model)
+        inputs["other"] = routed_strength
+
+    def effective_strength(lora_name: str, strength_model: float) -> float:
+        if is_ltx:
+            return _effective_ltx_lora_strength(checkpoint_name, lora_name, strength_model)
+        return strength_model
+
+    def pop_selection_for_node(remaining: list[tuple[str, float, float]], node: dict[str, Any]) -> tuple[str, float, float] | None:
+        if not is_ltx:
+            return remaining.pop(0) if remaining else None
+        class_lower = str(node.get("class_type", "")).lower()
+        wants_advanced = class_lower == "ltx2loraloaderadvanced"
+        for index, selection in enumerate(remaining):
+            if _ltx_lora_prefers_advanced_loader(selection[0]) == wants_advanced:
+                return remaining.pop(index)
+        if wants_advanced:
+            return None
+        for index, selection in enumerate(remaining):
+            if not _ltx_lora_prefers_advanced_loader(selection[0]):
+                return remaining.pop(index)
+        return None
 
     existing_nodes = [
         (str(node_id), node)
@@ -2234,8 +2583,22 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
         and isinstance(node.get("inputs"), dict)
         and "lora_name" in node["inputs"]
     ]
-    for (_node_id, node), (lora_name, strength_model, strength_clip) in zip(existing_nodes, selections):
+    remaining = list(selections)
+    for _node_id, node in existing_nodes:
+        selection = pop_selection_for_node(remaining, node)
         inputs = node.setdefault("inputs", {})
+        if not selection:
+            if "strength_model" in inputs:
+                inputs["strength_model"] = 0.0
+            elif "strength" in inputs:
+                inputs["strength"] = 0.0
+            if "strength_clip" in inputs:
+                inputs["strength_clip"] = 0.0
+            if is_ltx and str(node.get("class_type", "")).lower() == "ltx2loraloaderadvanced":
+                patch_ltx2_lora_inputs(inputs, 0.0)
+            continue
+        lora_name, strength_model, strength_clip = selection
+        strength_model = effective_strength(lora_name, strength_model)
         inputs["lora_name"] = lora_name
         if "strength_model" in inputs:
             inputs["strength_model"] = strength_model
@@ -2243,18 +2606,10 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
             inputs["strength"] = strength_model
         if "strength_clip" in inputs:
             inputs["strength_clip"] = strength_clip
-    for _node_id, node in existing_nodes[len(selections) :]:
-        inputs = node.setdefault("inputs", {})
-        if "strength_model" in inputs:
-            inputs["strength_model"] = 0.0
-        elif "strength" in inputs:
-            inputs["strength"] = 0.0
-        if "strength_clip" in inputs:
-            inputs["strength_clip"] = 0.0
-    if len(existing_nodes) >= len(selections):
+        if is_ltx and str(node.get("class_type", "")).lower() == "ltx2loraloaderadvanced":
+            patch_ltx2_lora_inputs(inputs, strength_model)
+    if not remaining:
         return
-    if existing_nodes:
-        selections = selections[len(existing_nodes) :]
 
     target_refs = _model_input_refs(api)
     if not target_refs:
@@ -2266,7 +2621,8 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
     final_clip_ref = list(clip_ref) if clip_ref else None
     next_id = _next_api_node_id(api)
 
-    for lora_name, strength_model, strength_clip in selections:
+    for lora_name, strength_model, strength_clip in remaining:
+        strength_model = effective_strength(lora_name, strength_model)
         node_id = str(next_id)
         if final_clip_ref:
             api[node_id] = {
@@ -2283,15 +2639,32 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
             model_ref = [node_id, 0]
             final_clip_ref = [node_id, 1]
         else:
-            api[node_id] = {
-                "class_type": "LoraLoaderModelOnly",
-                "inputs": {
-                    "model": model_ref,
-                    "lora_name": lora_name,
-                    "strength_model": strength_model,
-                },
-                "_meta": {"title": f"LoRA - {Path(lora_name).name}"},
-            }
+            if is_ltx and _ltx_lora_prefers_advanced_loader(lora_name):
+                routed_strength = max(0.0, min(1.0, abs(float(strength_model))))
+                api[node_id] = {
+                    "class_type": "LTX2LoraLoaderAdvanced",
+                    "inputs": {
+                        "model": model_ref,
+                        "lora_name": lora_name,
+                        "strength_model": strength_model,
+                        "video": routed_strength,
+                        "video_to_audio": ltx_audio_strength(strength_model),
+                        "audio": ltx_audio_strength(strength_model),
+                        "audio_to_video": ltx_audio_strength(strength_model),
+                        "other": routed_strength,
+                    },
+                    "_meta": {"title": f"LTX LoRA - {Path(lora_name).name}"},
+                }
+            else:
+                api[node_id] = {
+                    "class_type": "LoraLoaderModelOnly",
+                    "inputs": {
+                        "model": model_ref,
+                        "lora_name": lora_name,
+                        "strength_model": strength_model,
+                    },
+                    "_meta": {"title": f"LoRA - {Path(lora_name).name}"},
+                }
             model_ref = [node_id, 0]
         next_id += 1
 
@@ -2578,6 +2951,8 @@ def _replacement_for_model_input(
         return assets["video_vae"], lora_slot
     if "vae" in haystack and assets.get("vae"):
         return assets["vae"], lora_slot
+    if key == "text_encoder" and assets.get("text_encoder"):
+        return assets["text_encoder"], lora_slot
     if ("projection" in haystack or "proj" in haystack) and assets.get("text_projection"):
         return assets["text_projection"], lora_slot
     if ("clip" in haystack or "text" in haystack or "gemma" in haystack) and assets.get("text_encoder"):

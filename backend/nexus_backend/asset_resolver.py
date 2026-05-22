@@ -21,13 +21,13 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
 
     preset = request.preset.lower()
     if preset == "ltx":
-        assets.update(_resolve_ltx(by_category, selected_name, request.video or {}))
+        assets.update(_resolve_ltx(by_category, selected_name, request))
     elif preset == "wan":
-        assets.update(_resolve_wan(by_category, selected_name))
+        assets.update(_resolve_wan(by_category, selected_name, request))
     elif preset == "flux":
-        assets.update(_resolve_flux(by_category, selected_name))
+        assets.update(_resolve_flux(by_category, selected_name, request))
     elif preset == "anima":
-        assets.update(_resolve_anima(by_category, selected_name))
+        assets.update(_resolve_anima(by_category, selected_name, request))
     elif preset == "qwen":
         assets.pop("primary_model", None)
         assets.update(_resolve_qwen(by_category, selected_name, request))
@@ -36,6 +36,12 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
             match = _first(by_category, ["checkpoints", "diffusion_models", "unet"], [])
             if match:
                 assets["primary_model"] = match.name
+        selected_vae = _selected_model_choice(by_category, request.vae)
+        selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+        if selected_vae:
+            assets["vae"] = _comfy_name(selected_vae)
+        if selected_text_encoder:
+            assets["text_encoder"] = _comfy_name(selected_text_encoder)
 
     assets.update(_resolve_controlnet(by_category, request))
     return {key: value for key, value in assets.items() if value}
@@ -85,7 +91,7 @@ def _first_controlnet(items: list[ModelFile], preset: str, control_type: str) ->
     return scored[0][2]
 
 
-def _resolve_flux(by_category: dict[str, list[ModelFile]], selected_name: str) -> dict[str, str]:
+def _resolve_flux(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
     assets: dict[str, str] = {}
     primary = _find_name(by_category, selected_name)
     if not primary:
@@ -97,14 +103,25 @@ def _resolve_flux(by_category: dict[str, list[ModelFile]], selected_name: str) -
     if primary:
         assets["primary_model"] = _comfy_name(primary)
 
-    clip_l = _first(by_category, ["text_encoders", "clip"], ["clip_l"])
+    selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    selected_vae = _selected_model_choice(by_category, request.vae)
+    clip_l = (
+        selected_text_encoder
+        if selected_text_encoder and "clip_l" in " ".join([selected_text_encoder.name, selected_text_encoder.folder, selected_text_encoder.relative_path]).lower()
+        else _first(by_category, ["text_encoders", "clip"], ["clip_l"])
+    )
     t5 = (
+        selected_text_encoder
+        if selected_text_encoder and "clip_l" not in " ".join([selected_text_encoder.name, selected_text_encoder.folder, selected_text_encoder.relative_path]).lower()
+        else None
+    ) or (
         _first(by_category, ["text_encoders", "clip"], ["t5xxl", "fp8"])
         or _first(by_category, ["text_encoders", "clip"], ["t5", "fp8"])
         or _first(by_category, ["text_encoders", "clip"], ["t5"])
     )
     vae = (
-        _first(by_category, ["vae"], ["flux_ae"])
+        selected_vae
+        or _first(by_category, ["vae"], ["flux_ae"])
         or _first(by_category, ["vae"], ["ae.safetensors"])
         or _first(by_category, ["vae"], ["flux", "vae"])
         or _first(by_category, ["vae"], ["ae"])
@@ -119,9 +136,9 @@ def _resolve_flux(by_category: dict[str, list[ModelFile]], selected_name: str) -
     return assets
 
 
-def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, video_options: dict[str, object] | None = None) -> dict[str, str]:
+def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
     assets: dict[str, str] = {}
-    video_options = video_options or {}
+    video_options = request.video or {}
     primary = _find_name(by_category, selected_name)
     if not primary:
         primary = (
@@ -135,26 +152,29 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, vi
     if primary:
         assets["primary_model"] = _comfy_name(primary)
 
-    gemma = _first(by_category, ["text_encoders", "clip"], ["gemma"])
-    projection = _first(by_category, ["text_encoders", "vae"], ["projection"])
+    selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    if selected_text_encoder and _is_text_projection(selected_text_encoder):
+        selected_text_encoder = None
+    gemma = selected_text_encoder or _first(by_category, ["text_encoders", "clip"], ["gemma"])
+    projection = _first(by_category, ["checkpoints", "text_encoders", "vae"], ["projection"])
     if gemma:
         assets["text_encoder"] = _comfy_name(gemma)
     if projection:
         assets["text_projection"] = _comfy_name(projection)
 
-    selected_video_vae = _selected_asset(video_options.get("video_vae"))
-    active_audio = video_options.get("active_audio", True)
-    if isinstance(active_audio, str):
-        active_audio = active_audio.lower() not in {"false", "0", "off", "none", "no"}
-    selected_audio_vae = _selected_asset(video_options.get("audio_vae")) if active_audio else None
+    selected_video_vae = _selected_asset(video_options.get("video_vae")) or _selected_asset(request.vae)
+    selected_audio_vae = _selected_asset(video_options.get("audio_vae"))
     selected_upscale = _selected_asset(video_options.get("latent_upscale"))
-    video_vae = _find_name(by_category, selected_video_vae) or _first(by_category, ["vae"], ["video", "ltx"])
-    audio_vae = (_find_name(by_category, selected_audio_vae) or _first(by_category, ["vae"], ["audio", "ltx"])) if active_audio else None
+    video_vae = _find_name(by_category, selected_video_vae)
+    if video_vae and _is_ltx_preview_vae(video_vae):
+        video_vae = None
+    video_vae = video_vae or _first(by_category, ["vae"], ["video", "ltx"])
+    audio_vae = _find_name(by_category, selected_audio_vae) or _first(by_category, ["vae"], ["audio", "ltx"])
     preview_vae = _first(by_category, ["vae"], ["taeltx"])
     if video_vae:
         assets["video_vae"] = _comfy_name(video_vae)
         assets["vae"] = _comfy_name(video_vae)
-    if audio_vae and active_audio:
+    if audio_vae:
         assets["audio_vae"] = _comfy_name(audio_vae)
     if preview_vae:
         assets["preview_vae"] = _comfy_name(preview_vae)
@@ -163,15 +183,15 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, vi
     if upscale:
         assets["latent_upscale"] = _comfy_name(upscale)
 
-    distilled_large = _first(by_category, ["loras"], ["distilled", "384"])
     distilled_safe = _first(by_category, ["loras"], ["distilled", "condsafe"])
+    distilled_large = _first(by_category, ["loras"], ["distilled", "384"])
     distilled_any = _first(by_category, ["loras"], ["distilled"])
-    if distilled_large:
-        assets["distilled_lora_1"] = _comfy_name(distilled_large)
     if distilled_safe:
-        assets["distilled_lora_2"] = _comfy_name(distilled_safe)
+        assets["distilled_lora_1"] = _comfy_name(distilled_safe)
     elif distilled_any:
-        assets["distilled_lora_2"] = _comfy_name(distilled_any)
+        assets["distilled_lora_1"] = _comfy_name(distilled_any)
+    if distilled_large:
+        assets["distilled_lora_2"] = _comfy_name(distilled_large)
 
     ic_lora = _first(by_category, ["loras"], ["ic-lora", "cameraman"])
     if ic_lora:
@@ -179,7 +199,7 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, vi
     return assets
 
 
-def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str) -> dict[str, str]:
+def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
     assets: dict[str, str] = {}
     selected = _find_name(by_category, selected_name)
     high_model = selected if selected and _is_wan_noise_model(selected, "high") else None
@@ -202,11 +222,15 @@ def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str) ->
     if low_model:
         assets["wan_low_model"] = _comfy_name(low_model)
 
+    selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    selected_vae = _selected_model_choice(by_category, request.vae)
     text_encoder = (
+        selected_text_encoder
+        or
         _first(by_category, ["text_encoders", "clip"], ["umt5"])
         or _first(by_category, ["text_encoders", "clip"], ["t5"])
     )
-    vae = _first(by_category, ["vae"], ["wan"])
+    vae = selected_vae or _first(by_category, ["vae"], ["wan"])
     if text_encoder:
         assets["text_encoder"] = _comfy_name(text_encoder)
     if vae:
@@ -214,7 +238,7 @@ def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str) ->
     return assets
 
 
-def _resolve_anima(by_category: dict[str, list[ModelFile]], selected_name: str) -> dict[str, str]:
+def _resolve_anima(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
     assets: dict[str, str] = {}
     primary = _find_name(by_category, selected_name)
     if not primary:
@@ -223,13 +247,16 @@ def _resolve_anima(by_category: dict[str, list[ModelFile]], selected_name: str) 
             primary = _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["anima"])
     if primary:
         assets["primary_model"] = _comfy_name(primary)
-    text_encoder = _first(by_category, ["text_encoders", "clip"], ["qwen_3"]) or _first(
+    selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    selected_vae = _selected_model_choice(by_category, request.vae)
+    text_encoder = selected_text_encoder or _first(by_category, ["text_encoders", "clip"], ["qwen_3"]) or _first(
         by_category, ["text_encoders", "clip"], ["qwen"]
     )
     if text_encoder:
         assets["text_encoder"] = _comfy_name(text_encoder)
     vae = (
-        _first(by_category, ["vae"], ["qwen", "image"])
+        selected_vae
+        or _first(by_category, ["vae"], ["qwen", "image"])
         or _first(by_category, ["vae"], ["qwen"])
         or _first(by_category, ["vae"], ["anime", "kl-f8", "vae"])
     )
@@ -301,23 +328,52 @@ def _is_qwen_edit_model(item: ModelFile) -> bool:
     return "qwen" in haystack and "edit" in haystack
 
 
+def _is_ltx_preview_vae(item: ModelFile) -> bool:
+    haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+    return "taeltx" in haystack or "preview" in haystack
+
+
+def _is_text_projection(item: ModelFile) -> bool:
+    haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+    return "projection" in haystack or "text_projection" in haystack or "proj" in haystack
+
+
 def _comfy_name(item: ModelFile) -> str:
     relative = item.relative_path.replace("/", "\\")
     prefix = f"{item.category}\\"
     if relative.lower().startswith(prefix.lower()):
-        return relative[len(prefix) :]
+        name = relative[len(prefix) :]
+        if item.category == "loras" and name.lower().startswith("ltx2\\"):
+            return "ltx\\" + name.split("\\", 1)[1]
+        return name
     return item.name
 
 
 def _find_name(by_category: dict[str, list[ModelFile]], name: str) -> ModelFile | None:
     if not name:
         return None
-    lower = name.lower()
+    lower = name.replace("/", "\\").lower()
+    normalized_lower = _normalize_model_lookup(lower)
     for items in by_category.values():
         for item in items:
-            if item.name.lower() == lower:
+            item_name = item.name.replace("/", "\\").lower()
+            item_relative = item.relative_path.replace("/", "\\").lower()
+            item_lookup = _normalize_model_lookup(item_relative)
+            if item_name == lower or item_relative == lower or item_lookup == normalized_lower:
                 return item
     return None
+
+
+def _normalize_model_lookup(value: str) -> str:
+    text = value.strip().replace("/", "\\")
+    for prefix in ("models\\", ".\\models\\"):
+        if text.startswith(prefix):
+            text = text[len(prefix) :]
+    if text.startswith("loras\\ltx2\\"):
+        text = "loras\\ltx\\" + text.split("\\", 2)[2]
+    if text.startswith("ltx2\\"):
+        text = "ltx\\" + text.split("\\", 1)[1]
+    return text
 
 
 def _is_wan_noise_model(item: ModelFile, noise: str) -> bool:
