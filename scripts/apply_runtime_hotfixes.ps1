@@ -197,9 +197,12 @@ def _nexus_audio_latent_noise_mask(timeline_data_str: str, frame_rate: float, la
     except Exception:
         data = {}
     audio_segments = [seg for seg in data.get("audioSegments", []) if isinstance(seg, dict)]
-    text_segments = [seg for seg in data.get("segments", []) if isinstance(seg, dict) and str(seg.get("type", "text")) == "text"]
+    timeline_segments = [
+        seg for seg in data.get("segments", [])
+        if isinstance(seg, dict) and str(seg.get("type", "text")) not in {"audio", "reference"}
+    ]
     max_frame = 1.0
-    for seg in audio_segments + text_segments:
+    for seg in audio_segments + timeline_segments:
         try:
             max_frame = max(max_frame, float(seg.get("start", 0)) + float(seg.get("length", 1)))
         except Exception:
@@ -215,7 +218,7 @@ def _nexus_audio_latent_noise_mask(timeline_data_str: str, frame_rate: float, la
         except Exception:
             continue
         mask_1d[frame_to_bin(start):max(frame_to_bin(start) + 1, frame_to_bin(end))] = 0.0
-    for seg in text_segments:
+    for seg in timeline_segments:
         if not _nexus_text_requests_lipsync(seg):
             continue
         try:

@@ -7315,7 +7315,6 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const createVideoImageRef = trimFrameCount > 1 ? ['33', 0] : ['15', 0];
             const timelineSegments = director.timeline_data?.segments || [];
             const shouldLayerGeneratedAudio = useCustomAudio && audioSegments.length && timelineSegments.some((segment) => {
-                if ((segment?.type || 'text') !== 'text') return false;
                 const text = String(segment?.prompt || segment?.text || '').toLowerCase();
                 return /lip[- ]?sync|sincron|fala|falando|voz|di[aá]logo|pessoas falando|people talking|ambient|ambiente|room tone|soundscape|efeito sonoro|sound effect/.test(text);
             });
@@ -10021,8 +10020,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (!view) return;
             view.classList.remove('hidden');
             if (viewId === 'viewer' || viewId === 'director') view.classList.add('flex');
+            if (viewId === 'workflow') view.classList.add('active');
             if (viewId === 'director') activateLtxDirectorSuite();
-            if ((previousWorkspace === 'director' || ltxDirectorWorkflowGraphActive) && viewId !== 'director') {
+            const enteringDirectorWorkflow = viewId === 'workflow' && (previousWorkspace === 'director' || ltxDirectorWorkflowGraphActive) && isLtxDirectorTemplateActive();
+            if ((previousWorkspace === 'director' || ltxDirectorWorkflowGraphActive) && viewId !== 'director' && !enteringDirectorWorkflow) {
                 restoreLtxLinearSideState();
                 if (viewId === 'viewer' || viewId === 'canvas') {
                     resetLinearWorkflowGraphForPreset({ render: false });
@@ -10035,7 +10036,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 hideInpaintBrushCursor();
             }
             if (viewId === 'workflow') {
-                if ((previousWorkspace === 'director' || ltxDirectorWorkflowGraphActive) && isLtxDirectorTemplateActive()) {
+                if (enteringDirectorWorkflow) {
+                    syncLtxDirectorToSideControls({ silent: true });
                     renderActiveLtxDirectorWorkflowGraph(workflowCenterOnNextReveal);
                 } else {
                     scheduleWorkflowViewportRefresh({ center: workflowCenterOnNextReveal });
@@ -11421,7 +11423,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     payload.distilled_loras.push({ name: payload.video.omnicine_lora, strength: LTX_OMNICINE_DEFAULT_STRENGTH });
                 }
             }
-            if (isDirectorWorkspaceActive()) {
+            const generatingDirectorWorkflow = isDirectorWorkspaceActive()
+                || (activeWorkspace === 'workflow' && ltxDirectorWorkflowGraphActive && isLtxDirectorTemplateActive());
+            if (generatingDirectorWorkflow) {
                 const director = serializeLtxDirectorState();
                 payload.activity = 'txt2img';
                 payload.workspace = 'director';
