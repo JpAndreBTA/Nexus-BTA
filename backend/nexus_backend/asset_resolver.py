@@ -31,6 +31,12 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
     elif preset == "qwen":
         assets.pop("primary_model", None)
         assets.update(_resolve_qwen(by_category, selected_name, request))
+    elif preset in {"zimageturbo", "zimage"}:
+        assets.update(_resolve_zimage(by_category, selected_name, request))
+    elif preset in {"sd", "sd15"}:
+        assets.update(_resolve_sd_family(by_category, selected_name, request, [["sd15"], ["sd", "1.5"], ["realistic"]]))
+    elif preset in {"xl", "sdxl"}:
+        assets.update(_resolve_sd_family(by_category, selected_name, request, [["sdxl"], ["xl"], ["illustrious"]]))
     else:
         if "primary_model" not in assets:
             match = _first(by_category, ["checkpoints", "diffusion_models", "unet"], [])
@@ -52,6 +58,14 @@ def _resolve_controlnet(by_category: dict[str, list[ModelFile]], request: Genera
     if not control.enabled:
         return {}
     preset = request.preset.lower()
+    if preset == "ltx":
+        selected = _selected_model_choice(by_category, control.model)
+        if selected and selected.category != "loras":
+            selected = None
+        model = selected or _first_ltx_lora(by_category, [["ic-lora", "union"], ["ic-lora", "control"], ["ic-lora", "cameraman"], ["ic", "lora"]])
+        if not model:
+            return {}
+        return {"controlnet_model": _comfy_name(model), "ic_lora": _comfy_name(model)}
     if preset not in {"sd", "sd15", "xl", "sdxl"}:
         return {}
     selected = _selected_model_choice(by_category, control.model)
@@ -65,6 +79,28 @@ def _resolve_controlnet(by_category: dict[str, list[ModelFile]], request: Genera
     if not model:
         return {}
     return {"controlnet_model": _comfy_name(model)}
+
+
+def _resolve_sd_family(
+    by_category: dict[str, list[ModelFile]],
+    selected_name: str,
+    request: GenerateRequest,
+    token_sets: list[list[str]],
+) -> dict[str, str]:
+    assets: dict[str, str] = {}
+    primary = _find_name(by_category, selected_name)
+    if primary and primary.category not in {"checkpoints", "diffusion_models", "unet"}:
+        primary = None
+    for tokens in token_sets:
+        if primary:
+            break
+        primary = _first(by_category, ["checkpoints", "diffusion_models", "unet"], tokens)
+    if primary:
+        assets["primary_model"] = _comfy_name(primary)
+    selected_vae = _selected_model_choice(by_category, request.vae)
+    if selected_vae and selected_vae.category == "vae":
+        assets["vae"] = _comfy_name(selected_vae)
+    return assets
 
 
 def _first_controlnet(items: list[ModelFile], preset: str, control_type: str) -> ModelFile | None:
@@ -133,6 +169,7 @@ def _resolve_flux(by_category: dict[str, list[ModelFile]], selected_name: str, r
         assets["text_encoder"] = _comfy_name(t5)
     if vae:
         assets["vae"] = _comfy_name(vae)
+
     return assets
 
 
@@ -193,9 +230,22 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, re
     if distilled_large:
         assets["distilled_lora_2"] = _comfy_name(distilled_large)
 
-    ic_lora = _first(by_category, ["loras"], ["ic-lora", "cameraman"])
+    selected_control_lora = _selected_model_choice(by_category, getattr(request.controlnet, "model", None))
+    if selected_control_lora and selected_control_lora.category != "loras":
+        selected_control_lora = None
+    ic_lora = (
+        selected_control_lora
+        if selected_control_lora and "ic" in " ".join([selected_control_lora.name, selected_control_lora.folder, selected_control_lora.relative_path]).lower()
+        else None
+    ) or _first_ltx_lora(by_category, [["ic-lora", "union"], ["ic-lora", "control"], ["ic-lora", "cameraman"], ["ic", "lora"]])
     if ic_lora:
         assets["ic_lora"] = _comfy_name(ic_lora)
+    detailer_lora = _first_ltx_lora(by_category, [["detailer"], ["ic-lora", "detail"]])
+    if detailer_lora:
+        assets["detailer_lora"] = _comfy_name(detailer_lora)
+    id_lora = _first_ltx_lora(by_category, [["id-lora"], ["id", "lora"], ["celebvhq"]])
+    if id_lora:
+        assets["id_lora"] = _comfy_name(id_lora)
     return assets
 
 
@@ -210,7 +260,9 @@ def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str, re
         or _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["wan", "high"])
     )
     low_model = low_model or (
-        _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["wan2.2", "low"])
+        _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["dasiwa", "low"])
+        or _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["tasty", "low"])
+        or _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["wan2.2", "low"])
         or _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["wan", "low"])
     )
 
@@ -224,17 +276,46 @@ def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str, re
 
     selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
     selected_vae = _selected_model_choice(by_category, request.vae)
+    model_haystack = " ".join(
+        value
+        for value in [
+            selected_name,
+            high_model.name if high_model else "",
+            low_model.name if low_model else "",
+            high_model.relative_path if high_model else "",
+            low_model.relative_path if low_model else "",
+        ]
+        if value
+    ).lower()
+    wan_ti2v_route = "ti2v" in model_haystack or "5b" in model_haystack
+    wan22_route = any(token in model_haystack for token in ("wan2.2", "wan22", "wan_2.2"))
     text_encoder = (
         selected_text_encoder
         or
         _first(by_category, ["text_encoders", "clip"], ["umt5"])
         or _first(by_category, ["text_encoders", "clip"], ["t5"])
     )
-    vae = selected_vae or _first(by_category, ["vae"], ["wan"])
+    if selected_vae:
+        selected_vae_haystack = " ".join([selected_vae.name, selected_vae.folder, selected_vae.relative_path]).lower()
+        selected_is_wan22 = any(token in selected_vae_haystack for token in ("wan22", "wan2.2", "wan_2.2"))
+        if wan_ti2v_route and not selected_is_wan22:
+            selected_vae = None
+        elif not wan_ti2v_route and selected_is_wan22:
+            selected_vae = None
+    vae = selected_vae or (
+        (_first(by_category, ["vae"], ["wan22"]) or _first(by_category, ["vae"], ["wan2.2"]) if wan_ti2v_route else None)
+        or (_first(by_category, ["vae"], ["wan_2.1"]) or _first(by_category, ["vae"], ["wan2.1"]))
+        or _first(by_category, ["vae"], ["wan"])
+    )
     if text_encoder:
         assets["text_encoder"] = _comfy_name(text_encoder)
     if vae:
         assets["vae"] = _comfy_name(vae)
+    high_lora = _first_wan_4step_lora(by_category, "high")
+    low_lora = _first_wan_4step_lora(by_category, "low")
+    if high_lora and low_lora:
+        assets["wan_4step_high_lora"] = _comfy_name(high_lora)
+        assets["wan_4step_low_lora"] = _comfy_name(low_lora)
     return assets
 
 
@@ -248,6 +329,10 @@ def _resolve_anima(by_category: dict[str, list[ModelFile]], selected_name: str, 
     if primary:
         assets["primary_model"] = _comfy_name(primary)
     selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    if selected_text_encoder:
+        encoder_haystack = " ".join([selected_text_encoder.name, selected_text_encoder.folder, selected_text_encoder.relative_path]).lower()
+        if "qwen_3" not in encoder_haystack and "qwen3" not in encoder_haystack:
+            selected_text_encoder = None
     selected_vae = _selected_model_choice(by_category, request.vae)
     text_encoder = selected_text_encoder or _first(by_category, ["text_encoders", "clip"], ["qwen_3"]) or _first(
         by_category, ["text_encoders", "clip"], ["qwen"]
@@ -267,8 +352,18 @@ def _resolve_anima(by_category: dict[str, list[ModelFile]], selected_name: str, 
 
 def _resolve_qwen(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
     assets: dict[str, str] = {}
-    has_reference = request.activity == "img2img" and bool((request.img2img.reference_image or "").strip())
+    has_reference = request.activity == "img2img" and (
+        bool((request.img2img.reference_image or "").strip())
+        or any(bool((value or "").strip()) for value in (request.img2img.reference_images or []))
+    )
     primary = _find_name(by_category, selected_name)
+    if has_reference and primary and not _is_qwen_edit_model(primary):
+        preferred_edit = (
+            _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["qwen", "edit", "q4"])
+            or _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["qwen", "edit"])
+        )
+        if preferred_edit:
+            primary = preferred_edit
     if primary and _is_qwen_edit_model(primary) and not has_reference:
         primary = None
     if not primary:
@@ -306,11 +401,55 @@ def _resolve_qwen(by_category: dict[str, list[ModelFile]], selected_name: str, r
     return assets
 
 
+def _resolve_zimage(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
+    assets: dict[str, str] = {}
+    primary = _find_name(by_category, selected_name)
+    if primary and primary.category in {"vae", "text_encoders", "clip", "loras", "embeddings"}:
+        primary = None
+    if not primary:
+        primary = (
+            _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["z", "image", "turbo"])
+            or _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["zimage", "turbo"])
+            or _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["z-image", "turbo"])
+            or _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["z", "image"])
+        )
+    if primary:
+        assets["primary_model"] = _comfy_name(primary)
+
+    selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    if selected_text_encoder and not _is_exact_model_name(selected_text_encoder, "qwen_3_4b.safetensors"):
+        selected_text_encoder = None
+    text_encoder = selected_text_encoder or _first_exact(by_category, ["text_encoders", "clip"], "qwen_3_4b.safetensors")
+    if text_encoder:
+        assets["text_encoder"] = _comfy_name(text_encoder)
+
+    selected_vae = _selected_model_choice(by_category, request.vae)
+    if selected_vae and not _is_exact_model_name(selected_vae, "ae.safetensors"):
+        selected_vae = None
+    vae = selected_vae or _first_exact(by_category, ["vae"], "ae.safetensors")
+    if vae:
+        assets["vae"] = _comfy_name(vae)
+    return assets
+
+
 def _selected_model_choice(by_category: dict[str, list[ModelFile]], value: str | None) -> ModelFile | None:
     name = Path(str(value or "")).name
     if not name or name.lower() in {"automatic", "auto", "none"}:
         return None
     return _find_name(by_category, name)
+
+
+def _is_exact_model_name(item: ModelFile, name: str) -> bool:
+    return Path(item.name).name.lower() == name.lower()
+
+
+def _first_exact(by_category: dict[str, list[ModelFile]], categories: list[str], name: str) -> ModelFile | None:
+    expected = name.lower()
+    for category in categories:
+        for item in by_category.get(category, []):
+            if Path(item.name).name.lower() == expected:
+                return item
+    return None
 
 
 def _first_qwen_base(by_category: dict[str, list[ModelFile]], tokens: list[str]) -> ModelFile | None:
@@ -379,6 +518,45 @@ def _normalize_model_lookup(value: str) -> str:
 def _is_wan_noise_model(item: ModelFile, noise: str) -> bool:
     haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
     return "wan" in haystack and noise.lower() in haystack
+
+
+def _first_wan_4step_lora(by_category: dict[str, list[ModelFile]], noise: str) -> ModelFile | None:
+    noise = noise.lower()
+    candidates: list[tuple[int, str, ModelFile]] = []
+    for item in by_category.get("loras", []):
+        haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+        if "wan" not in haystack or noise not in haystack:
+            continue
+        if not any(token in haystack for token in ("lightx2v", "4step", "4-step", "lightning", "distill")):
+            continue
+        score = 0
+        if "lightx2v" in haystack:
+            score -= 40
+        if "4step" in haystack or "4-step" in haystack:
+            score -= 30
+        if "i2v" in haystack:
+            score -= 10
+        candidates.append((score, item.name.lower(), item))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda row: row[:2])
+    return candidates[0][2]
+
+
+def _first_ltx_lora(by_category: dict[str, list[ModelFile]], token_sets: list[list[str]]) -> ModelFile | None:
+    candidates: list[tuple[int, str, ModelFile]] = []
+    for item in by_category.get("loras", []):
+        haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+        if "ltx" not in haystack:
+            continue
+        for rank, tokens in enumerate(token_sets):
+            if all(token.lower() in haystack for token in tokens):
+                candidates.append((rank, len(item.name), item.name.lower(), item))
+                break
+    if not candidates:
+        return None
+    candidates.sort(key=lambda row: row[:3])
+    return candidates[0][3]
 
 
 def _selected_asset(value: object) -> str:

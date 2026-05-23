@@ -24,6 +24,8 @@ class RuntimeSettings(BaseModel):
     disable_xformers: bool = False
     enable_sage_attention: bool = False
     enable_flash_attention: bool = False
+    idle_unload_seconds: int = 90
+    idle_stop_seconds: int = 300
 
 
 class NexusSettings(BaseModel):

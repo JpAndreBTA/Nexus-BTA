@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import subprocess
 import time
 import uuid
@@ -23,6 +24,9 @@ class ComfyClient:
     def __init__(self, settings: NexusSettings):
         self.settings = settings
         self.process: subprocess.Popen[str] | None = None
+        self._started_runtime_signature: str = ""
+        self._start_lock = asyncio.Lock()
+        self._owned_external_pid: int | None = None
 
     @property
     def base_url(self) -> str:
@@ -39,14 +43,23 @@ class ComfyClient:
 
     async def ensure_running(self) -> None:
         if await self.is_running():
+            if not self._adopt_running_runtime():
+                owner = self.runtime_owner_description()
+                raise RuntimeError(f"Port {self.settings.runtime.comfy_port} is already used by another ComfyUI/runtime process: {owner}")
             return
-        self.start()
-        deadline = time.time() + 120
-        while time.time() < deadline:
+        async with self._start_lock:
             if await self.is_running():
+                if not self._adopt_running_runtime():
+                    owner = self.runtime_owner_description()
+                    raise RuntimeError(f"Port {self.settings.runtime.comfy_port} is already used by another ComfyUI/runtime process: {owner}")
                 return
-            await asyncio.sleep(1)
-        raise RuntimeError("ComfyUI embedded runtime did not become ready in time.")
+            self.start()
+            deadline = time.time() + 120
+            while time.time() < deadline:
+                if await self.is_running():
+                    return
+                await asyncio.sleep(1)
+            raise RuntimeError("ComfyUI embedded runtime did not become ready in time.")
 
     async def restart(self) -> None:
         self.stop()
@@ -56,8 +69,10 @@ class ComfyClient:
     def stop(self) -> None:
         if not self.process or self.process.poll() is not None:
             self.process = None
+            self._stop_owned_external_runtime()
             return
-        self.process.terminate()
+        pid = self.process.pid
+        self._stop_process_tree(pid)
         try:
             self.process.wait(timeout=20)
         except subprocess.TimeoutExpired:
@@ -65,9 +80,17 @@ class ComfyClient:
             self.process.wait(timeout=10)
         finally:
             self.process = None
+            self._owned_external_pid = None
 
     def start(self) -> None:
         if self.process and self.process.poll() is None:
+            return
+        owner_pid = self._runtime_owner_pid()
+        if owner_pid:
+            if self._adopt_running_runtime():
+                return
+            raise RuntimeError(f"Port {self.settings.runtime.comfy_port} is already used by another runtime: {self.runtime_owner_description(owner_pid)}")
+        if self._owned_external_pid:
             return
         if not self.settings.comfy_root.exists():
             raise FileNotFoundError(
@@ -131,32 +154,118 @@ class ComfyClient:
             stderr=subprocess.DEVNULL,
             startupinfo=startupinfo,
         )
+        self._started_runtime_signature = self.runtime_signature()
+
+    def _runtime_owner_pid(self) -> int | None:
+        try:
+            import psutil
+
+            for conn in psutil.net_connections(kind="inet"):
+                if conn.status == "LISTEN" and conn.laddr and getattr(conn.laddr, "port", None) == self.settings.runtime.comfy_port:
+                    return conn.pid
+        except Exception:
+            return None
+        return None
+
+    def _pid_belongs_to_runtime(self, pid: int | None) -> bool:
+        if not pid:
+            return False
+        try:
+            import psutil
+
+            process = psutil.Process(pid)
+            command = " ".join(process.cmdline())
+            root = str(self.settings.project_root).lower()
+            normalized = command.replace("/", "\\").lower()
+            return root in normalized and "comfyui\\main.py" in normalized
+        except Exception:
+            return False
+
+    def _adopt_running_runtime(self) -> bool:
+        pid = self._runtime_owner_pid()
+        if self._pid_belongs_to_runtime(pid):
+            self._owned_external_pid = pid
+            self._started_runtime_signature = self.runtime_signature()
+            return True
+        return False
+
+    def runtime_owner_description(self, pid: int | None = None) -> str:
+        pid = pid or self._runtime_owner_pid()
+        if not pid:
+            return "unknown process"
+        try:
+            import psutil
+
+            process = psutil.Process(pid)
+            command = " ".join(process.cmdline())
+            return f"pid={pid} command={command}"
+        except Exception:
+            return f"pid={pid}"
+
+    def _stop_process_tree(self, pid: int | None) -> None:
+        if not pid:
+            return
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            else:
+                os.kill(pid, signal.SIGTERM)
+        except Exception:
+            pass
+
+    def _stop_owned_external_runtime(self) -> None:
+        pid = self._owned_external_pid or self._runtime_owner_pid()
+        if not self._pid_belongs_to_runtime(pid):
+            self._owned_external_pid = None
+            return
+        self._stop_process_tree(pid)
+        self._owned_external_pid = None
+
+    def runtime_signature(self) -> str:
+        runtime = self.settings.runtime
+        payload = {
+            "vram_policy": runtime.vram_policy.lower(),
+            "precision": runtime.precision.lower(),
+            "disable_xformers": bool(runtime.disable_xformers),
+            "attention_backend": runtime.attention_backend.lower(),
+            "enable_sage_attention": bool(runtime.enable_sage_attention),
+            "enable_flash_attention": bool(runtime.enable_flash_attention),
+        }
+        return json.dumps(payload, sort_keys=True)
+
+    def runtime_changed_since_start(self) -> bool:
+        owned_running = bool(self.process and self.process.poll() is None) or bool(self._owned_external_pid and self._pid_belongs_to_runtime(self._owned_external_pid))
+        return bool(owned_running and self._started_runtime_signature and self._started_runtime_signature != self.runtime_signature())
 
     def _runtime_flags(self) -> list[str]:
         runtime = self.settings.runtime
         flags: list[str] = []
-        vram = runtime.vram_policy.lower()
+        vram = runtime.vram_policy.lower().replace(" ", "").replace("_", "").replace("-", "")
         if vram in {"low", "lowvram"}:
             flags.append("--lowvram")
-        elif vram in {"med", "normal", "balanced"}:
+        elif vram in {"med", "medium", "medvram", "normal", "balanced"}:
             flags.append("--normalvram")
         elif vram in {"high", "highvram"}:
             flags.append("--highvram")
-        elif vram == "cpu":
+        elif vram.startswith("cpu"):
             flags.append("--cpu")
 
-        precision = runtime.precision.lower()
+        precision = runtime.precision.lower().replace("_", "-")
         if precision in {"fp16", "fp32"}:
             flags.append(f"--force-{precision}")
+        elif precision == "bf16":
+            flags.extend(["--force-fp16", "--bf16-unet"])
+        elif precision == "fp8":
+            flags.append("--fp8_e4m3fn-unet")
 
         if runtime.disable_xformers:
             flags.append("--disable-xformers")
-        attention = runtime.attention_backend.lower()
-        if attention == "sage" or (attention == "auto" and runtime.enable_sage_attention):
+        attention = runtime.attention_backend.lower().replace(" ", "").replace("_", "").replace("-", "")
+        if attention in {"sage", "sageattention"} or (attention == "auto" and runtime.enable_sage_attention):
             flags.append("--use-sage-attention")
-        elif attention == "flash" or runtime.enable_flash_attention:
+        elif attention in {"flash", "flashattention"} or runtime.enable_flash_attention:
             flags.append("--use-flash-attention")
-        elif attention == "pytorch":
+        elif attention in {"pytorch", "pytorchsdpa", "sdpa"}:
             flags.append("--use-pytorch-cross-attention")
         return flags
 
@@ -166,6 +275,43 @@ class ComfyClient:
             response = await client.get(f"{self.base_url}/object_info")
             response.raise_for_status()
             return response.json()
+
+    async def system_stats(self) -> dict[str, Any]:
+        if not await self.is_running():
+            return {}
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(f"{self.base_url}/system_stats")
+            response.raise_for_status()
+            data = response.json()
+            return data if isinstance(data, dict) else {}
+
+    async def free_memory(self, unload_models: bool = True, free_memory: bool = True) -> dict[str, Any]:
+        if not await self.is_running():
+            return {"status": "stopped", "url": self.base_url}
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                f"{self.base_url}/free",
+                json={"unload_models": unload_models, "free_memory": free_memory},
+            )
+            response.raise_for_status()
+        return {"status": "free_requested", "url": self.base_url, "unload_models": unload_models, "free_memory": free_memory}
+
+    async def interrupt(self, prompt_id: str | None = None) -> dict[str, Any]:
+        if not await self.is_running():
+            return {"status": "stopped", "url": self.base_url}
+        payload = {"prompt_id": prompt_id} if prompt_id else {}
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(f"{self.base_url}/interrupt", json=payload)
+            response.raise_for_status()
+        return {"status": "interrupt_requested", "url": self.base_url, "prompt_id": prompt_id}
+
+    async def clear_queue(self) -> dict[str, Any]:
+        if not await self.is_running():
+            return {"status": "stopped", "url": self.base_url}
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(f"{self.base_url}/queue", json={"clear": True})
+            response.raise_for_status()
+        return {"status": "queue_cleared", "url": self.base_url}
 
     async def queue_prompt(self, workflow: dict[str, Any], client_id: str | None = None) -> str:
         await self.ensure_running()
@@ -273,6 +419,7 @@ class ComfyClient:
 
     async def wait_for_outputs(self, prompt_id: str, timeout_seconds: int = 3600) -> list[dict[str, Any]]:
         deadline = time.time() + timeout_seconds
+        completed_since: float | None = None
         while time.time() < deadline:
             history = await self.history(prompt_id)
             item = history.get(prompt_id)
@@ -284,7 +431,9 @@ class ComfyClient:
                 if status.get("status_str") == "error":
                     raise ComfyExecutionError(_history_error_message(status))
                 if item.get("status", {}).get("completed"):
-                    return []
+                    completed_since = completed_since or time.time()
+                    if time.time() - completed_since >= 30:
+                        return []
             await asyncio.sleep(1)
         raise TimeoutError(f"ComfyUI job timed out: {prompt_id}")
 

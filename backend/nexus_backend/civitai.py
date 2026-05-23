@@ -335,8 +335,14 @@ def _target_kind(model_type: Any, filename: str, requested: str) -> str:
         return "loras"
     if "textualinversion" in lower_type or "embedding" in lower_type:
         return "embeddings"
+    if "qwen_3_4b" in lower_name or "qwen3_4b" in lower_name:
+        return "text_encoders"
+    if lower_name == "ae.safetensors":
+        return "vae"
     if "vae" in lower_type or "vae" in lower_name:
         return "vae"
+    if any(token in lower_name for token in ("z_image", "z-image", "zimage")):
+        return "diffusion_models"
     if "controlnet" in lower_type or "control" in lower_name:
         return "controlnet"
     if "upscaler" in lower_type or "upscale" in lower_name:
@@ -366,6 +372,7 @@ def _preset_from_base_model(base_model: Any, fallback: str | None = None) -> str
             ("sdxl", ("sdxl", "stable diffusion xl", "pony")),
             ("flux", ("flux", "flux1")),
             ("qwen", ("qwen", "qwen image", "qwenimage")),
+            ("zimage", ("zimage", "z image", "z-image", "zimage turbo", "z image turbo")),
             ("wan", ("wan", "wan2", "wan22", "wan21")),
             ("ltx", ("ltx", "ltx video", "ltxvideo", "ltx23")),
             ("anima", ("anima",)),
@@ -389,6 +396,8 @@ def _preset_folder(preset: str | None) -> str:
         "wan": "wan",
         "flux": "flux",
         "qwen": "qwen",
+        "zimage": "zimage",
+        "zimageturbo": "zimage",
         "lumina": "lumina",
     }.get(value, value or "download")
 

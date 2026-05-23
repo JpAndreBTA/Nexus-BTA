@@ -36,6 +36,7 @@ CHECKPOINT_PRESET_FOLDERS = [
     "wan",
     "ltx",
     "anima",
+    "zimage",
 ]
 
 

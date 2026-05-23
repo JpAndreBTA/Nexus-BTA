@@ -80,6 +80,7 @@ class Img2ImgSettings(BaseModel):
     mask_blur: int = 4
     mask_content: str = "Original"
     reference_image: str | None = None
+    reference_images: list[str] = Field(default_factory=list)
     mask_image: str | None = None
 
 

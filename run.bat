@@ -2,7 +2,7 @@
 setlocal
 
 set "ROOT=%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\start_nexus.ps1" -ProjectRoot "%~dp0."
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\start_nexus.ps1" -ProjectRoot "%~dp0." -StartComfy
 if errorlevel 1 (
   echo [NEXUS BTA] Startup failed.
   pause

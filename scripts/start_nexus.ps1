@@ -1,5 +1,6 @@
 param(
     [string]$ProjectRoot = "D:\NexusBTA",
+    [switch]$StartComfy,
     [switch]$NoOpen
 )
 
@@ -35,6 +36,40 @@ function Wait-NexusHealth {
     return $false
 }
 
+function Stop-NexusRuntimeProcesses {
+    $patterns = @(
+        "backend\\run_backend\.py",
+        "backend/run_backend\.py",
+        "runtime\\ComfyUI\\main\.py",
+        "runtime/ComfyUI/main\.py"
+    )
+
+    foreach ($port in @(7861, 8189)) {
+        $owners = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
+        foreach ($ownerPid in $owners) {
+            if ($ownerPid -eq $PID) { continue }
+            $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$ownerPid" -ErrorAction SilentlyContinue
+            if (!$proc) { continue }
+            $command = [string]$proc.CommandLine
+            $belongsToNexus = $command -like "*$root*" -or ($patterns | Where-Object { $command -match $_ })
+            if ($belongsToNexus) {
+                Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.ProcessId -ne $PID -and
+            ([string]$_.CommandLine) -like "*$root*" -and
+            ([string]$_.CommandLine) -match "run_backend\.py|ComfyUI\\main\.py|ComfyUI/main\.py"
+        } |
+        ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    Start-Sleep -Milliseconds 800
+}
+
 if (!$NoOpen) {
     $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction SilentlyContinue
     if ($parent -and (Test-Path -LiteralPath $watcher)) {
@@ -59,6 +94,9 @@ if (!(Test-Path -LiteralPath $python)) {
 if (Test-Path -LiteralPath $runtimeHotfixes) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File $runtimeHotfixes -ProjectRoot $root
 }
+
+Write-Host "[NEXUS BTA] Closing stale Nexus/ComfyUI runtimes..."
+Stop-NexusRuntimeProcesses
 
 foreach ($relative in @("output", "temp")) {
     $target = Join-Path $comfyRoot $relative
@@ -110,11 +148,19 @@ if (!(Wait-NexusHealth -Seconds 180)) {
 Write-Host "[NEXUS BTA] Preparing model folders..."
 Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/model-tree" -TimeoutSec 15 | Out-Null
 
-Write-Host "[NEXUS BTA] Starting embedded ComfyUI runtime..."
-try {
-    Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/comfy/start" -TimeoutSec 180 | Out-Null
-} catch {
-    Write-Warning $_.Exception.Message
+if ($StartComfy) {
+    Write-Host "[NEXUS BTA] Starting embedded ComfyUI runtime..."
+    try {
+        Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/comfy/start" -TimeoutSec 180 | Out-Null
+        $runtimeHealth = Invoke-RestMethod "http://127.0.0.1:7861/api/health" -TimeoutSec 10
+        if (-not $runtimeHealth.comfy_running) {
+            throw "ComfyUI did not report as running after startup."
+        }
+    } catch {
+        throw "ComfyUI startup failed: $($_.Exception.Message)"
+    }
+} else {
+    Write-Host "[NEXUS BTA] ComfyUI will start on demand. Use -StartComfy to preload it."
 }
 
 if (!$NoOpen) {

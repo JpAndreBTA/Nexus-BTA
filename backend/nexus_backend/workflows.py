@@ -44,6 +44,7 @@ SAMPLER_ALIASES = {
     "IPNDM V": "ipndm_v",
     "Restart": "restart",
     "FlowMatch Euler": "euler",
+    "Res Multistep": "res_multistep",
 }
 
 SCHEDULER_ALIASES = {
@@ -222,6 +223,8 @@ class WorkflowRegistry:
                 "wan": ["wan"],
                 "flux": [],
                 "qwen": [],
+                "zimageturbo": ["z-image-turbo", "zimage-turbo", "zimage"],
+                "zimage": ["z-image-turbo", "zimage-turbo", "zimage"],
                 "lumina": ["lumina"],
             }.get(preset_lower, [])
             for token in preferred:
@@ -237,7 +240,7 @@ class WorkflowRegistry:
         tags = sorted(
             {
                 tag
-                for tag in ["ltx", "anima", "wan", "flux", "qwen", "gguf", "i2v", "t2v"]
+                for tag in ["ltx", "anima", "wan", "flux", "qwen", "zimage", "z-image", "gguf", "i2v", "t2v"]
                 if tag in path.name.lower() or any(tag in cls.lower() for cls in classes)
             }
         )
@@ -591,7 +594,11 @@ def workflow_settings(path: Path, object_info: dict[str, Any] | None = None) -> 
             capture_linked_constants(prompt)
     combined = " ".join(text_hints + class_types(data, fmt)).lower()
     result["is_video"] = any(token in combined for token in ["video", "frames", "fps", "ltx", "wan", "animatediff", "vhs_", "frame_rate"])
-    if "ltx" in combined:
+    if "z-image" in combined or "zimage" in combined or "z_image" in combined:
+        result["preset"] = "ZImageTurbo"
+        result.setdefault("scheduler", "simple")
+        result.setdefault("sampler", "res_multistep")
+    elif "ltx" in combined:
         result["preset"] = "LTX"
         result.setdefault("scheduler", "quadratic")
         result.setdefault("sampler", "euler_cfg_pp")
@@ -635,6 +642,10 @@ def _known_ui_widget_order(node_type: str) -> list[str]:
             "divisible_by",
             "img_compression",
         ]
+    if lower == "modelsamplingauraflow":
+        return ["shift"]
+    if lower == "textencodezimageomni":
+        return ["prompt", "auto_resize_images"]
     if "textencode" in lower or "cliptext" in lower:
         return ["text"]
     if "ksamplerselect" in lower:
@@ -968,7 +979,11 @@ def convert_ui_to_api(data: dict[str, Any], object_info: dict[str, Any]) -> dict
                 inputs[name] = [origin_id, origin_slot]
 
         widget_values = node.get("widgets_values", [])
-        if isinstance(widget_values, dict):
+        named_widget_values = node.get("properties", {}).get("nexus_widget_values")
+        if isinstance(named_widget_values, dict):
+            for key, value in named_widget_values.items():
+                inputs.setdefault(key, value)
+        elif isinstance(widget_values, dict):
             for key, value in widget_values.items():
                 inputs.setdefault(key, value)
         else:
@@ -1336,6 +1351,7 @@ def build_basic_qwen_image_workflow(
     text_encoder_name: str,
     vae_name: str,
     reference_image_name: str | None = None,
+    reference_image_names: list[str] | None = None,
     mask_image_name: str | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
@@ -1343,11 +1359,27 @@ def build_basic_qwen_image_workflow(
     height = max(16, int(request.height))
     width -= width % 16
     height -= height % 16
+    refs = [name for name in (reference_image_names or ([reference_image_name] if reference_image_name else [])) if name][:3]
+    reference_image_name = refs[0] if refs else None
     positive_inputs: dict[str, Any]
     negative_inputs: dict[str, Any]
-    if reference_image_name:
-        positive_inputs = {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0], "image": ["4", 0]}
-        negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0], "image": ["4", 0]}
+    if refs:
+        if len(refs) > 1:
+            prompt_prefix = "Use Picture 1 as the base reference"
+            if len(refs) >= 2:
+                prompt_prefix += ", Picture 2 as the Image 2 style/object reference"
+            if len(refs) >= 3:
+                prompt_prefix += ", and Picture 3 as the Image 3 additional reference"
+            prompt_prefix += ". "
+            positive_inputs = {"clip": ["2", 0], "prompt": prompt_prefix + request.prompt, "vae": ["3", 0]}
+            negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0]}
+            for index, _name in enumerate(refs, start=1):
+                node_id = "4" if index == 1 else str(13 + index)
+                positive_inputs[f"image{index}"] = [node_id, 0]
+                negative_inputs[f"image{index}"] = [node_id, 0]
+        else:
+            positive_inputs = {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0], "image": ["4", 0]}
+            negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0], "image": ["4", 0]}
     else:
         positive_inputs = {"clip": ["2", 0], "text": request.prompt}
         negative_inputs = {"clip": ["2", 0], "text": request.negative_prompt}
@@ -1393,15 +1425,15 @@ def build_basic_qwen_image_workflow(
         "4": {
             "class_type": "LoadImage",
             "inputs": {"image": reference_image_name or ""},
-            "_meta": {"title": "Reference Image"},
+            "_meta": {"title": "Reference Image 1"},
         },
         "5": {
-            "class_type": "TextEncodeQwenImageEdit" if reference_image_name else "CLIPTextEncode",
+            "class_type": "TextEncodeQwenImageEditPlus" if len(refs) > 1 else ("TextEncodeQwenImageEdit" if reference_image_name else "CLIPTextEncode"),
             "inputs": positive_inputs,
             "_meta": {"title": "Positive Prompt"},
         },
         "6": {
-            "class_type": "TextEncodeQwenImageEdit" if reference_image_name else "CLIPTextEncode",
+            "class_type": "TextEncodeQwenImageEditPlus" if len(refs) > 1 else ("TextEncodeQwenImageEdit" if reference_image_name else "CLIPTextEncode"),
             "inputs": negative_inputs,
             "_meta": {"title": "Negative Prompt"},
         },
@@ -1447,6 +1479,13 @@ def build_basic_qwen_image_workflow(
         },
     }
     workflow.update(qwen_lora_nodes)
+    for index, name in enumerate(refs[1:], start=2):
+        node_id = str(13 + index)
+        workflow[node_id] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": name},
+            "_meta": {"title": f"Reference Image {index}"},
+        }
     if not reference_image_name:
         workflow.pop("4", None)
     else:
@@ -1461,6 +1500,152 @@ def build_basic_qwen_image_workflow(
             reference_node_id="4",
             vae_ref=["3", 0],
             sampler_node_id="10",
+            mask_image_name=mask_image_name,
+        )
+    return workflow
+
+
+def build_basic_zimage_turbo_workflow(
+    request: GenerateRequest,
+    model_name: str,
+    text_encoder_name: str,
+    vae_name: str,
+    reference_image_name: str | None = None,
+    mask_image_name: str | None = None,
+) -> dict[str, Any]:
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    width = max(16, int(request.width))
+    height = max(16, int(request.height))
+    width -= width % 16
+    height -= height % 16
+    denoise = request.img2img.denoise if reference_image_name else request.denoise
+    sampler = normalize_sampler(request.sampler or "res_multistep")
+    scheduler = normalize_scheduler(request.scheduler or "simple")
+    model_ref: list[Any] = ["1", 0]
+    lora_nodes: dict[str, Any] = {}
+    next_lora_id = 20
+    for lora_name, strength_model, _strength_clip in _active_lora_selections(request):
+        node_id = str(next_lora_id)
+        lora_nodes[node_id] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": model_ref,
+                "lora_name": lora_name,
+                "strength_model": float(strength_model),
+            },
+            "_meta": {"title": f"Z-Image LoRA - {Path(lora_name).name}"},
+        }
+        model_ref = [node_id, 0]
+        next_lora_id += 1
+
+    positive_inputs: dict[str, Any]
+    if reference_image_name:
+        positive_inputs = {
+            "clip": ["2", 0],
+            "prompt": request.prompt,
+            "auto_resize_images": True,
+            "vae": ["3", 0],
+            "image1": ["9", 0],
+        }
+        positive_class = "TextEncodeZImageOmni"
+    else:
+        positive_inputs = {"clip": ["2", 0], "text": request.prompt}
+        positive_class = "CLIPTextEncode"
+
+    workflow: dict[str, Any] = {
+        "1": {
+            "class_type": "UNETLoader" if not model_name.lower().endswith(".gguf") else "UnetLoaderGGUF",
+            "inputs": (
+                {"unet_name": model_name, "weight_dtype": "default"}
+                if not model_name.lower().endswith(".gguf")
+                else {"unet_name": model_name}
+            ),
+            "_meta": {"title": "Load Z-Image Turbo Model"},
+        },
+        "2": {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": text_encoder_name, "type": "lumina2", "device": "default"},
+            "_meta": {"title": "Z-Image Qwen3 Text Encoder"},
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": vae_name},
+            "_meta": {"title": "Z-Image AE VAE"},
+        },
+        "4": {
+            "class_type": positive_class,
+            "inputs": positive_inputs,
+            "_meta": {"title": "Positive Prompt"},
+        },
+        "5": (
+            {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"clip": ["2", 0], "text": request.negative_prompt},
+                "_meta": {"title": "Negative Prompt"},
+            }
+            if request.negative_prompt.strip()
+            else {
+                "class_type": "ConditioningZeroOut",
+                "inputs": {"conditioning": ["4", 0]},
+                "_meta": {"title": "Official Z-Image Empty Negative"},
+            }
+        ),
+        "6": {
+            "class_type": "EmptySD3LatentImage",
+            "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
+            "_meta": {"title": "Z-Image Latent"},
+        },
+        "7": {
+            "class_type": "ModelSamplingAuraFlow",
+            "inputs": {"model": model_ref, "shift": float((request.video or {}).get("shift") or 3.0)},
+            "_meta": {"title": "Z-Image AuraFlow Sampling Shift"},
+        },
+        "8": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": seed,
+                "steps": max(1, int(request.steps or 8)),
+                "cfg": request.cfg,
+                "sampler_name": sampler,
+                "scheduler": scheduler,
+                "denoise": denoise,
+                "model": ["7", 0],
+                "positive": ["4", 0],
+                "negative": ["5", 0],
+                "latent_image": ["6", 0],
+            },
+            "_meta": {"title": "Z-Image Turbo Sampler"},
+        },
+        "11": {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["8", 0], "vae": ["3", 0]},
+            "_meta": {"title": "VAE Decode"},
+        },
+        "12": {
+            "class_type": "SaveImage",
+            "inputs": {"filename_prefix": "NEXUS_BTA_ZIMAGE_TURBO", "images": ["11", 0]},
+            "_meta": {"title": "Save Image"},
+        },
+    }
+    workflow.update(lora_nodes)
+    if reference_image_name:
+        workflow["9"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": reference_image_name},
+            "_meta": {"title": "Reference Image"},
+        }
+        workflow["10"] = {
+            "class_type": "VAEEncode",
+            "inputs": {"pixels": ["9", 0], "vae": ["3", 0]},
+            "_meta": {"title": "Encode Reference"},
+        }
+        workflow["8"]["inputs"]["latent_image"] = ["10", 0]
+        _append_inpaint_mask(
+            workflow,
+            request,
+            reference_node_id="9",
+            vae_ref=["3", 0],
+            sampler_node_id="8",
             mask_image_name=mask_image_name,
         )
     return workflow
@@ -1495,6 +1680,7 @@ def build_basic_flux_workflow(
             "_meta": {"title": "Load Flux Model"},
         }
     )
+    flux_guidance = max(0.0, float(request.cfg if request.cfg is not None else 3.5))
     latent_ref: list[Any] = ["6", 0]
     denoise = request.img2img.denoise if reference_image_name else request.denoise
     workflow = {
@@ -1524,6 +1710,11 @@ def build_basic_flux_workflow(
             "inputs": {"conditioning": ["4", 0]},
             "_meta": {"title": "Flux Empty Negative"},
         },
+        "12": {
+            "class_type": "FluxGuidance",
+            "inputs": {"conditioning": ["4", 0], "guidance": flux_guidance},
+            "_meta": {"title": "Flux Guidance"},
+        },
         "6": {
             "class_type": "EmptySD3LatentImage",
             "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
@@ -1534,12 +1725,12 @@ def build_basic_flux_workflow(
             "inputs": {
                 "seed": seed,
                 "steps": max(1, request.steps),
-                "cfg": request.cfg,
+                "cfg": 1.0,
                 "sampler_name": sampler,
                 "scheduler": scheduler,
                 "denoise": denoise,
                 "model": ["1", 0],
-                "positive": ["4", 0],
+                "positive": ["12", 0],
                 "negative": ["5", 0],
                 "latent_image": latent_ref,
             },
@@ -1592,7 +1783,7 @@ def build_basic_wan_i2video_workflow(
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     video_options = request.video or {}
-    fps = max(1, int(_number_or_none(video_options.get("fps")) or 24))
+    fps = max(1, int(_number_or_none(video_options.get("fps")) or 16))
     seconds = _number_or_none(video_options.get("seconds") or video_options.get("duration"))
     requested_frames = _number_or_none(video_options.get("frames") or video_options.get("length"))
     if requested_frames:
@@ -1600,7 +1791,7 @@ def build_basic_wan_i2video_workflow(
     elif seconds:
         length = max(5, int(round(seconds * fps)) + 1)
     else:
-        length = 49
+        length = 81
     if (length - 1) % 4 != 0:
         length = (((length - 1) // 4) + 1) * 4 + 1
 
@@ -1609,7 +1800,7 @@ def build_basic_wan_i2video_workflow(
     width -= width % 16
     height -= height % 16
 
-    steps = max(2, int(request.steps or 4))
+    steps = 4
     cfg = float(request.cfg if request.cfg is not None else 1.0)
     sampler = normalize_sampler(request.sampler or "euler")
     scheduler = normalize_scheduler(request.scheduler or "simple")
@@ -1836,7 +2027,11 @@ def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, 
             if not name or not _lora_is_compatible_with_preset(name, request.preset):
                 continue
             strength_model = _number_or_none(item.get("strength_model", item.get("strength", 1.0))) or 1.0
-            strength_clip = _number_or_none(item.get("strength_clip", item.get("clip_strength", 0.0))) or 0.0
+            strength_clip_value = _number_or_none(item.get("strength_clip", item.get("clip_strength")))
+            if request.preset.lower() in {"anima", "flux", "ltx", "qwen", "wan", "zimageturbo", "zimage"}:
+                strength_clip = strength_clip_value if strength_clip_value is not None else 0.0
+            else:
+                strength_clip = strength_model if strength_clip_value in {None, 0.0} else strength_clip_value
             append_selection(name, float(strength_model), float(strength_clip))
 
     def append_distilled_loras() -> None:
@@ -1855,12 +2050,13 @@ def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, 
         append_user_loras()
         append_distilled_loras()
     video_options = request.video or {}
-    omnicine_enabled = video_options.get("omnicine_enabled", True)
+    omnicine_enabled = video_options.get("omnicine_enabled", False)
     if isinstance(omnicine_enabled, str):
         omnicine_enabled = omnicine_enabled.lower() not in {"false", "0", "off", "none", "no"}
     if request.preset.lower() == "ltx" and omnicine_enabled is not False:
         raw_name = video_options.get("omnicine_lora") or LTX_OMNICINE_LORA_NAME
-        append_selection(str(raw_name), LTX_OMNICINE_DEFAULT_STRENGTH, 0.0)
+        if _is_omnicine_lora(raw_name):
+            append_selection(str(raw_name), LTX_OMNICINE_DEFAULT_STRENGTH, 0.0)
     return selections
 
 
@@ -1892,9 +2088,10 @@ def _lora_is_compatible_with_preset(name: str, preset: str) -> bool:
         "wan": {"wan"},
         "flux": {"flux"},
         "lumina": {"lumina"},
+        "zimage": {"zimage", "zimageturbo", "z-image", "z_image"},
     }
     preset_key = str(preset or "").lower()
-    preset_key = {"sd": "sd15", "sd 1.5": "sd15", "sdxl": "xl"}.get(preset_key, preset_key)
+    preset_key = {"sd": "sd15", "sd 1.5": "sd15", "sdxl": "xl", "zimageturbo": "zimage", "z-image": "zimage", "z_image": "zimage"}.get(preset_key, preset_key)
     all_known = set().union(*known.values())
     if folder not in all_known:
         return True
@@ -1920,6 +2117,10 @@ def _effective_ltx_lora_strength(checkpoint_name: str, lora_name: str, requested
 def _ltx_lora_prefers_advanced_loader(lora_name: str) -> bool:
     lower = lora_name.lower()
     return "singularity" in lower or "omnicine" in lower
+
+
+def _is_omnicine_lora(lora_name: Any) -> bool:
+    return _ltx_lora_prefers_advanced_loader(str(lora_name or ""))
 
 
 def build_basic_ltx_img2video_workflow(
@@ -2306,7 +2507,7 @@ def _selected_text(value: Any) -> str:
 def patch_workflow(
     api: dict[str, Any],
     request: GenerateRequest,
-    assets: dict[str, str] | None = None,
+    assets: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     sampler = normalize_sampler(request.sampler)
@@ -2316,6 +2517,13 @@ def patch_workflow(
     video_options = request.video or {}
     director_options = request.director or {}
     preset = request.preset.lower()
+    director_negative_prompt = (
+        str(director_options.get("local_negative_prompts") or "").strip()
+        if preset == "ltx" and str(request.workspace or "").lower() == "director"
+        else ""
+    )
+    if not director_negative_prompt:
+        director_negative_prompt = request.negative_prompt
     fps_value = _number_or_none(video_options.get("fps"))
     seconds_value = _number_or_none(video_options.get("seconds") or video_options.get("duration"))
     frames_value = _number_or_none(video_options.get("frames"))
@@ -2329,6 +2537,17 @@ def patch_workflow(
 
     positive_patched = False
     lora_slot = 0
+
+    def ltx_director_base_dimension(value: Any) -> int:
+        numeric = max(0, int(round(_number_or_none(value) or 0)))
+        if not numeric:
+            return numeric
+        latent_choice = str(video_options.get("latent_upscale") or "").strip().lower()
+        latent_enabled = assets.get("latent_upscale") and latent_choice not in {"none", "off", "false", "0", "no"}
+        if not latent_enabled:
+            return numeric
+        half = max(64, numeric // 2)
+        return max(64, half - (half % 32))
 
     def set_input_or_linked(inputs: dict[str, Any], key: str, value: Any) -> None:
         current = inputs.get(key)
@@ -2368,7 +2587,15 @@ def patch_workflow(
             elif assets.get("text_encoder"):
                 inputs["clip_name"] = assets["text_encoder"]
         if "unet_name" in inputs and assets.get("primary_model"):
-            inputs["unet_name"] = assets["primary_model"]
+            if preset == "wan":
+                if "high" in haystack and assets.get("wan_high_model"):
+                    inputs["unet_name"] = assets["wan_high_model"]
+                elif "low" in haystack and assets.get("wan_low_model"):
+                    inputs["unet_name"] = assets["wan_low_model"]
+                else:
+                    inputs["unet_name"] = assets["primary_model"]
+            else:
+                inputs["unet_name"] = assets["primary_model"]
         if "model_name" in inputs and assets.get("primary_model"):
             inputs["model_name"] = assets["primary_model"]
 
@@ -2396,8 +2623,8 @@ def patch_workflow(
                 "use_custom_audio": director_options.get("use_custom_audio"),
                 "frame_rate": director_options.get("frame_rate") or fps_value,
                 "display_mode": director_options.get("display_mode"),
-                "custom_width": director_options.get("custom_width") or request.width,
-                "custom_height": director_options.get("custom_height") or request.height,
+                "custom_width": ltx_director_base_dimension(director_options.get("custom_width") or request.width),
+                "custom_height": ltx_director_base_dimension(director_options.get("custom_height") or request.height),
                 "resize_method": director_options.get("resize_method"),
                 "divisible_by": director_options.get("divisible_by"),
                 "img_compression": director_options.get("img_compression"),
@@ -2410,6 +2637,15 @@ def patch_workflow(
             for key in ["ckpt_name", "unet_name"]:
                 if key in inputs:
                     if preset == "ltx" and class_lower == "ltxavtextencoderloader" and key == "ckpt_name":
+                        continue
+                    if preset == "wan" and key == "unet_name":
+                        wan_haystack = " ".join([title, class_lower, str(inputs.get(key) or "")]).lower()
+                        if "high" in wan_haystack and assets.get("wan_high_model"):
+                            inputs[key] = assets["wan_high_model"]
+                        elif "low" in wan_haystack and assets.get("wan_low_model"):
+                            inputs[key] = assets["wan_low_model"]
+                        else:
+                            inputs[key] = model_name
                         continue
                     inputs[key] = model_name
             if "unet_name" in inputs:
@@ -2446,19 +2682,19 @@ def patch_workflow(
         if "text" in inputs and ("textencode" in class_lower or "conditioning" in class_lower or "prompt" in title):
             is_negative = "negative" in title or "negative" in class_lower
             if is_negative:
-                inputs["text"] = request.negative_prompt
+                inputs["text"] = director_negative_prompt
             elif not positive_patched:
                 inputs["text"] = request.prompt
                 positive_patched = True
         elif "text" in inputs:
             if "negative" in title or "negative" in class_lower:
-                inputs["text"] = request.negative_prompt
+                inputs["text"] = director_negative_prompt
             elif "positive" in title or "positive" in class_lower:
                 inputs["text"] = request.prompt
         if "prompt" in inputs and ("textencode" in class_lower or "conditioning" in class_lower or "prompt" in title):
             is_negative = "negative" in title or "negative" in class_lower
             if is_negative:
-                inputs["prompt"] = request.negative_prompt
+                inputs["prompt"] = director_negative_prompt
             elif not positive_patched:
                 inputs["prompt"] = request.prompt
                 positive_patched = True
@@ -2483,9 +2719,17 @@ def patch_workflow(
                     continue
                 set_input_or_linked(inputs, key, seed)
         if "steps" in inputs:
-            set_input_or_linked(inputs, "steps", max(8, int(request.steps or 8)) if preset == "ltx" else request.steps)
+            if preset == "ltx":
+                step_value = max(8, int(request.steps or 8))
+            elif preset == "wan":
+                step_value = 4
+            else:
+                step_value = request.steps
+            set_input_or_linked(inputs, "steps", step_value)
+        if preset == "flux" and "guidance" in inputs:
+            set_input_or_linked(inputs, "guidance", request.cfg)
         if "cfg" in inputs:
-            set_input_or_linked(inputs, "cfg", request.cfg)
+            set_input_or_linked(inputs, "cfg", 1.0 if preset == "flux" else request.cfg)
         if "sampler_name" in inputs:
             if preset == "ltx" and ("refiner" in title or "upscale" in title):
                 inputs["sampler_name"] = "euler_cfg_pp"
@@ -2524,16 +2768,243 @@ def patch_workflow(
         if "terminal" in inputs and terminal_value is not None:
             set_input_or_linked(inputs, "terminal", terminal_value)
 
+    _ensure_external_vae_loader(api, assets)
     _apply_side_menu_loras(api, request)
+    _ensure_zimage_reference_route(api, request, assets)
+    _ensure_qwen_multi_reference_route(api, request, assets)
     _ensure_controlnet_route(api, request, assets)
+    _ensure_ltx_workflow_extensions(api, request, assets)
     _ensure_inpaint_mask_route(api, request, assets)
+    _ensure_ltx_director_frame_trim(api, request)
     return api
+
+
+def _ensure_ltx_director_frame_trim(api: dict[str, Any], request: GenerateRequest) -> None:
+    if request.preset.lower() != "ltx" or str(request.workspace or "").lower() != "director":
+        return
+    director_options = request.director or {}
+    target_frames_value = _number_or_none(director_options.get("duration_frames"))
+    if target_frames_value is not None:
+        target_frames = max(1, int(round(target_frames_value)) + 1)
+    else:
+        target_frames = max(1, int(round(_number_or_none((request.video or {}).get("frames")) or 0)))
+    if target_frames <= 1:
+        return
+    indexes = f"0:{target_frames}"
+    for _node_id, node in list(api.items()):
+        if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "createvideo":
+            continue
+        inputs = node.setdefault("inputs", {})
+        image_ref = inputs.get("images")
+        if not isinstance(image_ref, list) or not image_ref:
+            continue
+        existing = api.get(str(image_ref[0]))
+        if isinstance(existing, dict) and str(existing.get("class_type", "")).lower() == "vhs_selectimages":
+            existing_inputs = existing.setdefault("inputs", {})
+            existing_inputs["indexes"] = indexes
+            existing_inputs["err_if_missing"] = False
+            existing_inputs["err_if_empty"] = True
+            return
+        trim_id = str(_next_api_node_id(api))
+        api[trim_id] = {
+            "class_type": "VHS_SelectImages",
+            "inputs": {
+                "image": image_ref,
+                "indexes": indexes,
+                "err_if_missing": False,
+                "err_if_empty": True,
+            },
+            "_meta": {"title": "Trim Director Frames To Timeline"},
+        }
+        inputs["images"] = [trim_id, 0]
+        return
+
+
+def _ensure_zimage_reference_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
+    if request.activity != "img2img" or request.preset.lower() not in {"zimageturbo", "zimage"}:
+        return
+    reference_image = str(assets.get("reference_image") or "").strip()
+    if not reference_image:
+        return
+    vae_ref = _find_vae_ref(api)
+    if not vae_ref:
+        return
+    loader_id = _find_reference_image_node_id(api, reference_image) or _add_load_image_node(api, reference_image, "Reference Image")
+    if not loader_id:
+        return
+    api[str(loader_id)].setdefault("inputs", {})["image"] = reference_image
+    api[str(loader_id)].setdefault("_meta", {})["title"] = "Reference Image"
+
+    sampler_id = _find_sampler_node_id(api)
+    if sampler_id and isinstance(api.get(sampler_id), dict):
+        sampler_inputs = api[sampler_id].setdefault("inputs", {})
+        encode_id: str | None = None
+        for node_id, node in api.items():
+            if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "vaeencode":
+                continue
+            inputs = node.get("inputs", {})
+            if isinstance(inputs, dict) and inputs.get("pixels") == [str(loader_id), 0]:
+                encode_id = str(node_id)
+                break
+        if not encode_id:
+            encode_id = str(_next_api_node_id(api))
+            api[encode_id] = {
+                "class_type": "VAEEncode",
+                "inputs": {"pixels": [str(loader_id), 0], "vae": vae_ref},
+                "_meta": {"title": "Encode Z-Image Reference"},
+            }
+        sampler_inputs["latent_image"] = [encode_id, 0]
+        sampler_inputs["denoise"] = request.img2img.denoise
+        positive_ref = sampler_inputs.get("positive")
+    else:
+        positive_ref = None
+
+    positive_node: dict[str, Any] | None = None
+    if isinstance(positive_ref, list) and positive_ref:
+        candidate = api.get(str(positive_ref[0]))
+        if isinstance(candidate, dict):
+            positive_node = candidate
+    if positive_node is None:
+        for node in api.values():
+            if not isinstance(node, dict):
+                continue
+            title = str(node.get("_meta", {}).get("title", "")).lower()
+            class_lower = str(node.get("class_type", "")).lower()
+            if "negative" in title:
+                continue
+            if "textencodezimageomni" in class_lower or "cliptextencode" in class_lower:
+                positive_node = node
+                break
+    if positive_node is None:
+        return
+    inputs = positive_node.setdefault("inputs", {})
+    if not isinstance(inputs, dict):
+        return
+    positive_node["class_type"] = "TextEncodeZImageOmni"
+    prompt = inputs.pop("text", None)
+    inputs["prompt"] = str(prompt if prompt not in {None, ""} else request.prompt)
+    inputs["auto_resize_images"] = True
+    inputs["vae"] = vae_ref
+    inputs["image1"] = [str(loader_id), 0]
+
+
+def _ensure_qwen_multi_reference_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
+    if request.activity != "img2img" or request.preset.lower() != "qwen":
+        return
+    raw_refs = assets.get("reference_images") or []
+    if isinstance(raw_refs, str):
+        raw_refs = [raw_refs]
+    refs = [str(name) for name in raw_refs if str(name or "").strip()][:3]
+    if len(refs) < 2:
+        return
+
+    vae_ref = _find_vae_ref(api)
+    loader_refs: list[list[Any]] = []
+    for index, image_name in enumerate(refs, start=1):
+        node_id = _find_qwen_reference_loader_id(api, index, image_name)
+        if not node_id:
+            node_id = _add_load_image_node(api, image_name, f"Reference Image {index}")
+        if not node_id:
+            continue
+        node = api.get(str(node_id))
+        if isinstance(node, dict):
+            node.setdefault("inputs", {})["image"] = image_name
+            node.setdefault("_meta", {})["title"] = f"Reference Image {index}"
+        loader_refs.append([str(node_id), 0])
+    if len(loader_refs) < 2:
+        return
+
+    prompt_prefix = "Use Picture 1 as the base reference"
+    if len(loader_refs) >= 2:
+        prompt_prefix += ", Picture 2 as the Image 2 style/object reference"
+    if len(loader_refs) >= 3:
+        prompt_prefix += ", and Picture 3 as the Image 3 additional reference"
+    prompt_prefix += ". "
+
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        if class_lower not in {"textencodeqwenimageedit", "textencodeqwenimageeditplus"}:
+            continue
+        inputs = node.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        node["class_type"] = "TextEncodeQwenImageEditPlus"
+        prompt_text = inputs.pop("text", None)
+        if prompt_text is not None and "prompt" not in inputs:
+            inputs["prompt"] = prompt_text
+        if "prompt" not in inputs:
+            title = str(node.get("_meta", {}).get("title", "")).lower()
+            inputs["prompt"] = request.negative_prompt if "negative" in title else request.prompt
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        if "negative" not in title:
+            prompt = str(inputs.get("prompt") or request.prompt)
+            if "picture 1" not in prompt.lower():
+                inputs["prompt"] = prompt_prefix + request.prompt
+        inputs.pop("image", None)
+        if vae_ref and "vae" not in inputs:
+            inputs["vae"] = vae_ref
+        for index, ref in enumerate(loader_refs, start=1):
+            inputs[f"image{index}"] = ref
+
+
+def _ensure_external_vae_loader(api: dict[str, Any], assets: dict[str, str]) -> None:
+    vae_name = assets.get("vae")
+    if not vae_name:
+        return
+
+    vae_refs: set[tuple[Any, ...]] = set()
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for key, value in inputs.items():
+            key_lower = str(key).lower()
+            if key_lower != "vae" or not isinstance(value, list) or not value:
+                continue
+            source = api.get(str(value[0]))
+            source_class = str(source.get("class_type", "")).lower() if isinstance(source, dict) else ""
+            if source_class != "vaeloader":
+                vae_refs.add(tuple(value))
+    if not vae_refs:
+        return
+
+    loader_id = None
+    for candidate_id, node in api.items():
+        if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "vaeloader":
+            continue
+        inputs = node.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        if inputs.get("vae_name") == vae_name or "side menu" in title or "vae" in title:
+            inputs["vae_name"] = vae_name
+            loader_id = str(candidate_id)
+            break
+    if loader_id is None:
+        loader_id = str(_next_api_node_id(api))
+        api[loader_id] = {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": vae_name},
+            "_meta": {"title": "Side Menu VAE Override"},
+        }
+    replacement = [loader_id, 0]
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for key, value in list(inputs.items()):
+            if "vae" in str(key).lower() and isinstance(value, list) and tuple(value) in vae_refs:
+                inputs[key] = replacement
 
 
 def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> None:
     selections = _active_lora_selections(request)
-    if not selections:
-        return
     is_ltx = request.preset.lower() == "ltx"
     checkpoint_name = request.model_name or Path(request.model_path or "").name
     audio_value = (request.director or {}).get("use_custom_audio")
@@ -2615,7 +3086,7 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
     if not target_refs:
         return
     original_model_ref = target_refs[0]
-    model_only_lora = request.preset.lower() in {"anima", "flux", "ltx", "qwen", "wan"}
+    model_only_lora = request.preset.lower() in {"anima", "flux", "ltx", "qwen", "wan", "zimageturbo", "zimage"}
     clip_ref = None if model_only_lora else _find_clip_ref_for_lora(api, original_model_ref)
     model_ref = list(original_model_ref)
     final_clip_ref = list(clip_ref) if clip_ref else None
@@ -2828,6 +3299,322 @@ def _ensure_controlnet_route(api: dict[str, Any], request: GenerateRequest, asse
     sampler_inputs["negative"] = negative_ref
 
 
+def _ensure_ltx_workflow_extensions(api: dict[str, Any], request: GenerateRequest, assets: dict[str, str]) -> None:
+    if request.preset.lower() != "ltx":
+        return
+    _apply_ltx_tiled_decode_settings(api, request)
+    _ensure_ltx_detailer_lora(api, request, assets)
+    _ensure_ltx_ic_lora_control_route(api, request, assets)
+
+
+def _bool_option(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in {"", "0", "false", "off", "none", "no"}
+
+
+def _int_option(value: Any, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        numeric = int(round(float(value)))
+    except (TypeError, ValueError):
+        numeric = default
+    if minimum is not None:
+        numeric = max(minimum, numeric)
+    if maximum is not None:
+        numeric = min(maximum, numeric)
+    return numeric
+
+
+def _apply_ltx_tiled_decode_settings(api: dict[str, Any], request: GenerateRequest) -> None:
+    video_options = request.video or {}
+    tiles_x = _int_option(video_options.get("decode_tiles_x") or video_options.get("tiled_decode_x"), 2, 1, 8)
+    tiles_y = _int_option(video_options.get("decode_tiles_y") or video_options.get("tiled_decode_y"), 2, 1, 8)
+    overlap = _int_option(video_options.get("decode_overlap") or video_options.get("tiled_decode_overlap"), 6, 0, 256)
+    working_device = str(video_options.get("decode_working_device") or "auto")
+    working_dtype = str(video_options.get("decode_working_dtype") or "auto")
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("class_type", "")).lower() != "ltxvtiledvaedecode":
+            continue
+        inputs = node.setdefault("inputs", {})
+        inputs["horizontal_tiles"] = tiles_x
+        inputs["vertical_tiles"] = tiles_y
+        inputs["overlap"] = overlap
+        inputs["working_device"] = working_device
+        inputs["working_dtype"] = working_dtype
+
+
+def _ensure_ltx_detailer_lora(api: dict[str, Any], request: GenerateRequest, assets: dict[str, str]) -> None:
+    video_options = request.video or {}
+    if not _bool_option(video_options.get("detailer_enabled"), False):
+        return
+    detailer_name = _selected_text(video_options.get("detailer_lora")) or assets.get("detailer_lora")
+    if not detailer_name:
+        return
+    strength = _number_or_none(video_options.get("detailer_strength"))
+    strength_model = 1.0 if strength is None else max(-2.0, min(2.0, strength))
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        inputs = node.get("inputs", {})
+        if not isinstance(inputs, dict) or "lora_name" not in inputs:
+            continue
+        if "detailer" in title or "detailer" in str(inputs.get("lora_name", "")).lower():
+            inputs["lora_name"] = detailer_name
+            inputs["strength_model"] = strength_model
+            return
+
+    target_refs = _model_input_refs(api)
+    if not target_refs:
+        return
+    original_model_ref = target_refs[0]
+    node_id = str(_next_api_node_id(api))
+    api[node_id] = {
+        "class_type": "LoraLoaderModelOnly",
+        "inputs": {
+            "model": list(original_model_ref),
+            "lora_name": detailer_name,
+            "strength_model": strength_model,
+        },
+        "_meta": {"title": f"LTX Detailer LoRA - {Path(detailer_name).name}"},
+    }
+    _replace_model_refs(api, original_model_ref, [node_id, 0])
+
+
+def _ensure_ltx_ic_lora_control_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, str]) -> None:
+    control = request.controlnet
+    if not control.enabled:
+        return
+    control_image_name = assets.get("controlnet_image")
+    ic_lora_name = assets.get("controlnet_model") or assets.get("ic_lora")
+    if not control_image_name or not ic_lora_name:
+        return
+
+    control_image_id = _find_controlnet_image_node_id(api) or _add_load_image_node(api, control_image_name, "LTX IC-LoRA Control Image")
+    if not control_image_id:
+        return
+    api[str(control_image_id)].setdefault("inputs", {})["image"] = control_image_name
+    api[str(control_image_id)].setdefault("_meta", {})["title"] = "LTX IC-LoRA Control Image"
+
+    ic_loader_id = _ensure_ltx_ic_lora_loader(api, ic_lora_name, max(-2.0, min(2.0, float(control.strength or 0.75))))
+    if not ic_loader_id:
+        return
+
+    guide_inputs = _ltx_ic_lora_guide_inputs(api)
+    if not guide_inputs:
+        return
+    positive_ref, negative_ref, latent_ref, vae_ref, rewires = guide_inputs
+    if not positive_ref or not negative_ref or not latent_ref or not vae_ref:
+        return
+
+    has_director_guide = any(
+        isinstance(node, dict) and str(node.get("class_type", "")).lower() == "ltxdirectorguide"
+        for node in api.values()
+    )
+    if has_director_guide and not any(token in str(ic_lora_name).lower() for token in ("union", "control", "ref")):
+        return
+    existing_guide_id = None
+    for node_id, node in api.items():
+        if isinstance(node, dict) and str(node.get("class_type", "")).lower() == "ltxaddvideoicloraguide":
+            existing_guide_id = str(node_id)
+            break
+    ic_guide_id = existing_guide_id or str(_next_api_node_id(api))
+    frame_count = _number_or_none((request.video or {}).get("frames")) or _number_or_none((request.director or {}).get("duration_frames")) or 0
+    frame_idx = _int_option(float(control.start_percent or 0.0) * max(0, frame_count), 0, 0, 9999)
+    video_options = request.video or {}
+    crop = str(video_options.get("ltx_ic_crop") or ("center" if str(control.balance).lower().startswith("control") else "disabled"))
+    if crop not in {"disabled", "center"}:
+        crop = "disabled"
+    guide_node = {
+        "class_type": "LTXAddVideoICLoRAGuide",
+        "inputs": {
+            "positive": list(positive_ref),
+            "negative": list(negative_ref),
+            "vae": list(vae_ref),
+            "latent": list(latent_ref),
+            "image": [str(control_image_id), 0],
+            "frame_idx": frame_idx,
+            "strength": max(0.0, min(1.0, float(control.strength or 0.8))),
+            "latent_downscale_factor": 1.0 if has_director_guide else [str(ic_loader_id), 1],
+            "crop": crop,
+            "use_tiled_encode": _bool_option(video_options.get("ltx_ic_tiled_encode"), False),
+            "tile_size": _int_option(video_options.get("ltx_ic_tile_size"), 256, 64, 512),
+            "tile_overlap": _int_option(video_options.get("ltx_ic_tile_overlap"), 64, 16, 256),
+        },
+        "_meta": {"title": "LTX IC-LoRA Control Guide"},
+    }
+    if existing_guide_id:
+        api[existing_guide_id].setdefault("inputs", {}).update(guide_node["inputs"])
+        api[existing_guide_id]["_meta"] = guide_node["_meta"]
+    else:
+        api[ic_guide_id] = guide_node
+
+    for owner_id, key, slot in rewires:
+        if str(owner_id) == str(ic_guide_id):
+            continue
+        owner = api.get(str(owner_id))
+        if not isinstance(owner, dict):
+            continue
+        inputs = owner.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        inputs[key] = [str(ic_guide_id), slot]
+
+
+def _ensure_ltx_ic_lora_loader(api: dict[str, Any], lora_name: str, strength_model: float) -> str | None:
+    existing_id = None
+    for node_id, node in api.items():
+        if isinstance(node, dict) and str(node.get("class_type", "")).lower() == "ltxicloraloadermodelonly":
+            existing_id = str(node_id)
+            inputs = node.setdefault("inputs", {})
+            inputs["lora_name"] = lora_name
+            inputs["strength_model"] = strength_model
+            break
+
+    model_ref: list[Any] | None = None
+    director_id = None
+    for node_id, node in api.items():
+        if isinstance(node, dict) and str(node.get("class_type", "")).lower() == "ltxdirector":
+            inputs = node.setdefault("inputs", {})
+            if isinstance(inputs.get("model"), list):
+                model_ref = list(inputs["model"])
+                director_id = str(node_id)
+                break
+    if model_ref is None:
+        for _node_id, node in api.items():
+            if isinstance(node, dict) and str(node.get("class_type", "")).lower() == "cfgguider":
+                inputs = node.setdefault("inputs", {})
+                if isinstance(inputs.get("model"), list):
+                    model_ref = list(inputs["model"])
+                    break
+    if model_ref is None:
+        refs = _model_input_refs(api)
+        model_ref = refs[0] if refs else None
+    if model_ref is None:
+        return existing_id
+
+    if existing_id:
+        inputs = api[existing_id].setdefault("inputs", {})
+        inputs.setdefault("model", list(model_ref))
+        loader_ref = [existing_id, 0]
+    else:
+        existing_id = str(_next_api_node_id(api))
+        api[existing_id] = {
+            "class_type": "LTXICLoRALoaderModelOnly",
+            "inputs": {
+                "model": list(model_ref),
+                "lora_name": lora_name,
+                "strength_model": strength_model,
+            },
+            "_meta": {"title": f"LTX IC-LoRA Control - {Path(lora_name).name}"},
+        }
+        loader_ref = [existing_id, 0]
+        _replace_model_refs(api, model_ref, loader_ref)
+    if director_id:
+        api[director_id].setdefault("inputs", {})["model"] = loader_ref
+    return existing_id
+
+
+def _ltx_ic_lora_guide_inputs(api: dict[str, Any]) -> tuple[list[Any], list[Any], list[Any], list[Any], list[tuple[str, str, int]]] | None:
+    for node_id, node in api.items():
+        if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "ltxdirectorguide":
+            continue
+        inputs = node.get("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        positive_ref = inputs.get("positive")
+        negative_ref = inputs.get("negative")
+        latent_ref = inputs.get("latent")
+        if not isinstance(positive_ref, list) or not isinstance(negative_ref, list) or not isinstance(latent_ref, list):
+            continue
+        rewires = [(str(node_id), "positive", 0), (str(node_id), "negative", 1), (str(node_id), "latent", 2)]
+        return list(positive_ref), list(negative_ref), list(latent_ref), list(inputs.get("vae") or _find_ltx_video_vae_ref(api) or []), rewires
+
+    cfg_id = None
+    cfg_inputs: dict[str, Any] | None = None
+    for node_id, node in api.items():
+        if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "cfgguider":
+            continue
+        inputs = node.get("inputs", {})
+        if isinstance(inputs, dict) and isinstance(inputs.get("positive"), list) and isinstance(inputs.get("negative"), list):
+            cfg_id = str(node_id)
+            cfg_inputs = inputs
+            break
+    if not cfg_id or not cfg_inputs:
+        return None
+
+    latent_owner_id = None
+    latent_owner_key = None
+    latent_ref = None
+    for node_id, node in api.items():
+        if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "ltxvconcatavlatent":
+            continue
+        inputs = node.get("inputs", {})
+        if isinstance(inputs, dict) and isinstance(inputs.get("video_latent"), list):
+            latent_owner_id = str(node_id)
+            latent_owner_key = "video_latent"
+            latent_ref = list(inputs["video_latent"])
+            break
+    if latent_ref is None:
+        sampler_id = _find_sampler_node_id(api)
+        sampler = api.get(sampler_id or "")
+        sampler_inputs = sampler.get("inputs", {}) if isinstance(sampler, dict) else {}
+        if isinstance(sampler_inputs, dict) and isinstance(sampler_inputs.get("latent_image"), list):
+            latent_owner_id = str(sampler_id)
+            latent_owner_key = "latent_image"
+            latent_ref = list(sampler_inputs["latent_image"])
+    if latent_ref is None or not latent_owner_id or not latent_owner_key:
+        return None
+
+    positive_ref = list(cfg_inputs["positive"])
+    negative_ref = list(cfg_inputs["negative"])
+    rewires = _matching_input_refs(api, positive_ref, 0) + _matching_input_refs(api, negative_ref, 1)
+    rewires.append((latent_owner_id, latent_owner_key, 2))
+    vae_ref = _find_ltx_video_vae_ref(api) or _find_vae_ref(api)
+    if not vae_ref:
+        return None
+    return positive_ref, negative_ref, latent_ref, list(vae_ref), rewires
+
+
+def _matching_input_refs(api: dict[str, Any], target_ref: list[Any], output_slot: int) -> list[tuple[str, str, int]]:
+    matches: list[tuple[str, str, int]] = []
+    target = list(target_ref)
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        for key, value in inputs.items():
+            if isinstance(value, list) and list(value) == target:
+                matches.append((str(node_id), key, output_slot))
+    return matches
+
+
+def _find_ltx_video_vae_ref(api: dict[str, Any]) -> list[Any] | None:
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        vae_input = inputs.get("vae")
+        if isinstance(vae_input, list) and ("ltxdirectorguide" in str(node.get("class_type", "")).lower() or "ltxvimgtovideo" in str(node.get("class_type", "")).lower()):
+            return list(vae_input)
+    for node_id, node in api.items():
+        if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "vaeloader":
+            continue
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        vae_name = str(node.get("inputs", {}).get("vae_name", "")).lower()
+        if "video" in title or ("ltx" in vae_name and "audio" not in vae_name and "tae" not in vae_name and "preview" not in vae_name):
+            return [str(node_id), 0]
+    return _find_vae_ref(api)
+
+
 def _find_controlnet_image_node_id(api: dict[str, Any]) -> str | None:
     for node_id, node in api.items():
         if not isinstance(node, dict):
@@ -2876,6 +3663,29 @@ def _find_reference_image_node_id(api: dict[str, Any], reference_image_name: str
             return str(node_id)
         if "reference" in title or "input" in title or "image" in title:
             fallback = fallback or str(node_id)
+    return fallback
+
+
+def _find_qwen_reference_loader_id(api: dict[str, Any], index: int, reference_image_name: str | None) -> str | None:
+    reference_lower = str(reference_image_name or "").lower()
+    target_titles = {
+        f"reference image {index}",
+        f"picture {index}",
+        f"image {index}",
+    }
+    fallback: str | None = None
+    for node_id, node in api.items():
+        if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "loadimage":
+            continue
+        inputs = node.get("inputs", {})
+        title = str(node.get("_meta", {}).get("title", "")).strip().lower()
+        image_name = str(inputs.get("image", "")).lower() if isinstance(inputs, dict) else ""
+        if reference_lower and image_name == reference_lower:
+            return str(node_id)
+        if title in target_titles:
+            fallback = fallback or str(node_id)
+    if index == 1:
+        return fallback or _find_reference_image_node_id(api, reference_image_name)
     return fallback
 
 

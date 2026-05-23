@@ -63,6 +63,19 @@ DEFAULT_MODEL_TEMPLATES: dict[str, dict[str, Any]] = {
         "supports": ["multimodal_edit", "gguf", "vl_encoder"],
         "workflow_hint": "custom_workflow",
     },
+    "ZImageTurbo": {
+        "label": "Z-Image Turbo",
+        "family": "zimage",
+        "type": "image",
+        "model_folder": "./models/diffusion_models",
+        "native_size": [1024, 1024],
+        "sampler": "res_multistep",
+        "scheduler": "simple",
+        "steps": 8,
+        "cfg": 1.0,
+        "supports": ["z_image_turbo", "qwen3_encoder", "ae_vae", "lora"],
+        "workflow_hint": "zimage_turbo",
+    },
     "Lumina": {
         "label": "LUMINA",
         "family": "lumina",
@@ -86,7 +99,7 @@ DEFAULT_MODEL_TEMPLATES: dict[str, dict[str, Any]] = {
         "scheduler": "simple",
         "steps": 4,
         "cfg": 1.0,
-        "supports": ["text_to_video", "image_to_video", "gguf", "high_noise", "low_noise"],
+        "supports": ["text_to_video", "image_to_video", "gguf", "high_noise", "low_noise", "4_step"],
         "workflow_hint": "custom_workflow",
     },
     "LTX": {
