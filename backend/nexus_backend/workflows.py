@@ -1492,7 +1492,7 @@ def build_basic_qwen_image_workflow(
         }
         previous_conditioning: list[Any] = ["5", 0]
         for index, name in enumerate(refs, start=1):
-            load_id = "4" if index == 1 else str(13 + index)
+            load_id = "4" if index == 1 else str(39 + index)
             scale_id = str(59 + index)
             encode_id = str(69 + index)
             ref_id = str(79 + index)
