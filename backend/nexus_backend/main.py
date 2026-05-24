@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -72,29 +73,112 @@ ANSI = {
 }
 
 
+def _seconds_label(seconds: float | int | None) -> str:
+    try:
+        value = max(0, int(float(seconds or 0)))
+    except (TypeError, ValueError):
+        value = 0
+    minutes, secs = divmod(value, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m"
+    if minutes:
+        return f"{minutes}m{secs:02d}s"
+    return f"{secs}s"
+
+
+def _console_status(status: str) -> str:
+    return {
+        "queued": "QUEUE",
+        "starting": "START",
+        "preparing": "PREP",
+        "building": "BUILD",
+        "running": "RUN",
+        "polling": "SYNC",
+        "completed": "DONE",
+        "failed": "FAIL",
+        "cancelled": "CANCEL",
+    }.get(status.lower(), status.upper()[:6])
+
+
+def _console_message(job: dict[str, Any]) -> str:
+    status = str(job.get("status") or "queued").lower()
+    message = str(job.get("message") or "").strip()
+    if status == "queued":
+        position = job.get("queue_position")
+        return f"queue pos {position}" if position else "waiting for VRAM"
+    if status == "starting":
+        return "runtime"
+    if status == "preparing":
+        return "assets"
+    if status == "building":
+        return "workflow"
+    if status == "polling":
+        return "syncing ComfyUI"
+    if status == "completed":
+        return "output ready"
+    if status == "cancelled":
+        return "cancelled"
+    if status == "failed":
+        return message[:96] or "failed"
+    if message.lower().startswith("queued "):
+        return "queued in ComfyUI"
+    if "executing node" in message.lower():
+        return "executing"
+    if "step " in message.lower():
+        return "sampling"
+    return message[:96] or "active"
+
+
+def _console_speed(job: dict[str, Any]) -> str:
+    parts: list[str] = []
+    steps_per_second = job.get("steps_per_second")
+    if isinstance(steps_per_second, (int, float)) and steps_per_second > 0:
+        parts.append(f"{steps_per_second:.2f} step/s")
+    eta_seconds = job.get("eta_seconds")
+    if isinstance(eta_seconds, (int, float)) and eta_seconds > 0 and int(job.get("progress") or 0) < 100:
+        parts.append(f"eta {_seconds_label(eta_seconds)}")
+    elapsed_seconds = job.get("elapsed_seconds")
+    if isinstance(elapsed_seconds, (int, float)) and elapsed_seconds >= 0:
+        parts.append(f"elapsed {_seconds_label(elapsed_seconds)}")
+    elif job.get("_queued_monotonic"):
+        parts.append(f"wait {_seconds_label(time.monotonic() - float(job['_queued_monotonic']))}")
+    return " ".join(parts)
+
+
 def _console_generation(job: dict[str, Any], force: bool = False) -> None:
     progress = int(job.get("progress") or 0)
-    bucket = progress // 5
-    if not force and job.get("_last_bucket") == bucket and job.get("_last_status") == job.get("status"):
+    bucket = progress // 2
+    step_key = (job.get("current_step"), job.get("total_steps"), job.get("node"))
+    if (
+        not force
+        and job.get("_last_bucket") == bucket
+        and job.get("_last_status") == job.get("status")
+        and job.get("_last_step_key") == step_key
+    ):
         return
     job["_last_bucket"] = bucket
     job["_last_status"] = job.get("status")
+    job["_last_step_key"] = step_key
     filled = max(0, min(20, round(progress / 5)))
     bar = "#" * filled + "-" * (20 - filled)
-    status = str(job.get("status") or "queued").upper()
-    color = ANSI["green"] if status == "COMPLETED" else ANSI["red"] if status == "FAILED" else ANSI["cyan"]
+    raw_status = str(job.get("status") or "queued")
+    status = _console_status(raw_status)
+    color = ANSI["green"] if status == "DONE" else ANSI["red"] if status in {"FAIL", "CANCEL"} else ANSI["cyan"]
     timestamp = datetime.now().strftime("%H:%M:%S")
-    message = str(job.get("message") or "").strip()
+    message = _console_message(job)
+    speed = _console_speed(job)
     node = str(job.get("node") or "").strip()
     step = ""
     if job.get("current_step") is not None and job.get("total_steps"):
-        step = f" step {job['current_step']}/{job['total_steps']}"
+        step = f" {job['current_step']}/{job['total_steps']}"
     node_part = f" node {node}" if node else ""
+    detail = " ".join(part for part in [step.strip(), node_part.strip(), speed, message] if part)
     try:
         print(
             f"{ANSI['muted']}[{timestamp}]{ANSI['reset']} {ANSI['red']}NEXUS{ANSI['reset']} "
-            f"{color}{status:<9}{ANSI['reset']} {color}{bar}{ANSI['reset']} "
-            f"{ANSI['white']}{progress:3d}%{ANSI['reset']}{step}{node_part} {ANSI['muted']}{message}{ANSI['reset']}",
+            f"{color}{status:<6}{ANSI['reset']} {color}{bar}{ANSI['reset']} "
+            f"{ANSI['white']}{progress:3d}%{ANSI['reset']} {ANSI['muted']}{detail}{ANSI['reset']}",
             flush=True,
         )
     except OSError:
@@ -107,9 +191,28 @@ def _update_generation_job(job_id: str, update: dict[str, Any], *, force: bool =
         return
     if str(job.get("status") or "").lower() == "cancelled" and str(update.get("status") or "").lower() != "cancelled":
         return
+    if "progress" in update and update.get("progress") is not None:
+        next_progress = int(float(update.get("progress") or 0))
+        current_progress = int(float(job.get("progress") or 0))
+        next_status = str(update.get("status") or job.get("status") or "").lower()
+        if next_status not in {"failed", "completed", "cancelled"} and next_progress < current_progress:
+            update = {**update, "progress": current_progress}
     job.update({key: value for key, value in update.items() if value is not None})
+    if str(job.get("status") or "").lower() in {"running", "polling"} and not job.get("_started_monotonic"):
+        job["_started_monotonic"] = time.monotonic()
+    if job.get("_started_monotonic") and "elapsed_seconds" not in update:
+        job["elapsed_seconds"] = round(time.monotonic() - float(job["_started_monotonic"]), 1)
     job["updated_at"] = datetime.now().isoformat(timespec="seconds")
     _console_generation(job, force=force)
+
+
+def _public_generation_job(job: dict[str, Any]) -> dict[str, Any]:
+    public = {key: value for key, value in job.items() if not key.startswith("_")}
+    if job.get("_started_monotonic") and "elapsed_seconds" not in public:
+        public["elapsed_seconds"] = round(time.monotonic() - float(job["_started_monotonic"]), 1)
+    if job.get("_queued_monotonic") and str(job.get("status") or "").lower() == "queued":
+        public["queued_seconds"] = round(time.monotonic() - float(job["_queued_monotonic"]), 1)
+    return public
 
 
 def _update_download_job(job_id: str, update: dict[str, Any]) -> None:
@@ -1386,11 +1489,11 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         runtime_changed = _apply_runtime_options(request.runtime)
         if (runtime_changed or comfy.runtime_changed_since_start()) and await comfy.is_running():
             if job_id:
-                _update_generation_job(job_id, {"status": "starting", "progress": 1, "message": "Restarting ComfyUI for selected runtime profile"}, force=True)
+                _update_generation_job(job_id, {"status": "starting", "progress": 2, "message": "Restarting ComfyUI runtime"}, force=True)
             cleanup_embedded_comfy_artifacts()
             await comfy.restart()
         if job_id:
-            _update_generation_job(job_id, {"status": "preparing", "progress": 5, "message": "Resolving selected models and template assets"})
+            _update_generation_job(job_id, {"status": "preparing", "progress": 4, "message": "Resolving generation assets"})
         assets = resolve_generation_assets(settings, request)
         _ensure_ltx_default_distilled_loras(request, assets)
         _ensure_wan_4step_loras(request, assets)
@@ -1437,15 +1540,15 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             workflow_path = None
 
         if job_id:
-            _update_generation_job(job_id, {"status": "starting", "progress": 1, "message": "Starting embedded ComfyUI"}, force=True)
+            _update_generation_job(job_id, {"status": "starting", "progress": 6, "message": "Starting embedded ComfyUI"}, force=True)
         await comfy.ensure_running()
         if job_id:
-            _update_generation_job(job_id, {"status": "preparing", "progress": 3, "message": "Reading Comfy object registry"})
+            _update_generation_job(job_id, {"status": "preparing", "progress": 7, "message": "Reading Comfy object registry"})
         object_info = await comfy.object_info()
 
         if request.workflow_override:
             if job_id:
-                _update_generation_job(job_id, {"status": "building", "progress": 7, "message": "Using edited visual workflow from active tab"})
+                _update_generation_job(job_id, {"status": "building", "progress": 9, "message": "Building visual workflow"})
             override = request.workflow_override
             fmt = detect_workflow_format(override)
             if fmt == "ui":
@@ -1457,14 +1560,14 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             prompt = patch_workflow(prompt, request, assets=assets)
         elif workflow_path:
             if job_id:
-                _update_generation_job(job_id, {"status": "building", "progress": 7, "message": f"Patching workflow {workflow_path.name}"})
+                _update_generation_job(job_id, {"status": "building", "progress": 9, "message": "Patching workflow"})
             prompt = workflow_registry.load_api_workflow(workflow_path, request, object_info, assets=assets)
         else:
             checkpoint_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
             if not checkpoint_name:
                 raise ValueError("No model selected.")
             if job_id:
-                _update_generation_job(job_id, {"status": "building", "progress": 7, "message": f"Using simple default workflow for {checkpoint_name}"})
+                _update_generation_job(job_id, {"status": "building", "progress": 9, "message": "Building default workflow"})
             if request.preset.lower() == "anima":
                 text_encoder_name = assets.get("text_encoder")
                 vae_name = assets.get("vae")
@@ -1651,7 +1754,7 @@ async def _run_generation_job(job_id: str, request: GenerateRequest) -> None:
             if generation_jobs.get(job_id, {}).get("status") == "cancelled":
                 _console_generation(generation_jobs[job_id], force=True)
                 return
-            _update_generation_job(job_id, {"queue_position": 1, "message": "Generation has the VRAM lock."}, force=True)
+            _update_generation_job(job_id, {"queue_position": 1, "message": "VRAM lock acquired."}, force=True)
             response = await _run_generation_core(request, job_id=job_id)
         if generation_jobs.get(job_id, {}).get("status") == "cancelled":
             _console_generation(generation_jobs[job_id], force=True)
@@ -1703,10 +1806,11 @@ async def generate_start(request: GenerateRequest) -> dict[str, Any]:
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "preset": request.preset,
         "workflow_id": request.workflow_id,
+        "_queued_monotonic": time.monotonic(),
     }
     _console_generation(generation_jobs[job_id], force=True)
     asyncio.create_task(_run_generation_job(job_id, request))
-    return generation_jobs[job_id]
+    return _public_generation_job(generation_jobs[job_id])
 
 
 @app.get("/api/generate/{job_id}")
@@ -1714,7 +1818,7 @@ async def generate_status(job_id: str) -> dict[str, Any]:
     job = generation_jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Generation job not found.")
-    return {key: value for key, value in job.items() if not key.startswith("_")}
+    return _public_generation_job(job)
 
 
 @app.post("/api/generate/{job_id}/cancel")
@@ -1741,7 +1845,7 @@ async def cancel_generation(job_id: str) -> dict[str, Any]:
         pass
     await _release_comfy_memory_if_idle()
     _schedule_comfy_idle_release()
-    return {key: value for key, value in job.items() if not key.startswith("_")}
+    return _public_generation_job(job)
 
 
 @app.post("/api/generate", response_model=GenerateResponse)

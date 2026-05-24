@@ -12170,13 +12170,31 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
+        function formatGenerationSeconds(seconds) {
+            const value = Math.max(0, Math.round(Number(seconds || 0)));
+            const minutes = Math.floor(value / 60);
+            const secs = value % 60;
+            if (minutes > 0) return `${minutes}m ${String(secs).padStart(2, '0')}s`;
+            return `${secs}s`;
+        }
+
+        function generationJobSubtext(job) {
+            const parts = [];
+            if (job.current_step && job.total_steps) parts.push(`Step ${job.current_step}/${job.total_steps}`);
+            if (job.node) parts.push(`Node ${job.node}`);
+            if (Number(job.steps_per_second) > 0) parts.push(`${Number(job.steps_per_second).toFixed(2)} step/s`);
+            if (Number(job.eta_seconds) > 0 && Number(job.progress || 0) < 100) parts.push(`ETA ${formatGenerationSeconds(job.eta_seconds)}`);
+            if (Number(job.elapsed_seconds) >= 0) parts.push(`Elapsed ${formatGenerationSeconds(job.elapsed_seconds)}`);
+            if (Number(job.queued_seconds) >= 0) parts.push(`Waiting ${formatGenerationSeconds(job.queued_seconds)}`);
+            if (!parts.length && job.queue_position) parts.push(`Queue position ${job.queue_position}`);
+            return parts.join(' · ');
+        }
+
         async function pollGenerationJob(jobId, payload) {
             activeGenerationJobId = jobId;
             while (activeGenerationJobId === jobId) {
                 const job = await nexusFetch(`/generate/${encodeURIComponent(jobId)}`);
-                const step = job.current_step && job.total_steps ? `Step ${job.current_step}/${job.total_steps}` : '';
-                const node = job.node ? `Node ${job.node}` : '';
-                setGenerationProgress(job.progress || 0, job.message || job.status || 'Generating', [step, node].filter(Boolean).join(' · '));
+                setGenerationProgress(job.progress || 0, job.message || job.status || 'Generating', generationJobSubtext(job));
                 if (job.status === 'completed') {
                     addGeneratedOutputsToGallery({ outputs: job.outputs || [], message: job.message }, payload);
                     return job;

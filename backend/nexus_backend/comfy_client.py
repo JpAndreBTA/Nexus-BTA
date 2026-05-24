@@ -333,19 +333,42 @@ class ComfyClient:
         timeout_seconds: int = 3600,
     ) -> tuple[str, list[dict[str, Any]]]:
         client_id = str(uuid.uuid4())
+        started_at = time.time()
         prompt_id = await self.queue_prompt(workflow, client_id=client_id)
         if progress_callback:
-            progress_callback({"status": "queued", "progress": 4, "message": f"Queued {prompt_id}", "prompt_id": prompt_id})
+            progress_callback({"status": "queued", "progress": 10, "message": "Queued in ComfyUI", "prompt_id": prompt_id})
         try:
             await self.watch_prompt_progress(prompt_id, client_id, progress_callback, timeout_seconds=timeout_seconds)
         except ComfyExecutionError:
             raise
         except Exception as exc:
             if progress_callback:
-                progress_callback({"status": "polling", "progress": 12, "message": f"Progress stream unavailable, polling history: {exc}"})
-        outputs = await self.wait_for_outputs(prompt_id, timeout_seconds=timeout_seconds)
+                progress_callback(
+                    {
+                        "status": "polling",
+                        "progress": 12,
+                        "message": "Syncing ComfyUI history",
+                        "detail": str(exc),
+                        "elapsed_seconds": round(time.time() - started_at, 1),
+                        "prompt_id": prompt_id,
+                    }
+                )
+        outputs = await self.wait_for_outputs(
+            prompt_id,
+            timeout_seconds=timeout_seconds,
+            progress_callback=progress_callback,
+            started_at=started_at,
+        )
         if progress_callback:
-            progress_callback({"status": "completed", "progress": 100, "message": "Generation completed.", "prompt_id": prompt_id})
+            progress_callback(
+                {
+                    "status": "completed",
+                    "progress": 100,
+                    "message": "Generation completed.",
+                    "elapsed_seconds": round(time.time() - started_at, 1),
+                    "prompt_id": prompt_id,
+                }
+            )
         return prompt_id, outputs
 
     async def watch_prompt_progress(
@@ -364,9 +387,10 @@ class ComfyClient:
         scheme = "wss" if parsed.scheme == "https" else "ws"
         ws_url = f"{scheme}://{parsed.netloc}/ws?clientId={quote(client_id)}"
         deadline = time.time() + timeout_seconds
+        sampling_started_at: float | None = None
         async with websockets.connect(ws_url, max_size=None) as websocket:
             while time.time() < deadline:
-                message = await asyncio.wait_for(websocket.recv(), timeout=min(30, max(1, deadline - time.time())))
+                message = await asyncio.wait_for(websocket.recv(), timeout=min(5, max(1, deadline - time.time())))
                 if isinstance(message, bytes):
                     continue
                 event = json.loads(message)
@@ -377,8 +401,12 @@ class ComfyClient:
                     continue
 
                 if event_type == "progress":
+                    sampling_started_at = sampling_started_at or time.time()
                     value = float(data.get("value") or 0)
                     maximum = max(1.0, float(data.get("max") or 1))
+                    elapsed = max(0.001, time.time() - sampling_started_at)
+                    steps_per_second = value / elapsed if value > 0 else 0.0
+                    eta_seconds = ((maximum - value) / steps_per_second) if steps_per_second > 0 else None
                     if progress_callback:
                         progress_callback(
                             {
@@ -388,6 +416,9 @@ class ComfyClient:
                                 "total_steps": int(maximum),
                                 "node": str(data.get("node") or ""),
                                 "message": f"Step {int(value)}/{int(maximum)}",
+                                "steps_per_second": round(steps_per_second, 3) if steps_per_second else None,
+                                "eta_seconds": round(eta_seconds, 1) if eta_seconds is not None else None,
+                                "elapsed_seconds": round(elapsed, 1),
                                 "prompt_id": prompt_id,
                             }
                         )
@@ -399,7 +430,7 @@ class ComfyClient:
                         progress_callback(
                             {
                                 "status": "running",
-                                "progress": 8,
+                                "progress": 12,
                                 "node": str(node or ""),
                                 "message": f"Executing node {node}",
                                 "prompt_id": prompt_id,
@@ -417,9 +448,17 @@ class ComfyClient:
             response.raise_for_status()
             return response.json()
 
-    async def wait_for_outputs(self, prompt_id: str, timeout_seconds: int = 3600) -> list[dict[str, Any]]:
+    async def wait_for_outputs(
+        self,
+        prompt_id: str,
+        timeout_seconds: int = 3600,
+        progress_callback: Any | None = None,
+        started_at: float | None = None,
+    ) -> list[dict[str, Any]]:
         deadline = time.time() + timeout_seconds
         completed_since: float | None = None
+        started_at = started_at or time.time()
+        last_emit = 0.0
         while time.time() < deadline:
             history = await self.history(prompt_id)
             item = history.get(prompt_id)
@@ -432,8 +471,34 @@ class ComfyClient:
                     raise ComfyExecutionError(_history_error_message(status))
                 if item.get("status", {}).get("completed"):
                     completed_since = completed_since or time.time()
+                    if progress_callback:
+                        progress_callback(
+                            {
+                                "status": "polling",
+                                "progress": 98,
+                                "message": "Finalizing outputs",
+                                "elapsed_seconds": round(time.time() - started_at, 1),
+                                "prompt_id": prompt_id,
+                            }
+                        )
                     if time.time() - completed_since >= 30:
                         return []
+            now = time.time()
+            if progress_callback and now - last_emit >= 1.5:
+                elapsed = max(0.0, now - started_at)
+                estimated = min(95, int(12 + (83 * (elapsed / (elapsed + 90)))))
+                eta_seconds = max(0.0, (elapsed / max(1, estimated - 12)) * (95 - estimated)) if estimated > 12 else None
+                progress_callback(
+                    {
+                        "status": "polling",
+                        "progress": estimated,
+                        "message": "Syncing ComfyUI history",
+                        "elapsed_seconds": round(elapsed, 1),
+                        "eta_seconds": round(eta_seconds, 1) if eta_seconds is not None else None,
+                        "prompt_id": prompt_id,
+                    }
+                )
+                last_emit = now
             await asyncio.sleep(1)
         raise TimeoutError(f"ComfyUI job timed out: {prompt_id}")
 
