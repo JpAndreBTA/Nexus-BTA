@@ -20,6 +20,14 @@ Use the inpaint canvas to load a reference, paint masks, undo/redo brush edits, 
 
 Switch to Node Workflow when you want to inspect or tune the generated Comfy graph without leaving Nexus.
 
+![LTX 2.3 linear video workspace](examples/LTX_2.3.png)
+
+The LTX 2.3 Linear View keeps img2video/txt2video controls synchronized with the Comfy workflow, including video VAE, audio VAE, distilled LoRAs and latent upscaling.
+
+![LTX 2.3 Director timeline](examples/LTX_2.3Director.png)
+
+The LTX 2.3 Director Suite adds a timeline for image, text, video and audio segments, with per-segment prompts, negative prompts, crop/camera controls, custom audio and generated speech/ambience routing.
+
 ![Civitai browser modal](examples/Civitai_Modal.png)
 
 The Civitai modal helps browse models, download assets, and route them into the right Nexus model folders.
@@ -78,15 +86,17 @@ Use [requirements/model_assets.md](requirements/model_assets.md) as the friendly
 - Textual inversion files live in `models/embeddings`; the prompt Emb buttons insert them into positive or negative prompts for SD 1.5, SDXL, Pony and Illustrious routes.
 - WAN 2.2 and LTX 2.3 use video-specific encoders, so use their model, VAE, text encoder and distilled LoRA assets instead of classic textual inversion. WAN 2.2 4-step runs need the matching high/low 4-step LoRA pair under `models/loras/wan`.
 - LTX 2.3 assets are available from [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3); WAN 2.2 assets are available from [Wan-AI](https://huggingface.co/Wan-AI).
+- LTX 2.3 latent upscale is part of the normal route. For a `512x512` output, Nexus samples the base latent at `256x256`, applies `LatentUpscaleModelLoader` + `LTXVLatentUpsampler`, refines it, and then decodes the final video.
 
 ## Verified Smoke Battery
 
-Last verified on May 21, 2026:
+Last verified on May 24, 2026:
 
 - SD 1.5 and SDXL image generation, img2img, inpaint, and ControlNet Canny.
 - Qwen at 512x512 with CFG 1 and 4 steps.
 - WAN 2.2 at 512x512, 2 seconds, 24 FPS.
-- LTX 2.3 at 512x512, 4 seconds, 24 FPS, with audio present.
+- LTX 2.3 at 512x512, 4-5 seconds, 24 FPS, with latent upscale/refiner routed in both Linear View and Director Suite.
+- LTX 2.3 Director Suite with custom background audio, generated speech/ambience segments, per-segment negative prompts and non-black video output.
 - Anima with Concept LoRA selection and gallery metadata.
 
 ## Notes
