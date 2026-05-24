@@ -105,6 +105,8 @@ def _update_generation_job(job_id: str, update: dict[str, Any], *, force: bool =
     job = generation_jobs.get(job_id)
     if not job:
         return
+    if str(job.get("status") or "").lower() == "cancelled" and str(update.get("status") or "").lower() != "cancelled":
+        return
     job.update({key: value for key, value in update.items() if value is not None})
     job["updated_at"] = datetime.now().isoformat(timespec="seconds")
     _console_generation(job, force=force)
@@ -445,6 +447,14 @@ def _prepare_reference_images(request: GenerateRequest) -> list[str]:
         return []
     values = _reference_image_values(request)[:3]
     return [_prepare_reference_value(value, f"nexus_reference_{index + 1}") for index, value in enumerate(values)]
+
+
+def _available_comfy_node(object_info: dict[str, Any], *names: str) -> str | None:
+    available = set(object_info or {})
+    for name in names:
+        if name in available:
+            return name
+    return None
 
 
 def _prepare_reference_image(request: GenerateRequest) -> str | None:
@@ -1504,6 +1514,13 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     raise ValueError("WAN 2.2 requires a UMT5 text encoder in models/text_encoders.")
                 if not vae_name:
                     raise ValueError("WAN 2.2 requires a Wan VAE in models/vae.")
+                wan_first_last_node = None
+                if len(reference_image_names) > 1:
+                    wan_first_last_node = _available_comfy_node(
+                        object_info,
+                        "WanFirstLastFrameToVideo",
+                        "WanFirstLastFrameToVideoFunModel",
+                    )
                 prompt = build_basic_wan_i2video_workflow(
                     request,
                     high_model_name,
@@ -1511,6 +1528,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     text_encoder_name,
                     vae_name,
                     reference_image_name=reference_image_name,
+                    reference_end_image_name=reference_image_names[1] if len(reference_image_names) > 1 else None,
+                    first_last_frame_node=wan_first_last_node,
                 )
             elif request.preset.lower() == "qwen":
                 checkpoint_name = assets.get("primary_model") or ""
@@ -1634,6 +1653,9 @@ async def _run_generation_job(job_id: str, request: GenerateRequest) -> None:
                 return
             _update_generation_job(job_id, {"queue_position": 1, "message": "Generation has the VRAM lock."}, force=True)
             response = await _run_generation_core(request, job_id=job_id)
+        if generation_jobs.get(job_id, {}).get("status") == "cancelled":
+            _console_generation(generation_jobs[job_id], force=True)
+            return
         generation_jobs[job_id].update(
             {
                 "status": "completed",
@@ -1708,6 +1730,7 @@ async def cancel_generation(job_id: str) -> dict[str, Any]:
             "message": "Generation cancelled.",
             "error": "cancelled",
             "completed_at": datetime.now().isoformat(timespec="seconds"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
         }
     )
     _console_generation(job, force=True)

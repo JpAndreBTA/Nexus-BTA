@@ -1035,21 +1035,27 @@ def _append_inpaint_mask(
     mask_loader_id = str(start_id)
     mask_to_mask_id = str(start_id + 1)
     encode_id = str(start_id + 2)
+    reference_resize_id = str(start_id + 3)
+    mask_resize_id = str(start_id + 4)
     grow_mask_by = max(0, min(64, int(request.img2img.mask_blur or 0)))
     workflow[mask_loader_id] = {
         "class_type": "LoadImage",
         "inputs": {"image": mask_image_name},
         "_meta": {"title": "Inpaint Mask"},
     }
+    workflow[reference_resize_id] = _image_scale_node([reference_node_id, 0], request.width, request.height)
+    workflow[reference_resize_id]["_meta"]["title"] = "Resize Inpaint Reference To Side Menu"
+    workflow[mask_resize_id] = _image_scale_node([mask_loader_id, 0], request.width, request.height, method="nearest-exact")
+    workflow[mask_resize_id]["_meta"]["title"] = "Resize Inpaint Mask To Side Menu"
     workflow[mask_to_mask_id] = {
         "class_type": "ImageToMask",
-        "inputs": {"image": [mask_loader_id, 0], "channel": "red"},
+        "inputs": {"image": [mask_resize_id, 0], "channel": "red"},
         "_meta": {"title": "Mask Channel"},
     }
     workflow[encode_id] = {
         "class_type": "VAEEncodeForInpaint",
         "inputs": {
-            "pixels": [reference_node_id, 0],
+            "pixels": [reference_resize_id, 0],
             "vae": vae_ref,
             "mask": [mask_to_mask_id, 0],
             "grow_mask_by": grow_mask_by,
@@ -1060,6 +1066,20 @@ def _append_inpaint_mask(
     sampler_inputs = sampler.setdefault("inputs", {})
     sampler_inputs["latent_image"] = [encode_id, 0]
     return True
+
+
+def _image_scale_node(image_ref: list[Any], width: int | float, height: int | float, method: str = "lanczos") -> dict[str, Any]:
+    return {
+        "class_type": "ImageScale",
+        "inputs": {
+            "image": image_ref,
+            "width": max(16, int(width)),
+            "height": max(16, int(height)),
+            "upscale_method": method,
+            "crop": "disabled",
+        },
+        "_meta": {"title": "Resize Reference To Side Menu"},
+    }
 
 
 def _controlnet_can_apply(request: GenerateRequest, controlnet_name: str | None, controlnet_image_name: str | None) -> bool:
@@ -1223,9 +1243,10 @@ def build_basic_sd_workflow(
             "class_type": "LoadImage",
             "inputs": {"image": reference_image_name},
         }
+        workflow["9"] = _image_scale_node(["4", 0], request.width, request.height)
         workflow["8"] = {
             "class_type": "VAEEncode",
-            "inputs": {"pixels": ["4", 0], "vae": vae_ref},
+            "inputs": {"pixels": ["9", 0], "vae": vae_ref},
         }
         workflow["5"]["inputs"]["latent_image"] = ["8", 0]
         workflow["5"]["inputs"]["denoise"] = denoise
@@ -1334,6 +1355,8 @@ def build_basic_anima_workflow(
             "inputs": {"image": reference_image_name},
             "_meta": {"title": "Reference Image"},
         }
+        workflow["13"] = _image_scale_node(["10", 0], width, height)
+        workflow["4"]["inputs"]["image"] = ["13", 0]
         _append_inpaint_mask(
             workflow,
             request,
@@ -1488,12 +1511,7 @@ def build_basic_qwen_image_workflow(
         }
     if not reference_image_name:
         workflow.pop("4", None)
-    else:
-        workflow["7"] = {
-            "class_type": "VAEEncode",
-            "inputs": {"pixels": ["4", 0], "vae": ["3", 0]},
-            "_meta": {"title": "Encode Reference"},
-        }
+    elif mask_image_name and "inpaint" in request.img2img.mode.lower():
         _append_inpaint_mask(
             workflow,
             request,
@@ -1634,9 +1652,10 @@ def build_basic_zimage_turbo_workflow(
             "inputs": {"image": reference_image_name},
             "_meta": {"title": "Reference Image"},
         }
+        workflow["13"] = _image_scale_node(["9", 0], width, height)
         workflow["10"] = {
             "class_type": "VAEEncode",
-            "inputs": {"pixels": ["9", 0], "vae": ["3", 0]},
+            "inputs": {"pixels": ["13", 0], "vae": ["3", 0]},
             "_meta": {"title": "Encode Reference"},
         }
         workflow["8"]["inputs"]["latent_image"] = ["10", 0]
@@ -1756,9 +1775,10 @@ def build_basic_flux_workflow(
             "inputs": {"image": reference_image_name},
             "_meta": {"title": "Reference Image"},
         }
+        workflow["13"] = _image_scale_node(["10", 0], width, height)
         workflow["11"] = {
             "class_type": "VAEEncode",
-            "inputs": {"pixels": ["10", 0], "vae": ["3", 0]},
+            "inputs": {"pixels": ["13", 0], "vae": ["3", 0]},
             "_meta": {"title": "Encode Reference"},
         }
         workflow["7"]["inputs"]["latent_image"] = ["11", 0]
@@ -1780,6 +1800,8 @@ def build_basic_wan_i2video_workflow(
     text_encoder_name: str,
     vae_name: str,
     reference_image_name: str | None = None,
+    reference_end_image_name: str | None = None,
+    first_last_frame_node: str | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     video_options = request.video or {}
@@ -1891,7 +1913,7 @@ def build_basic_wan_i2video_workflow(
             "_meta": {"title": "Negative Prompt"},
         },
         "10": {
-            "class_type": "WanImageToVideo",
+            "class_type": first_last_frame_node or "WanImageToVideo",
             "inputs": {
                 "positive": ["7", 0],
                 "negative": ["8", 0],
@@ -1970,6 +1992,13 @@ def build_basic_wan_i2video_workflow(
             "_meta": {"title": "Reference Image"},
         }
         workflow["10"]["inputs"]["start_image"] = ["9", 0]
+    if reference_image_name and reference_end_image_name and first_last_frame_node:
+        workflow["16"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": reference_end_image_name},
+            "_meta": {"title": "End Frame Image"},
+        }
+        workflow["10"]["inputs"]["end_image"] = ["16", 0]
     workflow.update(wan_lora_nodes)
     return workflow
 
@@ -2771,7 +2800,10 @@ def patch_workflow(
     _ensure_external_vae_loader(api, assets)
     _apply_side_menu_loras(api, request)
     _ensure_zimage_reference_route(api, request, assets)
+    _ensure_qwen_image_edit_route(api, request, assets)
     _ensure_qwen_multi_reference_route(api, request, assets)
+    _ensure_wan_start_end_frame_route(api, request, assets)
+    _ensure_img2img_reference_resize_routes(api, request)
     _ensure_controlnet_route(api, request, assets)
     _ensure_ltx_workflow_extensions(api, request, assets)
     _ensure_inpaint_mask_route(api, request, assets)
@@ -2853,6 +2885,7 @@ def _ensure_zimage_reference_route(api: dict[str, Any], request: GenerateRequest
                 "inputs": {"pixels": [str(loader_id), 0], "vae": vae_ref},
                 "_meta": {"title": "Encode Z-Image Reference"},
             }
+        _ensure_encode_reference_resize(api, request, encode_id)
         sampler_inputs["latent_image"] = [encode_id, 0]
         sampler_inputs["denoise"] = request.img2img.denoise
         positive_ref = sampler_inputs.get("positive")
@@ -2886,6 +2919,71 @@ def _ensure_zimage_reference_route(api: dict[str, Any], request: GenerateRequest
     inputs["auto_resize_images"] = True
     inputs["vae"] = vae_ref
     inputs["image1"] = [str(loader_id), 0]
+
+
+def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
+    if request.activity != "img2img" or request.preset.lower() != "qwen":
+        return
+    reference_image = str(assets.get("reference_image") or "").strip()
+    if not reference_image:
+        return
+
+    loader_id = _find_qwen_reference_loader_id(api, 1, reference_image) or _add_load_image_node(api, reference_image, "Reference Image 1")
+    if not loader_id:
+        return
+    loader = api.get(str(loader_id))
+    if isinstance(loader, dict):
+        loader.setdefault("inputs", {})["image"] = reference_image
+        loader.setdefault("_meta", {})["title"] = "Reference Image 1"
+
+    vae_ref = _find_vae_ref(api)
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        if class_lower not in {"textencodeqwenimageedit", "textencodeqwenimageeditplus"}:
+            continue
+        inputs = node.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        prompt_text = inputs.pop("text", None)
+        if prompt_text is not None and "prompt" not in inputs:
+            inputs["prompt"] = prompt_text
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        if "prompt" not in inputs:
+            inputs["prompt"] = request.negative_prompt if "negative" in title else request.prompt
+        if vae_ref and "vae" not in inputs:
+            inputs["vae"] = vae_ref
+        if class_lower == "textencodeqwenimageeditplus":
+            inputs["image1"] = [str(loader_id), 0]
+        else:
+            inputs["image"] = [str(loader_id), 0]
+
+    if "inpaint" in request.img2img.mode.lower():
+        return
+    sampler_id = _find_sampler_node_id(api)
+    if not sampler_id:
+        return
+    latent_id: str | None = None
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        if class_lower in {"emptysd3latentimage", "emptylatentimage"}:
+            latent_id = str(node_id)
+            break
+    if not latent_id:
+        latent_id = str(_next_api_node_id(api))
+        api[latent_id] = {
+            "class_type": "EmptySD3LatentImage",
+            "inputs": {},
+            "_meta": {"title": "QWEN Target Latent"},
+        }
+    latent_inputs = api[latent_id].setdefault("inputs", {})
+    latent_inputs["width"] = max(16, int(request.width))
+    latent_inputs["height"] = max(16, int(request.height))
+    latent_inputs["batch_size"] = max(1, int(request.batch_size or 1))
+    api[sampler_id].setdefault("inputs", {})["latent_image"] = [latent_id, 0]
 
 
 def _ensure_qwen_multi_reference_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
@@ -2947,6 +3045,139 @@ def _ensure_qwen_multi_reference_route(api: dict[str, Any], request: GenerateReq
             inputs["vae"] = vae_ref
         for index, ref in enumerate(loader_refs, start=1):
             inputs[f"image{index}"] = ref
+
+
+def _ensure_wan_start_end_frame_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
+    if request.activity != "img2img" or request.preset.lower() != "wan":
+        return
+    raw_refs = assets.get("reference_images") or []
+    if isinstance(raw_refs, str):
+        raw_refs = [raw_refs]
+    refs = [str(name) for name in raw_refs if str(name or "").strip()]
+    if not refs:
+        fallback = str(assets.get("reference_image") or "").strip()
+        refs = [fallback] if fallback else []
+    if not refs:
+        return
+
+    start_loader_id = _find_reference_image_node_id(api, refs[0]) or _add_load_image_node(api, refs[0], "WAN Start Frame")
+    if not start_loader_id:
+        return
+    start_node = api.get(str(start_loader_id))
+    if isinstance(start_node, dict):
+        start_node.setdefault("inputs", {})["image"] = refs[0]
+        start_node.setdefault("_meta", {})["title"] = "WAN Start Frame"
+    start_ref = [str(start_loader_id), 0]
+
+    end_ref: list[Any] | None = None
+    if len(refs) > 1:
+        end_loader_id = _add_load_image_node(api, refs[1], "WAN End Frame")
+        if end_loader_id:
+            end_ref = [str(end_loader_id), 0]
+
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        if "wan" not in class_lower and "wan" not in title:
+            continue
+        inputs = node.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        if "start_image" in inputs:
+            inputs["start_image"] = start_ref
+        elif class_lower == "wanimagetovideo":
+            inputs["start_image"] = start_ref
+        if end_ref and ("firstlast" in class_lower or "first last" in title or "end_image" in inputs):
+            inputs["end_image"] = end_ref
+
+
+def _ensure_img2img_reference_resize_routes(api: dict[str, Any], request: GenerateRequest) -> None:
+    if request.activity != "img2img" or request.preset.lower() in {"ltx", "wan"}:
+        return
+    for node_id, node in list(api.items()):
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        if class_lower not in {"vaeencode", "vaeencodeforinpaint"}:
+            continue
+        _ensure_encode_reference_resize(api, request, str(node_id))
+        if class_lower == "vaeencodeforinpaint":
+            _ensure_inpaint_mask_resize(api, request, node)
+
+
+def _ensure_encode_reference_resize(api: dict[str, Any], request: GenerateRequest, encode_node_id: str) -> None:
+    node = api.get(str(encode_node_id))
+    if not isinstance(node, dict):
+        return
+    inputs = node.setdefault("inputs", {})
+    if not isinstance(inputs, dict):
+        return
+    pixels_ref = inputs.get("pixels")
+    scaled_ref = _ensure_image_ref_scaled(api, pixels_ref, request.width, request.height, "Resize Reference To Side Menu")
+    if scaled_ref:
+        inputs["pixels"] = scaled_ref
+
+
+def _ensure_inpaint_mask_resize(api: dict[str, Any], request: GenerateRequest, encode_node: dict[str, Any]) -> None:
+    inputs = encode_node.get("inputs", {})
+    if not isinstance(inputs, dict):
+        return
+    mask_ref = inputs.get("mask")
+    if not isinstance(mask_ref, list) or not mask_ref:
+        return
+    mask_node = api.get(str(mask_ref[0]))
+    if not isinstance(mask_node, dict) or str(mask_node.get("class_type", "")).lower() != "imagetomask":
+        return
+    mask_inputs = mask_node.setdefault("inputs", {})
+    if not isinstance(mask_inputs, dict):
+        return
+    scaled_ref = _ensure_image_ref_scaled(
+        api,
+        mask_inputs.get("image"),
+        request.width,
+        request.height,
+        "Resize Inpaint Mask To Side Menu",
+        method="nearest-exact",
+    )
+    if scaled_ref:
+        mask_inputs["image"] = scaled_ref
+
+
+def _ensure_image_ref_scaled(
+    api: dict[str, Any],
+    image_ref: Any,
+    width: int | float,
+    height: int | float,
+    title: str,
+    *,
+    method: str = "lanczos",
+) -> list[Any] | None:
+    if not isinstance(image_ref, list) or not image_ref:
+        return None
+    source_id = str(image_ref[0])
+    source = api.get(source_id)
+    if not isinstance(source, dict):
+        return None
+    source_class = str(source.get("class_type", "")).lower()
+    target_width = max(16, int(width))
+    target_height = max(16, int(height))
+    if source_class == "imagescale":
+        source_inputs = source.setdefault("inputs", {})
+        if isinstance(source_inputs, dict):
+            source_inputs["width"] = target_width
+            source_inputs["height"] = target_height
+            source_inputs.setdefault("upscale_method", method)
+            source_inputs.setdefault("crop", "disabled")
+        source.setdefault("_meta", {})["title"] = title
+        return [source_id, 0]
+    if source_class != "loadimage":
+        return None
+    scale_id = str(_next_api_node_id(api))
+    api[scale_id] = _image_scale_node([source_id, 0], target_width, target_height, method=method)
+    api[scale_id]["_meta"]["title"] = title
+    return [scale_id, 0]
 
 
 def _ensure_external_vae_loader(api: dict[str, Any], assets: dict[str, str]) -> None:

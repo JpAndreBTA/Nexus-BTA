@@ -1273,12 +1273,22 @@
             <div id="globalActionPanel" class="p-3 border-b border-nexus-border bg-nexus-panel">
                 <div class="flex gap-2">
                 <button id="globalGenerateButton" onclick="simulateGeneration()" class="flex-1 h-12 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-sm tracking-wider uppercase transition-colors flex items-center justify-center gap-2 rounded-sm active:scale-[0.98]">
-                    <i class="fa-solid fa-play"></i>
+                    <i id="generateBtnIcon" class="fa-solid fa-play"></i>
                     <span id="generateBtnText">Generate</span>
+                </button>
+                <button id="globalCancelGenerationButton" type="button" onclick="cancelActiveGeneration()" class="hidden h-12 w-12 bg-zinc-950 border border-nexus-red text-nexus-red hover:bg-nexus-red hover:text-white rounded-sm items-center justify-center transition-colors" title="Cancel generation">
+                    <i class="fa-solid fa-stop text-xs"></i>
+                    <span class="sr-only">Cancel generation</span>
                 </button>
                 <button id="leftSidebarToggleBtn" type="button" onclick="toggleLeftSidebar()" class="ml-auto h-12 w-11 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center justify-center" title="Hide left side menu">
                     <i id="leftSidebarToggleIcon" class="fa-solid fa-angles-left"></i>
                 </button>
+                </div>
+                <div id="globalGenerationProgress" class="hidden mt-2">
+                    <div class="h-1.5 bg-nexus-border overflow-hidden">
+                        <div id="globalGenerationProgressBar" class="h-full bg-nexus-red transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <p id="globalGenerationProgressText" class="mt-1 text-[9px] font-mono text-nexus-muted truncate">Preparing generation...</p>
                 </div>
             </div>
 
@@ -2058,7 +2068,7 @@
                         </div>
                         <div id="ltxDirectorInfoPane" class="hidden flex-1 min-h-[260px] overflow-y-auto p-3 space-y-3 bg-zinc-950"></div>
                         <div class="p-3 border-t border-nexus-border flex flex-col gap-2">
-                            <button type="button" onclick="startLtxDirectorRender()" class="w-full py-3 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-xs uppercase tracking-wider rounded-sm flex items-center justify-center gap-2"><i class="fa-solid fa-circle-play"></i>Render Sequenced Video</button>
+                            <button id="ltxDirectorRenderButton" type="button" onclick="startLtxDirectorRender()" class="w-full py-3 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-xs uppercase tracking-wider rounded-sm flex items-center justify-center gap-2"><i id="ltxDirectorRenderIcon" class="fa-solid fa-circle-play"></i><span id="ltxDirectorRenderText">Render Sequenced Video</span></button>
                             <div class="grid grid-cols-2 gap-2">
                                 <button type="button" onclick="exportLtxDirectorMetadata()" class="flat-button text-[10px] font-bold uppercase">Export Metadata</button>
                                 <button type="button" onclick="sendLtxDirectorToImg2Img()" class="flat-button text-[10px] font-bold uppercase">Send to <span data-img2img-label>img2img</span></button>
@@ -2079,6 +2089,10 @@
                         </div>
                         <p id="generationProgressText" class="text-xs font-mono text-nexus-red mt-3 text-center">Preparing generation...</p>
                         <p id="generationProgressSubtext" class="text-[10px] font-mono text-nexus-muted mt-1 text-center">Backend queue is starting.</p>
+                        <button id="overlayCancelGenerationButton" type="button" onclick="cancelActiveGeneration()" class="mt-4 h-9 px-4 bg-zinc-950 border border-nexus-red text-nexus-red hover:bg-nexus-red hover:text-white rounded-sm flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider transition-colors" title="Cancel generation">
+                            <i class="fa-solid fa-stop text-[10px]"></i>
+                            <span id="overlayCancelGenerationText">Cancel Generation</span>
+                        </button>
                     </div>
                 </div>
 
@@ -2879,6 +2893,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let controlNetImageDataUrl = '';
         let controlNetImageMeta = { src: '', label: '', width: 0, height: 0 };
         let activeGenerationJobId = null;
+        let generationUiActive = false;
+        let generationCancelRequested = false;
+        let generationProgressState = { progress: 0, message: 'Preparing generation...', subtext: 'Backend queue is starting.' };
         let referenceImageMeta = { src: '', label: '', width: 0, height: 0 };
         let activeCanvasTool = 'Move';
         let inpaintMaskDirty = false;
@@ -4217,7 +4234,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 activeGalleryIndex = preservedIndex >= 0 ? preservedIndex : 0;
             }
             renderGallerySidebar();
-            if (options.preferNewest || !hadItems) setLinearOutput(galleryItems[activeGalleryIndex] || null);
+            if (options.preferNewest || !hadItems) setLinearOutput(galleryItems[activeGalleryIndex] || null, { force: true });
             if (document.getElementById('galleryModal') && !document.getElementById('galleryModal').classList.contains('hidden')) {
                 renderGalleryModal();
             }
@@ -4496,11 +4513,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const profile = modelProfiles[presetName];
             if (!profile) return;
             const previousPreset = activePreset;
-            const wasQwenImageEdit = isQwenImageEditTemplateActive();
+            const hadExtraReferences = referenceExtraSlotsEnabled();
             const leaveDirectorView = activeWorkspace === 'director' && !(presetName === 'LTX' && profile.template === 'LTX_DIRECTOR_SUITE');
             activePreset = presetName;
             localStorage.setItem('nexus_active_preset', presetName);
-            if (wasQwenImageEdit && !isQwenImageEditTemplateActive()) {
+            if (hadExtraReferences && !referenceExtraSlotsEnabled()) {
                 referenceImageExtraDataUrls = [];
             }
 
@@ -4668,6 +4685,25 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             return activePreset === 'Qwen' && profile.template === 'QWEN_IMAGE_EDIT';
         }
 
+        function isWanStartEndFrameMode() {
+            return activePreset === 'Wan' && currentActivity === 'img2img';
+        }
+
+        function referenceExtraSlotsEnabled() {
+            return isQwenImageEditTemplateActive() || isWanStartEndFrameMode();
+        }
+
+        function referenceExtraSlotNumbers() {
+            if (isQwenImageEditTemplateActive()) return [2, 3];
+            if (isWanStartEndFrameMode()) return [2];
+            return [];
+        }
+
+        function referenceSlotLabel(slot) {
+            if (isWanStartEndFrameMode()) return slot === 1 ? 'First Frame' : 'End Frame';
+            return slot === 1 ? 'Picture 1' : `Image ${slot}`;
+        }
+
         function isDirectorWorkspaceActive() {
             return activeWorkspace === 'director' && isLtxDirectorTemplateActive();
         }
@@ -4676,6 +4712,67 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (activity === 'extras') return 'Process';
             if (activity === 'merge') return 'Merge';
             return 'Generate';
+        }
+
+        function syncGenerationActionUi() {
+            const generateButton = document.getElementById('globalGenerateButton');
+            const cancelButton = document.getElementById('globalCancelGenerationButton');
+            const overlayCancelButton = document.getElementById('overlayCancelGenerationButton');
+            const overlayCancelText = document.getElementById('overlayCancelGenerationText');
+            const generateIcon = document.getElementById('generateBtnIcon');
+            const generateText = document.getElementById('generateBtnText');
+            const directorRenderButton = document.getElementById('ltxDirectorRenderButton');
+            const directorRenderIcon = document.getElementById('ltxDirectorRenderIcon');
+            const directorRenderText = document.getElementById('ltxDirectorRenderText');
+            const globalProgress = document.getElementById('globalGenerationProgress');
+            const overlay = document.getElementById('loadingOverlay');
+            const active = !!generationUiActive;
+            if (generateText) generateText.innerText = active ? (generationCancelRequested ? 'Cancelling' : 'Generating') : idleGenerateLabel();
+            if (generateIcon) {
+                generateIcon.className = active ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-play';
+            }
+            if (generateButton) {
+                generateButton.disabled = active;
+                generateButton.classList.toggle('opacity-70', active);
+                generateButton.classList.toggle('cursor-not-allowed', active);
+                generateButton.title = active ? 'Generation is running' : idleGenerateLabel();
+            }
+            if (cancelButton) {
+                cancelButton.classList.toggle('hidden', !active);
+                cancelButton.classList.toggle('flex', active);
+                cancelButton.disabled = generationCancelRequested;
+                cancelButton.title = generationCancelRequested ? 'Cancelling generation' : 'Cancel generation';
+            }
+            if (overlayCancelButton) {
+                overlayCancelButton.disabled = generationCancelRequested;
+                overlayCancelButton.classList.toggle('opacity-70', generationCancelRequested);
+                overlayCancelButton.classList.toggle('cursor-not-allowed', generationCancelRequested);
+                overlayCancelButton.title = generationCancelRequested ? 'Cancelling generation' : 'Cancel generation';
+            }
+            if (overlayCancelText) {
+                overlayCancelText.innerText = generationCancelRequested ? 'Cancelling Generation' : 'Cancel Generation';
+            }
+            if (directorRenderButton) {
+                directorRenderButton.title = active ? 'Cancel generation' : 'Render sequenced video';
+            }
+            if (directorRenderIcon) {
+                directorRenderIcon.className = active ? (generationCancelRequested ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-stop') : 'fa-solid fa-circle-play';
+            }
+            if (directorRenderText) {
+                directorRenderText.innerText = active ? (generationCancelRequested ? 'Cancelling Generation' : 'Cancel Generation') : 'Render Sequenced Video';
+            }
+            if (globalProgress) globalProgress.classList.toggle('hidden', !active);
+            if (overlay) overlay.classList.toggle('hidden', !active);
+            if (active) {
+                setGenerationProgress(generationProgressState.progress, generationProgressState.message, generationProgressState.subtext);
+            }
+        }
+
+        function setGenerationUiActive(active, options = {}) {
+            generationUiActive = !!active;
+            if (!generationUiActive) generationCancelRequested = false;
+            if (options.cancelling !== undefined) generationCancelRequested = !!options.cancelling;
+            syncGenerationActionUi();
         }
 
         function updateActivityLabels() {
@@ -4730,7 +4827,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             document.getElementById('img2imgControls')?.classList.toggle('hidden', !isImg2Img || directorWorkspace);
             document.getElementById('promptPanelTitle').innerText = isImg2Img ? (isMotionTemplateActive() ? 'Prompt / Video Reference' : 'Prompt / Reference') : 'Prompt';
 
-            document.getElementById('generateBtnText').innerText = idleGenerateLabel();
+            syncGenerationActionUi();
             document.getElementById('sendToImg2ImgBtn')?.classList.toggle('hidden', isImg2Img);
             document.getElementById('sendToExtrasBtn')?.setAttribute('title', isImg2Img ? 'Send to extras' : 'Send to extras');
 
@@ -4799,8 +4896,15 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 cfg: document.getElementById('cfgSlider')?.value,
                 cfg_scale: document.getElementById('cfgSlider')?.value,
                 guidance: document.getElementById('cfgSlider')?.value,
+                denoise: document.getElementById('denoiseSlider')?.value,
+                denoising: document.getElementById('denoiseSlider')?.value,
+                denoise_strength: document.getElementById('denoiseSlider')?.value,
                 width: document.getElementById('widthInput')?.value,
                 height: document.getElementById('heightInput')?.value,
+                batch_size: document.getElementById('batchCountInput')?.value,
+                batch_count: document.getElementById('batchCountInput')?.value,
+                grow_mask_by: document.getElementById('maskBlurSlider')?.value,
+                mask_blur: document.getElementById('maskBlurSlider')?.value,
                 sampler: document.getElementById('samplingMethodSelect')?.value,
                 sampler_name: document.getElementById('samplingMethodSelect')?.value,
                 scheduler: document.getElementById('schedulerSelect')?.value,
@@ -6863,6 +6967,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             syncLtxDirectorWorkflowGraph(false);
         }
 
+        function ltxDirectorSegmentFrameIntent(segment) {
+            const haystack = `${segment?.prompt || ''} ${segment?.title || ''} ${segment?.speechText || ''}`.toLowerCase();
+            if (/(^|\W)(start\s*frame|startframe|first\s*frame|firstframe)(\W|$)/.test(haystack)) return 'start';
+            if (/(^|\W)(end\s*frame|endframe|last\s*frame|lastframe)(\W|$)/.test(haystack)) return 'end';
+            return '';
+        }
+
         function serializeLtxDirectorState() {
             ltxDirectorNormalizeAllTracks();
             const fps = Math.max(1, Math.round(Number(ltxDirectorState.fps || 24)));
@@ -6902,6 +7013,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     const effectiveType = segment.type === 'video' && (segment.imageB64 || segment.imageSrc)
                         ? 'image'
                         : (segment.type || 'image');
+                    const frameIntent = ltxDirectorSegmentFrameIntent(segment);
                     return {
                     id: segment.id,
                     start: Math.max(0, Math.round(Number(segment.start || 0) * fps)),
@@ -6920,6 +7032,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     crop: segment.crop || { x: 0, y: 0, w: 1, h: 1 },
                     resizeMethod: segment.resizeMethod || effectiveResizeMethod,
                     cameraKeyframes: segment.cameraKeyframes || [],
+                    frameIntent,
+                    isStartFrame: frameIntent === 'start',
+                    isEndFrame: frameIntent === 'end',
                     loadVideo: segment.loadVideo
                         ? { resize_method: segment.resizeMethod || effectiveResizeMethod, ...segment.loadVideo }
                         : null
@@ -9232,24 +9347,28 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (loadedLabel) {
                 loadedLabel.classList.toggle('hidden', !hasImage);
                 const extraCount = (referenceImageExtraDataUrls || []).filter(item => item?.src).length;
+                const extraLabel = isWanStartEndFrameMode()
+                    ? (extraCount ? ' + End Frame' : '')
+                    : (extraCount ? ` + ${extraCount} Qwen ref` : '');
                 loadedLabel.innerText = hasImage
-                    ? `${referenceImageMeta.label || 'Picture 1'}${referenceImageMeta.width && referenceImageMeta.height ? ` - ${referenceImageMeta.width}x${referenceImageMeta.height}` : ''}${extraCount ? ` + ${extraCount} Qwen ref` : ''}`
+                    ? `${referenceImageMeta.label || referenceSlotLabel(1)}${referenceImageMeta.width && referenceImageMeta.height ? ` - ${referenceImageMeta.width}x${referenceImageMeta.height}` : ''}${extraLabel}`
                     : '';
             }
             if (multiList) {
-                const qwenRefsEnabled = isQwenImageEditTemplateActive();
+                const extraSlots = referenceExtraSlotNumbers();
                 const extraRefs = referenceImageExtraDataUrls || [];
-                const showSlots = qwenRefsEnabled;
+                const showSlots = extraSlots.length > 0;
                 multiList.classList.toggle('hidden', !showSlots);
-                multiList.innerHTML = showSlots ? [2, 3].map(slot => {
+                multiList.innerHTML = showSlots ? extraSlots.map(slot => {
                     const item = extraRefs[slot - 2] || {};
                     const hasSlotImage = !!item.src;
+                    const slotLabel = referenceSlotLabel(slot);
                     return `
-                        <button type="button" class="qwen-ref-slot relative min-h-16 border border-dashed ${hasSlotImage ? 'border-nexus-border bg-black' : 'border-nexus-border bg-zinc-950'} rounded-sm overflow-hidden text-left hover:border-nexus-red transition-colors" data-qwen-ref-slot="${slot}" onclick="event.preventDefault();event.stopPropagation();openReferenceImageSlotPicker(${slot});" title="${escapeHtml(hasSlotImage ? (item.label || `Image ${slot}`) : `Load Image ${slot}`)}">
-                            ${hasSlotImage ? `<img src="${escapeHtml(item.src)}" class="absolute inset-0 w-full h-full object-cover" alt="Image ${slot}">` : ''}
-                            <span class="absolute left-1.5 bottom-1.5 bg-black/80 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white">Image ${slot}</span>
-                            ${hasSlotImage ? `<span class="absolute left-1.5 top-1.5 max-w-[calc(100%-2.5rem)] truncate bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-nexus-muted">${escapeHtml(item.label || `Picture ${slot}`)}</span>` : '<span class="absolute inset-0 flex items-center justify-center text-[9px] font-mono text-nexus-muted">drop or click</span>'}
-                            ${hasSlotImage ? `<span class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm" data-qwen-ref-remove="${slot}" onclick="event.preventDefault();event.stopPropagation();clearReferenceImageExtraSlot(${slot});" title="Remove Image ${slot}"><i class="fa-solid fa-xmark text-[9px]"></i></span>` : ''}
+                        <button type="button" class="qwen-ref-slot relative min-h-16 border border-dashed ${hasSlotImage ? 'border-nexus-border bg-black' : 'border-nexus-border bg-zinc-950'} rounded-sm overflow-hidden text-left hover:border-nexus-red transition-colors" data-qwen-ref-slot="${slot}" onclick="event.preventDefault();event.stopPropagation();openReferenceImageSlotPicker(${slot});" title="${escapeHtml(hasSlotImage ? (item.label || slotLabel) : `Load ${slotLabel}`)}">
+                            ${hasSlotImage ? `<img src="${escapeHtml(item.src)}" class="absolute inset-0 w-full h-full object-cover" alt="${escapeHtml(slotLabel)}">` : ''}
+                            <span class="absolute left-1.5 bottom-1.5 bg-black/80 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white">${escapeHtml(slotLabel)}</span>
+                            ${hasSlotImage ? `<span class="absolute left-1.5 top-1.5 max-w-[calc(100%-2.5rem)] truncate bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-nexus-muted">${escapeHtml(item.label || slotLabel)}</span>` : '<span class="absolute inset-0 flex items-center justify-center text-[9px] font-mono text-nexus-muted">drop or click</span>'}
+                            ${hasSlotImage ? `<span class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm" data-qwen-ref-remove="${slot}" onclick="event.preventDefault();event.stopPropagation();clearReferenceImageExtraSlot(${slot});" title="Remove ${escapeHtml(slotLabel)}"><i class="fa-solid fa-xmark text-[9px]"></i></span>` : ''}
                         </button>
                     `;
                 }).join('') : '';
@@ -9303,38 +9422,41 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function addReferenceImageExtraSource(src, label = 'reference image') {
-            if (!isQwenImageEditTemplateActive()) return;
+            if (!referenceExtraSlotsEnabled()) return;
             if (!src) return;
             const list = referenceImageExtraDataUrls || [];
+            const maxSlots = referenceExtraSlotNumbers().length;
             if (!list.some(item => item.src === src)) {
                 list.push({ src, label, width: 0, height: 0 });
             }
-            referenceImageExtraDataUrls = list.slice(0, 2);
+            referenceImageExtraDataUrls = list.slice(0, maxSlots);
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
         }
 
         function setReferenceImageExtraSlot(slot, src, label = 'reference image') {
-            if (!isQwenImageEditTemplateActive()) return;
+            if (!referenceExtraSlotsEnabled()) return;
+            const slots = referenceExtraSlotNumbers();
             const slotIndex = Number(slot) - 2;
-            if (slotIndex < 0 || slotIndex > 1 || !src) return;
+            if (!slots.includes(Number(slot)) || slotIndex < 0 || !src) return;
             const refs = [...(referenceImageExtraDataUrls || [])];
             refs[slotIndex] = { src, label, width: 0, height: 0 };
-            referenceImageExtraDataUrls = refs.slice(0, 2);
+            referenceImageExtraDataUrls = refs.slice(0, slots.length);
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
         }
 
         function clearReferenceImageExtraSlot(slot) {
+            const slots = referenceExtraSlotNumbers();
             const slotIndex = Number(slot) - 2;
-            if (slotIndex < 0 || slotIndex > 1) return;
+            if (!slots.includes(Number(slot)) || slotIndex < 0) return;
             const refs = [...(referenceImageExtraDataUrls || [])];
             refs[slotIndex] = null;
             while (refs.length && !refs[refs.length - 1]?.src) refs.pop();
-            referenceImageExtraDataUrls = refs.slice(0, 2);
+            referenceImageExtraDataUrls = refs.slice(0, slots.length);
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
-            showToast("Reference Removed", `Image ${Number(slot)} was removed from Qwen references.`);
+            showToast("Reference Removed", `${referenceSlotLabel(Number(slot))} was removed.`);
         }
 
         function readImageFileAsDataUrl(file) {
@@ -9562,7 +9684,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (files.length) {
                 event.preventDefault();
                 event.stopPropagation();
-                if ((slot === 2 || slot === 3) && isQwenImageEditTemplateActive()) {
+                if (referenceExtraSlotNumbers().includes(slot)) {
                     loadReferenceImageFile(files[0], { slot });
                 } else if (files.length > 1) {
                     loadReferenceImageFiles(files);
@@ -9580,8 +9702,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (droppedUrl) {
                 event.preventDefault();
                 event.stopPropagation();
-                if ((slot === 2 || slot === 3) && isQwenImageEditTemplateActive()) {
-                    setReferenceImageExtraSlot(slot, droppedUrl, `Image ${slot}`);
+                if (referenceExtraSlotNumbers().includes(slot)) {
+                    setReferenceImageExtraSlot(slot, droppedUrl, referenceSlotLabel(slot));
                 } else {
                     loadImageIntoImg2Img(droppedUrl, 'dropped gallery image', openCanvas);
                 }
@@ -9599,7 +9721,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             const src = item.image || item.thumb || '';
             const label = item.title || item.filename || 'gallery image';
-            if ((slot === 2 || slot === 3) && isQwenImageEditTemplateActive()) {
+            if (referenceExtraSlotNumbers().includes(slot)) {
                 setReferenceImageExtraSlot(slot, src, label);
             } else {
                 loadImageIntoImg2Img(src, label, openCanvas);
@@ -9703,9 +9825,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         async function loadReferenceImageFile(file, options = {}) {
             if (!isImageFile(file)) return;
             const dataUrl = await readImageFileAsDataUrl(file);
-            if (options.slot === 2 || options.slot === 3) {
+            if (referenceExtraSlotNumbers().includes(Number(options.slot))) {
                 setReferenceImageExtraSlot(options.slot, dataUrl, file.name || `Image ${options.slot}`);
-                if (!options.quiet) showToast("Reference Loaded", `${file.name || `Image ${options.slot}`} ready as Qwen image${options.slot}.`);
+                if (!options.quiet) showToast("Reference Loaded", `${file.name || referenceSlotLabel(Number(options.slot))} ready as ${referenceSlotLabel(Number(options.slot))}.`);
                 return;
             }
             setReferenceImageSource(dataUrl, file.name || 'clipboard image');
@@ -9715,25 +9837,29 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         async function loadReferenceImageFiles(files) {
             const images = [...(files || [])].filter(isImageFile).slice(0, 3);
             if (!images.length) return;
-            if (!isQwenImageEditTemplateActive()) {
+            if (!referenceExtraSlotsEnabled()) {
                 await loadReferenceImageFile(images[0]);
                 if (images.length > 1) showToast("Single Reference Mode", `${presetButtonLabels[activePreset] || activePreset} uses one reference image; loaded the first file.`);
                 return;
             }
             referenceImageExtraDataUrls = [];
-            const loaded = await Promise.all(images.map(async (file, index) => ({
+            const slotCount = referenceExtraSlotNumbers().length;
+            const loaded = (await Promise.all(images.map(async (file, index) => ({
                 file,
                 index,
                 dataUrl: await readImageFileAsDataUrl(file),
-            })));
+            })))).slice(0, 1 + slotCount);
             loaded.forEach(({ file, index, dataUrl }) => {
                 if (index === 0) {
-                    setReferenceImageSource(dataUrl, file.name || 'Picture 1', { keepExtraReferences: true });
+                    setReferenceImageSource(dataUrl, file.name || referenceSlotLabel(1), { keepExtraReferences: true });
                 } else {
-                    setReferenceImageExtraSlot(index + 1, dataUrl, file.name || `Image ${index + 1}`);
+                    setReferenceImageExtraSlot(index + 1, dataUrl, file.name || referenceSlotLabel(index + 1));
                 }
             });
-            showToast("References Loaded", `${loaded.length} image reference${loaded.length === 1 ? '' : 's'} ready. Use Picture 1, Image 2 and Image 3 in Qwen prompts.`);
+            const hint = isWanStartEndFrameMode()
+                ? 'Use the first image as Start Frame and the second as End Frame.'
+                : 'Use Picture 1, Image 2 and Image 3 in Qwen prompts.';
+            showToast("References Loaded", `${loaded.length} image reference${loaded.length === 1 ? '' : 's'} ready. ${hint}`);
         }
 
         function syncControlNetImageSurface() {
@@ -9821,14 +9947,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const input = document.getElementById('referenceImageInput');
             if (!input) return;
             delete input.dataset.qwenRefSlot;
-            input.multiple = isQwenImageEditTemplateActive();
+            input.multiple = referenceExtraSlotsEnabled();
             input.value = '';
             input.click();
         }
 
         function openReferenceImageSlotPicker(slot) {
             const normalizedSlot = Number(slot);
-            if (!isQwenImageEditTemplateActive() || ![2, 3].includes(normalizedSlot)) return;
+            if (!referenceExtraSlotNumbers().includes(normalizedSlot)) return;
             const input = document.getElementById(`referenceImage${normalizedSlot}Input`);
             if (!input) return;
             input.dataset.qwenRefSlot = String(normalizedSlot);
@@ -10560,7 +10686,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 refreshManagerPanel();
             }
 
-            document.getElementById('generateBtnText').innerText = idleGenerateLabel(activity);
+            syncGenerationActionUi();
             showToast("Tab Opened", `${labels[activity]} workspace ready.`);
         }
 
@@ -11379,6 +11505,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const hasLora = (activeLoras || []).length > 0;
             const negativeText = document.getElementById('negPrompt')?.value || 'worst quality, low quality, blurry, deformed';
             const selectedModelName = document.getElementById('modelSelect')?.selectedOptions?.[0]?.dataset?.model || profile.backendModels?.[0]?.name || profile.checkpoint || 'Select model';
+            const sideWidth = document.getElementById('widthInput')?.value || profile.width || 512;
+            const sideHeight = document.getElementById('heightInput')?.value || profile.height || 512;
+            const sideSteps = document.getElementById('stepsSlider')?.value || profile.steps || 20;
+            const sideCfg = document.getElementById('cfgSlider')?.value || profile.cfg || 7;
+            const sideSampler = document.getElementById('samplingMethodSelect')?.value || profile.sampler || 'Euler';
+            const sideScheduler = document.getElementById('schedulerSelect')?.value || profile.scheduler || 'Simple';
             const externalQwenRoute = ['Qwen', 'Anima'].includes(preset);
             const qwenModelIsGguf = /\.gguf$/i.test(String(selectedModelName));
             const modelSource = hasLora ? 'lora' : 'model';
@@ -11395,7 +11527,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { id: 'aura', class_type: 'ModelSamplingAuraFlow', title: 'AuraFlow Shift', x: 430, y: 120, width: 240, height: 105, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'shift', value: '3' }], color: '#2f3c4f' },
                     { id: 'positive', class_type: isImg2Img ? 'TextEncodeZImageOmni' : 'CLIPTextEncode', title: 'Positive Prompt', x: 430, y: 270, width: 290, height: 130, inputs: isImg2Img ? ['clip', 'vae', 'image1', 'prompt'] : ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: isImg2Img ? 'prompt' : 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic image...' }], color: '#1f5f3a' },
                     { id: 'negative', class_type: negativeText ? 'CLIPTextEncode' : 'ConditioningZeroOut', title: negativeText ? 'Negative Prompt' : 'Official Empty Negative', x: 430, y: 450, width: 290, height: 120, inputs: negativeText ? ['clip', 'text'] : ['conditioning'], outputs: ['CONDITIONING'], widgets: negativeText ? [{ name: 'text', value: negativeText }] : [], color: '#5a2c2c' },
-                    { id: 'sampler', class_type: 'KSampler', title: 'Z-Image Turbo Sampler', x: 820, y: 270, width: 300, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: profile.steps }, { name: 'cfg', value: profile.cfg }, { name: 'sampler_name', value: profile.sampler }, { name: 'scheduler', value: profile.scheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.55' : '1.0' }] },
+                    { id: 'sampler', class_type: 'KSampler', title: 'Z-Image Turbo Sampler', x: 820, y: 270, width: 300, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: sideCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.55' : '1.0' }] },
                     { id: 'decode', class_type: 'VAEDecode', title: 'VAE Decode', x: 1190, y: 270, width: 220, height: 112, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [], color: '#62305a' },
                     { id: 'save', class_type: 'SaveImage', title: 'Save Image', x: 1190, y: 430, width: 220, height: 110, inputs: ['images'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA_ZIMAGE_TURBO' }], color: '#3f3f46' }
                 ];
@@ -11418,10 +11550,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 if (isImg2Img) {
                     zNodes.push(
                         { id: 'reference', class_type: 'LoadImage', title: 'Reference Image', x: 70, y: 590, width: 250, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference image' }], color: '#164e63' },
-                        { id: 'encode', class_type: 'VAEEncode', title: 'Encode Reference', x: 430, y: 620, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' }
+                        { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize Reference To Side Menu', x: 390, y: 590, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
+                        { id: 'encode', class_type: 'VAEEncode', title: 'Encode Reference', x: 700, y: 620, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' }
                     );
                     zLinks.push(
-                        { from_node: 'reference', from_slot: 0, to_node: 'encode', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'resize_reference', from_slot: 0, to_node: 'encode', to_slot: 0, type: 'IMAGE' },
                         { from_node: 'vae', from_slot: 0, to_node: 'encode', to_slot: 1, type: 'VAE' },
                         { from_node: 'encode', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' },
                         { from_node: 'reference', from_slot: 0, to_node: 'positive', to_slot: 2, type: 'IMAGE' },
@@ -11451,7 +11585,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { id: 'positive', class_type: 'CLIPTextEncode', title: 'Positive Prompt', x: 430, y: 230, width: 290, height: 130, inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic image...' }], color: '#1f5f3a' },
                     { id: 'guidance', class_type: 'FluxGuidance', title: 'Flux Guidance', x: 760, y: 230, width: 230, height: 105, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [{ name: 'guidance', value: document.getElementById('cfgSlider')?.value || profile.cfg || '3.5' }], color: '#0f766e' },
                     { id: 'negative', class_type: 'ConditioningZeroOut', title: 'Flux Empty Negative', x: 430, y: 420, width: 240, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [], color: '#5a2c2c' },
-                    { id: 'sampler', class_type: 'KSampler', title: 'Flux Sampler', x: 1030, y: 240, width: 300, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: profile.steps }, { name: 'cfg', value: '1.0' }, { name: 'sampler_name', value: profile.sampler }, { name: 'scheduler', value: profile.scheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.55' : '1.0' }], color: '#2f3c4f' },
+                    { id: 'sampler', class_type: 'KSampler', title: 'Flux Sampler', x: 1030, y: 240, width: 300, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: '1.0' }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.55' : '1.0' }], color: '#2f3c4f' },
                     { id: 'decode', class_type: 'VAEDecode', title: 'VAE Decode', x: 1390, y: 250, width: 220, height: 112, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [], color: '#62305a' },
                     { id: 'save', class_type: 'SaveImage', title: 'Save Image', x: 1390, y: 410, width: 220, height: 110, inputs: ['images'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA_FLUX' }], color: '#3f3f46' }
                 ];
@@ -11476,15 +11610,17 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 if (isImg2Img) {
                     fluxNodes.push(
                         { id: 'reference', class_type: 'LoadImage', title: 'Reference Image', x: 70, y: 600, width: 250, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference image' }], color: '#164e63' },
-                        { id: 'encode', class_type: 'VAEEncode', title: 'Encode Reference', x: 430, y: 600, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' }
+                        { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize Reference To Side Menu', x: 390, y: 600, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
+                        { id: 'encode', class_type: 'VAEEncode', title: 'Encode Reference', x: 700, y: 600, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' }
                     );
                     fluxLinks.push(
-                        { from_node: 'reference', from_slot: 0, to_node: 'encode', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'resize_reference', from_slot: 0, to_node: 'encode', to_slot: 0, type: 'IMAGE' },
                         { from_node: 'vae', from_slot: 0, to_node: 'encode', to_slot: 1, type: 'VAE' },
                         { from_node: 'encode', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' }
                     );
                 } else {
-                    fluxNodes.push({ id: 'latent', class_type: 'EmptySD3LatentImage', title: 'Flux Latent', x: 760, y: 430, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: document.getElementById('widthInput')?.value || profile.width }, { name: 'height', value: document.getElementById('heightInput')?.value || profile.height }, { name: 'batch_size', value: '1' }], color: '#4338ca' });
+                    fluxNodes.push({ id: 'latent', class_type: 'EmptySD3LatentImage', title: 'Flux Latent', x: 760, y: 430, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'batch_size', value: '1' }], color: '#4338ca' });
                     fluxLinks.push({ from_node: 'latent', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' });
                 }
                 return {
@@ -11511,17 +11647,28 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 { from_node: 'negative', from_slot: 0, to_node: 'sampler', to_slot: 2, type: 'CONDITIONING' }
             );
             if (isImg2Img) {
-                if (isCanvasInpaint) {
+                if (externalQwenRoute && !isCanvasInpaint) {
                     links.push(
-                        { from_node: 'reference', from_slot: 0, to_node: 'inpaint_encode', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'reference', from_slot: 0, to_node: 'positive', to_slot: 1, type: 'IMAGE' },
+                        { from_node: 'reference', from_slot: 0, to_node: 'negative', to_slot: 1, type: 'IMAGE' },
+                        { from_node: vaeSource, from_slot: vaeOutputSlot, to_node: 'positive', to_slot: 2, type: 'VAE' },
+                        { from_node: vaeSource, from_slot: vaeOutputSlot, to_node: 'negative', to_slot: 2, type: 'VAE' },
+                        { from_node: 'latent', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' }
+                    );
+                } else if (isCanvasInpaint) {
+                    links.push(
+                        { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'resize_reference', from_slot: 0, to_node: 'inpaint_encode', to_slot: 0, type: 'IMAGE' },
                         { from_node: vaeSource, from_slot: vaeOutputSlot, to_node: 'inpaint_encode', to_slot: 1, type: 'VAE' },
-                        { from_node: 'mask_source', from_slot: 0, to_node: 'mask_channel', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'mask_source', from_slot: 0, to_node: 'resize_mask', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'resize_mask', from_slot: 0, to_node: 'mask_channel', to_slot: 0, type: 'IMAGE' },
                         { from_node: 'mask_channel', from_slot: 0, to_node: 'inpaint_encode', to_slot: 2, type: 'MASK' },
                         { from_node: 'inpaint_encode', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' }
                     );
                 } else {
                     links.push(
-                        { from_node: 'reference', from_slot: 0, to_node: 'encode', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'resize_reference', from_slot: 0, to_node: 'encode', to_slot: 0, type: 'IMAGE' },
                         { from_node: vaeSource, from_slot: vaeOutputSlot, to_node: 'encode', to_slot: 1, type: 'VAE' },
                         { from_node: 'encode', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' }
                     );
@@ -11536,6 +11683,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 { from_node: 'decode', from_slot: 0, to_node: 'save', to_slot: 0, type: isVideo ? 'VIDEO' : 'IMAGE' }
             );
             const genericPromptClass = externalQwenRoute ? 'TextEncodeQwenImageEdit' : 'CLIPTextEncode';
+            const promptInputs = externalQwenRoute && isImg2Img && !isCanvasInpaint ? ['clip', 'image', 'vae'] : ['clip', 'text'];
             const modelNode = externalQwenRoute
                 ? {
                     id: 'model',
@@ -11555,9 +11703,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 : { id: 'model', class_type: 'CheckpointLoaderSimple', title: 'Load Model', x: 80, y: 130, width: 250, height: 118, inputs: [], outputs: ['MODEL', 'CLIP', 'VAE'], widgets: [{ name: 'ckpt_name', value: selectedModelName }], color: '#1f3b63' };
             const nodes = [
                 modelNode,
-                { id: 'positive', class_type: genericPromptClass, title: 'Positive Prompt', x: 80, y: 300, width: 260, height: 132, inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic landscape...' }], color: '#1f5f3a' },
-                { id: 'negative', class_type: genericPromptClass, title: 'Negative Prompt', x: 80, y: 480, width: 260, height: 132, inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: negativeText }], color: '#5a2c2c' },
-                { id: 'sampler', class_type: 'KSampler', title: isVideo ? 'Video Sampler / KSampler' : 'KSampler', x: 470, y: 285, width: 285, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: profile.steps }, { name: 'cfg', value: profile.cfg }, { name: 'sampler_name', value: profile.sampler }, { name: 'scheduler', value: profile.scheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.55' : '1.0' }] },
+                { id: 'positive', class_type: genericPromptClass, title: 'Positive Prompt', x: 80, y: 300, width: 260, height: 132, inputs: promptInputs, outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic landscape...' }], color: '#1f5f3a' },
+                { id: 'negative', class_type: genericPromptClass, title: 'Negative Prompt', x: 80, y: 480, width: 260, height: 132, inputs: promptInputs, outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: negativeText }], color: '#5a2c2c' },
+                { id: 'sampler', class_type: 'KSampler', title: isVideo ? 'Video Sampler / KSampler' : 'KSampler', x: 470, y: 285, width: 285, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: sideCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.55' : '1.0' }] },
                 { id: 'decode', class_type: 'VAEDecode', title: 'VAE Decode', x: 870, y: 285, width: 230, height: 124, inputs: ['samples', 'vae'], outputs: [isVideo ? 'VIDEO' : 'IMAGE'], widgets: [], color: '#62305a' },
                 { id: 'preview', class_type: 'PreviewImage', title: 'Preview Output', x: 1160, y: 220, width: 220, height: 110, inputs: [isVideo ? 'video' : 'images'], outputs: [], widgets: [], color: '#164e63' },
                 { id: 'save', class_type: isVideo ? 'SaveVideo' : 'SaveImage', title: isVideo ? 'Save Video' : 'Save Image', x: 1160, y: 370, width: 220, height: 110, inputs: [isVideo ? 'video' : 'images'], outputs: [], widgets: [{ name: 'filename_prefix', value: `NEXUS_BTA_${preset}` }], color: '#3f3f46' },
@@ -11572,17 +11720,24 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             if (isImg2Img) {
                 nodes.push({ id: 'reference', class_type: 'LoadImage', title: 'Reference Image', x: 80, y: 650, width: 250, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference image' }], color: '#164e63' });
-                if (isCanvasInpaint) {
+                if (externalQwenRoute && !isCanvasInpaint) {
+                    nodes.push({ id: 'latent', class_type: 'EmptySD3LatentImage', title: 'QWEN Target Latent', x: 470, y: 650, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'batch_size', value: document.getElementById('batchCountInput')?.value || '1' }], color: '#4338ca' });
+                } else if (isCanvasInpaint) {
                     nodes.push(
                         { id: 'mask_source', class_type: 'LoadImage', title: 'Inpaint Mask', x: 80, y: 795, width: 250, height: 105, inputs: [], outputs: ['IMAGE'], widgets: [{ name: 'image', value: 'canvas mask' }], color: '#5a2c2c' },
-                        { id: 'mask_channel', class_type: 'ImageToMask', title: 'Mask Channel', x: 470, y: 795, width: 220, height: 90, inputs: ['image'], outputs: ['MASK'], widgets: [{ name: 'channel', value: 'red' }], color: '#5a2c2c' },
-                        { id: 'inpaint_encode', class_type: 'VAEEncodeForInpaint', title: 'Encode Reference For Inpaint', x: 470, y: 650, width: 260, height: 118, inputs: ['pixels', 'vae', 'mask'], outputs: ['LATENT'], widgets: [{ name: 'grow_mask_by', value: document.getElementById('maskBlurSlider')?.value || '4' }], color: '#164e63' }
+                        { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize Reference To Side Menu', x: 390, y: 650, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
+                        { id: 'resize_mask', class_type: 'ImageScale', title: 'Resize Inpaint Mask To Side Menu', x: 390, y: 795, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'nearest-exact' }, { name: 'crop', value: 'disabled' }], color: '#5a2c2c' },
+                        { id: 'mask_channel', class_type: 'ImageToMask', title: 'Mask Channel', x: 700, y: 795, width: 220, height: 90, inputs: ['image'], outputs: ['MASK'], widgets: [{ name: 'channel', value: 'red' }], color: '#5a2c2c' },
+                        { id: 'inpaint_encode', class_type: 'VAEEncodeForInpaint', title: 'Encode Reference For Inpaint', x: 700, y: 650, width: 260, height: 118, inputs: ['pixels', 'vae', 'mask'], outputs: ['LATENT'], widgets: [{ name: 'grow_mask_by', value: document.getElementById('maskBlurSlider')?.value || '4' }], color: '#164e63' }
                     );
                 } else {
-                    nodes.push({ id: 'encode', class_type: 'VAEEncode', title: 'Encode Reference', x: 470, y: 650, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' });
+                    nodes.push(
+                        { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize Reference To Side Menu', x: 390, y: 650, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
+                        { id: 'encode', class_type: 'VAEEncode', title: 'Encode Reference', x: 700, y: 650, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' }
+                    );
                 }
             } else {
-                nodes.push({ id: 'latent', class_type: 'EmptyLatentImage', title: isVideo ? 'Empty Video Latent' : 'Empty Latent', x: 470, y: 90, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: document.getElementById('widthInput')?.value || profile.width }, { name: 'height', value: document.getElementById('heightInput')?.value || profile.height }, { name: 'batch_size', value: '1' }], color: '#4338ca' });
+                nodes.push({ id: 'latent', class_type: 'EmptyLatentImage', title: isVideo ? 'Empty Video Latent' : 'Empty Latent', x: 470, y: 90, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'batch_size', value: '1' }], color: '#4338ca' });
             }
             if (hasLora) nodes.push({ id: 'lora', class_type: isVideo ? 'LTX2LoraLoaderAdvanced' : 'LoraLoader', title: 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: activeLoras.slice(0, 4).map(item => ({ name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) })), color: '#4c1d95' });
             if (isVideo) {
@@ -11826,7 +11981,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     mask_blur: parseInt(document.getElementById('maskBlurSlider')?.value || '4', 10),
                     mask_content: document.getElementById('maskContentSelect')?.value || 'Original',
                     reference_image: referenceImageDataUrl || null,
-                    reference_images: isQwenImageEditTemplateActive()
+                    reference_images: referenceExtraSlotsEnabled()
                         ? [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean)
                         : (referenceImageDataUrl ? [referenceImageDataUrl] : []),
                     mask_image: exportInpaintMaskDataUrl()
@@ -11965,19 +12120,30 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             activeGalleryIndex = 0;
             renderGallerySidebar();
             setLinearOutput(galleryItems[0], { force: true });
+            if (document.getElementById('galleryModal') && !document.getElementById('galleryModal').classList.contains('hidden')) {
+                renderGalleryModal();
+            }
             setTimeout(async () => {
                 await syncGalleryFromBackend({ quiet: true, preferNewest: true, force: true });
                 if (galleryItems[0]) setLinearOutput(galleryItems[0], { force: true });
+                if (document.getElementById('galleryModal') && !document.getElementById('galleryModal').classList.contains('hidden')) {
+                    renderGalleryModal();
+                }
             }, 900);
         }
 
         function setGenerationProgress(progress, message = 'Generating...', subtext = '') {
             const normalized = Math.max(0, Math.min(100, Number(progress || 0)));
             const bar = document.getElementById('generationProgressBar');
+            const globalBar = document.getElementById('globalGenerationProgressBar');
             const text = document.getElementById('generationProgressText');
+            const globalText = document.getElementById('globalGenerationProgressText');
             const sub = document.getElementById('generationProgressSubtext');
+            generationProgressState = { progress: normalized, message, subtext };
             if (bar) bar.style.width = `${normalized}%`;
+            if (globalBar) globalBar.style.width = `${normalized}%`;
             if (text) text.innerText = `${message} ${Math.round(normalized)}%`;
+            if (globalText) globalText.innerText = `${message} ${Math.round(normalized)}%${subtext ? ` - ${subtext}` : ''}`;
             if (sub) sub.innerText = subtext || 'Waiting for ComfyUI progress events...';
         }
 
@@ -11996,6 +12162,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     addGeneratedOutputsToGallery({ outputs: job.outputs || [], message: job.message }, payload);
                     return job;
                 }
+                if (job.status === 'cancelled') {
+                    throw new Error('Generation cancelled.');
+                }
                 if (job.status === 'failed') {
                     throw new Error(job.error || job.message || 'Generation failed.');
                 }
@@ -12004,85 +12173,94 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             throw new Error('Generation cancelled.');
         }
 
+        async function requestGenerationCancel(jobId) {
+            if (!backendOnline || !jobId) return null;
+            const job = await nexusFetch(`/generate/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+            refreshRuntimeMemory({ quiet: true }).catch(() => {});
+            return job;
+        }
+
+        function cancelActiveGeneration() {
+            if (!generationUiActive) return;
+            const cancellingJobId = activeGenerationJobId;
+            generationCancelRequested = true;
+            activeGenerationJobId = null;
+            setGenerationProgress(100, 'Cancelling generation...', cancellingJobId ? `Job ${cancellingJobId}` : 'Waiting for backend job id.');
+            syncGenerationActionUi();
+            if (cancellingJobId) {
+                requestGenerationCancel(cancellingJobId)
+                    .catch(error => showToast("Cancel Failed", error.message.slice(0, 140)));
+            }
+            showToast("Generation Cancelled", "Generation process was cancelled by user.");
+        }
+
         // Generate through the embedded backend when available, with a UI-only fallback.
         async function simulateGeneration() {
             if (currentActivity === 'extras') {
                 startExtrasProcessing();
                 return;
             }
-            const btn = document.getElementById('generateBtnText');
-            const overlay = document.getElementById('loadingOverlay');
-            
-            if(overlay.classList.contains('hidden')) {
-                btn.innerText = "Cancel";
-                overlay.classList.remove('hidden');
-                setGenerationProgress(0, 'Preparing generation...', 'Building request payload.');
+            if (generationUiActive) {
+                cancelActiveGeneration();
+                return;
+            }
 
-                if (backendOnline) {
-                    const payload = collectGenerationPayload();
-                    if (payload.activity === 'img2img' && payload.workspace === 'canvas' && !payload.img2img.reference_image) {
-                        showToast("Inpaint Source Required", "Load or drag an image into the inpaint canvas first.");
-                        btn.innerText = idleGenerateLabel();
-                        overlay.classList.add('hidden');
-                        return;
+            generationCancelRequested = false;
+            setGenerationUiActive(true);
+            setGenerationProgress(0, 'Preparing generation...', 'Building request payload.');
+
+            if (backendOnline) {
+                const payload = collectGenerationPayload();
+                if (payload.activity === 'img2img' && payload.workspace === 'canvas' && !payload.img2img.reference_image) {
+                    showToast("Inpaint Source Required", "Load or drag an image into the inpaint canvas first.");
+                    setGenerationUiActive(false);
+                    return;
+                }
+                if (payload.activity === 'img2img' && payload.workspace === 'canvas' && !payload.img2img.mask_image) {
+                    showToast("Inpaint Mask Required", "Paint a mask on the inpaint canvas before generating.");
+                    setGenerationUiActive(false);
+                    return;
+                }
+                if (payload.controlnet?.enabled && !payload.controlnet.image) {
+                    showToast("ControlNet Image Required", "Load or drag an image into the ControlNet panel before generating.");
+                    setGenerationUiActive(false);
+                    return;
+                }
+                if (payload.controlnet?.enabled && !controlNetModelsForPreset(payload.preset, payload.controlnet.type).length) {
+                    showToast("ControlNet Model Required", "Select a compatible ControlNet model for the active preset/type.");
+                    setGenerationUiActive(false);
+                    return;
+                }
+                if (!payload.model_path) {
+                    showToast("No Model Selected", "Add a compatible model file to the active preset folder and refresh.");
+                    setGenerationUiActive(false);
+                    return;
+                }
+                try {
+                    const job = await nexusFetch('/generate/start', {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+                    if (generationCancelRequested) {
+                        await requestGenerationCancel(job.job_id);
+                        throw new Error('Generation cancelled.');
                     }
-                    if (payload.activity === 'img2img' && payload.workspace === 'canvas' && !payload.img2img.mask_image) {
-                        showToast("Inpaint Mask Required", "Paint a mask on the inpaint canvas before generating.");
-                        btn.innerText = idleGenerateLabel();
-                        overlay.classList.add('hidden');
-                        return;
-                    }
-                    if (payload.controlnet?.enabled && !payload.controlnet.image) {
-                        showToast("ControlNet Image Required", "Load or drag an image into the ControlNet panel before generating.");
-                        btn.innerText = idleGenerateLabel();
-                        overlay.classList.add('hidden');
-                        return;
-                    }
-                    if (payload.controlnet?.enabled && !controlNetModelsForPreset(payload.preset, payload.controlnet.type).length) {
-                        showToast("ControlNet Model Required", "Select a compatible ControlNet model for the active preset/type.");
-                        btn.innerText = idleGenerateLabel();
-                        overlay.classList.add('hidden');
-                        return;
-                    }
-                    if (!payload.model_path) {
-                        showToast("No Model Selected", "Add a compatible model file to the active preset folder and refresh.");
-                        btn.innerText = idleGenerateLabel();
-                        overlay.classList.add('hidden');
-                        return;
-                    }
-                    try {
-                        const job = await nexusFetch('/generate/start', {
-                            method: 'POST',
-                            body: JSON.stringify(payload)
-                        });
-                        setGenerationProgress(job.progress || 1, job.message || 'Queued generation.', `Job ${job.job_id}`);
-                        const response = await pollGenerationJob(job.job_id, payload);
-                        showToast("Generation Complete", response.message || "Output generated by Nexus backend.");
-                    } catch (error) {
+                    setGenerationProgress(job.progress || 1, job.message || 'Queued generation.', `Job ${job.job_id}`);
+                    const response = await pollGenerationJob(job.job_id, payload);
+                    showToast("Generation Complete", response.message || "Output generated by Nexus backend.");
+                } catch (error) {
+                    if (!/cancelled/i.test(error.message || '')) {
                         showToast("Generation Failed", error.message.slice(0, 180));
-                    } finally {
-                        activeGenerationJobId = null;
-                        btn.innerText = idleGenerateLabel();
-                        overlay.classList.add('hidden');
                     }
-                } else {
-                    btn.innerText = idleGenerateLabel();
-                    overlay.classList.add('hidden');
-                    setBootState('Waiting for backend before generation...');
-                    showToast("Backend Offline", "Nexus will wait for the backend instead of using HTML fallback.");
-                    initializeBackendBridge();
+                } finally {
+                    activeGenerationJobId = null;
+                    setGenerationUiActive(false);
                 }
             } else {
-                const cancellingJobId = activeGenerationJobId;
-                activeGenerationJobId = null;
-                if (backendOnline && cancellingJobId) {
-                    nexusFetch(`/generate/${encodeURIComponent(cancellingJobId)}/cancel`, { method: 'POST' })
-                        .then(() => refreshRuntimeMemory({ quiet: true }))
-                        .catch(error => showToast("Cancel Failed", error.message.slice(0, 140)));
-                }
-                btn.innerText = idleGenerateLabel();
-                overlay.classList.add('hidden');
-                showToast("Generation Cancelled", "Generation process was cancelled by user.");
+                setGenerationUiActive(false);
+                setBootState('Waiting for backend before generation...');
+                showToast("Backend Offline", "Nexus will wait for the backend instead of using HTML fallback.");
+                initializeBackendBridge();
             }
         }
 
@@ -12639,7 +12817,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const slot = Number(event.target.dataset.qwenRefSlot || 0);
             delete event.target.dataset.qwenRefSlot;
             event.target.multiple = true;
-            if ((slot === 2 || slot === 3) && files[0]) {
+            if (referenceExtraSlotNumbers().includes(slot) && files[0]) {
                 loadReferenceImageFile(files[0], { slot });
             } else if (files.length > 1) {
                 loadReferenceImageFiles(files);
