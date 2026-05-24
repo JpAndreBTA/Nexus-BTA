@@ -67,6 +67,7 @@ SCHEDULER_ALIASES = {
 UI_HELPER_NODE_TYPES = {
     "Note",
     "MarkdownNote",
+    "PrimitiveNode",
     "SetNode",
     "GetNode",
     "Anything Everywhere",
@@ -4226,6 +4227,10 @@ def _replacement_for_model_input(
     lora_slot: int,
 ) -> tuple[str | None, int]:
     haystack = " ".join([key, value, class_type, title]).lower()
+    checkpoint_keys = {"ckpt_name", "unet_name", "model_name", "checkpoint_name"}
+    if key in checkpoint_keys and "projection" not in haystack and "proj" not in haystack:
+        if assets.get("primary_model"):
+            return assets["primary_model"], lora_slot
     if "high" in haystack and "wan" in haystack and assets.get("wan_high_model"):
         return assets["wan_high_model"], lora_slot
     if "low" in haystack and "wan" in haystack and assets.get("wan_low_model"):

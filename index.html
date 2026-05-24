@@ -4522,6 +4522,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (hadExtraReferences && !referenceExtraSlotsEnabled()) {
                 referenceImageExtraDataUrls = [];
             }
+            if (previousPreset !== presetName && pruneActiveLorasForPreset(presetName)) {
+                renderActiveLoras();
+                updatePromptWithLoras();
+            }
 
             activatePresetButton(presetName);
             populateModelSelect(presetName);
@@ -12000,6 +12004,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 }
             } else {
                 links.push({ from_node: 'latent', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' });
+                if (externalQwenRoute) {
+                    links.push(
+                        { from_node: vaeSource, from_slot: vaeOutputSlot, to_node: 'positive', to_slot: 1, type: 'VAE' },
+                        { from_node: vaeSource, from_slot: vaeOutputSlot, to_node: 'negative', to_slot: 1, type: 'VAE' }
+                    );
+                }
             }
             links.push(
                 { from_node: 'sampler', from_slot: 0, to_node: 'decode', to_slot: 0, type: 'LATENT' },
@@ -12008,7 +12018,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 { from_node: 'decode', from_slot: 0, to_node: 'save', to_slot: 0, type: isVideo ? 'VIDEO' : 'IMAGE' }
             );
             const genericPromptClass = externalQwenRoute ? 'TextEncodeQwenImageEdit' : 'CLIPTextEncode';
-            const promptInputs = externalQwenRoute && isImg2Img && !isCanvasInpaint ? ['clip', 'image', 'vae'] : ['clip', 'text'];
+            const promptInputs = externalQwenRoute
+                ? (isImg2Img && !isCanvasInpaint ? ['clip', 'image', 'vae', 'prompt'] : ['clip', 'vae', 'prompt'])
+                : ['clip', 'text'];
+            const promptWidgetName = externalQwenRoute ? 'prompt' : 'text';
             const modelNode = externalQwenRoute
                 ? {
                     id: 'model',
@@ -12028,8 +12041,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 : { id: 'model', class_type: 'CheckpointLoaderSimple', title: 'Load Model', x: 80, y: 130, width: 250, height: 118, inputs: [], outputs: ['MODEL', 'CLIP', 'VAE'], widgets: [{ name: 'ckpt_name', value: selectedModelName }], color: '#1f3b63' };
             const nodes = [
                 modelNode,
-                { id: 'positive', class_type: genericPromptClass, title: 'Positive Prompt', x: 80, y: 300, width: 260, height: 132, inputs: promptInputs, outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic landscape...' }], color: '#1f5f3a' },
-                { id: 'negative', class_type: genericPromptClass, title: 'Negative Prompt', x: 80, y: 480, width: 260, height: 132, inputs: promptInputs, outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: negativeText }], color: '#5a2c2c' },
+                { id: 'positive', class_type: genericPromptClass, title: 'Positive Prompt', x: 80, y: 300, width: 260, height: 132, inputs: promptInputs, outputs: ['CONDITIONING'], widgets: [{ name: promptWidgetName, value: document.getElementById('posPrompt')?.value || 'Cinematic landscape...' }], color: '#1f5f3a' },
+                { id: 'negative', class_type: genericPromptClass, title: 'Negative Prompt', x: 80, y: 480, width: 260, height: 132, inputs: promptInputs, outputs: ['CONDITIONING'], widgets: [{ name: promptWidgetName, value: negativeText }], color: '#5a2c2c' },
                 { id: 'sampler', class_type: 'KSampler', title: isVideo ? 'Video Sampler / KSampler' : 'KSampler', x: 470, y: 285, width: 285, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: sideCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.75' : '1.0' }] },
                 { id: 'decode', class_type: 'VAEDecode', title: 'VAE Decode', x: 870, y: 285, width: 230, height: 124, inputs: ['samples', 'vae'], outputs: [isVideo ? 'VIDEO' : 'IMAGE'], widgets: [], color: '#62305a' },
                 { id: 'preview', class_type: 'PreviewImage', title: 'Preview Output', x: 1160, y: 220, width: 220, height: 110, inputs: [isVideo ? 'video' : 'images'], outputs: [], widgets: [], color: '#164e63' },
@@ -12069,7 +12082,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             if (hasLora) nodes.push(qwenModelOnlyLora
                 ? { id: 'lora', class_type: 'LoraLoaderModelOnly', title: 'QWEN LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: activeLoras[0]?.relative_name || activeLoras[0]?.name || 'select_lora.safetensors' }, { name: 'strength_model', value: Number(activeLoras[0]?.strength || 0.65).toFixed(2) }], color: '#4c1d95' }
-                : { id: 'lora', class_type: isVideo ? 'LTX2LoraLoaderAdvanced' : 'LoraLoader', title: 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: activeLoras.slice(0, 4).map(item => ({ name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) })), color: '#4c1d95' });
+                : { id: 'lora', class_type: isVideo ? (preset === 'LTX' ? 'LTX2LoraLoaderAdvanced' : 'LoraLoaderModelOnly') : 'LoraLoader', title: 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: isVideo ? ['model'] : ['model', 'clip'], outputs: isVideo ? ['MODEL'] : ['MODEL', 'CLIP'], widgets: activeLoras.slice(0, 4).map(item => ({ name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) })), color: '#4c1d95' });
             if (isVideo) {
                 nodes.push(
                     { id: 'video_settings', class_type: 'PrimitiveNode', title: 'Video / Motion Settings', x: 760, y: 90, width: 260, height: 150, inputs: [], outputs: ['INT', 'FLOAT', 'STRING'], widgets: [{ name: 'frames', value: document.getElementById('framesInput')?.value || profile.videoSettings?.frames || 49 }, { name: 'seconds', value: document.getElementById('secondsInput')?.value || profile.videoSettings?.seconds || 4 }, { name: 'fps', value: document.getElementById('fpsInput')?.value || profile.videoSettings?.fps || 8 }, { name: 'motion_adapter', value: document.getElementById('motionSelect')?.value || profile.motionAdapters?.[0] || 'Auto by model' }, { name: 'omnicine_lora', value: activeOmnicineSelection() || 'Off' }, { name: 'omnicine_enabled', value: activeOmnicineSelection() ? 'true' : 'false' }, { name: 'active_audio', value: document.getElementById('activeAudioToggle')?.checked ? 'true' : 'false' }, { name: 'latent_upscale', value: document.getElementById('latentUpscaleSelect')?.value || 'Automatic' }], color: '#2f3c4f' },
@@ -12407,6 +12420,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             } else if (activePreset === 'Qwen' && currentActivity === 'img2img') {
                 payload.workflow_override = null;
                 payload.workflow_id = null;
+            } else if (activePreset === 'Wan' && currentActivity === 'img2img') {
+                payload.workflow_override = null;
+                payload.workflow_id = null;
             } else if ((activeWorkflowId || activeWorkspace === 'workflow') && activeWorkflowGraph?.nodes?.length) {
                 const graphPreset = activeWorkflowAnalysis
                     ? inferPresetFromWorkflow(activeWorkflowAnalysis)
@@ -12661,6 +12677,49 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function normalizeLoraToken(value) {
             return String(value || '').trim().replaceAll('\\', '/').toLowerCase();
+        }
+
+        function loraLookupName(value) {
+            const text = String(value || '').trim();
+            if (!text) return '';
+            const normalized = normalizeLoraToken(text).replace(/^loras\//, '');
+            const match = (loraLibrary || []).find(lora => {
+                const candidates = [lora.name, lora.relativeName, lora.path]
+                    .map(item => normalizeLoraToken(item).replace(/^loras\//, ''))
+                    .filter(Boolean);
+                return candidates.includes(normalized)
+                    || candidates.some(candidate => candidate.endsWith(normalized) || normalized.endsWith(candidate));
+            });
+            return normalizeLoraToken(match?.relativeName || normalized).replace(/^loras\//, '');
+        }
+
+        function loraCompatibleWithPreset(lora, presetName = activePreset) {
+            const rawName = loraLookupName(lora?.relative_name || lora?.relativeName || lora?.path || lora?.name || lora);
+            if (!rawName) return false;
+            const parts = rawName.split('/').filter(Boolean);
+            const family = parts.length > 1 ? parts[0] : '';
+            const known = {
+                sd15: new Set(['sd', 'sd15', 'sd1', 'sd1.5', 'stable-diffusion']),
+                xl: new Set(['xl', 'sdxl', 'illustrious', 'ilustrous', 'wai', 'pony']),
+                qwen: new Set(['qwen']),
+                anima: new Set(['anima']),
+                ltx: new Set(['ltx', 'ltx2', 'ltx23', 'ltxv']),
+                wan: new Set(['wan']),
+                flux: new Set(['flux']),
+                lumina: new Set(['lumina']),
+                zimage: new Set(['zimage', 'zimageturbo', 'z-image', 'z_image'])
+            };
+            const aliases = { SD: 'sd15', XL: 'xl', ZImageTurbo: 'zimage' };
+            const presetKey = aliases[presetName] || String(presetName || '').toLowerCase();
+            const knownFamilies = new Set(Object.values(known).flatMap(set => [...set]));
+            if (!family || !knownFamilies.has(family)) return true;
+            return !!known[presetKey]?.has(family);
+        }
+
+        function pruneActiveLorasForPreset(presetName = activePreset) {
+            const before = Array.isArray(activeLoras) ? activeLoras.length : 0;
+            activeLoras = (Array.isArray(activeLoras) ? activeLoras : []).filter(lora => loraCompatibleWithPreset(lora, presetName));
+            return activeLoras.length !== before;
         }
 
         function loraFilterTokens(lora) {
