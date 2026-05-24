@@ -488,6 +488,7 @@ class ComfyClient:
                 elapsed = max(0.0, now - started_at)
                 estimated = min(95, int(12 + (83 * (elapsed / (elapsed + 90)))))
                 eta_seconds = max(0.0, (elapsed / max(1, estimated - 12)) * (95 - estimated)) if estimated > 12 else None
+                progress_per_second = max(0.0, (estimated - 12) / elapsed) if elapsed > 0 else 0.0
                 progress_callback(
                     {
                         "status": "polling",
@@ -495,6 +496,7 @@ class ComfyClient:
                         "message": "Syncing ComfyUI history",
                         "elapsed_seconds": round(elapsed, 1),
                         "eta_seconds": round(eta_seconds, 1) if eta_seconds is not None else None,
+                        "progress_per_second": round(progress_per_second, 3) if progress_per_second else None,
                         "prompt_id": prompt_id,
                     }
                 )

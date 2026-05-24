@@ -68,6 +68,8 @@ ANSI = {
     "red": "\033[91m",
     "green": "\033[92m",
     "yellow": "\033[93m",
+    "blue": "\033[94m",
+    "magenta": "\033[95m",
     "cyan": "\033[96m",
     "white": "\033[97m",
 }
@@ -134,16 +136,38 @@ def _console_speed(job: dict[str, Any]) -> str:
     parts: list[str] = []
     steps_per_second = job.get("steps_per_second")
     if isinstance(steps_per_second, (int, float)) and steps_per_second > 0:
-        parts.append(f"{steps_per_second:.2f} step/s")
+        parts.append(f"vel {steps_per_second:.2f} step/s")
+    elif isinstance(job.get("progress_per_second"), (int, float)) and job.get("progress_per_second") > 0:
+        parts.append(f"vel {float(job['progress_per_second']):.2f}%/s")
     eta_seconds = job.get("eta_seconds")
     if isinstance(eta_seconds, (int, float)) and eta_seconds > 0 and int(job.get("progress") or 0) < 100:
         parts.append(f"eta {_seconds_label(eta_seconds)}")
     elapsed_seconds = job.get("elapsed_seconds")
     if isinstance(elapsed_seconds, (int, float)) and elapsed_seconds >= 0:
-        parts.append(f"elapsed {_seconds_label(elapsed_seconds)}")
+        parts.append(f"tempo {_seconds_label(elapsed_seconds)}")
     elif job.get("_queued_monotonic"):
-        parts.append(f"wait {_seconds_label(time.monotonic() - float(job['_queued_monotonic']))}")
-    return " ".join(parts)
+        parts.append(f"fila {_seconds_label(time.monotonic() - float(job['_queued_monotonic']))}")
+    return " | ".join(parts)
+
+
+def _console_stage(job: dict[str, Any]) -> str:
+    status = str(job.get("status") or "").lower()
+    message = str(job.get("message") or "").lower()
+    if job.get("current_step") is not None and job.get("total_steps"):
+        return f"sample {job['current_step']}/{job['total_steps']}"
+    if status == "queued":
+        return "fila"
+    if status == "starting":
+        return "runtime"
+    if status == "preparing":
+        return "assets"
+    if status == "building":
+        return "workflow"
+    if status == "polling":
+        return "sync"
+    if "executing node" in message:
+        return "node"
+    return status or "active"
 
 
 def _console_generation(job: dict[str, Any], force: bool = False) -> None:
@@ -160,8 +184,8 @@ def _console_generation(job: dict[str, Any], force: bool = False) -> None:
     job["_last_bucket"] = bucket
     job["_last_status"] = job.get("status")
     job["_last_step_key"] = step_key
-    filled = max(0, min(20, round(progress / 5)))
-    bar = "#" * filled + "-" * (20 - filled)
+    filled = max(0, min(24, round(progress / 4.1667)))
+    bar = "#" * filled + "-" * (24 - filled)
     raw_status = str(job.get("status") or "queued")
     status = _console_status(raw_status)
     color = ANSI["green"] if status == "DONE" else ANSI["red"] if status in {"FAIL", "CANCEL"} else ANSI["cyan"]
@@ -169,16 +193,16 @@ def _console_generation(job: dict[str, Any], force: bool = False) -> None:
     message = _console_message(job)
     speed = _console_speed(job)
     node = str(job.get("node") or "").strip()
-    step = ""
-    if job.get("current_step") is not None and job.get("total_steps"):
-        step = f" {job['current_step']}/{job['total_steps']}"
-    node_part = f" node {node}" if node else ""
-    detail = " ".join(part for part in [step.strip(), node_part.strip(), speed, message] if part)
+    stage = _console_stage(job)
+    node_part = f"node {node}" if node else ""
+    status_message = "" if job.get("current_step") is not None and message == "sampling" else message
+    detail = " | ".join(part for part in [f"etapa {stage}", node_part, speed, status_message] if part)
+    brand = f"{ANSI['red']}NEXUS{ANSI['reset']} {ANSI['cyan']}BTA{ANSI['reset']}"
     try:
         print(
-            f"{ANSI['muted']}[{timestamp}]{ANSI['reset']} {ANSI['red']}NEXUS{ANSI['reset']} "
+            f"{ANSI['muted']}[{timestamp}]{ANSI['reset']} {brand} "
             f"{color}{status:<6}{ANSI['reset']} {color}{bar}{ANSI['reset']} "
-            f"{ANSI['white']}{progress:3d}%{ANSI['reset']} {ANSI['muted']}{detail}{ANSI['reset']}",
+            f"{ANSI['white']}{progress:3d}%{ANSI['reset']} {ANSI['muted']}| {detail}{ANSI['reset']}",
             flush=True,
         )
     except OSError:
@@ -728,6 +752,7 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
         ("wan_low_model", "wan_low_model"),
         ("wan_4step_high_lora", "wan_4step_high_lora"),
         ("wan_4step_low_lora", "wan_4step_low_lora"),
+        ("clip_vision", "clip_vision"),
     ):
         current_value = str(video.get(target_key) or "").strip().lower()
         if assets.get(source_key) and (not current_value or current_value in {"automatic", "auto"}):
@@ -1650,6 +1675,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     raise ValueError("WAN 2.2 requires a UMT5 text encoder in models/text_encoders.")
                 if not vae_name:
                     raise ValueError("WAN 2.2 requires a Wan VAE in models/vae.")
+                if not assets.get("clip_vision"):
+                    raise ValueError("WAN 2.2 requires clip_vision_h.safetensors or a compatible CLIP Vision encoder in models/clip_vision.")
                 wan_first_last_node = None
                 if len(reference_image_names) > 1:
                     wan_first_last_node = _available_comfy_node(
@@ -1666,6 +1693,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     reference_image_name=reference_image_name,
                     reference_end_image_name=reference_image_names[1] if len(reference_image_names) > 1 else None,
                     first_last_frame_node=wan_first_last_node,
+                    clip_vision_name=assets.get("clip_vision"),
                 )
             elif request.preset.lower() == "qwen":
                 checkpoint_name = assets.get("primary_model") or ""

@@ -311,6 +311,14 @@ def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str, re
         assets["text_encoder"] = _comfy_name(text_encoder)
     if vae:
         assets["vae"] = _comfy_name(vae)
+    clip_vision = (
+        _first(by_category, ["clip_vision"], ["clip_vision"])
+        or _first(by_category, ["clip_vision"], ["siglip"])
+        or _first(by_category, ["clip_vision"], ["vision"])
+        or _first(by_category, ["clip_vision"], [])
+    )
+    if clip_vision:
+        assets["clip_vision"] = _comfy_name(clip_vision)
     high_lora = _first_wan_4step_lora(by_category, "high")
     low_lora = _first_wan_4step_lora(by_category, "low")
     if high_lora and low_lora:

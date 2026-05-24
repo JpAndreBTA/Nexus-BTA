@@ -1834,6 +1834,7 @@ def build_basic_wan_i2video_workflow(
     reference_image_name: str | None = None,
     reference_end_image_name: str | None = None,
     first_last_frame_node: str | None = None,
+    clip_vision_name: str | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     video_options = request.video or {}
@@ -2031,6 +2032,24 @@ def build_basic_wan_i2video_workflow(
             "_meta": {"title": "End Frame Image"},
         }
         workflow["10"]["inputs"]["end_image"] = ["16", 0]
+        if clip_vision_name:
+            workflow["17"] = {
+                "class_type": "CLIPVisionLoader",
+                "inputs": {"clip_name": clip_vision_name},
+                "_meta": {"title": "WAN CLIP Vision"},
+            }
+            workflow["18"] = {
+                "class_type": "CLIPVisionEncode",
+                "inputs": {"clip_vision": ["17", 0], "image": ["9", 0], "crop": "center"},
+                "_meta": {"title": "Encode WAN Start Frame Vision"},
+            }
+            workflow["19"] = {
+                "class_type": "CLIPVisionEncode",
+                "inputs": {"clip_vision": ["17", 0], "image": ["16", 0], "crop": "center"},
+                "_meta": {"title": "Encode WAN End Frame Vision"},
+            }
+            workflow["10"]["inputs"]["clip_vision_start_image"] = ["18", 0]
+            workflow["10"]["inputs"]["clip_vision_end_image"] = ["19", 0]
     workflow.update(wan_lora_nodes)
     return workflow
 

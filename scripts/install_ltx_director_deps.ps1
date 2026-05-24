@@ -7,7 +7,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Write-NexusWarn([string]$Message) {
-    Write-Warning "[NEXUS BTA] $Message"
+    if (Get-Command Write-NexusLine -ErrorAction SilentlyContinue) {
+        Write-NexusLine $Message "Warn"
+    } else {
+        Write-Warning "[NEXUS BTA] $Message"
+    }
 }
 
 function Invoke-NexusStep([scriptblock]$Step, [string]$Label) {
@@ -26,6 +30,12 @@ function Get-AbsolutePath([string]$PathValue) {
 }
 
 $root = Get-AbsolutePath $ProjectRoot
+$terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
+if (Test-Path -LiteralPath $terminalHelpers) {
+    . $terminalHelpers
+} elseif (!(Get-Command Write-NexusLine -ErrorAction SilentlyContinue)) {
+    function Write-NexusLine([string]$Message, [string]$Kind = "Info") { Write-Host "[NEXUS BTA] $Message" }
+}
 $customNodesDir = Join-Path $root "custom_nodes"
 $modelsDir = Join-Path $root "models"
 $diffusionModelsDir = Join-Path $modelsDir "diffusion_models"
@@ -55,16 +65,17 @@ $repos = @(
 foreach ($repo in $repos) {
     Invoke-NexusStep -Label "Installing $($repo.Name)" -Step {
         if (!(Test-Path -LiteralPath $repo.Path)) {
-            Write-Host "[NEXUS BTA] Cloning $($repo.Name)..."
+            Write-NexusLine "Instalando $($repo.Name)..." "Info"
             git clone --depth 1 $repo.Url $repo.Path
         } else {
-            Write-Host "[NEXUS BTA] $($repo.Name) already present."
+            Write-NexusLine "$($repo.Name) presente." "Ok"
         }
 
         $requirements = Join-Path $repo.Path "requirements.txt"
         if (Test-Path -LiteralPath $requirements) {
-            Write-Host "[NEXUS BTA] Checking $($repo.Name) Python requirements..."
-            & $RuntimePython -m pip install -r $requirements
+            Write-NexusLine "$($repo.Name) requisitos Python..." "Info"
+            & $RuntimePython -m pip install -q -r $requirements
+            Write-NexusLine "$($repo.Name) requisitos atendidos." "Ok"
         }
     }
 }
@@ -82,9 +93,9 @@ Invoke-NexusStep -Label "Downloading MelBandRoFormer model" -Step {
     $url = "https://huggingface.co/Kijai/MelBandRoFormer_comfy/resolve/main/MelBandRoformer_fp16.safetensors?download=true"
     $partial = "$melModel.part"
     Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
-    Write-Host "[NEXUS BTA] Downloading MelBandRoformer_fp16.safetensors to models\diffusion_models\MelRoFormer..."
+    Write-NexusLine "Baixando MelBandRoformer_fp16.safetensors..." "Info"
     Invoke-WebRequest -Uri $url -OutFile $partial -TimeoutSec 1800
     Move-Item -LiteralPath $partial -Destination $melModel -Force
 }
 
-Write-Host "[NEXUS BTA] LTX Director dependency check complete."
+Write-NexusLine "LTX Director requisitos atendidos." "Ok"

@@ -14,7 +14,17 @@ $comfyRoot = Join-Path $root "runtime\ComfyUI"
 $watcher = Join-Path $root "scripts\watch_launcher.ps1"
 $runtimeHotfixes = Join-Path $root "scripts\apply_runtime_hotfixes.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
+$terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
 $uiUrl = "http://127.0.0.1:7861/ui"
+
+if (Test-Path -LiteralPath $terminalHelpers) {
+    . $terminalHelpers
+} else {
+    function Write-NexusLogo { Write-Host "[NEXUS BTA]" }
+    function Write-NexusLine([string]$Message, [string]$Kind = "Info") { Write-Host "[NEXUS BTA] $Message" }
+    function Write-NexusSection([string]$Title) { Write-Host ""; Write-NexusLine $Title "Step" }
+    function Invoke-NexusRepositoryUpdate([string]$ProjectRoot) { return }
+}
 
 function Test-NexusHealth {
     try {
@@ -92,15 +102,22 @@ if (!(Test-Path -LiteralPath $python)) {
     $python = "python"
 }
 
+Write-NexusLogo
+Write-NexusSection "Atualizacoes"
+Invoke-NexusRepositoryUpdate -ProjectRoot $root
+
 if (Test-Path -LiteralPath $ltxDirectorDeps) {
+    Write-NexusSection "Requisitos"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $python
 }
 
 if (Test-Path -LiteralPath $runtimeHotfixes) {
+    Write-NexusLine "Aplicando ajustes locais do runtime..." "Info"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $runtimeHotfixes -ProjectRoot $root
 }
 
-Write-Host "[NEXUS BTA] Closing stale Nexus/ComfyUI runtimes..."
+Write-NexusSection "Runtime"
+Write-NexusLine "Fechando processos antigos do Nexus/ComfyUI..." "Info"
 Stop-NexusRuntimeProcesses
 
 foreach ($relative in @("output", "temp")) {
@@ -141,20 +158,20 @@ if ($comfyPortOwner) {
 }
 
 if (!(Test-NexusHealth)) {
-    Write-Host "[NEXUS BTA] Starting backend..."
+    Write-NexusLine "Iniciando backend..." "Info"
     Start-Process -FilePath $python -ArgumentList @($backend) -WorkingDirectory $root -NoNewWindow
 }
 
-Write-Host "[NEXUS BTA] Waiting for API..."
+Write-NexusLine "Aguardando API..." "Info"
 if (!(Wait-NexusHealth -Seconds 180)) {
     throw "Backend did not become ready at http://127.0.0.1:7861/api/health"
 }
 
-Write-Host "[NEXUS BTA] Preparing model folders..."
+Write-NexusLine "Pastas e catalogo de modelos prontos." "Info"
 Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/model-tree" -TimeoutSec 15 | Out-Null
 
 if ($StartComfy) {
-    Write-Host "[NEXUS BTA] Starting embedded ComfyUI runtime..."
+    Write-NexusLine "Iniciando ComfyUI embutido..." "Info"
     try {
         Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/comfy/start" -TimeoutSec 180 | Out-Null
         $runtimeHealth = Invoke-RestMethod "http://127.0.0.1:7861/api/health" -TimeoutSec 10
@@ -165,12 +182,12 @@ if ($StartComfy) {
         throw "ComfyUI startup failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Host "[NEXUS BTA] ComfyUI will start on demand. Use -StartComfy to preload it."
+    Write-NexusLine "ComfyUI iniciara sob demanda." "Info"
 }
 
 if (!$NoOpen) {
-    Write-Host "[NEXUS BTA] Opening UI..."
+    Write-NexusLine "Abrindo interface..." "Info"
     Start-Process $uiUrl
 }
 
-Write-Host "[NEXUS BTA] Ready: $uiUrl"
+Write-NexusLine "Pronto: $uiUrl" "Ok"

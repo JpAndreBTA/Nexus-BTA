@@ -12,7 +12,7 @@ models/loras              LoRA, LyCORIS and distilled LoRA files
 models/embeddings         Textual inversion / embedding files
 models/vae                SD, SDXL, Flux, Wan and LTX VAE files
 models/text_encoders      CLIP, T5, UMT5, Gemma and Qwen text encoders
-models/clip_vision        Optional CLIP vision encoders used by WAN start/end-frame conditioning
+models/clip_vision        Required CLIP vision encoders for WAN first/end-frame conditioning
 models/controlnet         SD 1.5 and SDXL ControlNet models
 models/upscale_models     ESRGAN/RealESRGAN-style upscalers
 models/latent_upscale_models  LTX latent upscalers
@@ -26,7 +26,7 @@ models/diffusion_models/MelRoFormer  Mel-Band RoFormer audio cleanup model for L
 | SD 1.5 | [stable-diffusion-v1-5/stable-diffusion-v1-5](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5) or a compatible checkpoint | `models/checkpoints/sd15` |
 | SDXL / Pony / Illustrious | [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0) or compatible finetunes | `models/checkpoints/sdxl` |
 | Flux | [black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev) plus Flux VAE/text encoders | `models/checkpoints/flux`, `models/vae`, `models/text_encoders` |
-| WAN 2.2 | [Wan-AI/Wan2.2-I2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B), [Wan-AI/Wan2.2-T2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B), [Wan-AI/Wan2.2-TI2V-5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) | `models/checkpoints/wan`, `models/text_encoders`, `models/vae` |
+| WAN 2.2 | [Wan-AI/Wan2.2-I2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B), [Wan-AI/Wan2.2-T2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B), [Wan-AI/Wan2.2-TI2V-5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B), compatible CLIP Vision such as `clip_vision_h.safetensors` | `models/checkpoints/wan`, `models/text_encoders`, `models/vae`, `models/clip_vision` |
 | LTX 2.3 | [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) | `models/checkpoints/ltx`, `models/loras/ltx`, `models/latent_upscale_models`, `models/vae`, `models/text_encoders` |
 
 ## Lightweight LoRA Starter List
@@ -76,7 +76,7 @@ Nexus enables the embedding picker for SD 1.5, SDXL, Pony and Illustrious-compat
 - WAN 2.2 smoke preset: `512x512`, `5s`, `16 FPS`, 4 steps, CFG 1.0 for the high/low route.
 - WAN 2.2 14B I2V/T2V uses `wan_2.1_vae.safetensors`; reserve `wan22-vae` / `wan2.2_vae` for TI2V 5B-style routes.
 - WAN 2.2 4-step quality depends on the matching high-noise and low-noise distilled/LightX2V LoRA pair in `models/loras/wan`. Nexus auto-detects files whose names include `high`/`low` plus `lightx2v`, `4step`, `4-step`, `lightning` or `distill`.
-- WAN 2.2 first/last-frame mode uses `WanFirstLastFrameToVideo` as motion conditioning, not a post-video crossfade. When a compatible CLIP vision model is present in `models/clip_vision`, Nexus also wires `CLIPVisionEncode` for the start and end images so the model sees both visual anchors.
+- WAN 2.2 first/last-frame mode uses `WanFirstLastFrameToVideo` as motion conditioning, not a post-video crossfade. Keep a compatible CLIP Vision model in `models/clip_vision`; Nexus wires `CLIPVisionEncode` for the start and end images so the model sees both visual anchors.
 - LTX 2.3 smoke preset: `512x512`, `4s`, `24 FPS`; distilled checkpoints and distilled LoRA variants usually run at low CFG and short step counts.
 - LTX 2.3 latent upscale is expected for normal `512x512` outputs: Nexus samples the base video latent at half resolution, runs the spatial latent upscaler/refiner, then decodes the final frames. A `256x256` result usually means the smoke test explicitly selected `None` or a `256x256` output size.
 - LTX 2.3 assets include full, distilled, distilled LoRA, spatial upscaler and temporal upscaler variants on the official Hugging Face repository.

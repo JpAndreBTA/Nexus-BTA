@@ -8,40 +8,51 @@ $root = $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath(
 $python = Join-Path $root "runtime\.venv\Scripts\python.exe"
 $bootstrap = Join-Path $root "scripts\bootstrap_nexus_runtime.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
+$terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
 
-Write-Host "[NEXUS BTA] Checking repository updates..."
-if (Test-Path -LiteralPath (Join-Path $root ".git")) {
-    git -C $root fetch --all --prune
-    git -C $root pull --ff-only
+if (Test-Path -LiteralPath $terminalHelpers) {
+    . $terminalHelpers
 } else {
-    Write-Host "[NEXUS BTA] No .git directory found; skipping git pull."
+    function Write-NexusLogo { Write-Host "[NEXUS BTA]" }
+    function Write-NexusLine([string]$Message, [string]$Kind = "Info") { Write-Host "[NEXUS BTA] $Message" }
+    function Write-NexusSection([string]$Title) { Write-Host ""; Write-NexusLine $Title "Step" }
+    function Invoke-NexusRepositoryUpdate([string]$ProjectRoot, [switch]$Strict) {
+        git -C $ProjectRoot fetch --all --prune
+        git -C $ProjectRoot pull --ff-only
+    }
 }
 
+Write-NexusLogo
+Write-NexusSection "Atualizacoes"
+Invoke-NexusRepositoryUpdate -ProjectRoot $root -Strict
+
 if (!(Test-Path -LiteralPath (Join-Path $root "runtime\ComfyUI\main.py"))) {
-    Write-Host "[NEXUS BTA] Embedded ComfyUI runtime missing; bootstrapping from configured local source..."
+    Write-NexusLine "ComfyUI embutido ausente; preparando runtime local..." "Warn"
     & $bootstrap -ProjectRoot $root -CopyPythonEnv
 }
 
 if (Test-Path -LiteralPath $python) {
-    Write-Host "[NEXUS BTA] Updating Python backend dependencies..."
-    & $python -m pip install --upgrade pip
-    & $python -m pip install "uvicorn[standard]>=0.30" fastapi pydantic python-multipart httpx websockets pillow soundfile opencv-contrib-python
+    Write-NexusSection "Requisitos"
+    Write-NexusLine "Backend Python..." "Info"
+    & $python -m pip install -q --upgrade pip
+    & $python -m pip install -q "uvicorn[standard]>=0.30" fastapi pydantic python-multipart httpx websockets pillow soundfile opencv-contrib-python
+    Write-NexusLine "Backend Python atendido." "Ok"
 
     $comfyRequirements = Join-Path $root "runtime\ComfyUI\requirements.txt"
     if (Test-Path -LiteralPath $comfyRequirements) {
-        Write-Host "[NEXUS BTA] Checking embedded ComfyUI requirements..."
-        & $python -m pip install -r $comfyRequirements
+        Write-NexusLine "ComfyUI Python..." "Info"
+        & $python -m pip install -q -r $comfyRequirements
+        Write-NexusLine "ComfyUI Python atendido." "Ok"
     }
 
     if (Test-Path -LiteralPath $ltxDirectorDeps) {
-        Write-Host "[NEXUS BTA] Checking LTX Director dependencies..."
         & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $python
     }
 } else {
-    Write-Host "[NEXUS BTA] Runtime Python not found; run run.bat after bootstrap."
+    Write-NexusLine "Runtime Python nao encontrado; execute run.bat apos o bootstrap." "Warn"
 }
 
-Write-Host "[NEXUS BTA] Ensuring model and workflow folders..."
+Write-NexusSection "Pastas"
 New-Item -ItemType Directory -Force -Path (Join-Path $root "workflows\nexus_base") | Out-Null
 foreach ($dir in @(
     "models\checkpoints\sd15",
@@ -64,4 +75,5 @@ foreach ($dir in @(
     New-Item -ItemType Directory -Force -Path (Join-Path $root $dir) | Out-Null
 }
 
-Write-Host "[NEXUS BTA] Dependency check complete."
+Write-NexusLine "Pastas de modelos e workflows prontas." "Ok"
+Write-NexusLine "Verificacao concluida." "Ok"

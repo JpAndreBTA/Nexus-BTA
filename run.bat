@@ -1,18 +1,17 @@
 @echo off
 setlocal
+title Nexus BTA
 
 set "ROOT=%~dp0"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\start_nexus.ps1" -ProjectRoot "%~dp0." -StartComfy
 if errorlevel 1 (
-  echo [NEXUS BTA] Startup failed.
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "& { . '%ROOT%scripts\nexus_terminal.ps1'; Write-NexusLine 'Startup falhou.' 'Error' }"
   pause
   exit /b 1
 )
 
 echo.
-echo [NEXUS BTA] Backend and embedded ComfyUI are running.
-echo [NEXUS BTA] Keep this window open while using the app.
-echo [NEXUS BTA] Press any key to close the app and stop backend/frontend services.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { . '%ROOT%scripts\nexus_terminal.ps1'; Write-NexusLine 'Backend e ComfyUI em execucao.' 'Ok'; Write-NexusLine 'Mantenha esta janela aberta enquanto usa a plataforma.' 'Info'; Write-NexusLine 'Pressione qualquer tecla para fechar e parar os servicos.' 'Info' }"
 pause >nul
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\stop_nexus.ps1" -ProjectRoot "%~dp0."
