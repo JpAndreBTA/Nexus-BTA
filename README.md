@@ -18,7 +18,7 @@ Use the inpaint canvas to load a reference, paint masks, undo/redo brush edits, 
 
 ![Node workflow workspace](examples/Node_Workflow_layout.png)
 
-Switch to Node Workflow when you want to inspect or tune the generated Comfy graph without leaving Nexus.
+Switch to Node Workflow when you want to inspect or tune the generated Comfy graph without leaving Nexus. The editor supports a Blender-style add-node menu with search, categorized node presets, click-to-connect ports, click-to-unlink inputs, Ctrl+click multi-select, and drag-box selection. When this tab is active, Nexus sends the edited visual graph as the Comfy workflow override instead of treating the view as a mockup.
 
 ![LTX 2.3 linear video workspace](examples/LTX_2.3.png)
 
@@ -39,7 +39,7 @@ The Civitai modal helps browse models, download assets, and route them into the 
 - Template-aware side menu: preset changes keep workflow nodes, CFG, steps, resolution, video motion, LoRA stacks, and ControlNet in sync.
 - Template-scoped references: Qwen multi-reference image slots stay on Qwen, while SD/SDXL/Flux/Lumina/Anima/WAN/LTX return to their own img2img or img2video source controls.
 - Clean gallery: final outputs refresh on launch, when the gallery opens, and after a new generation. Temporary Comfy previews are ignored.
-- Visual workflow view: inspect and tune nodes without leaving the app.
+- Visual workflow view: inspect, link, multi-select, move and tune nodes without leaving the app; edited graphs are sent through the backend as Comfy workflow overrides.
 - Civitai and Concept LoRA modals: browse, download, preview, multi-select, and route assets into the right local folders.
 
 ## Start
@@ -100,6 +100,7 @@ Last verified on May 24, 2026:
 - LTX 2.3 at 512x512, 4-5 seconds, 24 FPS, with latent upscale/refiner routed in both Linear View and Director Suite.
 - LTX 2.3 Director Suite with custom background audio, generated speech/ambience segments, per-segment negative prompts and non-black video output.
 - Anima with Concept LoRA selection and gallery metadata.
+- Node Workflow editor smoke: menu search, categorized add-node menu, visual multi-selection, grouped drag behavior, port connection/unlink affordances, and workflow override routing from the active graph.
 
 ## Notes
 

@@ -143,6 +143,23 @@
             outline: 1px solid rgba(255, 59, 59, 0.55);
         }
 
+        .workflow-node.multi-selected {
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28), 0 0 0 3px rgba(255, 59, 59, 0.25);
+        }
+
+        .workflow-selection-rect {
+            position: absolute;
+            border: 1px solid rgba(255, 59, 59, 0.9);
+            background: rgba(255, 59, 59, 0.12);
+            pointer-events: none;
+            z-index: 35;
+        }
+
+        .workflow-port.pending {
+            box-shadow: 0 0 0 3px rgba(255, 59, 59, 0.32);
+            background: #ffffff !important;
+        }
+
         .ltx-director-timeline {
             --ltx-duration: 8;
             --ltx-px-per-second: 120px;
@@ -807,33 +824,8 @@
         </div>
     </div>
 
-    <div id="workflowContextMenu" class="fixed z-[140] hidden w-64 max-h-[78vh] overflow-y-auto bg-nexus-panel border border-nexus-border rounded-sm p-1 text-xs text-white">
-        <button data-workflow-action="add-KSampler" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-plus text-nexus-red mr-2"></i>Add KSampler</button>
-        <button data-workflow-action="add-CLIPTextEncode" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-font text-nexus-red mr-2"></i>Add Text Encode</button>
-        <button data-workflow-action="add-CheckpointLoaderSimple" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-cube text-nexus-red mr-2"></i>Add Checkpoint</button>
-        <button data-workflow-action="add-EmptyLatentImage" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-regular fa-square text-nexus-red mr-2"></i>Add Empty Latent</button>
-        <button data-workflow-action="add-VAEDecode" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-image text-nexus-red mr-2"></i>Add VAE Decode</button>
-        <button data-workflow-action="add-SaveImage" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-floppy-disk text-nexus-red mr-2"></i>Add Save Image</button>
-        <button data-workflow-action="add-PreviewImage" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-regular fa-eye text-nexus-red mr-2"></i>Add Preview Image</button>
-        <button data-workflow-action="add-LoadImage" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-regular fa-image text-nexus-red mr-2"></i>Add Load Image</button>
-        <button data-workflow-action="add-VAEEncode" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-code-branch text-nexus-red mr-2"></i>Add VAE Encode</button>
-        <button data-workflow-action="add-LoraLoader" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-link text-nexus-red mr-2"></i>Add LoRA Loader</button>
-        <button data-workflow-action="add-ControlNetLoader" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-sliders text-nexus-red mr-2"></i>Add ControlNet (Off)</button>
-        <button data-workflow-action="add-Note" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-regular fa-note-sticky text-nexus-red mr-2"></i>Add Note</button>
-        <div class="h-px bg-nexus-border my-1"></div>
-        <button data-workflow-action="pin-right" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-thumbtack mr-2"></i>Pin to Adjusts</button>
-        <button data-workflow-action="pin-left" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-table-columns mr-2"></i>Pin to Side Menu</button>
-        <button data-workflow-action="duplicate" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-regular fa-clone mr-2"></i>Duplicate Node</button>
-        <button data-workflow-action="copy" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-regular fa-copy mr-2"></i>Copy Node</button>
-        <button data-workflow-action="paste" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-regular fa-clipboard mr-2"></i>Paste Node</button>
-        <button data-workflow-action="bypass" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-toggle-off mr-2"></i>Bypass Toggle</button>
-        <button data-workflow-action="disconnect-inputs" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-link-slash mr-2"></i>Disconnect Inputs</button>
-        <button data-workflow-action="disconnect-outputs" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-scissors mr-2"></i>Disconnect Outputs</button>
-        <button data-workflow-action="enable" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-toggle-on mr-2"></i>Enable Node</button>
-        <button data-workflow-action="disable" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-ban mr-2"></i>Disable Node</button>
-        <button data-workflow-action="set-preview" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-regular fa-eye mr-2"></i>Set as Preview</button>
-        <button data-workflow-action="fit" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm"><i class="fa-solid fa-crosshairs mr-2"></i>Fit Workflow</button>
-        <button data-workflow-action="delete" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm text-nexus-red"><i class="fa-regular fa-trash-can mr-2"></i>Delete Node</button>
+    <div id="workflowContextMenu" class="fixed z-[140] hidden w-[760px] max-w-[calc(100vw-16px)] max-h-[78vh] overflow-hidden bg-nexus-panel border border-nexus-border rounded-sm p-2 text-xs text-white shadow-2xl">
+        <div class="text-[10px] text-nexus-muted font-mono">Loading node menu...</div>
     </div>
 
     <!-- Floating Toast Notification Banner -->
@@ -2187,6 +2179,7 @@
                     <button onclick="zoomViewport('workflow', 0.1)" class="px-3 py-1 text-xs text-nexus-muted hover:text-white"><i class="fa-solid fa-plus"></i></button>
                     <button onclick="resetViewport('workflow')" class="px-3 py-1 text-xs text-nexus-muted hover:text-white" title="Reset view"><i class="fa-solid fa-crosshairs"></i></button>
                 </div>
+                <div id="workflowSelectionRect" class="workflow-selection-rect hidden"></div>
 
                 <div id="workflowPanZoomLayer" class="absolute left-0 top-0 w-[1300px] h-[720px] transform-gpu origin-top-left">
                 <!-- Nodes SVG Connections Container -->
@@ -2870,7 +2863,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let activeWorkflowLinks = [];
         let workflowTabs = [];
         let selectedWorkflowNodeId = null;
+        let selectedWorkflowNodeIds = new Set();
         let pendingWorkflowConnection = null;
+        let workflowSelectionDrag = null;
+        let workflowSuppressNextNodeClick = false;
         let pinnedWorkflowNodes = nexusSafeStorage.json('nexus_pinned_workflow_nodes', []);
         let templateWorkflowSelections = nexusSafeStorage.json('nexus_template_workflows', {});
         let activeRightSidebarTab = nexusSafeStorage.get('nexus_right_sidebar_tab', 'nodes');
@@ -7644,6 +7640,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             activeWorkflowGraph = buildLtxDirectorVisualGraph();
             activeWorkflowLinks = activeWorkflowGraph.links || [];
             selectedWorkflowNodeId = null;
+            selectedWorkflowNodeIds = new Set();
             pendingWorkflowConnection = null;
             ltxDirectorWorkflowGraphActive = true;
             return true;
@@ -8279,6 +8276,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             normalizeWorkflowGraphLayout(activeWorkflowGraph);
             const nodes = activeWorkflowGraph.nodes;
             const nodeIds = new Set(nodes.map(node => String(node.id)));
+            selectedWorkflowNodeIds = new Set([...selectedWorkflowNodeIds].filter(id => nodeIds.has(String(id))));
+            if (selectedWorkflowNodeId && !nodeIds.has(String(selectedWorkflowNodeId))) selectedWorkflowNodeId = [...selectedWorkflowNodeIds].at(-1) || null;
             const missing = new Set(activeWorkflowAnalysis?.missing_nodes || []);
             activeWorkflowLinks = (activeWorkflowGraph.links || []).filter(link => nodeIds.has(String(link.from_node)) && nodeIds.has(String(link.to_node)));
             layer.style.width = `${Math.max(1300, Number(activeWorkflowGraph.width || 1300))}px`;
@@ -8299,7 +8298,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 const isMissing = missing.has(node.class_type);
                 const border = isMissing ? 'border-nexus-red' : role === 'sampler' ? 'border-nexus-red' : 'border-nexus-border';
                 const dot = isMissing ? 'bg-white' : role === 'model' ? 'bg-blue-500' : role === 'prompt' ? 'bg-green-500' : role === 'decode' ? 'bg-pink-400' : 'bg-cyan-400';
-                const selected = String(node.id) === String(selectedWorkflowNodeId) ? 'selected' : '';
+                const isSelected = selectedWorkflowNodeIds.has(String(node.id)) || String(node.id) === String(selectedWorkflowNodeId);
+                const selected = isSelected ? `selected ${selectedWorkflowNodeIds.size > 1 ? 'multi-selected' : ''}` : '';
                 const pinned = isWorkflowNodePinned(node.id);
                 const nodeBg = safeCssColor(node.bgcolor, '');
                 const headerBg = isMissing ? '#ff3b3b' : role === 'sampler' ? '#ff3b3b' : safeCssColor(node.color, '#27272a');
@@ -8428,6 +8428,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     name,
                     type: name
                 };
+                document.querySelectorAll('.workflow-port.pending').forEach(port => port.classList.remove('pending'));
+                event.currentTarget?.classList?.add('pending');
                 showToast("Connection Started", `${node.title || node.class_type} -> ${name}`);
                 return;
             }
@@ -8519,6 +8521,98 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             };
         }
 
+        function workflowMenuActionButton(action, label, icon = 'fa-circle', className = '') {
+            return `<button data-workflow-action="${escapeHtml(action)}" class="w-full text-left px-2 py-1.5 hover:bg-nexus-hover rounded-sm flex items-center gap-2 ${className}">
+                <i class="fa-solid ${icon} ${className.includes('text-nexus-red') ? '' : 'text-nexus-muted'} w-3"></i>
+                <span class="truncate">${escapeHtml(label)}</span>
+            </button>`;
+        }
+
+        function renderWorkflowContextMenu(query = '') {
+            const menu = document.getElementById('workflowContextMenu');
+            if (!menu) return;
+            const needle = String(query || '').trim().toLowerCase();
+            const node = workflowNodeById(workflowContextNodeId);
+            const selectedCount = selectedWorkflowNodeIds.size;
+            const categories = WORKFLOW_NODE_CATEGORIES;
+            const items = workflowNodeLibraryItems();
+            const actionPanel = `
+                <div class="border-l border-nexus-border pl-2 min-w-0">
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                        <span class="text-[10px] text-nexus-muted font-mono uppercase">${node ? escapeHtml(node.title || node.class_type) : 'Workflow'}</span>
+                        <span class="text-[9px] text-nexus-muted font-mono">${selectedCount || 0} selected</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1">
+                        ${workflowMenuActionButton('pin-right', 'Pin to Adjusts', 'fa-thumbtack')}
+                        ${workflowMenuActionButton('pin-left', 'Pin to Side Menu', 'fa-table-columns')}
+                        ${workflowMenuActionButton('duplicate', 'Duplicate', 'fa-clone')}
+                        ${workflowMenuActionButton('copy', 'Copy', 'fa-copy')}
+                        ${workflowMenuActionButton('paste', 'Paste', 'fa-clipboard')}
+                        ${workflowMenuActionButton('bypass', 'Bypass', 'fa-toggle-off')}
+                        ${workflowMenuActionButton('disconnect-inputs', 'Disconnect Inputs', 'fa-link-slash')}
+                        ${workflowMenuActionButton('disconnect-outputs', 'Disconnect Outputs', 'fa-scissors')}
+                        ${workflowMenuActionButton('enable', 'Enable', 'fa-toggle-on')}
+                        ${workflowMenuActionButton('disable', 'Disable', 'fa-ban')}
+                        ${workflowMenuActionButton('set-preview', 'Set Preview', 'fa-eye')}
+                        ${workflowMenuActionButton('fit', 'Fit View', 'fa-crosshairs')}
+                        ${workflowMenuActionButton('delete', selectedCount > 1 ? 'Delete Selected' : 'Delete Node', 'fa-trash-can', 'text-nexus-red col-span-2')}
+                    </div>
+                    <div class="mt-3 text-[9px] text-nexus-muted leading-4">
+                        Ctrl+click toggles nodes. Drag empty canvas to box-select. Click an output port, then an input port to connect; click a connected input to unlink it.
+                    </div>
+                </div>
+            `;
+            const searchResults = items
+                .filter(item => !needle || `${item.title} ${item.classType} ${item.category}`.toLowerCase().includes(needle))
+                .slice(0, 32);
+            const nodePicker = needle ? `
+                <div class="col-span-2 min-w-0">
+                    <div class="max-h-[50vh] overflow-y-auto pr-1 space-y-0.5">
+                        ${searchResults.map(item => {
+                            const category = categories.find(cat => cat.id === item.category);
+                            return workflowMenuActionButton(`add-${item.classType}`, `${category?.label || 'Node'} > ${item.title}`, category?.icon || 'fa-plus');
+                        }).join('') || '<div class="text-[10px] text-nexus-muted p-2">No nodes found.</div>'}
+                    </div>
+                </div>
+            ` : `
+                <div class="col-span-2 grid grid-cols-3 gap-2 max-h-[50vh] overflow-y-auto pr-1">
+                    ${categories.map(category => {
+                        const categoryItems = items.filter(item => item.category === category.id);
+                        if (!categoryItems.length) return '';
+                        return `
+                            <div class="border border-nexus-border bg-nexus-bg/60 rounded-sm p-1 min-w-0">
+                                <div class="px-1.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white flex items-center gap-2">
+                                    <i class="fa-solid ${category.icon} text-nexus-red"></i>${escapeHtml(category.label)}
+                                </div>
+                                <div class="space-y-0.5">
+                                    ${categoryItems.map(item => workflowMenuActionButton(`add-${item.classType}`, item.title, 'fa-plus')).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+            menu.innerHTML = `
+                <div class="grid grid-cols-[minmax(0,1fr)_220px] gap-2">
+                    <div class="min-w-0">
+                        <label class="flex items-center gap-2 border border-nexus-border bg-nexus-bg px-2 py-1.5 rounded-sm mb-2">
+                            <i class="fa-solid fa-magnifying-glass text-nexus-muted"></i>
+                            <input data-workflow-menu-search value="${escapeHtml(query)}" placeholder="Search node or preset..." class="w-full bg-transparent outline-none text-xs text-white font-mono">
+                        </label>
+                        <div class="grid grid-cols-2 gap-2">${nodePicker}</div>
+                    </div>
+                    ${actionPanel}
+                </div>
+            `;
+            requestAnimationFrame(() => {
+                const input = menu.querySelector('[data-workflow-menu-search]');
+                if (input && document.activeElement !== input) {
+                    input.focus();
+                    input.setSelectionRange(input.value.length, input.value.length);
+                }
+            });
+        }
+
         function showWorkflowContextMenu(event, nodeId = null) {
             event.preventDefault();
             event.stopPropagation();
@@ -8526,8 +8620,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             workflowContextPoint = workflowLayerPoint(event.clientX, event.clientY);
             const menu = document.getElementById('workflowContextMenu');
             if (!menu) return;
-            menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - 280))}px`;
-            menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - 480))}px`;
+            renderWorkflowContextMenu('');
+            menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - 780))}px`;
+            menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - 540))}px`;
             menu.classList.remove('hidden');
         }
 
@@ -8541,60 +8636,195 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             return activeWorkflowGraph;
         }
 
+        const WORKFLOW_NODE_CATEGORIES = [
+            { id: 'input', label: 'Input', icon: 'fa-arrow-right-to-bracket' },
+            { id: 'model', label: 'Model', icon: 'fa-cube' },
+            { id: 'conditioning', label: 'Conditioning', icon: 'fa-font' },
+            { id: 'sampling', label: 'Sampling', icon: 'fa-wave-square' },
+            { id: 'latent', label: 'Latent', icon: 'fa-layer-group' },
+            { id: 'image-video', label: 'Image / Video', icon: 'fa-film' },
+            { id: 'audio', label: 'Audio', icon: 'fa-music' },
+            { id: 'control', label: 'Control / Detail', icon: 'fa-sliders' },
+            { id: 'output', label: 'Output', icon: 'fa-floppy-disk' },
+            { id: 'utility', label: 'Utility', icon: 'fa-screwdriver-wrench' },
+            { id: 'preset', label: 'Nexus Presets', icon: 'fa-diagram-project' }
+        ];
+
+        function workflowNodeLibraryItems() {
+            return [
+                { category: 'input', classType: 'LoadImage', title: 'Load Image', inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference.png' }] },
+                { category: 'input', classType: 'LoadVideo', title: 'Load Video', inputs: [], outputs: ['VIDEO', 'IMAGE'], widgets: [{ name: 'video', value: 'source.mp4' }, { name: 'force_rate', value: document.getElementById('fpsInput')?.value || '24' }] },
+                { category: 'input', classType: 'LoadAudio', title: 'Load Audio', inputs: [], outputs: ['AUDIO'], widgets: [{ name: 'audio', value: 'audio.wav' }] },
+                { category: 'model', classType: 'CheckpointLoaderSimple', title: 'Load Checkpoint', inputs: [], outputs: ['MODEL', 'CLIP', 'VAE'], widgets: [{ name: 'ckpt_name', value: document.getElementById('modelSelect')?.selectedOptions?.[0]?.dataset?.model || 'select_model.safetensors' }] },
+                { category: 'model', classType: 'UNETLoader', title: 'Load Diffusion Model', inputs: [], outputs: ['MODEL'], widgets: [{ name: 'unet_name', value: document.getElementById('modelSelect')?.selectedOptions?.[0]?.dataset?.model || 'select_model.safetensors' }, { name: 'weight_dtype', value: 'default' }] },
+                { category: 'model', classType: 'CLIPLoader', title: 'Load Text Encoder', inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || 'Automatic' }, { name: 'type', value: activePreset === 'Qwen' ? 'qwen_image' : 'stable_diffusion' }] },
+                { category: 'model', classType: 'VAELoader', title: 'Load VAE', inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || 'Automatic' }] },
+                { category: 'model', classType: 'LoraLoader', title: 'LoRA Loader', inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: [{ name: 'lora_name', value: 'select_lora.safetensors' }, { name: 'strength_model', value: '0.65' }, { name: 'strength_clip', value: '0.65' }] },
+                { category: 'model', classType: 'LTX2LoraLoaderAdvanced', title: 'LTX LoRA Stack', inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: [{ name: 'lora_name', value: 'ltx/distilled_or_concept.safetensors' }, { name: 'strength_model', value: '0.50' }, { name: 'strength_clip', value: '0.00' }] },
+                { category: 'conditioning', classType: 'CLIPTextEncode', title: 'CLIP Text Encode', inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || '' }] },
+                { category: 'conditioning', classType: 'TextEncodeQwenImageEdit', title: 'Qwen Image Edit Text', inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || '' }] },
+                { category: 'conditioning', classType: 'ConditioningConcat', title: 'Conditioning Concat', inputs: ['conditioning_to', 'conditioning_from'], outputs: ['CONDITIONING'], widgets: [] },
+                { category: 'sampling', classType: 'KSampler', title: 'KSampler', inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: document.getElementById('stepsSlider')?.value || '25' }, { name: 'cfg', value: document.getElementById('cfgSlider')?.value || '7' }, { name: 'sampler_name', value: document.getElementById('samplingMethodSelect')?.value || 'euler_ancestral' }, { name: 'scheduler', value: document.getElementById('schedulerSelect')?.value || 'karras' }] },
+                { category: 'sampling', classType: 'SamplerCustomAdvanced', title: 'Sampler Custom Advanced', inputs: ['noise', 'guider', 'sampler', 'sigmas', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'steps', value: document.getElementById('stepsSlider')?.value || '8' }, { name: 'cfg', value: document.getElementById('cfgSlider')?.value || '1' }] },
+                { category: 'latent', classType: 'EmptyLatentImage', title: 'Empty Latent', inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: document.getElementById('widthInput')?.value || '1024' }, { name: 'height', value: document.getElementById('heightInput')?.value || '1024' }, { name: 'batch_size', value: '1' }] },
+                { category: 'latent', classType: 'VAEEncode', title: 'VAE Encode', inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [] },
+                { category: 'latent', classType: 'VAEDecode', title: 'VAE Decode', inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [] },
+                { category: 'latent', classType: 'LTXVLatentUpsampler', title: 'LTX Latent Upscale', inputs: ['latents', 'upscale_model'], outputs: ['LATENT'], widgets: [{ name: 'scale_factor', value: '2.0' }] },
+                { category: 'image-video', classType: 'ImageScale', title: 'Image Scale', inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: document.getElementById('widthInput')?.value || '1024' }, { name: 'height', value: document.getElementById('heightInput')?.value || '1024' }, { name: 'upscale_method', value: 'lanczos' }] },
+                { category: 'image-video', classType: 'LTXVTiledVAEDecode', title: 'LTX Tiled VAE Decode', inputs: ['vae', 'latents'], outputs: ['IMAGE'], widgets: [{ name: 'horizontal_tiles', value: 2 }, { name: 'vertical_tiles', value: 2 }, { name: 'overlap', value: 6 }] },
+                { category: 'image-video', classType: 'CreateVideo', title: 'Create Video', inputs: ['images', 'fps'], outputs: ['VIDEO'], widgets: [{ name: 'fps', value: document.getElementById('fpsInput')?.value || '24' }] },
+                { category: 'audio', classType: 'AudioTrim', title: 'Audio Trim', inputs: ['audio'], outputs: ['AUDIO'], widgets: [{ name: 'start', value: '0.00' }, { name: 'end', value: document.getElementById('secondsInput')?.value || '5.00' }] },
+                { category: 'audio', classType: 'AudioNormalize', title: 'Audio Normalize', inputs: ['audio'], outputs: ['AUDIO'], widgets: [{ name: 'target_lufs', value: '-14' }] },
+                { category: 'audio', classType: 'AudioCombine', title: 'Audio Mix', inputs: ['audio_1', 'audio_2'], outputs: ['AUDIO'], widgets: [{ name: 'gain_1', value: '1.0' }, { name: 'gain_2', value: '1.0' }] },
+                { category: 'control', classType: 'ControlNetLoader', title: 'ControlNet Loader', inputs: [], outputs: ['CONTROL_NET'], widgets: [{ name: 'control_net_name', value: 'disabled' }, { name: 'enabled', value: 'false' }] },
+                { category: 'control', classType: 'ControlNetApplyAdvanced', title: 'Apply ControlNet', inputs: ['positive', 'negative', 'control_net', 'image'], outputs: ['CONDITIONING', 'CONDITIONING'], widgets: [{ name: 'strength', value: '0.75' }, { name: 'start_percent', value: '0.0' }, { name: 'end_percent', value: '1.0' }] },
+                { category: 'control', classType: 'DetailerForEach', title: 'Detailer', inputs: ['image', 'model', 'clip', 'vae', 'positive', 'negative'], outputs: ['IMAGE'], widgets: [{ name: 'guide_size', value: '512' }, { name: 'denoise', value: '0.35' }] },
+                { category: 'output', classType: 'PreviewImage', title: 'Preview Image', inputs: ['images'], outputs: [], widgets: [] },
+                { category: 'output', classType: 'SaveImage', title: 'Save Image', inputs: ['images'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA' }] },
+                { category: 'output', classType: 'SaveVideo', title: 'Save Video', inputs: ['video'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA_VIDEO' }] },
+                { category: 'utility', classType: 'PrimitiveNode', title: 'Primitive / Constant', inputs: [], outputs: ['INT', 'FLOAT', 'STRING'], widgets: [{ name: 'value', value: '1' }] },
+                { category: 'utility', classType: 'Note', title: 'Note', inputs: [], outputs: [], widgets: [{ name: 'text', value: 'Workflow note' }] },
+                { category: 'preset', classType: 'NexusBasicTxt2Img', title: 'Preset: Basic txt2img graph', preset: true },
+                { category: 'preset', classType: 'NexusMotionI2V', title: 'Preset: Motion img2video graph', preset: true },
+                { category: 'preset', classType: 'NexusLtxDirectorCore', title: 'Preset: LTX Director core', preset: true }
+            ];
+        }
+
+        function workflowNodeLibraryItem(classType) {
+            return workflowNodeLibraryItems().find(item => item.classType === classType);
+        }
+
         function workflowNodeTemplate(classType, x, y) {
             const id = `nexus_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-            const titles = {
-                KSampler: 'KSampler',
-                CLIPTextEncode: 'CLIP Text Encode',
-                CheckpointLoaderSimple: 'Load Checkpoint',
-                VAEDecode: 'VAE Decode',
-                SaveImage: 'Save Image',
-                PreviewImage: 'Preview Image',
-                EmptyLatentImage: 'Empty Latent',
-                LoadImage: 'Load Image',
-                VAEEncode: 'VAE Encode',
-                LoraLoader: 'LoRA Loader',
-                ControlNetLoader: 'ControlNet Loader',
-                Note: 'Note'
-            };
-            const specs = {
-                KSampler: { inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: document.getElementById('stepsSlider')?.value || '25' }, { name: 'cfg', value: document.getElementById('cfgSlider')?.value || '7' }, { name: 'sampler_name', value: document.getElementById('samplingMethodSelect')?.value || 'euler_ancestral' }, { name: 'scheduler', value: document.getElementById('schedulerSelect')?.value || 'karras' }] },
-                CLIPTextEncode: { inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || '' }] },
-                CheckpointLoaderSimple: { inputs: [], outputs: ['MODEL', 'CLIP', 'VAE'], widgets: [{ name: 'ckpt_name', value: document.getElementById('modelSelect')?.selectedOptions?.[0]?.dataset?.model || 'select_model.safetensors' }] },
-                EmptyLatentImage: { inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: document.getElementById('widthInput')?.value || '1024' }, { name: 'height', value: document.getElementById('heightInput')?.value || '1024' }, { name: 'batch_size', value: '1' }] },
-                VAEDecode: { inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [] },
-                SaveImage: { inputs: ['images'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA' }] },
-                PreviewImage: { inputs: ['images'], outputs: [], widgets: [] },
-                LoadImage: { inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference.png' }] },
-                VAEEncode: { inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [] },
-                LoraLoader: { inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: [{ name: 'lora_name', value: 'select_lora.safetensors' }, { name: 'strength_model', value: '0.65' }, { name: 'strength_clip', value: '0.65' }] },
-                ControlNetLoader: { inputs: [], outputs: ['CONTROL_NET'], widgets: [{ name: 'control_net_name', value: 'disabled' }, { name: 'enabled', value: 'false' }] },
-                Note: { inputs: [], outputs: [], widgets: [{ name: 'text', value: 'Workflow note' }] }
-            };
-            const spec = specs[classType] || { inputs: [], outputs: [], widgets: [] };
+            const item = workflowNodeLibraryItem(classType);
+            const spec = item || { title: classType, inputs: [], outputs: [], widgets: [] };
             return {
                 id,
                 class_type: classType,
-                title: titles[classType] || classType,
+                title: spec.title || classType,
                 x,
                 y,
                 width: classType === 'KSampler' ? 250 : 220,
                 height: classType === 'KSampler' ? 130 : 112,
-                inputs: spec.inputs,
-                outputs: spec.outputs,
-                widgets: spec.widgets
+                inputs: spec.inputs || [],
+                outputs: spec.outputs || [],
+                widgets: JSON.parse(JSON.stringify(spec.widgets || []))
             };
+        }
+
+        function workflowNodePresetTemplate(classType, x, y) {
+            const make = (type, dx, dy) => workflowNodeTemplate(type, x + dx, y + dy);
+            if (classType === 'NexusBasicTxt2Img') {
+                const model = make('CheckpointLoaderSimple', 0, 0);
+                const pos = make('CLIPTextEncode', 0, 160);
+                pos.title = 'Positive Prompt';
+                const neg = make('CLIPTextEncode', 0, 320);
+                neg.title = 'Negative Prompt';
+                neg.widgets = [{ name: 'text', value: document.getElementById('negPrompt')?.value || 'worst quality, blurry, deformed' }];
+                const latent = make('EmptyLatentImage', 330, 0);
+                const sampler = make('KSampler', 330, 190);
+                const decode = make('VAEDecode', 660, 190);
+                const save = make('SaveImage', 940, 190);
+                return {
+                    nodes: [model, pos, neg, latent, sampler, decode, save],
+                    links: [
+                        { from_node: model.id, from_slot: 0, to_node: sampler.id, to_slot: 0, type: 'MODEL' },
+                        { from_node: model.id, from_slot: 1, to_node: pos.id, to_slot: 0, type: 'CLIP' },
+                        { from_node: model.id, from_slot: 1, to_node: neg.id, to_slot: 0, type: 'CLIP' },
+                        { from_node: pos.id, from_slot: 0, to_node: sampler.id, to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: neg.id, from_slot: 0, to_node: sampler.id, to_slot: 2, type: 'CONDITIONING' },
+                        { from_node: latent.id, from_slot: 0, to_node: sampler.id, to_slot: 3, type: 'LATENT' },
+                        { from_node: sampler.id, from_slot: 0, to_node: decode.id, to_slot: 0, type: 'LATENT' },
+                        { from_node: model.id, from_slot: 2, to_node: decode.id, to_slot: 1, type: 'VAE' },
+                        { from_node: decode.id, from_slot: 0, to_node: save.id, to_slot: 0, type: 'IMAGE' }
+                    ]
+                };
+            }
+            if (classType === 'NexusMotionI2V') {
+                const image = make('LoadImage', 0, 0);
+                const model = make('CheckpointLoaderSimple', 0, 150);
+                const pos = make('CLIPTextEncode', 0, 300);
+                pos.title = 'Motion Prompt';
+                const neg = make('CLIPTextEncode', 0, 460);
+                neg.title = 'Negative Motion Prompt';
+                const encode = make('VAEEncode', 330, 0);
+                const sampler = make('KSampler', 330, 210);
+                const decode = make('VAEDecode', 660, 210);
+                const video = make('CreateVideo', 930, 160);
+                const save = make('SaveVideo', 1200, 160);
+                return {
+                    nodes: [image, model, pos, neg, encode, sampler, decode, video, save],
+                    links: [
+                        { from_node: image.id, from_slot: 0, to_node: encode.id, to_slot: 0, type: 'IMAGE' },
+                        { from_node: model.id, from_slot: 2, to_node: encode.id, to_slot: 1, type: 'VAE' },
+                        { from_node: model.id, from_slot: 0, to_node: sampler.id, to_slot: 0, type: 'MODEL' },
+                        { from_node: model.id, from_slot: 1, to_node: pos.id, to_slot: 0, type: 'CLIP' },
+                        { from_node: model.id, from_slot: 1, to_node: neg.id, to_slot: 0, type: 'CLIP' },
+                        { from_node: pos.id, from_slot: 0, to_node: sampler.id, to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: neg.id, from_slot: 0, to_node: sampler.id, to_slot: 2, type: 'CONDITIONING' },
+                        { from_node: encode.id, from_slot: 0, to_node: sampler.id, to_slot: 3, type: 'LATENT' },
+                        { from_node: sampler.id, from_slot: 0, to_node: decode.id, to_slot: 0, type: 'LATENT' },
+                        { from_node: model.id, from_slot: 2, to_node: decode.id, to_slot: 1, type: 'VAE' },
+                        { from_node: decode.id, from_slot: 0, to_node: video.id, to_slot: 0, type: 'IMAGE' },
+                        { from_node: video.id, from_slot: 0, to_node: save.id, to_slot: 0, type: 'VIDEO' }
+                    ]
+                };
+            }
+            if (classType === 'NexusLtxDirectorCore') {
+                const audio = make('LoadAudio', 0, 0);
+                const trim = make('AudioTrim', 280, 0);
+                const normalize = make('AudioNormalize', 560, 0);
+                const mix = make('AudioCombine', 840, 0);
+                const upscale = make('LTXVLatentUpsampler', 280, 170);
+                const decode = make('LTXVTiledVAEDecode', 560, 170);
+                const video = make('CreateVideo', 840, 170);
+                const save = make('SaveVideo', 1120, 170);
+                return {
+                    nodes: [audio, trim, normalize, mix, upscale, decode, video, save],
+                    links: [
+                        { from_node: audio.id, from_slot: 0, to_node: trim.id, to_slot: 0, type: 'AUDIO' },
+                        { from_node: trim.id, from_slot: 0, to_node: normalize.id, to_slot: 0, type: 'AUDIO' },
+                        { from_node: normalize.id, from_slot: 0, to_node: mix.id, to_slot: 0, type: 'AUDIO' },
+                        { from_node: upscale.id, from_slot: 0, to_node: decode.id, to_slot: 1, type: 'LATENT' },
+                        { from_node: decode.id, from_slot: 0, to_node: video.id, to_slot: 0, type: 'IMAGE' },
+                        { from_node: mix.id, from_slot: 0, to_node: video.id, to_slot: 1, type: 'AUDIO' },
+                        { from_node: video.id, from_slot: 0, to_node: save.id, to_slot: 0, type: 'VIDEO' }
+                    ]
+                };
+            }
+            return null;
         }
 
         function workflowNodeById(nodeId) {
             return activeWorkflowGraph?.nodes?.find(node => String(node.id) === String(nodeId));
         }
 
-        function selectWorkflowNode(nodeId) {
-            selectedWorkflowNodeId = nodeId;
+        function applyWorkflowNodeSelectionClasses() {
             document.querySelectorAll('.workflow-node').forEach(node => {
-                node.classList.toggle('selected', node.dataset.nodeId === String(nodeId));
+                const selected = selectedWorkflowNodeIds.has(String(node.dataset.nodeId));
+                node.classList.toggle('selected', selected);
+                node.classList.toggle('multi-selected', selectedWorkflowNodeIds.size > 1 && selected);
             });
+        }
+
+        function selectWorkflowNode(nodeId, additive = false) {
+            const id = String(nodeId);
+            if (!additive) selectedWorkflowNodeIds = new Set([id]);
+            else if (selectedWorkflowNodeIds.has(id)) selectedWorkflowNodeIds.delete(id);
+            else selectedWorkflowNodeIds.add(id);
+            selectedWorkflowNodeId = [...selectedWorkflowNodeIds].at(-1) || null;
+            applyWorkflowNodeSelectionClasses();
+        }
+
+        function setWorkflowNodeSelection(ids) {
+            selectedWorkflowNodeIds = new Set((ids || []).map(String));
+            selectedWorkflowNodeId = [...selectedWorkflowNodeIds].at(-1) || null;
+            applyWorkflowNodeSelectionClasses();
+        }
+
+        function workflowSelectedNodeIdsForAction(node = null) {
+            if (node && selectedWorkflowNodeIds.has(String(node.id))) return [...selectedWorkflowNodeIds];
+            return node ? [String(node.id)] : [...selectedWorkflowNodeIds];
         }
 
         function rerenderWorkflowGraphAfterEdit() {
@@ -8611,8 +8841,20 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function handleWorkflowContextAction(action) {
             const graph = ensureWorkflowGraphForEditing();
             const node = workflowNodeById(workflowContextNodeId);
+            const actionNodeIds = workflowSelectedNodeIdsForAction(node);
+            const actionNodes = actionNodeIds.map(id => workflowNodeById(id)).filter(Boolean);
             if (action.startsWith('add-')) {
-                graph.nodes.push(workflowNodeTemplate(action.replace('add-', ''), workflowContextPoint.x, workflowContextPoint.y));
+                const classType = action.replace('add-', '');
+                const preset = workflowNodePresetTemplate(classType, workflowContextPoint.x, workflowContextPoint.y);
+                if (preset) {
+                    graph.nodes.push(...preset.nodes);
+                    graph.links = [...(graph.links || []), ...(preset.links || [])];
+                    setWorkflowNodeSelection(preset.nodes.map(item => item.id));
+                } else {
+                    const created = workflowNodeTemplate(classType, workflowContextPoint.x, workflowContextPoint.y);
+                    graph.nodes.push(created);
+                    setWorkflowNodeSelection([created.id]);
+                }
                 rerenderWorkflowGraphAfterEdit();
                 hideWorkflowContextMenu();
                 return;
@@ -8631,12 +8873,16 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 rerenderWorkflowGraphAfterEdit();
             }
             if (action === 'duplicate' && node) {
-                const clone = JSON.parse(JSON.stringify(node));
-                clone.id = `nexus_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-                clone.x = Number(node.x || 0) + 32;
-                clone.y = Number(node.y || 0) + 32;
-                clone.title = `${clone.title || clone.class_type} Copy`;
-                graph.nodes.push(clone);
+                const clones = actionNodes.map((item, index) => {
+                    const clone = JSON.parse(JSON.stringify(item));
+                    clone.id = `nexus_${Date.now()}_${Math.floor(Math.random() * 1000)}_${index}`;
+                    clone.x = Number(item.x || 0) + 32;
+                    clone.y = Number(item.y || 0) + 32;
+                    clone.title = `${clone.title || clone.class_type} Copy`;
+                    return clone;
+                });
+                graph.nodes.push(...clones);
+                setWorkflowNodeSelection(clones.map(item => item.id));
                 rerenderWorkflowGraphAfterEdit();
             }
             if (action === 'pin-right' && node && !isWorkflowNodePinned(node.id)) {
@@ -8652,25 +8898,31 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 rerenderWorkflowGraphAfterEdit();
             }
             if (action === 'bypass' && node) {
-                node.bypassed = !node.bypassed;
+                actionNodes.forEach(item => { item.bypassed = !item.bypassed; });
                 rerenderWorkflowGraphAfterEdit();
             }
             if (action === 'enable' && node) {
-                node.bypassed = false;
-                node.disabled = false;
+                actionNodes.forEach(item => {
+                    item.bypassed = false;
+                    item.disabled = false;
+                });
                 rerenderWorkflowGraphAfterEdit();
             }
             if (action === 'disable' && node) {
-                node.bypassed = true;
-                node.disabled = true;
+                actionNodes.forEach(item => {
+                    item.bypassed = true;
+                    item.disabled = true;
+                });
                 rerenderWorkflowGraphAfterEdit();
             }
             if (action === 'disconnect-inputs' && node) {
-                graph.links = (graph.links || []).filter(link => String(link.to_node) !== String(node.id));
+                const ids = new Set(actionNodeIds);
+                graph.links = (graph.links || []).filter(link => !ids.has(String(link.to_node)));
                 rerenderWorkflowGraphAfterEdit();
             }
             if (action === 'disconnect-outputs' && node) {
-                graph.links = (graph.links || []).filter(link => String(link.from_node) !== String(node.id));
+                const ids = new Set(actionNodeIds);
+                graph.links = (graph.links || []).filter(link => !ids.has(String(link.from_node)));
                 rerenderWorkflowGraphAfterEdit();
             }
             if (action === 'set-preview' && node) {
@@ -8681,8 +8933,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 centerWorkflowGraph();
             }
             if (action === 'delete' && node) {
-                graph.nodes = graph.nodes.filter(item => String(item.id) !== String(node.id));
-                graph.links = (graph.links || []).filter(link => String(link.from_node) !== String(node.id) && String(link.to_node) !== String(node.id));
+                const ids = new Set(actionNodeIds);
+                graph.nodes = graph.nodes.filter(item => !ids.has(String(item.id)));
+                graph.links = (graph.links || []).filter(link => !ids.has(String(link.from_node)) && !ids.has(String(link.to_node)));
+                setWorkflowNodeSelection([]);
                 rerenderWorkflowGraphAfterEdit();
             }
             hideWorkflowContextMenu();
@@ -9824,6 +10078,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 view.classList.add('cursor-grabbing');
             });
 
+            if (type === 'workflow') {
+                view.addEventListener('mousedown', event => {
+                    if (event.button !== 0) return;
+                    if (event.target.closest('.workflow-node, input, textarea, select, button, #workflowContextMenu')) return;
+                    beginWorkflowSelection(event);
+                });
+            }
+
             view.addEventListener('auxclick', event => {
                 if (event.button === 1) event.preventDefault();
             });
@@ -9852,22 +10114,116 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     event.stopPropagation();
 
                     const state = viewportState.workflow;
+                    const nodeId = String(child.dataset.nodeId);
+                    const additive = event.ctrlKey || event.metaKey;
+                    if (additive) {
+                        selectWorkflowNode(nodeId, true);
+                    } else if (!selectedWorkflowNodeIds.has(nodeId)) {
+                        selectWorkflowNode(nodeId, false);
+                    }
+                    const selectedDragNodes = [...layer.querySelectorAll('.workflow-node')]
+                        .filter(nodeElement => selectedWorkflowNodeIds.has(String(nodeElement.dataset.nodeId)));
                     nodeDrag = {
                         node: child,
                         startX: event.clientX,
                         startY: event.clientY,
                         startLeft: child.offsetLeft,
                         startTop: child.offsetTop,
-                        scale: state.scale
+                        scale: state.scale,
+                        moved: false,
+                        nodes: selectedDragNodes.map(nodeElement => ({
+                            element: nodeElement,
+                            id: nodeElement.dataset.nodeId,
+                            startLeft: nodeElement.offsetLeft,
+                            startTop: nodeElement.offsetTop
+                        }))
                     };
                     child.style.zIndex = 30;
                     updateWorkflowWires();
                 });
                 child.addEventListener('click', event => {
                     if (event.target.closest('input, textarea, select, button')) return;
-                    selectWorkflowNode(child.dataset.nodeId);
+                    event.stopPropagation();
+                    if (workflowSuppressNextNodeClick) {
+                        workflowSuppressNextNodeClick = false;
+                        return;
+                    }
                 });
             });
+        }
+
+        function beginWorkflowSelection(event) {
+            const view = document.getElementById('view-workflow');
+            const rect = view?.getBoundingClientRect();
+            if (!view || !rect) return;
+            event.preventDefault();
+            hideWorkflowContextMenu();
+            workflowSelectionDrag = {
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                currentClientX: event.clientX,
+                currentClientY: event.clientY,
+                additive: event.ctrlKey || event.metaKey,
+                origin: new Set(selectedWorkflowNodeIds),
+                moved: false
+            };
+            updateWorkflowSelectionDrag(event);
+        }
+
+        function workflowSelectionLayerBounds(selection) {
+            const view = document.getElementById('view-workflow');
+            const rect = view?.getBoundingClientRect();
+            const state = viewportState.workflow;
+            if (!rect) return null;
+            const left = Math.min(selection.startClientX, selection.currentClientX) - rect.left;
+            const top = Math.min(selection.startClientY, selection.currentClientY) - rect.top;
+            const right = Math.max(selection.startClientX, selection.currentClientX) - rect.left;
+            const bottom = Math.max(selection.startClientY, selection.currentClientY) - rect.top;
+            return {
+                left,
+                top,
+                width: Math.max(1, right - left),
+                height: Math.max(1, bottom - top),
+                layerLeft: (left - state.x) / state.scale,
+                layerTop: (top - state.y) / state.scale,
+                layerRight: (right - state.x) / state.scale,
+                layerBottom: (bottom - state.y) / state.scale
+            };
+        }
+
+        function updateWorkflowSelectionDrag(event) {
+            if (!workflowSelectionDrag) return;
+            workflowSelectionDrag.currentClientX = event.clientX;
+            workflowSelectionDrag.currentClientY = event.clientY;
+            const distance = Math.hypot(event.clientX - workflowSelectionDrag.startClientX, event.clientY - workflowSelectionDrag.startClientY);
+            workflowSelectionDrag.moved = workflowSelectionDrag.moved || distance > 3;
+            const bounds = workflowSelectionLayerBounds(workflowSelectionDrag);
+            const box = document.getElementById('workflowSelectionRect');
+            if (!bounds || !box) return;
+            box.style.left = `${bounds.left}px`;
+            box.style.top = `${bounds.top}px`;
+            box.style.width = `${bounds.width}px`;
+            box.style.height = `${bounds.height}px`;
+            box.classList.toggle('hidden', !workflowSelectionDrag.moved);
+            const hits = (activeWorkflowGraph?.nodes || []).filter(node => {
+                const nodeLeft = Number(node.x || 0);
+                const nodeTop = Number(node.y || 0);
+                const nodeRight = nodeLeft + Number(node.width || 220);
+                const nodeBottom = nodeTop + Number(node.height || 120);
+                return nodeLeft < bounds.layerRight && nodeRight > bounds.layerLeft && nodeTop < bounds.layerBottom && nodeBottom > bounds.layerTop;
+            }).map(node => String(node.id));
+            const next = new Set(workflowSelectionDrag.additive ? workflowSelectionDrag.origin : []);
+            hits.forEach(id => next.add(id));
+            setWorkflowNodeSelection([...next]);
+        }
+
+        function endWorkflowSelectionDrag() {
+            if (!workflowSelectionDrag) return;
+            const wasClick = !workflowSelectionDrag.moved;
+            const additive = workflowSelectionDrag.additive;
+            workflowSelectionDrag = null;
+            document.getElementById('workflowSelectionRect')?.classList.add('hidden');
+            if (wasClick && !additive) setWorkflowNodeSelection([]);
         }
 
         function nodePoint(node, side = 'right') {
@@ -9911,10 +10267,16 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (nodeDrag) {
                 const dx = (event.clientX - nodeDrag.startX) / nodeDrag.scale;
                 const dy = (event.clientY - nodeDrag.startY) / nodeDrag.scale;
-                nodeDrag.node.style.left = `${nodeDrag.startLeft + dx}px`;
-                nodeDrag.node.style.top = `${nodeDrag.startTop + dy}px`;
+                nodeDrag.moved = nodeDrag.moved || Math.hypot(event.clientX - nodeDrag.startX, event.clientY - nodeDrag.startY) > 3;
+                (nodeDrag.nodes?.length ? nodeDrag.nodes : [{ element: nodeDrag.node, startLeft: nodeDrag.startLeft, startTop: nodeDrag.startTop }]).forEach(item => {
+                    item.element.style.left = `${item.startLeft + dx}px`;
+                    item.element.style.top = `${item.startTop + dy}px`;
+                    item.element.style.zIndex = 30;
+                });
                 updateWorkflowWires();
             }
+
+            if (workflowSelectionDrag) updateWorkflowSelectionDrag(event);
         });
 
         document.addEventListener('mouseup', () => {
@@ -9925,17 +10287,21 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
 
             if (nodeDrag) {
-                const nodeId = nodeDrag.node.dataset.nodeId;
-                const graphNode = workflowNodeById(nodeId);
-                if (graphNode) {
-                    graphNode.x = Math.round(nodeDrag.node.offsetLeft);
-                    graphNode.y = Math.round(nodeDrag.node.offsetTop);
-                }
+                workflowSuppressNextNodeClick = nodeDrag.moved;
+                (nodeDrag.nodes?.length ? nodeDrag.nodes : [{ element: nodeDrag.node, id: nodeDrag.node.dataset.nodeId }]).forEach(item => {
+                    const graphNode = workflowNodeById(item.id);
+                    if (graphNode) {
+                        graphNode.x = Math.round(item.element.offsetLeft);
+                        graphNode.y = Math.round(item.element.offsetTop);
+                    }
+                    item.element.style.zIndex = 10;
+                });
                 fitWorkflowGroupsToNodes(activeWorkflowGraph);
-                nodeDrag.node.style.zIndex = 10;
                 nodeDrag = null;
                 rerenderWorkflowGraphAfterEdit();
             }
+
+            endWorkflowSelectionDrag();
         });
 
         function closeModalById(modalId) {
@@ -10063,6 +10429,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             activeWorkflowGraph = defaultGraphForPreset(activePreset);
             activeWorkflowLinks = activeWorkflowGraph.links || [];
             selectedWorkflowNodeId = null;
+            selectedWorkflowNodeIds = new Set();
             pendingWorkflowConnection = null;
             ltxDirectorWorkflowGraphActive = false;
             if (options.render) {
@@ -10152,6 +10519,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     activeWorkflowLinks = activeWorkflowGraph.links || [];
                     activeWorkflowAnalysis = null;
                     selectedWorkflowNodeId = null;
+                    selectedWorkflowNodeIds = new Set();
                     pendingWorkflowConnection = null;
                     renderWorkflowGraph(activeWorkflowGraph, true);
                     renderManagerPanel();
@@ -11240,6 +11608,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (activeWorkflowGraph) activeWorkflowGraph.nexus_preset = preset;
             activeWorkflowLinks = activeWorkflowGraph?.links || [];
             selectedWorkflowNodeId = null;
+            selectedWorkflowNodeIds = new Set();
             pendingWorkflowConnection = null;
             workflowTabs = [];
             renderWorkflowGraph(activeWorkflowGraph, true);
@@ -11254,6 +11623,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (activeWorkflowGraph) activeWorkflowGraph.nexus_preset = preset;
             activeWorkflowLinks = activeWorkflowGraph.links || [];
             selectedWorkflowNodeId = null;
+            selectedWorkflowNodeIds = new Set();
             pendingWorkflowConnection = null;
             if (!options.keepTabs) workflowTabs = [];
             delete templateWorkflowSelections[preset];
@@ -11543,7 +11913,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 };
                 payload.director = director;
                 payload.workflow_override = buildLtxDirectorApiWorkflow(payload);
-            } else if (activeWorkflowId && activeWorkflowGraph?.nodes?.length) {
+            } else if ((activeWorkflowId || activeWorkspace === 'workflow') && activeWorkflowGraph?.nodes?.length) {
                 const graphPreset = activeWorkflowAnalysis
                     ? inferPresetFromWorkflow(activeWorkflowAnalysis)
                     : activeWorkflowGraph.nexus_preset;
@@ -12216,6 +12586,19 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         document.getElementById('workflowContextMenu')?.addEventListener('click', event => {
             const action = event.target.closest('[data-workflow-action]')?.dataset.workflowAction;
             if (action) handleWorkflowContextAction(action);
+        });
+        document.getElementById('workflowContextMenu')?.addEventListener('input', event => {
+            if (event.target?.matches?.('[data-workflow-menu-search]')) renderWorkflowContextMenu(event.target.value);
+        });
+        document.getElementById('workflowContextMenu')?.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                hideWorkflowContextMenu();
+                return;
+            }
+            if (event.key === 'Enter' && event.target?.matches?.('[data-workflow-menu-search]')) {
+                const action = document.getElementById('workflowContextMenu')?.querySelector('[data-workflow-action^="add-"]')?.dataset.workflowAction;
+                if (action) handleWorkflowContextAction(action);
+            }
         });
         document.getElementById('workflowTabBar')?.addEventListener('click', event => {
             const closeId = event.target.closest('[data-workflow-close-id]')?.dataset.workflowCloseId;
