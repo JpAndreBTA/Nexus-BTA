@@ -7150,12 +7150,22 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 }
                 directorModelRef = [nodeId, 0];
             });
+            const audioSegments = director.timeline_data?.audioSegments || [];
+            const timelineSegments = director.timeline_data?.segments || [];
+            const directorAudioCueRegex = /lip[- ]?sync|sincron|fala|falando|voz|dialogo|people talking|ambient|ambiente|room tone|soundscape|efeito sonoro|sound effect/i;
+            const hasTimelineAudio = useCustomAudio && audioSegments.length > 0;
+            const wantsGeneratedAudio = timelineSegments.some((segment) => {
+                const text = String(segment?.prompt || segment?.text || '').toLowerCase();
+                return directorAudioCueRegex.test(text);
+            });
+            const shouldLayerGeneratedAudio = wantsGeneratedAudio && (hasTimelineAudio || !!payload?.video?.audio_enabled);
             const samplerLatentRef = ['8', 0];
             const schedulerLatentRef = samplerLatentRef;
             const videoVaeRef = ['23', 0];
             let decodeLatentRef = ['14', 0];
-            const samplerModelRef = useCustomAudio ? ['16', 0] : ['4', 0];
-            const audioSegments = director.timeline_data?.audioSegments || [];
+            let samplerModelRef = useCustomAudio ? ['16', 0] : ['4', 0];
+            let samplerPositiveRef = ['7', 0];
+            let samplerNegativeRef = ['7', 1];
             const audioMixNodes = {};
             let audioMixRef = ['4', 6];
             const useDirectorCombinedAudio = false;
@@ -7262,6 +7272,26 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 };
                 audioMixRef = ['80', 0];
             }
+            const directorGeneratedAudioNodes = {};
+            if (shouldLayerGeneratedAudio && hasTimelineAudio) {
+                directorGeneratedAudioNodes['38'] = {
+                    class_type: 'LTXVReferenceAudio',
+                    inputs: {
+                        model: samplerModelRef,
+                        positive: samplerPositiveRef,
+                        negative: samplerNegativeRef,
+                        reference_audio: audioMixRef,
+                        audio_vae: ['3', 0],
+                        identity_guidance_scale: 3.0,
+                        start_percent: 0.0,
+                        end_percent: 1.0
+                    },
+                    _meta: { title: 'Condition Director Audio From Timeline Mix' }
+                };
+                samplerModelRef = ['38', 0];
+                samplerPositiveRef = ['38', 1];
+                samplerNegativeRef = ['38', 2];
+            }
             const latentUpscaleNodes = {};
             if (latentUpscale) {
                 latentUpscaleNodes['24'] = {
@@ -7286,7 +7316,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 };
                 latentUpscaleNodes['28'] = {
                     class_type: 'CFGGuider',
-                    inputs: { model: samplerModelRef, positive: ['7', 0], negative: ['7', 1], cfg },
+                    inputs: { model: samplerModelRef, positive: samplerPositiveRef, negative: samplerNegativeRef, cfg },
                     _meta: { title: 'Upscale Refiner CFG Guider' }
                 };
                 latentUpscaleNodes['30'] = {
@@ -7313,38 +7343,103 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             const trimFrameCount = Math.max(1, Math.round(Number(director.duration_frames || 0)) + 1);
             const createVideoImageRef = trimFrameCount > 1 ? ['33', 0] : ['15', 0];
-            const timelineSegments = director.timeline_data?.segments || [];
-            const shouldLayerGeneratedAudio = useCustomAudio && audioSegments.length && timelineSegments.some((segment) => {
-                const text = String(segment?.prompt || segment?.text || '').toLowerCase();
-                return /lip[- ]?sync|sincron|fala|falando|voz|di[aá]logo|pessoas falando|people talking|ambient|ambiente|room tone|soundscape|efeito sonoro|sound effect/.test(text);
-            });
-            const directorGeneratedAudioNodes = {};
             if (shouldLayerGeneratedAudio) {
                 directorGeneratedAudioNodes['34'] = {
                     class_type: 'LTXVAudioVAEDecode',
                     inputs: { samples: ['14', 1], audio_vae: ['3', 0] },
                     _meta: { title: 'Decode Director Generated Layer Audio' }
                 };
-                directorGeneratedAudioNodes['35'] = {
-                    class_type: 'AudioVolumeNormalization',
-                    inputs: { audio: ['34', 0], target_level: -28.0 },
-                    _meta: { title: 'Lower Generated Audio Layer' }
-                };
-                directorGeneratedAudioNodes['36'] = {
-                    class_type: 'AudioMerge',
-                    inputs: { audio1: audioMixRef, audio2: ['35', 0], merge_method: 'add' },
-                    _meta: { title: 'Mix Custom Audio + Generated Layer' }
-                };
-                directorGeneratedAudioNodes['37'] = {
-                    class_type: 'AudioVolumeNormalization',
-                    inputs: { audio: ['36', 0], target_level: -16.0 },
-                    _meta: { title: 'Normalize Final Director Audio' }
-                };
-                audioMixRef = ['37', 0];
+                const generatedRefs = [];
+                let nextGeneratedAudioNodeId = 120;
+                const fps = Math.max(1, Number(director.frame_rate || 24));
+                timelineSegments.forEach((segment, index) => {
+                    const text = String(segment?.prompt || segment?.text || '').toLowerCase();
+                    if (!directorAudioCueRegex.test(text)) return;
+                    const startSeconds = Math.max(0, Number(segment.start || 0) / fps);
+                    const duration = Math.max(0.05, Number(segment.length || 1) / fps);
+                    const trimId = String(nextGeneratedAudioNodeId++);
+                    directorGeneratedAudioNodes[trimId] = {
+                        class_type: 'TrimAudioDuration',
+                        inputs: { audio: ['34', 0], start_index: startSeconds, duration },
+                        _meta: { title: `Trim Generated Audio Cue #${index + 1}` }
+                    };
+                    let ref = [trimId, 0];
+                    const normId = String(nextGeneratedAudioNodeId++);
+                    directorGeneratedAudioNodes[normId] = {
+                        class_type: 'AudioVolumeNormalization',
+                        inputs: { audio: ref, target_level: -18.0 },
+                        _meta: { title: `Normalize Generated Audio Cue #${index + 1}` }
+                    };
+                    ref = [normId, 0];
+                    const gainId = String(nextGeneratedAudioNodeId++);
+                    directorGeneratedAudioNodes[gainId] = {
+                        class_type: 'AudioGain',
+                        inputs: { audio: ref, gain_db: 20.0 },
+                        _meta: { title: `Lift Generated Audio Cue #${index + 1}` }
+                    };
+                    ref = [gainId, 0];
+                    if (startSeconds > 0.001) {
+                        const preSilenceId = String(nextGeneratedAudioNodeId++);
+                        const preConcatId = String(nextGeneratedAudioNodeId++);
+                        directorGeneratedAudioNodes[preSilenceId] = {
+                            class_type: 'EmptyAudio',
+                            inputs: { duration: startSeconds, sample_rate: 44100, channels: 2 },
+                            _meta: { title: `Generated Audio Cue Offset #${index + 1}` }
+                        };
+                        directorGeneratedAudioNodes[preConcatId] = {
+                            class_type: 'AudioConcat',
+                            inputs: { audio1: [preSilenceId, 0], audio2: ref, direction: 'after' },
+                            _meta: { title: `Offset Generated Audio Cue #${index + 1}` }
+                        };
+                        ref = [preConcatId, 0];
+                    }
+                    const tailSeconds = Math.max(0, Number(director.duration_seconds || 0) - (startSeconds + duration));
+                    if (tailSeconds > 0.001) {
+                        const tailSilenceId = String(nextGeneratedAudioNodeId++);
+                        const tailConcatId = String(nextGeneratedAudioNodeId++);
+                        directorGeneratedAudioNodes[tailSilenceId] = {
+                            class_type: 'EmptyAudio',
+                            inputs: { duration: tailSeconds, sample_rate: 44100, channels: 2 },
+                            _meta: { title: `Generated Audio Cue Tail #${index + 1}` }
+                        };
+                        directorGeneratedAudioNodes[tailConcatId] = {
+                            class_type: 'AudioConcat',
+                            inputs: { audio1: ref, audio2: [tailSilenceId, 0], direction: 'after' },
+                            _meta: { title: `Pad Generated Audio Cue #${index + 1}` }
+                        };
+                        ref = [tailConcatId, 0];
+                    }
+                    generatedRefs.push(ref);
+                });
+                let generatedLayerRef = generatedRefs[0] || null;
+                for (let index = 1; index < generatedRefs.length; index += 1) {
+                    const mergeGeneratedId = String(nextGeneratedAudioNodeId++);
+                    directorGeneratedAudioNodes[mergeGeneratedId] = {
+                        class_type: 'AudioMerge',
+                        inputs: { audio1: generatedLayerRef, audio2: generatedRefs[index], merge_method: 'add' },
+                        _meta: { title: `Merge Generated Audio Cue #${index + 1}` }
+                    };
+                    generatedLayerRef = [mergeGeneratedId, 0];
+                }
+                if (generatedLayerRef && hasTimelineAudio) {
+                    directorGeneratedAudioNodes['36'] = {
+                        class_type: 'AudioMerge',
+                        inputs: { audio1: audioMixRef, audio2: generatedLayerRef, merge_method: 'add' },
+                        _meta: { title: 'Mix Custom Audio + Generated Layer' }
+                    };
+                    directorGeneratedAudioNodes['37'] = {
+                        class_type: 'AudioVolumeNormalization',
+                        inputs: { audio: ['36', 0], target_level: -16.0 },
+                        _meta: { title: 'Normalize Final Director Audio' }
+                    };
+                    audioMixRef = ['37', 0];
+                } else if (generatedLayerRef) {
+                    audioMixRef = generatedLayerRef;
+                }
             }
             const createVideoInputs = useCustomAudio && audioSegments.length
                 ? { images: createVideoImageRef, fps: director.frame_rate, audio: audioMixRef }
-                : { images: createVideoImageRef, fps: director.frame_rate };
+                : (shouldLayerGeneratedAudio ? { images: createVideoImageRef, fps: director.frame_rate, audio: audioMixRef } : { images: createVideoImageRef, fps: director.frame_rate });
             const sigmaNode = steps === 8
                 ? { class_type: 'ManualSigmas', inputs: { sigmas: LTX_DISTILLED_8_STEP_SIGMAS }, _meta: { title: 'Official LTX 2.3 8-Step Sigmas' } }
                 : { class_type: 'LTXVScheduler', inputs: { steps, max_shift: 2.05, base_shift: 0.95, stretch: true, terminal: 0.1, latent: schedulerLatentRef }, _meta: { title: 'LTX Scheduler' } };
@@ -7392,7 +7487,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 '9': { class_type: 'RandomNoise', inputs: { noise_seed: payload?.seed ?? document.getElementById('seedInput')?.value ?? -1 }, _meta: { title: 'Seed' } },
                 '10': { class_type: 'KSamplerSelect', inputs: { sampler_name: normalizeSamplerForWorkflow(payload?.sampler || document.getElementById('samplingMethodSelect')?.value || 'Euler CFG++') }, _meta: { title: 'Sampler' } },
                 '11': sigmaNode,
-                '12': { class_type: 'CFGGuider', inputs: { model: samplerModelRef, positive: ['7', 0], negative: ['7', 1], cfg }, _meta: { title: 'CFG Guider' } },
+                '12': { class_type: 'CFGGuider', inputs: { model: samplerModelRef, positive: samplerPositiveRef, negative: samplerNegativeRef, cfg }, _meta: { title: 'CFG Guider' } },
                 '13': { class_type: 'SamplerCustomAdvanced', inputs: { noise: ['9', 0], guider: ['12', 0], sampler: ['10', 0], sigmas: ['11', 0], latent_image: samplerLatentRef }, _meta: { title: 'LTX Sampler' } },
                 '15': { class_type: 'LTXVTiledVAEDecode', inputs: { vae: videoVaeRef, latents: decodeLatentRef, horizontal_tiles: decodeTilesX, vertical_tiles: decodeTilesY, overlap: decodeOverlap, last_frame_fix: false, working_device: 'auto', working_dtype: 'auto' }, _meta: { title: 'Decode Frames' } },
                 '33': { class_type: 'VHS_SelectImages', inputs: { image: ['15', 0], indexes: `0:${trimFrameCount}`, err_if_missing: false, err_if_empty: true }, _meta: { title: 'Trim Director Frames To Timeline' } },

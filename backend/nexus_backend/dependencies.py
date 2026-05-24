@@ -218,6 +218,8 @@ def _heuristic_custom_node_name(class_type: str) -> str | None:
         return "ComfyUI-Impact-Subpack"
     if value.startswith("easy ") or "easy getnode" in value or "easy setnode" in value:
         return "comfyui-easy-use"
+    if "melbandroformer" in value or "roformer" in value:
+        return "ComfyUI-MelBandRoFormer"
     if "gguf" in value:
         return "ComfyUI-GGUF"
     if "ltx" in value:
@@ -235,6 +237,8 @@ def _canonical_repo_for_missing_node(class_type: str) -> str | None:
         return "https://github.com/rgthree/rgthree-comfy"
     if value.startswith("easy ") or "easy getnode" in value or "easy setnode" in value:
         return "https://github.com/yolain/ComfyUI-Easy-Use"
+    if "melbandroformer" in value or "roformer" in value:
+        return "https://github.com/kijai/ComfyUI-MelBandRoFormer"
     return None
 
 

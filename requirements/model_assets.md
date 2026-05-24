@@ -15,6 +15,7 @@ models/text_encoders      CLIP, T5, UMT5, Gemma and Qwen text encoders
 models/controlnet         SD 1.5 and SDXL ControlNet models
 models/upscale_models     ESRGAN/RealESRGAN-style upscalers
 models/latent_upscale_models  LTX latent upscalers
+models/diffusion_models/MelRoFormer  Mel-Band RoFormer audio cleanup model for LTX Director audio workflows
 ```
 
 ## Core Model Links
@@ -76,6 +77,7 @@ Nexus enables the embedding picker for SD 1.5, SDXL, Pony and Illustrious-compat
 - WAN 2.2 4-step quality depends on the matching high-noise and low-noise distilled/LightX2V LoRA pair in `models/loras/wan`. Nexus auto-detects files whose names include `high`/`low` plus `lightx2v`, `4step`, `4-step`, `lightning` or `distill`.
 - LTX 2.3 smoke preset: `512x512`, `4s`, `24 FPS`; distilled checkpoints and distilled LoRA variants usually run at low CFG and short step counts.
 - LTX 2.3 assets include full, distilled, distilled LoRA, spatial upscaler and temporal upscaler variants on the official Hugging Face repository.
+- LTX 2.3 Director audio workflows that follow WhatDreamsCost v30 use Kijai's `ComfyUI-MelBandRoFormer` custom node and `MelRoFormer/MelBandRoformer_fp16.safetensors` under `models/diffusion_models`. This keeps source/background audio and generated speech/ambience from being routed as raw noisy audio latents.
 - Keep WAN high-noise and low-noise model files together so Nexus can pick the paired route automatically. A style LoRA without a 4-step/distill token is treated as a user Concept LoRA, not as the required fast adapter.
 
 ## Download Helper
