@@ -13,6 +13,7 @@ $comfyMain = Join-Path $root "runtime\ComfyUI\main.py"
 $comfyRoot = Join-Path $root "runtime\ComfyUI"
 $watcher = Join-Path $root "scripts\watch_launcher.ps1"
 $runtimeHotfixes = Join-Path $root "scripts\apply_runtime_hotfixes.ps1"
+$ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
 $uiUrl = "http://127.0.0.1:7861/ui"
 
 function Test-NexusHealth {
@@ -89,6 +90,10 @@ if (!(Test-Path -LiteralPath $comfyMain)) {
 
 if (!(Test-Path -LiteralPath $python)) {
     $python = "python"
+}
+
+if (Test-Path -LiteralPath $ltxDirectorDeps) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $python
 }
 
 if (Test-Path -LiteralPath $runtimeHotfixes) {

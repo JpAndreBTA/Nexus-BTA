@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $root = $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProjectRoot)
 $python = Join-Path $root "runtime\.venv\Scripts\python.exe"
 $bootstrap = Join-Path $root "scripts\bootstrap_nexus_runtime.ps1"
+$ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
 
 Write-Host "[NEXUS BTA] Checking repository updates..."
 if (Test-Path -LiteralPath (Join-Path $root ".git")) {
@@ -30,6 +31,11 @@ if (Test-Path -LiteralPath $python) {
     if (Test-Path -LiteralPath $comfyRequirements) {
         Write-Host "[NEXUS BTA] Checking embedded ComfyUI requirements..."
         & $python -m pip install -r $comfyRequirements
+    }
+
+    if (Test-Path -LiteralPath $ltxDirectorDeps) {
+        Write-Host "[NEXUS BTA] Checking LTX Director dependencies..."
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $python
     }
 } else {
     Write-Host "[NEXUS BTA] Runtime Python not found; run run.bat after bootstrap."

@@ -60,6 +60,8 @@ If this is a fresh machine, bootstrap the runtime first:
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap_nexus_runtime.ps1 -CopyPythonEnv
 ```
 
+`run.bat`, `update.bat`, and the bootstrap script also check LTX Director dependencies. They install the WhatDreamsCost Director node, Kijai's Mel-Band RoFormer node, its Python requirements, and the `MelBandRoformer_fp16.safetensors` model into the expected local folders when they are missing.
+
 ## Model Folders
 
 Keep models under `models/`:

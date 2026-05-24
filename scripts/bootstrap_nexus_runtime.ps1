@@ -48,6 +48,7 @@ function Link-Directory([string]$Source, [string]$Target) {
 }
 
 $root = Resolve-AbsolutePath $ProjectRoot
+$ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
 if (!(Test-Path -LiteralPath $root)) {
     New-Item -ItemType Directory -Path $root | Out-Null
 }
@@ -137,6 +138,14 @@ if ($ImportModels) {
     } else {
         Copy-Directory $ModelsSource (Join-Path $root "models")
     }
+}
+
+if (Test-Path -LiteralPath $ltxDirectorDeps) {
+    $runtimePython = Join-Path $root "runtime\.venv\Scripts\python.exe"
+    if (!(Test-Path -LiteralPath $runtimePython)) {
+        $runtimePython = "python"
+    }
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $runtimePython
 }
 
 Write-Host "Nexus runtime bootstrap completed at $root"

@@ -79,6 +79,7 @@ Nexus enables the embedding picker for SD 1.5, SDXL, Pony and Illustrious-compat
 - LTX 2.3 latent upscale is expected for normal `512x512` outputs: Nexus samples the base video latent at half resolution, runs the spatial latent upscaler/refiner, then decodes the final frames. A `256x256` result usually means the smoke test explicitly selected `None` or a `256x256` output size.
 - LTX 2.3 assets include full, distilled, distilled LoRA, spatial upscaler and temporal upscaler variants on the official Hugging Face repository.
 - LTX 2.3 Director audio workflows that follow WhatDreamsCost v30 use Kijai's `ComfyUI-MelBandRoFormer` custom node and `MelRoFormer/MelBandRoformer_fp16.safetensors` under `models/diffusion_models`. This keeps source/background audio and generated speech/ambience from being routed as raw noisy audio latents.
+- `run.bat`, `update.bat`, and `scripts/bootstrap_nexus_runtime.ps1` run `scripts/install_ltx_director_deps.ps1`, which installs the LTX Director custom-node dependencies and downloads `MelBandRoformer_fp16.safetensors` to `models/diffusion_models/MelRoFormer` if it is missing.
 - Keep WAN high-noise and low-noise model files together so Nexus can pick the paired route automatically. A style LoRA without a 4-step/distill token is treated as a user Concept LoRA, not as the required fast adapter.
 
 ## Download Helper
