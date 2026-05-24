@@ -1512,8 +1512,8 @@
                     </label>
                     <div class="grid grid-cols-[1fr_82px] gap-2 items-end">
                         <div class="space-y-2">
-                            <div class="flex justify-between text-[10px] font-mono text-nexus-text"><span>Denoising</span><span id="denoiseValue">0.55</span></div>
-                            <input id="denoiseSlider" type="range" min="0" max="1" value="0.55" step="0.01">
+                            <div class="flex justify-between text-[10px] font-mono text-nexus-text"><span>Denoising</span><span id="denoiseValue">0.75</span></div>
+                            <input id="denoiseSlider" type="range" min="0" max="1" value="0.75" step="0.01">
                         </div>
                         <label class="space-y-1">
                             <span class="mini-label">Batch count</span>
@@ -3075,6 +3075,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 models: ['Qwen-Image-Edit-2509-Q4_K_M.gguf', 'Qwen_Image_20B_Q4_K_M.gguf', 'Qwen_Image_Lightning.safetensors'],
                 width: 512,
                 height: 512,
+                denoise: 0.75,
+                batchSize: 1,
                 steps: 4,
                 cfg: 1,
                 sampler: 'Euler',
@@ -3566,8 +3568,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (distilled.length) {
                 profile.distilledLoras = uniqueOptions(['None', ...distilled]);
                 if (presetName === 'Qwen') {
-                    const qwenFast = distilled.find(name => /lightning|4steps|4step/i.test(name)) || distilled[0];
-                    profile.distilledDefaults = [qwenFast, 'None'];
+                    profile.distilledDefaults = ['None', 'None'];
                 } else if (presetName === 'LTX') {
                     const safeLtx = distilled.find(name => /condsafe/i.test(name))
                         || distilled.find(name => /distill|distilled/i.test(name))
@@ -4564,6 +4565,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             syncVideoMotionFields('profile');
             setDimensions(profile.width, profile.height);
+            if (profile.denoise !== undefined && document.getElementById('denoiseSlider')) {
+                document.getElementById('denoiseSlider').value = String(profile.denoise);
+            }
+            if (profile.batchSize !== undefined && document.getElementById('batchCountInput')) {
+                document.getElementById('batchCountInput').value = String(profile.batchSize);
+            }
 
             document.getElementById('stepsSlider').value = profile.steps;
             document.getElementById('cfgSlider').value = profile.cfg;
@@ -4886,6 +4893,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const selectedModelName = document.getElementById('modelSelect')?.selectedOptions?.[0]?.dataset?.model || '';
             const controlNetEnabled = controlNetCompatiblePreset() && !!document.getElementById('controlNetEnabledToggle')?.checked;
             const controlNetModelName = document.getElementById('controlNetModelSelect')?.selectedOptions?.[0]?.dataset?.model || document.getElementById('controlNetModelSelect')?.value || 'Automatic';
+            const qwenEditBatchSize = activePreset === 'Qwen' && currentActivity === 'img2img' ? '1' : document.getElementById('batchCountInput')?.value;
             const values = {
                 ckpt_name: selectedModelName,
                 unet_name: selectedModelName,
@@ -4901,8 +4909,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 denoise_strength: document.getElementById('denoiseSlider')?.value,
                 width: document.getElementById('widthInput')?.value,
                 height: document.getElementById('heightInput')?.value,
-                batch_size: document.getElementById('batchCountInput')?.value,
-                batch_count: document.getElementById('batchCountInput')?.value,
+                batch_size: qwenEditBatchSize,
+                batch_count: qwenEditBatchSize,
                 grow_mask_by: document.getElementById('maskBlurSlider')?.value,
                 mask_blur: document.getElementById('maskBlurSlider')?.value,
                 sampler: document.getElementById('samplingMethodSelect')?.value,
@@ -5091,7 +5099,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (workflowModeLabel) workflowModeLabel.innerText = currentImg2ImgMode();
 
             const denoiseLabel = document.getElementById('denoiseValue');
-            if (denoiseLabel) denoiseLabel.innerText = Number(document.getElementById('denoiseSlider')?.value || 0.55).toFixed(2);
+            if (denoiseLabel) denoiseLabel.innerText = Number(document.getElementById('denoiseSlider')?.value || 0.75).toFixed(2);
             const blurLabel = document.getElementById('maskBlurValue');
             if (blurLabel) blurLabel.innerText = `${document.getElementById('maskBlurSlider')?.value || 8} px`;
             persistActiveWorkflowGraphSnapshot();
@@ -11512,11 +11520,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const sideSampler = document.getElementById('samplingMethodSelect')?.value || profile.sampler || 'Euler';
             const sideScheduler = document.getElementById('schedulerSelect')?.value || profile.scheduler || 'Simple';
             const externalQwenRoute = ['Qwen', 'Anima'].includes(preset);
+            const qwenModelOnlyLora = externalQwenRoute;
             const qwenModelIsGguf = /\.gguf$/i.test(String(selectedModelName));
             const modelSource = hasLora ? 'lora' : 'model';
-            const clipSource = hasLora ? 'lora' : (externalQwenRoute ? 'clip' : 'model');
+            const clipSource = externalQwenRoute ? 'clip' : (hasLora ? 'lora' : 'model');
             const vaeSource = externalQwenRoute ? 'vae' : 'model';
-            const clipOutputSlot = hasLora ? 1 : (externalQwenRoute ? 0 : 1);
+            const clipOutputSlot = externalQwenRoute ? 0 : (hasLora ? 1 : 1);
             const vaeOutputSlot = externalQwenRoute ? 0 : 2;
             if (preset === 'ZImageTurbo') {
                 const zModelSource = hasLora ? 'lora' : 'model';
@@ -11527,7 +11536,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { id: 'aura', class_type: 'ModelSamplingAuraFlow', title: 'AuraFlow Shift', x: 430, y: 120, width: 240, height: 105, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'shift', value: '3' }], color: '#2f3c4f' },
                     { id: 'positive', class_type: isImg2Img ? 'TextEncodeZImageOmni' : 'CLIPTextEncode', title: 'Positive Prompt', x: 430, y: 270, width: 290, height: 130, inputs: isImg2Img ? ['clip', 'vae', 'image1', 'prompt'] : ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: isImg2Img ? 'prompt' : 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic image...' }], color: '#1f5f3a' },
                     { id: 'negative', class_type: negativeText ? 'CLIPTextEncode' : 'ConditioningZeroOut', title: negativeText ? 'Negative Prompt' : 'Official Empty Negative', x: 430, y: 450, width: 290, height: 120, inputs: negativeText ? ['clip', 'text'] : ['conditioning'], outputs: ['CONDITIONING'], widgets: negativeText ? [{ name: 'text', value: negativeText }] : [], color: '#5a2c2c' },
-                    { id: 'sampler', class_type: 'KSampler', title: 'Z-Image Turbo Sampler', x: 820, y: 270, width: 300, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: sideCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.55' : '1.0' }] },
+                    { id: 'sampler', class_type: 'KSampler', title: 'Z-Image Turbo Sampler', x: 820, y: 270, width: 300, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: sideCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.75' : '1.0' }] },
                     { id: 'decode', class_type: 'VAEDecode', title: 'VAE Decode', x: 1190, y: 270, width: 220, height: 112, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [], color: '#62305a' },
                     { id: 'save', class_type: 'SaveImage', title: 'Save Image', x: 1190, y: 430, width: 220, height: 110, inputs: ['images'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA_ZIMAGE_TURBO' }], color: '#3f3f46' }
                 ];
@@ -11585,7 +11594,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { id: 'positive', class_type: 'CLIPTextEncode', title: 'Positive Prompt', x: 430, y: 230, width: 290, height: 130, inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic image...' }], color: '#1f5f3a' },
                     { id: 'guidance', class_type: 'FluxGuidance', title: 'Flux Guidance', x: 760, y: 230, width: 230, height: 105, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [{ name: 'guidance', value: document.getElementById('cfgSlider')?.value || profile.cfg || '3.5' }], color: '#0f766e' },
                     { id: 'negative', class_type: 'ConditioningZeroOut', title: 'Flux Empty Negative', x: 430, y: 420, width: 240, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [], color: '#5a2c2c' },
-                    { id: 'sampler', class_type: 'KSampler', title: 'Flux Sampler', x: 1030, y: 240, width: 300, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: '1.0' }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.55' : '1.0' }], color: '#2f3c4f' },
+                    { id: 'sampler', class_type: 'KSampler', title: 'Flux Sampler', x: 1030, y: 240, width: 300, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: '1.0' }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.75' : '1.0' }], color: '#2f3c4f' },
                     { id: 'decode', class_type: 'VAEDecode', title: 'VAE Decode', x: 1390, y: 250, width: 220, height: 112, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [], color: '#62305a' },
                     { id: 'save', class_type: 'SaveImage', title: 'Save Image', x: 1390, y: 410, width: 220, height: 110, inputs: ['images'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA_FLUX' }], color: '#3f3f46' }
                 ];
@@ -11634,10 +11643,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             const links = [];
             if (hasLora) {
-                links.push(
-                    { from_node: 'model', from_slot: 0, to_node: 'lora', to_slot: 0, type: 'MODEL' },
-                    { from_node: externalQwenRoute ? 'clip' : 'model', from_slot: externalQwenRoute ? 0 : 1, to_node: 'lora', to_slot: 1, type: 'CLIP' }
-                );
+                links.push({ from_node: 'model', from_slot: 0, to_node: 'lora', to_slot: 0, type: 'MODEL' });
+                if (!qwenModelOnlyLora) {
+                    links.push({ from_node: 'model', from_slot: 1, to_node: 'lora', to_slot: 1, type: 'CLIP' });
+                }
             }
             links.push(
                 { from_node: modelSource, from_slot: 0, to_node: 'sampler', to_slot: 0, type: 'MODEL' },
@@ -11649,8 +11658,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (isImg2Img) {
                 if (externalQwenRoute && !isCanvasInpaint) {
                     links.push(
-                        { from_node: 'reference', from_slot: 0, to_node: 'positive', to_slot: 1, type: 'IMAGE' },
-                        { from_node: 'reference', from_slot: 0, to_node: 'negative', to_slot: 1, type: 'IMAGE' },
+                        { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'resize_reference', from_slot: 0, to_node: 'positive', to_slot: 1, type: 'IMAGE' },
                         { from_node: vaeSource, from_slot: vaeOutputSlot, to_node: 'positive', to_slot: 2, type: 'VAE' },
                         { from_node: vaeSource, from_slot: vaeOutputSlot, to_node: 'negative', to_slot: 2, type: 'VAE' },
                         { from_node: 'latent', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' }
@@ -11705,7 +11714,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 modelNode,
                 { id: 'positive', class_type: genericPromptClass, title: 'Positive Prompt', x: 80, y: 300, width: 260, height: 132, inputs: promptInputs, outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic landscape...' }], color: '#1f5f3a' },
                 { id: 'negative', class_type: genericPromptClass, title: 'Negative Prompt', x: 80, y: 480, width: 260, height: 132, inputs: promptInputs, outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: negativeText }], color: '#5a2c2c' },
-                { id: 'sampler', class_type: 'KSampler', title: isVideo ? 'Video Sampler / KSampler' : 'KSampler', x: 470, y: 285, width: 285, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: sideCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.55' : '1.0' }] },
+                { id: 'sampler', class_type: 'KSampler', title: isVideo ? 'Video Sampler / KSampler' : 'KSampler', x: 470, y: 285, width: 285, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: sideCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.75' : '1.0' }] },
                 { id: 'decode', class_type: 'VAEDecode', title: 'VAE Decode', x: 870, y: 285, width: 230, height: 124, inputs: ['samples', 'vae'], outputs: [isVideo ? 'VIDEO' : 'IMAGE'], widgets: [], color: '#62305a' },
                 { id: 'preview', class_type: 'PreviewImage', title: 'Preview Output', x: 1160, y: 220, width: 220, height: 110, inputs: [isVideo ? 'video' : 'images'], outputs: [], widgets: [], color: '#164e63' },
                 { id: 'save', class_type: isVideo ? 'SaveVideo' : 'SaveImage', title: isVideo ? 'Save Video' : 'Save Image', x: 1160, y: 370, width: 220, height: 110, inputs: [isVideo ? 'video' : 'images'], outputs: [], widgets: [{ name: 'filename_prefix', value: `NEXUS_BTA_${preset}` }], color: '#3f3f46' },
@@ -11721,7 +11730,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (isImg2Img) {
                 nodes.push({ id: 'reference', class_type: 'LoadImage', title: 'Reference Image', x: 80, y: 650, width: 250, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference image' }], color: '#164e63' });
                 if (externalQwenRoute && !isCanvasInpaint) {
-                    nodes.push({ id: 'latent', class_type: 'EmptySD3LatentImage', title: 'QWEN Target Latent', x: 470, y: 650, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'batch_size', value: document.getElementById('batchCountInput')?.value || '1' }], color: '#4338ca' });
+                    nodes.push(
+                        { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize QWEN Reference To Side Menu', x: 390, y: 650, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
+                        { id: 'latent', class_type: 'EmptyQwenImageLayeredLatentImage', title: 'QWEN Target Latent', x: 700, y: 650, width: 260, height: 135, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'layers', value: '1' }, { name: 'batch_size', value: '1' }], color: '#4338ca' }
+                    );
                 } else if (isCanvasInpaint) {
                     nodes.push(
                         { id: 'mask_source', class_type: 'LoadImage', title: 'Inpaint Mask', x: 80, y: 795, width: 250, height: 105, inputs: [], outputs: ['IMAGE'], widgets: [{ name: 'image', value: 'canvas mask' }], color: '#5a2c2c' },
@@ -11739,7 +11751,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             } else {
                 nodes.push({ id: 'latent', class_type: 'EmptyLatentImage', title: isVideo ? 'Empty Video Latent' : 'Empty Latent', x: 470, y: 90, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'batch_size', value: '1' }], color: '#4338ca' });
             }
-            if (hasLora) nodes.push({ id: 'lora', class_type: isVideo ? 'LTX2LoraLoaderAdvanced' : 'LoraLoader', title: 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: activeLoras.slice(0, 4).map(item => ({ name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) })), color: '#4c1d95' });
+            if (hasLora) nodes.push(qwenModelOnlyLora
+                ? { id: 'lora', class_type: 'LoraLoaderModelOnly', title: 'QWEN LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: activeLoras[0]?.relative_name || activeLoras[0]?.name || 'select_lora.safetensors' }, { name: 'strength_model', value: Number(activeLoras[0]?.strength || 0.65).toFixed(2) }], color: '#4c1d95' }
+                : { id: 'lora', class_type: isVideo ? 'LTX2LoraLoaderAdvanced' : 'LoraLoader', title: 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: activeLoras.slice(0, 4).map(item => ({ name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) })), color: '#4c1d95' });
             if (isVideo) {
                 nodes.push(
                     { id: 'video_settings', class_type: 'PrimitiveNode', title: 'Video / Motion Settings', x: 760, y: 90, width: 260, height: 150, inputs: [], outputs: ['INT', 'FLOAT', 'STRING'], widgets: [{ name: 'frames', value: document.getElementById('framesInput')?.value || profile.videoSettings?.frames || 49 }, { name: 'seconds', value: document.getElementById('secondsInput')?.value || profile.videoSettings?.seconds || 4 }, { name: 'fps', value: document.getElementById('fpsInput')?.value || profile.videoSettings?.fps || 8 }, { name: 'motion_adapter', value: document.getElementById('motionSelect')?.value || profile.motionAdapters?.[0] || 'Auto by model' }, { name: 'omnicine_lora', value: activeOmnicineSelection() || 'Off' }, { name: 'omnicine_enabled', value: activeOmnicineSelection() ? 'true' : 'false' }, { name: 'active_audio', value: document.getElementById('activeAudioToggle')?.checked ? 'true' : 'false' }, { name: 'latent_upscale', value: document.getElementById('latentUpscaleSelect')?.value || 'Automatic' }], color: '#2f3c4f' },
@@ -11959,7 +11973,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 scheduler: document.getElementById('schedulerSelect')?.value || profile.scheduler || 'Karras',
                 seed: Number.isFinite(seed) ? seed : -1,
                 batch_size: parseInt(document.getElementById('batchCountInput')?.value || '1', 10),
-                denoise: currentActivity === 'img2img' ? parseFloat(document.getElementById('denoiseSlider')?.value || '0.55') : 1,
+                denoise: currentActivity === 'img2img' ? parseFloat(document.getElementById('denoiseSlider')?.value || '0.75') : 1,
                 vae: document.getElementById('vaeSelect')?.value || 'Automatic',
                 text_encoder: document.getElementById('textEncoderSelect')?.value || 'Automatic',
                 loras: activeLoras,
@@ -11976,7 +11990,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 img2img: {
                     mode: effectiveImg2ImgMode,
                     resize_mode: document.getElementById('resizeModeSelect')?.value || 'Just Resize',
-                    denoise: parseFloat(document.getElementById('denoiseSlider')?.value || '0.55'),
+                    denoise: parseFloat(document.getElementById('denoiseSlider')?.value || '0.75'),
                     batch_count: parseInt(document.getElementById('batchCountInput')?.value || '1', 10),
                     mask_blur: parseInt(document.getElementById('maskBlurSlider')?.value || '4', 10),
                     mask_content: document.getElementById('maskContentSelect')?.value || 'Original',
@@ -12037,6 +12051,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     precision: document.getElementById('precisionSelect')?.value || 'Auto'
                 }
             };
+            if (activePreset === 'Qwen' && currentActivity === 'img2img') {
+                payload.batch_size = 1;
+                payload.img2img.batch_count = 1;
+                payload.distilled_loras = payload.distilled_loras.map(item => ({ ...item, name: 'None' }));
+            }
             if (activePreset === 'LTX' && payload.video.omnicine_enabled && isOmnicineLoraName(payload.video.omnicine_lora)) {
                 const existingOmni = payload.distilled_loras.some(item => ltxDirectorNormalizeLoraName(item.name).toLowerCase() === ltxDirectorNormalizeLoraName(payload.video.omnicine_lora).toLowerCase());
                 if (!existingOmni) {

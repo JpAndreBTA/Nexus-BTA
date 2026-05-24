@@ -75,7 +75,7 @@ class DistilledLoraSelection(BaseModel):
 class Img2ImgSettings(BaseModel):
     mode: str = "Image to Image"
     resize_mode: str = "Just Resize"
-    denoise: float = 0.55
+    denoise: float = 0.75
     batch_count: int = 1
     mask_blur: int = 4
     mask_content: str = "Original"

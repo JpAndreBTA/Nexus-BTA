@@ -116,7 +116,7 @@
       "cfg": 1.0,
       "sampler_name": "euler",
       "scheduler": "simple",
-      "denoise": 0.65
+      "denoise": 0.75
     },
     "_meta": {
       "title": "Qwen Edit Sampler"

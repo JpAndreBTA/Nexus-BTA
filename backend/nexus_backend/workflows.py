@@ -1398,11 +1398,10 @@ def build_basic_qwen_image_workflow(
             negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0]}
             for index, _name in enumerate(refs, start=1):
                 node_id = "4" if index == 1 else str(13 + index)
-                positive_inputs[f"image{index}"] = [node_id, 0]
-                negative_inputs[f"image{index}"] = [node_id, 0]
+                positive_inputs[f"image{index}"] = [str(59 + index), 0]
         else:
-            positive_inputs = {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0], "image": ["4", 0]}
-            negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0], "image": ["4", 0]}
+            positive_inputs = {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0], "image": ["60", 0]}
+            negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0]}
     else:
         positive_inputs = {"clip": ["2", 0], "text": request.prompt}
         negative_inputs = {"clip": ["2", 0], "text": request.negative_prompt}
@@ -1461,11 +1460,12 @@ def build_basic_qwen_image_workflow(
             "_meta": {"title": "Negative Prompt"},
         },
         "7": {
-            "class_type": "EmptySD3LatentImage",
+            "class_type": "EmptyQwenImageLayeredLatentImage" if reference_image_name else "EmptySD3LatentImage",
             "inputs": {
                 "width": width,
                 "height": height,
-                "batch_size": max(1, request.batch_size),
+                **({"layers": 1} if reference_image_name else {}),
+                "batch_size": 1 if reference_image_name else max(1, request.batch_size),
             },
             "_meta": {"title": "QWEN Latent"},
         },
@@ -1483,7 +1483,7 @@ def build_basic_qwen_image_workflow(
                 "sampler_name": normalize_sampler(request.sampler),
                 "scheduler": normalize_scheduler(request.scheduler),
                 "denoise": request.img2img.denoise if reference_image_name else request.denoise,
-                "model": ["8", 0],
+                "model": model_ref if reference_image_name else ["8", 0],
                 "positive": ["5", 0],
                 "negative": ["6", 0],
                 "latent_image": ["7", 0],
@@ -1502,6 +1502,10 @@ def build_basic_qwen_image_workflow(
         },
     }
     workflow.update(qwen_lora_nodes)
+    if reference_image_name:
+        workflow.pop("8", None)
+        workflow["60"] = _image_scale_node(["4", 0], width, height)
+        workflow["60"]["_meta"]["title"] = "Resize QWEN Reference 1 To Side Menu"
     for index, name in enumerate(refs[1:], start=2):
         node_id = str(13 + index)
         workflow[node_id] = {
@@ -1509,6 +1513,9 @@ def build_basic_qwen_image_workflow(
             "inputs": {"image": name},
             "_meta": {"title": f"Reference Image {index}"},
         }
+        scale_id = str(59 + index)
+        workflow[scale_id] = _image_scale_node([node_id, 0], width, height)
+        workflow[scale_id]["_meta"]["title"] = f"Resize QWEN Reference {index} To Side Menu"
     if not reference_image_name:
         workflow.pop("4", None)
     elif mask_image_name and "inpaint" in request.img2img.mode.lower():
@@ -2074,6 +2081,8 @@ def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, 
 
     if request.preset.lower() == "ltx":
         append_distilled_loras()
+        append_user_loras()
+    elif request.preset.lower() == "qwen" and request.activity == "img2img":
         append_user_loras()
     else:
         append_user_loras()
@@ -2773,7 +2782,8 @@ def patch_workflow(
         elif assets.get("reference_image") and "image" in inputs and ("loadimage" in class_lower or "image" in title):
             inputs["image"] = assets["reference_image"]
         if "batch_size" in inputs:
-            set_input_or_linked(inputs, "batch_size", max(1, request.batch_size))
+            batch_size_value = 1 if preset == "qwen" and request.activity == "img2img" else max(1, request.batch_size)
+            set_input_or_linked(inputs, "batch_size", batch_size_value)
         for key in ["fps", "frame_rate", "framerate"]:
             if key in inputs and fps_value is not None:
                 set_input_or_linked(inputs, key, fps_value)
@@ -2935,6 +2945,13 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
     if isinstance(loader, dict):
         loader.setdefault("inputs", {})["image"] = reference_image
         loader.setdefault("_meta", {})["title"] = "Reference Image 1"
+    scaled_loader_ref = _ensure_image_ref_scaled(
+        api,
+        [str(loader_id), 0],
+        request.width,
+        request.height,
+        "Resize QWEN Reference 1 To Side Menu",
+    ) or [str(loader_id), 0]
 
     vae_ref = _find_vae_ref(api)
     for node in api.values():
@@ -2954,10 +2971,14 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
             inputs["prompt"] = request.negative_prompt if "negative" in title else request.prompt
         if vae_ref and "vae" not in inputs:
             inputs["vae"] = vae_ref
-        if class_lower == "textencodeqwenimageeditplus":
-            inputs["image1"] = [str(loader_id), 0]
+        if "negative" in title:
+            inputs.pop("image", None)
+            for index in range(1, 4):
+                inputs.pop(f"image{index}", None)
+        elif class_lower == "textencodeqwenimageeditplus":
+            inputs["image1"] = scaled_loader_ref
         else:
-            inputs["image"] = [str(loader_id), 0]
+            inputs["image"] = scaled_loader_ref
 
     if "inpaint" in request.img2img.mode.lower():
         return
@@ -2969,20 +2990,23 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
         if not isinstance(node, dict):
             continue
         class_lower = str(node.get("class_type", "")).lower()
-        if class_lower in {"emptysd3latentimage", "emptylatentimage"}:
+        if class_lower in {"emptyqwenimagelayeredlatentimage", "emptysd3latentimage", "emptylatentimage"}:
             latent_id = str(node_id)
             break
     if not latent_id:
         latent_id = str(_next_api_node_id(api))
         api[latent_id] = {
-            "class_type": "EmptySD3LatentImage",
+            "class_type": "EmptyQwenImageLayeredLatentImage",
             "inputs": {},
             "_meta": {"title": "QWEN Target Latent"},
         }
+    else:
+        api[latent_id]["class_type"] = "EmptyQwenImageLayeredLatentImage"
     latent_inputs = api[latent_id].setdefault("inputs", {})
     latent_inputs["width"] = max(16, int(request.width))
     latent_inputs["height"] = max(16, int(request.height))
-    latent_inputs["batch_size"] = max(1, int(request.batch_size or 1))
+    latent_inputs["layers"] = max(1, int(latent_inputs.get("layers") or 1))
+    latent_inputs["batch_size"] = 1
     api[sampler_id].setdefault("inputs", {})["latent_image"] = [latent_id, 0]
 
 
@@ -3008,7 +3032,14 @@ def _ensure_qwen_multi_reference_route(api: dict[str, Any], request: GenerateReq
         if isinstance(node, dict):
             node.setdefault("inputs", {})["image"] = image_name
             node.setdefault("_meta", {})["title"] = f"Reference Image {index}"
-        loader_refs.append([str(node_id), 0])
+        scaled_ref = _ensure_image_ref_scaled(
+            api,
+            [str(node_id), 0],
+            request.width,
+            request.height,
+            f"Resize QWEN Reference {index} To Side Menu",
+        ) or [str(node_id), 0]
+        loader_refs.append(scaled_ref)
     if len(loader_refs) < 2:
         return
 
@@ -3043,8 +3074,14 @@ def _ensure_qwen_multi_reference_route(api: dict[str, Any], request: GenerateReq
         inputs.pop("image", None)
         if vae_ref and "vae" not in inputs:
             inputs["vae"] = vae_ref
-        for index, ref in enumerate(loader_refs, start=1):
-            inputs[f"image{index}"] = ref
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        if "negative" in title:
+            for index in range(1, 4):
+                inputs.pop(f"image{index}", None)
+            inputs.pop("image", None)
+        else:
+            for index, ref in enumerate(loader_refs, start=1):
+                inputs[f"image{index}"] = ref
 
 
 def _ensure_wan_start_end_frame_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
@@ -3237,6 +3274,7 @@ def _ensure_external_vae_loader(api: dict[str, Any], assets: dict[str, str]) -> 
 def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> None:
     selections = _active_lora_selections(request)
     is_ltx = request.preset.lower() == "ltx"
+    model_only_lora = request.preset.lower() in {"anima", "flux", "ltx", "qwen", "wan", "zimageturbo", "zimage"}
     checkpoint_name = request.model_name or Path(request.model_path or "").name
     audio_value = (request.director or {}).get("use_custom_audio")
     if audio_value is None:
@@ -3283,7 +3321,6 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
         if isinstance(node, dict)
         and "lora" in str(node.get("class_type", "")).lower()
         and isinstance(node.get("inputs"), dict)
-        and "lora_name" in node["inputs"]
     ]
     remaining = list(selections)
     for _node_id, node in existing_nodes:
@@ -3301,11 +3338,27 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
             continue
         lora_name, strength_model, strength_clip = selection
         strength_model = effective_strength(lora_name, strength_model)
+        if model_only_lora and str(node.get("class_type", "")).lower() != "ltx2loraloaderadvanced":
+            model_value = inputs.get("model")
+            node["class_type"] = "LoraLoaderModelOnly"
+            inputs.clear()
+            if model_value is not None:
+                inputs["model"] = model_value
+        elif not model_only_lora and str(node.get("class_type", "")).lower() == "loraloader":
+            model_value = inputs.get("model")
+            clip_value = inputs.get("clip")
+            inputs.clear()
+            if model_value is not None:
+                inputs["model"] = model_value
+            if clip_value is not None:
+                inputs["clip"] = clip_value
         inputs["lora_name"] = lora_name
-        if "strength_model" in inputs:
+        if model_only_lora:
             inputs["strength_model"] = strength_model
-        elif "strength" in inputs:
-            inputs["strength"] = strength_model
+            inputs.pop("strength", None)
+        else:
+            inputs["strength_model"] = strength_model
+            inputs["strength_clip"] = strength_clip
         if "strength_clip" in inputs:
             inputs["strength_clip"] = strength_clip
         if is_ltx and str(node.get("class_type", "")).lower() == "ltx2loraloaderadvanced":
@@ -3317,7 +3370,6 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
     if not target_refs:
         return
     original_model_ref = target_refs[0]
-    model_only_lora = request.preset.lower() in {"anima", "flux", "ltx", "qwen", "wan", "zimageturbo", "zimage"}
     clip_ref = None if model_only_lora else _find_clip_ref_for_lora(api, original_model_ref)
     model_ref = list(original_model_ref)
     final_clip_ref = list(clip_ref) if clip_ref else None
