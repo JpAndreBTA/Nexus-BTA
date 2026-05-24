@@ -2497,14 +2497,6 @@
                                     <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">Motion smoothing<span class="toggle-switch"><input id="extrasMotionSmooth" type="checkbox" checked><span class="toggle-track"></span></span></label>
                                 </section>
 
-                                <section class="data-card p-3.5 space-y-3">
-                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
-                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Encode</span>
-                                        <i class="fa-solid fa-file-video text-nexus-red text-[10px]"></i>
-                                    </div>
-                                    <select id="extrasVideoEncoder" class="flat-input appearance-none cursor-pointer"></select>
-                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">Pack metadata<span class="toggle-switch"><input id="extrasPackMetadata" type="checkbox" checked><span class="toggle-track"></span></span></label>
-                                </section>
                             </div>
                         </div>
                     </aside>
@@ -2550,8 +2542,21 @@
                             </div>
                         </div>
 
-                        <div class="p-3 border-t border-nexus-border bg-zinc-950 flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0">
-                            <span id="extrasStatusText" class="text-[10px] font-mono text-nexus-muted">Extras pipeline ready</span>
+                        <div class="p-3 border-t border-nexus-border bg-zinc-950 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3 shrink-0">
+                            <div class="flex flex-col lg:flex-row lg:items-center gap-2 min-w-0">
+                                <span id="extrasStatusText" class="text-[10px] font-mono text-nexus-muted min-w-0 truncate">Extras pipeline ready</span>
+                                <div id="extrasVideoEncodeBar" class="hidden flex flex-col sm:flex-row sm:items-center gap-2 min-w-0">
+                                    <label class="h-10 px-3 bg-nexus-bg border border-nexus-border rounded-sm flex items-center justify-between sm:justify-start gap-3 text-xs text-white">
+                                        <span class="font-bold uppercase tracking-wide text-[10px]">Encode</span>
+                                        <span class="toggle-switch"><input id="extrasVideoEncodeToggle" type="checkbox" checked onchange="syncExtrasEncodeUi()"><span class="toggle-track"></span></span>
+                                    </label>
+                                    <select id="extrasVideoEncoder" class="flat-input appearance-none cursor-pointer h-10 sm:w-56"></select>
+                                    <label class="h-10 px-3 bg-nexus-bg border border-nexus-border rounded-sm flex items-center justify-between sm:justify-start gap-3 text-xs text-white">
+                                        <span class="font-bold uppercase tracking-wide text-[10px]">Metadata</span>
+                                        <span class="toggle-switch"><input id="extrasPackMetadata" type="checkbox" checked><span class="toggle-track"></span></span>
+                                    </label>
+                                </div>
+                            </div>
                             <div class="flex gap-2 w-full sm:w-auto">
                                 <button id="extrasClearBtn" type="button" onclick="clearExtrasSource()" class="flat-button hidden px-4 py-2.5 text-xs font-bold uppercase">Clear</button>
                                 <button id="extrasProcessBtn" type="button" onclick="startExtrasProcessing()" class="flex-1 sm:flex-initial px-6 py-2.5 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-xs uppercase tracking-wider rounded-sm transition-all flex items-center justify-center gap-2">
@@ -3990,6 +3995,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             document.getElementById('extrasModeVideoBtn')?.classList.toggle('active', isVideo);
             document.getElementById('extrasImagePanel')?.classList.toggle('hidden', isVideo);
             document.getElementById('extrasVideoPanel')?.classList.toggle('hidden', !isVideo);
+            document.getElementById('extrasVideoEncodeBar')?.classList.toggle('hidden', !isVideo);
             const title = document.getElementById('extrasTitle');
             if (title) title.innerText = isVideo ? 'Extras / Video Post' : 'Extras / Image Tools';
             const input = document.getElementById('extrasFileInput');
@@ -3998,6 +4004,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (dropTitle) dropTitle.innerText = isVideo ? 'Drop video file here' : 'Drop image file here';
             const dropIcon = document.getElementById('extrasDropIcon');
             if (dropIcon) dropIcon.className = isVideo ? 'fa-solid fa-film text-2xl text-nexus-red' : 'fa-solid fa-cloud-arrow-up text-2xl text-nexus-red';
+            syncExtrasEncodeUi({ render: false });
             renderExtrasSource();
         }
 
@@ -4091,6 +4098,19 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             renderExtrasSource();
         }
 
+        function syncExtrasEncodeUi(options = {}) {
+            const enabled = !!document.getElementById('extrasVideoEncodeToggle')?.checked;
+            const encoder = document.getElementById('extrasVideoEncoder');
+            const metadata = document.getElementById('extrasPackMetadata');
+            if (encoder) {
+                encoder.disabled = !enabled;
+                encoder.classList.toggle('opacity-50', !enabled);
+                encoder.classList.toggle('cursor-not-allowed', !enabled);
+            }
+            if (metadata) metadata.disabled = !enabled;
+            if (options.render !== false) renderExtrasSource();
+        }
+
         function syncExtrasAlphaUi() {
             const imageAlpha = !!document.getElementById('extrasImageAlphaToggle')?.checked;
             const imageExport = document.getElementById('extrasImageExportSelect');
@@ -4125,6 +4145,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 videoEncoder.innerHTML = videoOptions.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`).join('');
                 if (videoOptions.some(item => item.value === previous)) videoEncoder.value = previous;
             }
+            syncExtrasEncodeUi({ render: false });
             renderExtrasSource();
         }
 
@@ -4156,6 +4177,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const interpolateEnabled = !!document.getElementById('extrasVideoInterpolateToggle')?.checked;
             const upscaleEnabled = !!document.getElementById('extrasVideoUpscaleToggle')?.checked;
             const denoiseEnabled = !!document.getElementById('extrasVideoDenoiseToggle')?.checked;
+            const encodeEnabled = !!document.getElementById('extrasVideoEncodeToggle')?.checked;
             return {
                 mediaType: 'video',
                 interpolate: {
@@ -4179,8 +4201,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 alpha_video_formats: ['image_sequence_png_alpha', 'mov_prores_4444_alpha'],
                 deflicker: Number(document.getElementById('extrasDeflickerSlider')?.value || 0.35),
                 motion_smoothing: !!document.getElementById('extrasMotionSmooth')?.checked,
-                encoder: document.getElementById('extrasVideoEncoder')?.value || 'mp4_h264',
-                pack_metadata: !!document.getElementById('extrasPackMetadata')?.checked
+                encode_enabled: encodeEnabled,
+                encoder: encodeEnabled ? (document.getElementById('extrasVideoEncoder')?.value || 'mp4_h264') : 'off',
+                pack_metadata: encodeEnabled && !!document.getElementById('extrasPackMetadata')?.checked
             };
         }
 
@@ -4196,6 +4219,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (plan.upscale?.enabled) stages.push(`upscale ${plan.upscale.scale}`);
             if (plan.denoise?.enabled) stages.push(`denoise ${plan.denoise.strength.toFixed(2)}`);
             if (plan.preserve_alpha) stages.push('alpha');
+            stages.push(plan.encode_enabled === false ? 'encode off' : plan.encoder);
             return stages.join(' / ');
         }
 
@@ -13757,6 +13781,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             'extrasMotionSmooth',
             'extrasImageExportSelect',
             'extrasVideoEncoder',
+            'extrasVideoEncodeToggle',
             'extrasPackMetadata',
             'extrasFaceRestore',
             'extrasColorMatch',
