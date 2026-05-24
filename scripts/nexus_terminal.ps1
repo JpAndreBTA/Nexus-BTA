@@ -50,30 +50,30 @@ function Invoke-NexusRepositoryUpdate {
     )
 
     if (!(Test-Path -LiteralPath (Join-Path $ProjectRoot ".git"))) {
-        Write-NexusLine "Repositorio Git nao encontrado; pulando atualizacoes." "Warn"
+        Write-NexusLine "Git repository not found; skipping updates." "Warn"
         return
     }
     if (!(Get-Command git -ErrorAction SilentlyContinue)) {
-        Write-NexusLine "Git nao encontrado no PATH; pulando atualizacoes." "Warn"
+        Write-NexusLine "Git was not found in PATH; skipping updates." "Warn"
         return
     }
 
     try {
-        Write-NexusLine "Verificando GitHub..." "Info"
+        Write-NexusLine "Checking GitHub..." "Info"
         git -C $ProjectRoot fetch --all --prune 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            throw "git fetch falhou"
+            throw "git fetch failed"
         }
 
         $dirty = git -C $ProjectRoot status --porcelain
         if ($dirty) {
-            Write-NexusLine "Alteracoes locais detectadas; pull automatico pulado." "Warn"
+            Write-NexusLine "Local changes detected; automatic pull skipped." "Warn"
             return
         }
 
         $upstream = git -C $ProjectRoot rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>$null
         if ($LASTEXITCODE -ne 0 -or !$upstream) {
-            Write-NexusLine "Branch sem upstream configurado; pull automatico pulado." "Warn"
+            Write-NexusLine "No upstream branch configured; automatic pull skipped." "Warn"
             return
         }
 
@@ -82,28 +82,28 @@ function Invoke-NexusRepositoryUpdate {
         $ahead = if ($counts.Length -gt 1) { [int]$counts[1] } else { 0 }
 
         if ($behind -eq 0 -and $ahead -eq 0) {
-            Write-NexusLine "Repositorio atualizado." "Ok"
+            Write-NexusLine "Repository is up to date." "Ok"
             return
         }
         if ($ahead -gt 0 -and $behind -gt 0) {
-            Write-NexusLine "Branch divergiu do remoto; resolva manualmente antes do pull." "Warn"
+            Write-NexusLine "Branch diverged from remote; resolve it manually before pulling." "Warn"
             return
         }
         if ($ahead -gt 0) {
-            Write-NexusLine "Commits locais ainda nao enviados; pull automatico pulado." "Warn"
+            Write-NexusLine "Local commits are not pushed yet; automatic pull skipped." "Warn"
             return
         }
 
-        Write-NexusLine "Aplicando $behind atualizacao(oes) do GitHub..." "Info"
+        Write-NexusLine "Applying $behind GitHub update(s)..." "Info"
         git -C $ProjectRoot pull --ff-only 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            throw "git pull --ff-only falhou"
+            throw "git pull --ff-only failed"
         }
-        Write-NexusLine "Atualizacao aplicada." "Ok"
+        Write-NexusLine "Update applied." "Ok"
     } catch {
         if ($Strict) {
             throw
         }
-        Write-NexusLine "Nao foi possivel verificar atualizacoes: $($_.Exception.Message)" "Warn"
+        Write-NexusLine "Could not check for updates: $($_.Exception.Message)" "Warn"
     }
 }

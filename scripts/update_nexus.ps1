@@ -23,36 +23,36 @@ if (Test-Path -LiteralPath $terminalHelpers) {
 }
 
 Write-NexusLogo
-Write-NexusSection "Atualizacoes"
+Write-NexusSection "Updates"
 Invoke-NexusRepositoryUpdate -ProjectRoot $root -Strict
 
 if (!(Test-Path -LiteralPath (Join-Path $root "runtime\ComfyUI\main.py"))) {
-    Write-NexusLine "ComfyUI embutido ausente; preparando runtime local..." "Warn"
+    Write-NexusLine "Embedded ComfyUI is missing; preparing local runtime..." "Warn"
     & $bootstrap -ProjectRoot $root -CopyPythonEnv
 }
 
 if (Test-Path -LiteralPath $python) {
-    Write-NexusSection "Requisitos"
+    Write-NexusSection "Requirements"
     Write-NexusLine "Backend Python..." "Info"
     & $python -m pip install -q --upgrade pip
     & $python -m pip install -q "uvicorn[standard]>=0.30" fastapi pydantic python-multipart httpx websockets pillow soundfile opencv-contrib-python
-    Write-NexusLine "Backend Python atendido." "Ok"
+    Write-NexusLine "Backend Python requirements satisfied." "Ok"
 
     $comfyRequirements = Join-Path $root "runtime\ComfyUI\requirements.txt"
     if (Test-Path -LiteralPath $comfyRequirements) {
         Write-NexusLine "ComfyUI Python..." "Info"
         & $python -m pip install -q -r $comfyRequirements
-        Write-NexusLine "ComfyUI Python atendido." "Ok"
+        Write-NexusLine "ComfyUI Python requirements satisfied." "Ok"
     }
 
     if (Test-Path -LiteralPath $ltxDirectorDeps) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $python
     }
 } else {
-    Write-NexusLine "Runtime Python nao encontrado; execute run.bat apos o bootstrap." "Warn"
+    Write-NexusLine "Runtime Python not found; run run.bat after bootstrap." "Warn"
 }
 
-Write-NexusSection "Pastas"
+Write-NexusSection "Folders"
 New-Item -ItemType Directory -Force -Path (Join-Path $root "workflows\nexus_base") | Out-Null
 foreach ($dir in @(
     "models\checkpoints\sd15",
@@ -75,5 +75,5 @@ foreach ($dir in @(
     New-Item -ItemType Directory -Force -Path (Join-Path $root $dir) | Out-Null
 }
 
-Write-NexusLine "Pastas de modelos e workflows prontas." "Ok"
-Write-NexusLine "Verificacao concluida." "Ok"
+Write-NexusLine "Model and workflow folders are ready." "Ok"
+Write-NexusLine "Verification complete." "Ok"

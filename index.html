@@ -2361,9 +2361,20 @@
                                     </div>
                                     <div class="space-y-1.5">
                                         <label class="mini-label">Scale factor</label>
-                                        <div class="grid grid-cols-2 gap-2">
+                                        <div class="grid grid-cols-3 gap-2">
                                             <button id="extrasScale2Btn" type="button" onclick="selectExtrasScale('2x')" class="flat-button py-2 text-xs font-bold">2x</button>
                                             <button id="extrasScale4Btn" type="button" onclick="selectExtrasScale('4x')" class="flat-button py-2 text-xs font-bold bg-nexus-red text-white border-nexus-red">4x</button>
+                                            <button id="extrasScaleCustomBtn" type="button" onclick="selectExtrasScale('custom')" class="flat-button py-2 text-xs font-bold">Custom</button>
+                                        </div>
+                                        <div id="extrasCustomResolutionFields" class="hidden grid grid-cols-2 gap-2 pt-1">
+                                            <label class="space-y-1">
+                                                <span class="mini-label">Width</span>
+                                                <input id="extrasCustomWidthInput" class="flat-input font-mono" type="number" min="64" step="8" value="1024" oninput="renderExtrasSource()">
+                                            </label>
+                                            <label class="space-y-1">
+                                                <span class="mini-label">Height</span>
+                                                <input id="extrasCustomHeightInput" class="flat-input font-mono" type="number" min="64" step="8" value="1024" oninput="renderExtrasSource()">
+                                            </label>
                                         </div>
                                     </div>
                                 </section>
@@ -2401,9 +2412,13 @@
                                         <span class="text-[10px] font-bold text-white uppercase tracking-wide">Interpolate</span>
                                         <i class="fa-solid fa-film text-nexus-red text-[10px]"></i>
                                     </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
+                                        <span><span class="font-bold block">Enable interpolation</span><span class="text-[9px] text-nexus-muted font-mono">Off by default</span></span>
+                                        <span class="toggle-switch"><input id="extrasVideoInterpolateToggle" type="checkbox" onchange="syncExtrasInterpolateUi()"><span class="toggle-track"></span></span>
+                                    </label>
                                     <div class="space-y-1.5">
                                         <label class="mini-label">Interpolation model</label>
-                                        <select id="extrasVideoInterpolator" class="flat-input appearance-none cursor-pointer">
+                                        <select id="extrasVideoInterpolator" class="flat-input appearance-none cursor-pointer" disabled>
                                             <option>RIFE v4.6</option>
                                             <option>FILM</option>
                                             <option>DAIN</option>
@@ -2424,8 +2439,40 @@
 
                                 <section class="data-card p-3.5 space-y-3">
                                     <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Video Upscale</span>
+                                        <i class="fa-solid fa-up-right-and-down-left-from-center text-nexus-red text-[10px]"></i>
+                                    </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
+                                        <span><span class="font-bold block">Enable video upscale</span><span id="extrasVideoUpscaleStatus" class="text-[9px] text-nexus-muted font-mono">Checking models...</span></span>
+                                        <span class="toggle-switch"><input id="extrasVideoUpscaleToggle" type="checkbox" onchange="syncExtrasVideoUpscaleUi()"><span class="toggle-track"></span></span>
+                                    </label>
+                                    <div class="space-y-1.5">
+                                        <label class="mini-label">Upscale model</label>
+                                        <select id="extrasVideoUpscaleModel" class="flat-input appearance-none cursor-pointer" disabled>
+                                            <option value="None">No compatible models detected</option>
+                                        </select>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="space-y-1.5">
+                                            <span class="mini-label">Scale</span>
+                                            <select id="extrasVideoUpscaleFactor" class="flat-input appearance-none cursor-pointer" disabled><option>2x</option><option>4x</option></select>
+                                        </label>
+                                        <label class="space-y-1.5">
+                                            <span class="mini-label">Tile size</span>
+                                            <input id="extrasVideoUpscaleTileInput" class="flat-input font-mono" type="number" value="512" min="128" step="64" disabled>
+                                        </label>
+                                    </div>
+                                </section>
+
+                                <section class="data-card p-3.5 space-y-3">
+                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
                                         <span class="text-[10px] font-bold text-white uppercase tracking-wide">Stabilize</span>
                                         <i class="fa-solid fa-wave-square text-nexus-red text-[10px]"></i>
+                                    </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">Video denoise<span class="toggle-switch"><input id="extrasVideoDenoiseToggle" type="checkbox" onchange="syncExtrasVideoDenoiseUi()"><span class="toggle-track"></span></span></label>
+                                    <div id="extrasVideoDenoiseControls" class="hidden space-y-1">
+                                        <div class="flex justify-between text-[10px] font-mono text-nexus-text"><span>Denoise strength</span><span id="extrasVideoDenoiseValue" class="text-nexus-red font-bold">0.20</span></div>
+                                        <input id="extrasVideoDenoiseSlider" type="range" min="0" max="1" value="0.20" step="0.01" oninput="document.getElementById('extrasVideoDenoiseValue').innerText = Number(this.value).toFixed(2); renderExtrasSource();">
                                     </div>
                                     <div class="space-y-1">
                                         <div class="flex justify-between text-[10px] font-mono text-nexus-text"><span>Deflicker</span><span id="extrasDeflickerValue" class="text-nexus-red font-bold">0.35</span></div>
@@ -3607,6 +3654,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             applyModelProfile(activePreset, false);
             updateWorkflowPreview();
+            populateExtrasModelControls();
         }
 
         async function refreshModelCatalog() {
@@ -3944,13 +3992,157 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (!options.quiet) showToast('Extras Mode', extrasMode === 'video' ? 'Video post tools selected.' : 'Image tools selected.');
         }
 
+        function extrasCatalogNames(categories, filter = null) {
+            if (!backendCatalog?.categories) return [];
+            return uniqueOptions(categories
+                .flatMap(category => backendCatalog.categories?.[category] || [])
+                .map(item => item?.relative_path || item?.name || '')
+                .filter(name => name && (!filter || filter(name))));
+        }
+
+        function setSelectOptions(selectId, options, fallback = []) {
+            const select = document.getElementById(selectId);
+            if (!select) return [];
+            const current = select.value;
+            const normalized = uniqueOptions([...(options || []), ...(fallback || [])].filter(Boolean));
+            select.innerHTML = normalized.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
+            if (current && normalized.includes(current)) select.value = current;
+            return normalized;
+        }
+
+        function populateExtrasModelControls() {
+            const rasterUpscalers = extrasCatalogNames(['upscale_models']);
+            const latentUpscalers = extrasCatalogNames(['latent_upscale_models']);
+            const interpolators = extrasCatalogNames(['frame_interpolation']);
+            const imageOptions = setSelectOptions('extrasImageUpscaler', rasterUpscalers, ['Lanczos']);
+            const videoOptions = setSelectOptions('extrasVideoUpscaleModel', [...latentUpscalers, ...rasterUpscalers], ['Lanczos']);
+            const interpolationOptions = setSelectOptions('extrasVideoInterpolator', interpolators, interpolators.length ? [] : ['No interpolation model detected']);
+            const upscaleStatus = document.getElementById('extrasVideoUpscaleStatus');
+            if (upscaleStatus) {
+                const latentLabel = latentUpscalers.length ? `${latentUpscalers.length} latent` : 'no latent';
+                const rasterLabel = rasterUpscalers.length ? `${rasterUpscalers.length} raster` : 'no raster';
+                upscaleStatus.innerText = `${latentLabel}, ${rasterLabel}`;
+            }
+            const imageSelect = document.getElementById('extrasImageUpscaler');
+            if (imageSelect) {
+                imageSelect.disabled = !imageOptions.length;
+                if (rasterUpscalers.length && (!imageSelect.value || imageSelect.value === 'Lanczos')) imageSelect.value = rasterUpscalers[0];
+            }
+            const interpolateSelect = document.getElementById('extrasVideoInterpolator');
+            if (interpolateSelect) interpolateSelect.dataset.hasModel = interpolators.length ? '1' : '0';
+            const videoSelect = document.getElementById('extrasVideoUpscaleModel');
+            if (videoSelect) {
+                videoSelect.dataset.hasModel = videoOptions.length ? '1' : '0';
+                const realVideoOptions = [...latentUpscalers, ...rasterUpscalers];
+                if (realVideoOptions.length && (!videoSelect.value || videoSelect.value === 'Lanczos')) videoSelect.value = realVideoOptions[0];
+            }
+            syncExtrasInterpolateUi();
+            syncExtrasVideoUpscaleUi();
+            syncExtrasVideoDenoiseUi();
+            renderExtrasSource();
+        }
+
+        function syncExtrasInterpolateUi() {
+            const toggle = document.getElementById('extrasVideoInterpolateToggle');
+            const model = document.getElementById('extrasVideoInterpolator');
+            const fps = document.getElementById('extrasTargetFps');
+            const speed = document.getElementById('extrasVideoSpeed');
+            const enabled = !!toggle?.checked;
+            const hasModel = model?.dataset.hasModel !== '0';
+            if (model) model.disabled = !enabled || !hasModel;
+            if (fps) fps.disabled = !enabled;
+            if (speed) speed.disabled = !enabled;
+            renderExtrasSource();
+        }
+
+        function syncExtrasVideoUpscaleUi() {
+            const toggle = document.getElementById('extrasVideoUpscaleToggle');
+            const model = document.getElementById('extrasVideoUpscaleModel');
+            const factor = document.getElementById('extrasVideoUpscaleFactor');
+            const tile = document.getElementById('extrasVideoUpscaleTileInput');
+            const enabled = !!toggle?.checked;
+            const hasModel = model?.dataset.hasModel !== '0';
+            [model, factor, tile].forEach(element => {
+                if (element) element.disabled = !enabled || !hasModel;
+            });
+            renderExtrasSource();
+        }
+
+        function syncExtrasVideoDenoiseUi() {
+            const enabled = !!document.getElementById('extrasVideoDenoiseToggle')?.checked;
+            document.getElementById('extrasVideoDenoiseControls')?.classList.toggle('hidden', !enabled);
+            renderExtrasSource();
+        }
+
+        function extrasCustomResolution() {
+            const width = Math.max(64, Math.round(Number(document.getElementById('extrasCustomWidthInput')?.value) || 1024));
+            const height = Math.max(64, Math.round(Number(document.getElementById('extrasCustomHeightInput')?.value) || 1024));
+            return { width, height };
+        }
+
+        function extrasProcessingPlan() {
+            const isVideo = extrasMode === 'video' || extrasSource?.mediaType === 'video';
+            if (!isVideo) {
+                const scale = extrasScaleFactor();
+                const custom = scale === 'custom' ? extrasCustomResolution() : null;
+                return {
+                    mediaType: 'image',
+                    upscaler: document.getElementById('extrasImageUpscaler')?.value || 'Lanczos',
+                    scale,
+                    custom_resolution: custom,
+                    face_restore: !!document.getElementById('extrasFaceRestore')?.checked,
+                    color_match: !!document.getElementById('extrasColorMatch')?.checked,
+                    tiled_vae: !!document.getElementById('extrasTiledVae')?.checked
+                };
+            }
+            const interpolateEnabled = !!document.getElementById('extrasVideoInterpolateToggle')?.checked;
+            const upscaleEnabled = !!document.getElementById('extrasVideoUpscaleToggle')?.checked;
+            const denoiseEnabled = !!document.getElementById('extrasVideoDenoiseToggle')?.checked;
+            return {
+                mediaType: 'video',
+                interpolate: {
+                    enabled: interpolateEnabled,
+                    model: interpolateEnabled ? (document.getElementById('extrasVideoInterpolator')?.value || 'Automatic') : 'Off',
+                    fps: Math.max(1, Math.min(120, Number(document.getElementById('extrasTargetFps')?.value) || 30)),
+                    speed: document.getElementById('extrasVideoSpeed')?.value || '1x'
+                },
+                upscale: {
+                    enabled: upscaleEnabled,
+                    model: upscaleEnabled ? (document.getElementById('extrasVideoUpscaleModel')?.value || 'Automatic') : 'Off',
+                    scale: document.getElementById('extrasVideoUpscaleFactor')?.value || '2x',
+                    tile: Math.max(128, Number(document.getElementById('extrasVideoUpscaleTileInput')?.value) || 512)
+                },
+                denoise: {
+                    enabled: denoiseEnabled,
+                    strength: denoiseEnabled ? Number(document.getElementById('extrasVideoDenoiseSlider')?.value || 0.2) : 0
+                },
+                deflicker: Number(document.getElementById('extrasDeflickerSlider')?.value || 0.35),
+                motion_smoothing: !!document.getElementById('extrasMotionSmooth')?.checked,
+                encoder: document.getElementById('extrasVideoEncoder')?.value || 'MP4 H.264',
+                pack_metadata: !!document.getElementById('extrasPackMetadata')?.checked
+            };
+        }
+
+        function extrasPlanLabel(plan = extrasProcessingPlan()) {
+            if (plan.mediaType === 'image') {
+                const scale = plan.scale === 'custom' && plan.custom_resolution
+                    ? `${plan.custom_resolution.width}x${plan.custom_resolution.height}`
+                    : plan.scale;
+                return `${plan.upscaler} / ${scale}`;
+            }
+            const stages = [];
+            stages.push(plan.interpolate?.enabled ? `interp ${plan.interpolate.fps} FPS` : 'interp off');
+            if (plan.upscale?.enabled) stages.push(`upscale ${plan.upscale.scale}`);
+            if (plan.denoise?.enabled) stages.push(`denoise ${plan.denoise.strength.toFixed(2)}`);
+            return stages.join(' / ');
+        }
+
         function toggleExtrasGallery() {
             const sidebar = document.getElementById('rightSidebar');
             const isGalleryOpen = sidebar && !sidebar.classList.contains('hidden') && activeRightSidebarTab === 'gallery';
             if (isGalleryOpen) {
                 sidebar.classList.add('hidden');
                 sidebar.classList.remove('lg:flex');
-                isGalleryOpen = false;
                 return;
             }
             openGalleryPanel();
@@ -4049,27 +4241,33 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
             const imageBadge = document.getElementById('extrasImageBadge');
             const videoBadge = document.getElementById('extrasVideoBadge');
-            if (imageBadge) imageBadge.innerText = extrasProcessedUrl ? `${document.getElementById('extrasImageUpscaler')?.value || 'Upscaled'} / ${extrasScaleFactor()}` : 'Source loaded';
-            if (videoBadge) videoBadge.innerText = extrasProcessedUrl ? `${document.getElementById('extrasVideoInterpolator')?.value || 'Interpolated'} / ${document.getElementById('extrasTargetFps')?.value || 30} FPS` : 'Source loaded';
+            if (imageBadge) imageBadge.innerText = extrasProcessedUrl ? extrasPlanLabel(extrasProcessingPlan()) : 'Source loaded';
+            if (videoBadge) videoBadge.innerText = extrasProcessedUrl ? extrasPlanLabel(extrasProcessingPlan()) : 'Source loaded';
 
             const status = document.getElementById('extrasStatusText');
             if (status) status.innerText = hasSource
-                ? `${extrasSource.mediaType === 'video' ? 'Video' : 'Image'} ready: ${extrasSource.title}`
+                ? `${extrasSource.mediaType === 'video' ? 'Video' : 'Image'} ready: ${extrasSource.title} / ${extrasPlanLabel(extrasProcessingPlan())}`
                 : 'Extras pipeline ready';
         }
 
         function extrasScaleFactor() {
+            if (document.getElementById('extrasScaleCustomBtn')?.classList.contains('bg-nexus-red')) return 'custom';
             return document.getElementById('extrasScale4Btn')?.classList.contains('bg-nexus-red') ? '4x' : '2x';
         }
 
         function selectExtrasScale(factor) {
-            const is4x = factor === '4x';
+            const selected = factor === 'custom' ? 'custom' : (factor === '2x' ? '2x' : '4x');
             const active = 'flat-button py-2 text-xs font-bold bg-nexus-red text-white border-nexus-red';
             const inactive = 'flat-button py-2 text-xs font-bold';
-            const scale2 = document.getElementById('extrasScale2Btn');
-            const scale4 = document.getElementById('extrasScale4Btn');
-            if (scale2) scale2.className = is4x ? inactive : active;
-            if (scale4) scale4.className = is4x ? active : inactive;
+            const buttons = {
+                '2x': document.getElementById('extrasScale2Btn'),
+                '4x': document.getElementById('extrasScale4Btn'),
+                custom: document.getElementById('extrasScaleCustomBtn')
+            };
+            Object.entries(buttons).forEach(([key, button]) => {
+                if (button) button.className = key === selected ? active : inactive;
+            });
+            document.getElementById('extrasCustomResolutionFields')?.classList.toggle('hidden', selected !== 'custom');
             renderExtrasSource();
         }
 
@@ -4098,9 +4296,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const label = document.getElementById('extrasProgressLabel');
             overlay?.classList.remove('hidden');
             let progress = 0;
+            const plan = extrasProcessingPlan();
             const detail = extrasSource.mediaType === 'video'
-                ? `Interpolating with ${document.getElementById('extrasVideoInterpolator')?.value || 'RIFE'}`
-                : `Upscaling with ${document.getElementById('extrasImageUpscaler')?.value || '4x-UltraSharp'}`;
+                ? `Video extras: ${extrasPlanLabel(plan)}`
+                : `Image extras: ${extrasPlanLabel(plan)}`;
             if (label) label.innerText = detail;
             const timer = setInterval(() => {
                 progress += 12.5;
@@ -4713,7 +4912,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function referenceSlotLabel(slot) {
-            if (isWanStartEndFrameMode()) return slot === 1 ? 'First Frame' : 'End Frame';
+            if (isWanStartEndFrameMode()) return slot === 1 ? 'Start Frame' : 'End Frame';
             return slot === 1 ? 'Picture 1' : `Image ${slot}`;
         }
 
@@ -9502,17 +9701,19 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const maskCanvas = document.getElementById('inpaintMaskCanvas');
             const empty = document.getElementById('inpaintEmptyState');
             const hasImage = !!referenceImageMeta.src;
+            const wanStartEnd = isWanStartEndFrameMode();
             panel?.classList.toggle('has-reference', hasImage);
             if (clearButton) {
-                clearButton.classList.toggle('hidden', !hasImage);
-                clearButton.classList.toggle('flex', hasImage);
+                clearButton.classList.toggle('hidden', !hasImage || wanStartEnd);
+                clearButton.classList.toggle('flex', hasImage && !wanStartEnd);
             }
             if (thumb) {
-                thumb.classList.toggle('hidden', !hasImage);
-                thumb.src = hasImage ? referenceImageMeta.src : '';
+                thumb.classList.toggle('hidden', !hasImage || wanStartEnd);
+                thumb.src = hasImage && !wanStartEnd ? referenceImageMeta.src : '';
             }
+            document.querySelector('#referenceImagePanel .reference-placeholder')?.classList.toggle('hidden', wanStartEnd);
             if (loadedLabel) {
-                loadedLabel.classList.toggle('hidden', !hasImage);
+                loadedLabel.classList.toggle('hidden', !hasImage || wanStartEnd);
                 const extraCount = (referenceImageExtraDataUrls || []).filter(item => item?.src).length;
                 const extraLabel = isWanStartEndFrameMode()
                     ? (extraCount ? ' + End Frame' : '')
@@ -9524,9 +9725,36 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (multiList) {
                 const extraSlots = referenceExtraSlotNumbers();
                 const extraRefs = referenceImageExtraDataUrls || [];
-                const showSlots = extraSlots.length > 0;
+                const showSlots = extraSlots.length > 0 || wanStartEnd;
                 multiList.classList.toggle('hidden', !showSlots);
-                multiList.innerHTML = showSlots ? extraSlots.map(slot => {
+                multiList.classList.toggle('mt-2', !wanStartEnd);
+                multiList.classList.toggle('mt-0', wanStartEnd);
+                const slots = wanStartEnd ? [1, 2] : extraSlots;
+                multiList.innerHTML = showSlots ? slots.map(slot => {
+                    const isStartSlot = wanStartEnd && slot === 1;
+                    const item = isStartSlot ? referenceImageMeta : (extraRefs[slot - 2] || {});
+                    const hasSlotImage = !!item.src;
+                    const slotLabel = referenceSlotLabel(slot);
+                    const pickerAttr = isStartSlot
+                        ? 'data-reference-main-slot="1"'
+                        : `data-qwen-ref-slot="${slot}"`;
+                    const removeAttr = isStartSlot
+                        ? 'data-reference-main-remove="1"'
+                        : `data-qwen-ref-remove="${slot}"`;
+                    const removeAction = isStartSlot
+                        ? 'clearReferenceImage({ quiet: true });'
+                        : `clearReferenceImageExtraSlot(${slot});`;
+                    return `
+                        <button type="button" class="qwen-ref-slot relative aspect-square min-h-24 border border-dashed ${hasSlotImage ? 'border-nexus-border bg-black' : 'border-nexus-border bg-zinc-950'} rounded-sm overflow-hidden text-left hover:border-nexus-red transition-colors" ${pickerAttr} onclick="event.preventDefault();event.stopPropagation();${isStartSlot ? 'openReferenceImagePicker();' : `openReferenceImageSlotPicker(${slot});`}" title="${escapeHtml(hasSlotImage ? (item.label || slotLabel) : `Load ${slotLabel}`)}">
+                            ${hasSlotImage ? `<img src="${escapeHtml(item.src)}" class="absolute inset-0 w-full h-full object-cover" alt="${escapeHtml(slotLabel)}">` : ''}
+                            <span class="absolute left-1.5 bottom-1.5 bg-black/80 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white">${escapeHtml(slotLabel)}</span>
+                            ${hasSlotImage ? `<span class="absolute left-1.5 top-1.5 max-w-[calc(100%-2.5rem)] truncate bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-nexus-muted">${escapeHtml(item.label || slotLabel)}</span>` : '<span class="absolute inset-0 flex items-center justify-center text-[9px] font-mono text-nexus-muted">drop or click</span>'}
+                            ${hasSlotImage ? `<span class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm" ${removeAttr} onclick="event.preventDefault();event.stopPropagation();${removeAction}" title="Remove ${escapeHtml(slotLabel)}"><i class="fa-solid fa-xmark text-[9px]"></i></span>` : ''}
+                        </button>
+                    `;
+                }).join('') : '';
+                if (!wanStartEnd) {
+                    multiList.innerHTML = showSlots ? extraSlots.map(slot => {
                     const item = extraRefs[slot - 2] || {};
                     const hasSlotImage = !!item.src;
                     const slotLabel = referenceSlotLabel(slot);
@@ -9538,7 +9766,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                             ${hasSlotImage ? `<span class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm" data-qwen-ref-remove="${slot}" onclick="event.preventDefault();event.stopPropagation();clearReferenceImageExtraSlot(${slot});" title="Remove ${escapeHtml(slotLabel)}"><i class="fa-solid fa-xmark text-[9px]"></i></span>` : ''}
                         </button>
                     `;
-                }).join('') : '';
+                    }).join('') : '';
+                }
             }
             if (state && !hasImage) state.innerText = 'drop or click to load';
             if (baseImage) {
@@ -11719,16 +11948,32 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     zNodes.push(
                         { id: 'reference', class_type: 'LoadImage', title: 'Reference Image', x: 70, y: 590, width: 250, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference image' }], color: '#164e63' },
                         { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize Reference To Side Menu', x: 390, y: 590, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
-                        { id: 'encode', class_type: 'VAEEncode', title: 'Encode Reference', x: 700, y: 620, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' }
+                        isCanvasInpaint
+                            ? { id: 'inpaint_encode', class_type: 'VAEEncodeForInpaint', title: 'Encode Reference For Inpaint', x: 700, y: 600, width: 260, height: 118, inputs: ['pixels', 'vae', 'mask'], outputs: ['LATENT'], widgets: [{ name: 'grow_mask_by', value: document.getElementById('maskBlurSlider')?.value || '4' }], color: '#164e63' }
+                            : { id: 'encode', class_type: 'VAEEncode', title: 'Encode Reference', x: 700, y: 620, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' }
                     );
+                    if (isCanvasInpaint) {
+                        zNodes.push(
+                            { id: 'mask_source', class_type: 'LoadImage', title: 'Inpaint Mask', x: 70, y: 745, width: 250, height: 105, inputs: [], outputs: ['IMAGE'], widgets: [{ name: 'image', value: 'canvas mask' }], color: '#5a2c2c' },
+                            { id: 'resize_mask', class_type: 'ImageScale', title: 'Resize Inpaint Mask To Side Menu', x: 390, y: 745, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'nearest-exact' }, { name: 'crop', value: 'disabled' }], color: '#5a2c2c' },
+                            { id: 'mask_channel', class_type: 'ImageToMask', title: 'Mask Channel', x: 700, y: 745, width: 220, height: 90, inputs: ['image'], outputs: ['MASK'], widgets: [{ name: 'channel', value: 'red' }], color: '#5a2c2c' }
+                        );
+                    }
                     zLinks.push(
                         { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
-                        { from_node: 'resize_reference', from_slot: 0, to_node: 'encode', to_slot: 0, type: 'IMAGE' },
-                        { from_node: 'vae', from_slot: 0, to_node: 'encode', to_slot: 1, type: 'VAE' },
-                        { from_node: 'encode', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' },
+                        { from_node: 'resize_reference', from_slot: 0, to_node: isCanvasInpaint ? 'inpaint_encode' : 'encode', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'vae', from_slot: 0, to_node: isCanvasInpaint ? 'inpaint_encode' : 'encode', to_slot: 1, type: 'VAE' },
+                        { from_node: isCanvasInpaint ? 'inpaint_encode' : 'encode', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' },
                         { from_node: 'reference', from_slot: 0, to_node: 'positive', to_slot: 2, type: 'IMAGE' },
                         { from_node: 'vae', from_slot: 0, to_node: 'positive', to_slot: 1, type: 'VAE' }
                     );
+                    if (isCanvasInpaint) {
+                        zLinks.push(
+                            { from_node: 'mask_source', from_slot: 0, to_node: 'resize_mask', to_slot: 0, type: 'IMAGE' },
+                            { from_node: 'resize_mask', from_slot: 0, to_node: 'mask_channel', to_slot: 0, type: 'IMAGE' },
+                            { from_node: 'mask_channel', from_slot: 0, to_node: 'inpaint_encode', to_slot: 2, type: 'MASK' }
+                        );
+                    }
                 } else {
                     zNodes.push({ id: 'latent', class_type: 'EmptySD3LatentImage', title: 'Z-Image Latent', x: 430, y: 620, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: document.getElementById('widthInput')?.value || profile.width }, { name: 'height', value: document.getElementById('heightInput')?.value || profile.height }, { name: 'batch_size', value: '1' }], color: '#4338ca' });
                     zLinks.push({ from_node: 'latent', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' });
@@ -11819,14 +12064,30 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     fluxNodes.push(
                         { id: 'reference', class_type: 'LoadImage', title: 'Reference Image', x: 70, y: 600, width: 250, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference image' }], color: '#164e63' },
                         { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize Reference To Side Menu', x: 390, y: 600, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
-                        { id: 'encode', class_type: 'VAEEncode', title: 'Encode Reference', x: 700, y: 600, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' }
+                        isCanvasInpaint
+                            ? { id: 'inpaint_encode', class_type: 'VAEEncodeForInpaint', title: 'Encode Reference For Inpaint', x: 700, y: 600, width: 260, height: 118, inputs: ['pixels', 'vae', 'mask'], outputs: ['LATENT'], widgets: [{ name: 'grow_mask_by', value: document.getElementById('maskBlurSlider')?.value || '4' }], color: '#164e63' }
+                            : { id: 'encode', class_type: 'VAEEncode', title: 'Encode Reference', x: 700, y: 600, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' }
                     );
+                    if (isCanvasInpaint) {
+                        fluxNodes.push(
+                            { id: 'mask_source', class_type: 'LoadImage', title: 'Inpaint Mask', x: 70, y: 755, width: 250, height: 105, inputs: [], outputs: ['IMAGE'], widgets: [{ name: 'image', value: 'canvas mask' }], color: '#5a2c2c' },
+                            { id: 'resize_mask', class_type: 'ImageScale', title: 'Resize Inpaint Mask To Side Menu', x: 390, y: 755, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'nearest-exact' }, { name: 'crop', value: 'disabled' }], color: '#5a2c2c' },
+                            { id: 'mask_channel', class_type: 'ImageToMask', title: 'Mask Channel', x: 700, y: 755, width: 220, height: 90, inputs: ['image'], outputs: ['MASK'], widgets: [{ name: 'channel', value: 'red' }], color: '#5a2c2c' }
+                        );
+                    }
                     fluxLinks.push(
                         { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
-                        { from_node: 'resize_reference', from_slot: 0, to_node: 'encode', to_slot: 0, type: 'IMAGE' },
-                        { from_node: 'vae', from_slot: 0, to_node: 'encode', to_slot: 1, type: 'VAE' },
-                        { from_node: 'encode', from_slot: 0, to_node: 'sampler', to_slot: fluxIsFlux2 ? 4 : 3, type: 'LATENT' }
+                        { from_node: 'resize_reference', from_slot: 0, to_node: isCanvasInpaint ? 'inpaint_encode' : 'encode', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'vae', from_slot: 0, to_node: isCanvasInpaint ? 'inpaint_encode' : 'encode', to_slot: 1, type: 'VAE' },
+                        { from_node: isCanvasInpaint ? 'inpaint_encode' : 'encode', from_slot: 0, to_node: 'sampler', to_slot: fluxIsFlux2 ? 4 : 3, type: 'LATENT' }
                     );
+                    if (isCanvasInpaint) {
+                        fluxLinks.push(
+                            { from_node: 'mask_source', from_slot: 0, to_node: 'resize_mask', to_slot: 0, type: 'IMAGE' },
+                            { from_node: 'resize_mask', from_slot: 0, to_node: 'mask_channel', to_slot: 0, type: 'IMAGE' },
+                            { from_node: 'mask_channel', from_slot: 0, to_node: 'inpaint_encode', to_slot: 2, type: 'MASK' }
+                        );
+                    }
                 } else {
                     fluxNodes.push({ id: 'latent', class_type: fluxIsFlux2 ? 'EmptyFlux2LatentImage' : 'EmptySD3LatentImage', title: fluxIsFlux2 ? 'Flux.2 Latent' : 'Flux Latent', x: 760, y: 500, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'batch_size', value: '1' }], color: '#4338ca' });
                     fluxLinks.push({ from_node: 'latent', from_slot: 0, to_node: 'sampler', to_slot: fluxIsFlux2 ? 4 : 3, type: 'LATENT' });
@@ -13422,6 +13683,25 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         document.querySelectorAll('.attention-toggle').forEach(input => {
             input.addEventListener('change', syncRuntimeBadges);
         });
+        [
+            'extrasImageUpscaler',
+            'extrasVideoInterpolator',
+            'extrasTargetFps',
+            'extrasVideoSpeed',
+            'extrasVideoUpscaleModel',
+            'extrasVideoUpscaleFactor',
+            'extrasVideoUpscaleTileInput',
+            'extrasDeflickerSlider',
+            'extrasMotionSmooth',
+            'extrasVideoEncoder',
+            'extrasPackMetadata',
+            'extrasFaceRestore',
+            'extrasColorMatch',
+            'extrasTiledVae'
+        ].forEach(id => {
+            document.getElementById(id)?.addEventListener('input', renderExtrasSource);
+            document.getElementById(id)?.addEventListener('change', renderExtrasSource);
+        });
         initSidebarResize();
         initLtxDirectorEvents();
         renderLtxDirector();
@@ -13435,6 +13715,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         syncSketchColor('#ff3b3b');
         syncInpaintBrushSize(inpaintBrushSize);
         updateInpaintHistoryButtons();
+        populateExtrasModelControls();
+        selectExtrasScale(extrasScaleFactor());
         updateExtrasModeUi();
         updateEmbeddingButtonState();
         const storedActivity = currentActivity;

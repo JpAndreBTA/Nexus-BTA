@@ -103,21 +103,21 @@ if (!(Test-Path -LiteralPath $python)) {
 }
 
 Write-NexusLogo
-Write-NexusSection "Atualizacoes"
+Write-NexusSection "Updates"
 Invoke-NexusRepositoryUpdate -ProjectRoot $root
 
 if (Test-Path -LiteralPath $ltxDirectorDeps) {
-    Write-NexusSection "Requisitos"
+    Write-NexusSection "Requirements"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $python
 }
 
 if (Test-Path -LiteralPath $runtimeHotfixes) {
-    Write-NexusLine "Aplicando ajustes locais do runtime..." "Info"
+    Write-NexusLine "Applying local runtime patches..." "Info"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $runtimeHotfixes -ProjectRoot $root
 }
 
 Write-NexusSection "Runtime"
-Write-NexusLine "Fechando processos antigos do Nexus/ComfyUI..." "Info"
+Write-NexusLine "Closing old Nexus/ComfyUI processes..." "Info"
 Stop-NexusRuntimeProcesses
 
 foreach ($relative in @("output", "temp")) {
@@ -158,20 +158,20 @@ if ($comfyPortOwner) {
 }
 
 if (!(Test-NexusHealth)) {
-    Write-NexusLine "Iniciando backend..." "Info"
+    Write-NexusLine "Starting backend..." "Info"
     Start-Process -FilePath $python -ArgumentList @($backend) -WorkingDirectory $root -NoNewWindow
 }
 
-Write-NexusLine "Aguardando API..." "Info"
+Write-NexusLine "Waiting for API..." "Info"
 if (!(Wait-NexusHealth -Seconds 180)) {
     throw "Backend did not become ready at http://127.0.0.1:7861/api/health"
 }
 
-Write-NexusLine "Pastas e catalogo de modelos prontos." "Info"
+Write-NexusLine "Model folders and catalog are ready." "Info"
 Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/model-tree" -TimeoutSec 15 | Out-Null
 
 if ($StartComfy) {
-    Write-NexusLine "Iniciando ComfyUI embutido..." "Info"
+    Write-NexusLine "Starting embedded ComfyUI..." "Info"
     try {
         Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/comfy/start" -TimeoutSec 180 | Out-Null
         $runtimeHealth = Invoke-RestMethod "http://127.0.0.1:7861/api/health" -TimeoutSec 10
@@ -182,12 +182,12 @@ if ($StartComfy) {
         throw "ComfyUI startup failed: $($_.Exception.Message)"
     }
 } else {
-    Write-NexusLine "ComfyUI iniciara sob demanda." "Info"
+    Write-NexusLine "ComfyUI will start on demand." "Info"
 }
 
 if (!$NoOpen) {
-    Write-NexusLine "Abrindo interface..." "Info"
+    Write-NexusLine "Opening interface..." "Info"
     Start-Process $uiUrl
 }
 
-Write-NexusLine "Pronto: $uiUrl" "Ok"
+Write-NexusLine "Ready: $uiUrl" "Ok"

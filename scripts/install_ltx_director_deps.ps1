@@ -65,17 +65,17 @@ $repos = @(
 foreach ($repo in $repos) {
     Invoke-NexusStep -Label "Installing $($repo.Name)" -Step {
         if (!(Test-Path -LiteralPath $repo.Path)) {
-            Write-NexusLine "Instalando $($repo.Name)..." "Info"
+            Write-NexusLine "Installing $($repo.Name)..." "Info"
             git clone --depth 1 $repo.Url $repo.Path
         } else {
-            Write-NexusLine "$($repo.Name) presente." "Ok"
+            Write-NexusLine "$($repo.Name) is present." "Ok"
         }
 
         $requirements = Join-Path $repo.Path "requirements.txt"
         if (Test-Path -LiteralPath $requirements) {
-            Write-NexusLine "$($repo.Name) requisitos Python..." "Info"
+            Write-NexusLine "$($repo.Name) Python requirements..." "Info"
             & $RuntimePython -m pip install -q -r $requirements
-            Write-NexusLine "$($repo.Name) requisitos atendidos." "Ok"
+            Write-NexusLine "$($repo.Name) requirements satisfied." "Ok"
         }
     }
 }
@@ -93,9 +93,9 @@ Invoke-NexusStep -Label "Downloading MelBandRoFormer model" -Step {
     $url = "https://huggingface.co/Kijai/MelBandRoFormer_comfy/resolve/main/MelBandRoformer_fp16.safetensors?download=true"
     $partial = "$melModel.part"
     Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
-    Write-NexusLine "Baixando MelBandRoformer_fp16.safetensors..." "Info"
+    Write-NexusLine "Downloading MelBandRoformer_fp16.safetensors..." "Info"
     Invoke-WebRequest -Uri $url -OutFile $partial -TimeoutSec 1800
     Move-Item -LiteralPath $partial -Destination $melModel -Force
 }
 
-Write-NexusLine "LTX Director requisitos atendidos." "Ok"
+Write-NexusLine "LTX Director requirements satisfied." "Ok"
