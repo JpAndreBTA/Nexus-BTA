@@ -2359,6 +2359,18 @@
                                             <option>Lanczos</option>
                                         </select>
                                     </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
+                                        <span><span class="font-bold block">Preserve alpha</span><span class="text-[9px] text-nexus-muted font-mono">Optional transparent PNG output</span></span>
+                                        <span class="toggle-switch"><input id="extrasImageAlphaToggle" type="checkbox" checked onchange="syncExtrasAlphaUi()"><span class="toggle-track"></span></span>
+                                    </label>
+                                    <div class="space-y-1.5">
+                                        <label class="mini-label">Image export</label>
+                                        <select id="extrasImageExportSelect" class="flat-input appearance-none cursor-pointer">
+                                            <option value="png">PNG</option>
+                                            <option value="webp">WebP</option>
+                                            <option value="jpg">JPEG</option>
+                                        </select>
+                                    </div>
                                     <div class="space-y-1.5">
                                         <label class="mini-label">Scale factor</label>
                                         <div class="grid grid-cols-3 gap-2">
@@ -2407,6 +2419,37 @@
                             </div>
 
                             <div id="extrasVideoPanel" class="hidden space-y-4">
+                                <section class="data-card p-3.5 space-y-3">
+                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Video Upscale</span>
+                                        <i class="fa-solid fa-up-right-and-down-left-from-center text-nexus-red text-[10px]"></i>
+                                    </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
+                                        <span><span class="font-bold block">Enable video upscale</span><span id="extrasVideoUpscaleStatus" class="text-[9px] text-nexus-muted font-mono">Checking models...</span></span>
+                                        <span class="toggle-switch"><input id="extrasVideoUpscaleToggle" type="checkbox" onchange="syncExtrasVideoUpscaleUi()"><span class="toggle-track"></span></span>
+                                    </label>
+                                    <div class="space-y-1.5">
+                                        <label class="mini-label">Upscale model</label>
+                                        <select id="extrasVideoUpscaleModel" class="flat-input appearance-none cursor-pointer" disabled>
+                                            <option value="None">No compatible models detected</option>
+                                        </select>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="space-y-1.5">
+                                            <span class="mini-label">Scale</span>
+                                            <select id="extrasVideoUpscaleFactor" class="flat-input appearance-none cursor-pointer" disabled><option>2x</option><option>4x</option></select>
+                                        </label>
+                                        <label class="space-y-1.5">
+                                            <span class="mini-label">Tile size</span>
+                                            <input id="extrasVideoUpscaleTileInput" class="flat-input font-mono" type="number" value="512" min="128" step="64" disabled>
+                                        </label>
+                                    </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
+                                        <span><span class="font-bold block">Preserve alpha</span><span class="text-[9px] text-nexus-muted font-mono">Routes alpha-safe video formats</span></span>
+                                        <span class="toggle-switch"><input id="extrasVideoAlphaToggle" type="checkbox" checked onchange="renderExtrasSource()"><span class="toggle-track"></span></span>
+                                    </label>
+                                </section>
+
                                 <section class="data-card p-3.5 space-y-3.5">
                                     <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
                                         <span class="text-[10px] font-bold text-white uppercase tracking-wide">Interpolate</span>
@@ -2439,33 +2482,6 @@
 
                                 <section class="data-card p-3.5 space-y-3">
                                     <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
-                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Video Upscale</span>
-                                        <i class="fa-solid fa-up-right-and-down-left-from-center text-nexus-red text-[10px]"></i>
-                                    </div>
-                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
-                                        <span><span class="font-bold block">Enable video upscale</span><span id="extrasVideoUpscaleStatus" class="text-[9px] text-nexus-muted font-mono">Checking models...</span></span>
-                                        <span class="toggle-switch"><input id="extrasVideoUpscaleToggle" type="checkbox" onchange="syncExtrasVideoUpscaleUi()"><span class="toggle-track"></span></span>
-                                    </label>
-                                    <div class="space-y-1.5">
-                                        <label class="mini-label">Upscale model</label>
-                                        <select id="extrasVideoUpscaleModel" class="flat-input appearance-none cursor-pointer" disabled>
-                                            <option value="None">No compatible models detected</option>
-                                        </select>
-                                    </div>
-                                    <div class="grid grid-cols-2 gap-2">
-                                        <label class="space-y-1.5">
-                                            <span class="mini-label">Scale</span>
-                                            <select id="extrasVideoUpscaleFactor" class="flat-input appearance-none cursor-pointer" disabled><option>2x</option><option>4x</option></select>
-                                        </label>
-                                        <label class="space-y-1.5">
-                                            <span class="mini-label">Tile size</span>
-                                            <input id="extrasVideoUpscaleTileInput" class="flat-input font-mono" type="number" value="512" min="128" step="64" disabled>
-                                        </label>
-                                    </div>
-                                </section>
-
-                                <section class="data-card p-3.5 space-y-3">
-                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
                                         <span class="text-[10px] font-bold text-white uppercase tracking-wide">Stabilize</span>
                                         <i class="fa-solid fa-wave-square text-nexus-red text-[10px]"></i>
                                     </div>
@@ -2486,7 +2502,7 @@
                                         <span class="text-[10px] font-bold text-white uppercase tracking-wide">Encode</span>
                                         <i class="fa-solid fa-file-video text-nexus-red text-[10px]"></i>
                                     </div>
-                                    <select id="extrasVideoEncoder" class="flat-input appearance-none cursor-pointer"><option>MP4 H.264</option><option>WebM VP9</option><option>ProRes 422</option><option>PNG sequence</option></select>
+                                    <select id="extrasVideoEncoder" class="flat-input appearance-none cursor-pointer"></select>
                                     <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">Pack metadata<span class="toggle-switch"><input id="extrasPackMetadata" type="checkbox" checked><span class="toggle-track"></span></span></label>
                                 </section>
                             </div>
@@ -4039,6 +4055,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             syncExtrasInterpolateUi();
             syncExtrasVideoUpscaleUi();
             syncExtrasVideoDenoiseUi();
+            syncExtrasAlphaUi();
             renderExtrasSource();
         }
 
@@ -4074,6 +4091,43 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             renderExtrasSource();
         }
 
+        function syncExtrasAlphaUi() {
+            const imageAlpha = !!document.getElementById('extrasImageAlphaToggle')?.checked;
+            const imageExport = document.getElementById('extrasImageExportSelect');
+            if (imageExport) {
+                const imageOptions = imageAlpha
+                    ? [{ value: 'png', label: 'PNG Alpha' }]
+                    : [
+                        { value: 'png', label: 'PNG' },
+                        { value: 'webp', label: 'WebP' },
+                        { value: 'jpg', label: 'JPEG' }
+                    ];
+                const previous = imageExport.value;
+                imageExport.innerHTML = imageOptions.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`).join('');
+                if (imageOptions.some(item => item.value === previous)) imageExport.value = previous;
+            }
+
+            const videoAlpha = !!document.getElementById('extrasVideoAlphaToggle')?.checked;
+            const videoEncoder = document.getElementById('extrasVideoEncoder');
+            if (videoEncoder) {
+                const videoOptions = videoAlpha
+                    ? [
+                        { value: 'image_sequence_png_alpha', label: 'Image Sequence PNG Alpha' },
+                        { value: 'mov_prores_4444_alpha', label: 'MOV ProRes 4444 Alpha' }
+                    ]
+                    : [
+                        { value: 'mp4_h264', label: 'MP4 H.264' },
+                        { value: 'webm_vp9', label: 'WebM VP9' },
+                        { value: 'mov_prores_422', label: 'MOV ProRes 422' },
+                        { value: 'image_sequence_png', label: 'Image Sequence PNG' }
+                    ];
+                const previous = videoEncoder.value;
+                videoEncoder.innerHTML = videoOptions.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`).join('');
+                if (videoOptions.some(item => item.value === previous)) videoEncoder.value = previous;
+            }
+            renderExtrasSource();
+        }
+
         function extrasCustomResolution() {
             const width = Math.max(64, Math.round(Number(document.getElementById('extrasCustomWidthInput')?.value) || 1024));
             const height = Math.max(64, Math.round(Number(document.getElementById('extrasCustomHeightInput')?.value) || 1024));
@@ -4092,6 +4146,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     custom_resolution: custom,
                     face_restore: !!document.getElementById('extrasFaceRestore')?.checked,
                     color_match: !!document.getElementById('extrasColorMatch')?.checked,
+                    preserve_alpha: !!document.getElementById('extrasImageAlphaToggle')?.checked,
+                    export_format: document.getElementById('extrasImageExportSelect')?.value || 'png',
+                    output_dir: 'output/extras/image',
+                    alpha_nodes: ['SplitImageWithAlpha', 'JoinImageWithAlpha', 'SaveImageWithAlpha'],
                     tiled_vae: !!document.getElementById('extrasTiledVae')?.checked
                 };
             }
@@ -4116,9 +4174,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     enabled: denoiseEnabled,
                     strength: denoiseEnabled ? Number(document.getElementById('extrasVideoDenoiseSlider')?.value || 0.2) : 0
                 },
+                preserve_alpha: !!document.getElementById('extrasVideoAlphaToggle')?.checked,
+                output_dir: 'output/extras/video',
+                alpha_video_formats: ['image_sequence_png_alpha', 'mov_prores_4444_alpha'],
                 deflicker: Number(document.getElementById('extrasDeflickerSlider')?.value || 0.35),
                 motion_smoothing: !!document.getElementById('extrasMotionSmooth')?.checked,
-                encoder: document.getElementById('extrasVideoEncoder')?.value || 'MP4 H.264',
+                encoder: document.getElementById('extrasVideoEncoder')?.value || 'mp4_h264',
                 pack_metadata: !!document.getElementById('extrasPackMetadata')?.checked
             };
         }
@@ -4128,12 +4189,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 const scale = plan.scale === 'custom' && plan.custom_resolution
                     ? `${plan.custom_resolution.width}x${plan.custom_resolution.height}`
                     : plan.scale;
-                return `${plan.upscaler} / ${scale}`;
+                return `${plan.upscaler} / ${scale}${plan.preserve_alpha ? ' / alpha' : ''}`;
             }
             const stages = [];
             stages.push(plan.interpolate?.enabled ? `interp ${plan.interpolate.fps} FPS` : 'interp off');
             if (plan.upscale?.enabled) stages.push(`upscale ${plan.upscale.scale}`);
             if (plan.denoise?.enabled) stages.push(`denoise ${plan.denoise.strength.toFixed(2)}`);
+            if (plan.preserve_alpha) stages.push('alpha');
             return stages.join(' / ');
         }
 
@@ -13693,10 +13755,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             'extrasVideoUpscaleTileInput',
             'extrasDeflickerSlider',
             'extrasMotionSmooth',
+            'extrasImageExportSelect',
             'extrasVideoEncoder',
             'extrasPackMetadata',
             'extrasFaceRestore',
             'extrasColorMatch',
+            'extrasImageAlphaToggle',
+            'extrasVideoAlphaToggle',
             'extrasTiledVae'
         ].forEach(id => {
             document.getElementById(id)?.addEventListener('input', renderExtrasSource);
@@ -13717,6 +13782,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         updateInpaintHistoryButtons();
         populateExtrasModelControls();
         selectExtrasScale(extrasScaleFactor());
+        syncExtrasAlphaUi();
         updateExtrasModeUi();
         updateEmbeddingButtonState();
         const storedActivity = currentActivity;
