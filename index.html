@@ -3972,6 +3972,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
         }
 
+        function resetGalleryHistoryToFolder(folder) {
+            const normalized = normalizeGalleryFolder(folder);
+            galleryFolderHistory = normalized ? ['', normalized] : [''];
+            galleryFolderHistoryIndex = galleryFolderHistory.length - 1;
+            activeGalleryFolder = normalized;
+        }
+
         function openGalleryFolder(folder) {
             setGalleryFolderFilter(folder);
         }
@@ -4814,9 +4821,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const hadItems = galleryItems.length > 0;
             galleryAllItems = normalized;
             if (options.preferNewest && normalized[0]) {
-                activeGalleryFolder = galleryFolderFromItem(normalized[0]);
-                galleryFolderHistory = [activeGalleryFolder];
-                galleryFolderHistoryIndex = 0;
+                resetGalleryHistoryToFolder(galleryFolderFromItem(normalized[0]));
             }
             galleryItems = filteredGalleryItems();
             galleryLastSignature = signature;
@@ -13127,9 +13132,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const newKeys = new Set(newItems.map(galleryItemKey));
             galleryAllItems = [...newItems, ...galleryAllItems.filter(item => !newKeys.has(galleryItemKey(item)))];
             if (newItems[0]) {
-                activeGalleryFolder = galleryFolderFromItem(newItems[0]);
-                galleryFolderHistory = [activeGalleryFolder];
-                galleryFolderHistoryIndex = 0;
+                resetGalleryHistoryToFolder(galleryFolderFromItem(newItems[0]));
             }
             galleryItems = filteredGalleryItems();
             galleryLastSignature = '';
