@@ -1739,11 +1739,21 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 clip_l_name = assets.get("flux_clip_l")
                 text_encoder_name = assets.get("text_encoder")
                 vae_name = assets.get("vae")
-                if not clip_l_name:
+                flux_family = assets.get("flux_family") or ""
+                is_flux2 = str(flux_family).startswith("flux2")
+                if not is_flux2 and not clip_l_name:
                     raise ValueError("Flux requires clip_l.safetensors in models/text_encoders.")
                 if not text_encoder_name:
+                    if flux_family == "flux2_dev":
+                        raise ValueError("Flux.2 Dev requires mistral_3_small_flux2_bf16.safetensors in models/text_encoders.")
+                    if flux_family == "flux2_klein_9b":
+                        raise ValueError("Flux.2 Klein 9B requires qwen_3_8b_fp8mixed.safetensors in models/text_encoders.")
+                    if flux_family == "flux2_klein_4b":
+                        raise ValueError("Flux.2 Klein 4B requires qwen_3_4b.safetensors in models/text_encoders.")
                     raise ValueError("Flux requires a T5 text encoder in models/text_encoders.")
                 if not vae_name:
+                    if is_flux2:
+                        raise ValueError("Flux.2 requires flux2-vae.safetensors or a compatible Flux.2 VAE in models/vae.")
                     raise ValueError("Flux requires an AE/Flux VAE in models/vae.")
                 prompt = build_basic_flux_workflow(
                     request,
@@ -1753,6 +1763,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     vae_name,
                     reference_image_name=reference_image_name,
                     mask_image_name=mask_image_name,
+                    flux_family=flux_family,
                 )
             else:
                 prompt = build_basic_sd_workflow(

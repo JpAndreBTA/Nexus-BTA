@@ -1705,11 +1705,12 @@ def build_basic_zimage_turbo_workflow(
 def build_basic_flux_workflow(
     request: GenerateRequest,
     model_name: str,
-    clip_l_name: str,
+    clip_l_name: str | None,
     text_encoder_name: str,
     vae_name: str,
     reference_image_name: str | None = None,
     mask_image_name: str | None = None,
+    flux_family: str | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     width = max(16, int(request.width))
@@ -1718,6 +1719,9 @@ def build_basic_flux_workflow(
     height -= height % 16
     sampler = normalize_sampler(request.sampler or "euler")
     scheduler = normalize_scheduler(request.scheduler or "simple")
+    flux_family = flux_family or _flux_family_from_name(model_name)
+    is_flux2 = flux_family.startswith("flux2")
+    is_klein = "klein" in flux_family
     loader = (
         {
             "class_type": "UnetLoaderGGUF",
@@ -1734,6 +1738,103 @@ def build_basic_flux_workflow(
     flux_guidance = max(0.0, float(request.cfg if request.cfg is not None else 3.5))
     latent_ref: list[Any] = ["6", 0]
     denoise = request.img2img.denoise if reference_image_name else request.denoise
+    if is_flux2:
+        positive_ref: list[Any] = ["4", 0]
+        workflow = {
+            "1": loader,
+            "2": {
+                "class_type": "CLIPLoader",
+                "inputs": {"clip_name": text_encoder_name, "type": "flux2", "device": "default"},
+                "_meta": {"title": "Flux.2 Text Encoder"},
+            },
+            "3": {
+                "class_type": "VAELoader",
+                "inputs": {"vae_name": vae_name},
+                "_meta": {"title": "Flux.2 VAE"},
+            },
+            "4": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": request.prompt, "clip": ["2", 0]},
+                "_meta": {"title": "Positive Prompt"},
+            },
+            "5": {
+                "class_type": "ConditioningZeroOut",
+                "inputs": {"conditioning": ["4", 0]},
+                "_meta": {"title": "Flux.2 Empty Negative"},
+            },
+            "6": {
+                "class_type": "EmptyFlux2LatentImage",
+                "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
+                "_meta": {"title": "Flux.2 Latent"},
+            },
+            "7": {
+                "class_type": "RandomNoise",
+                "inputs": {"noise_seed": seed},
+                "_meta": {"title": "Seed"},
+            },
+            "8": {
+                "class_type": "KSamplerSelect",
+                "inputs": {"sampler_name": sampler},
+                "_meta": {"title": "Sampler"},
+            },
+            "9": {
+                "class_type": "Flux2Scheduler",
+                "inputs": {"steps": max(1, request.steps), "width": width, "height": height},
+                "_meta": {"title": "Flux.2 Scheduler"},
+            },
+            "10": {
+                "class_type": "BasicGuider",
+                "inputs": {"model": ["1", 0], "conditioning": positive_ref},
+                "_meta": {"title": "Flux.2 Guider"},
+            },
+            "11": {
+                "class_type": "SamplerCustomAdvanced",
+                "inputs": {"noise": ["7", 0], "guider": ["10", 0], "sampler": ["8", 0], "sigmas": ["9", 0], "latent_image": latent_ref},
+                "_meta": {"title": "Flux.2 Sampler"},
+            },
+            "12": {
+                "class_type": "VAEDecode",
+                "inputs": {"samples": ["11", 0], "vae": ["3", 0]},
+                "_meta": {"title": "VAE Decode"},
+            },
+            "13": {
+                "class_type": "SaveImage",
+                "inputs": {"filename_prefix": "NEXUS_BTA_FLUX2", "images": ["12", 0]},
+                "_meta": {"title": "Save Image"},
+            },
+        }
+        if not is_klein:
+            workflow["14"] = {
+                "class_type": "FluxGuidance",
+                "inputs": {"conditioning": ["4", 0], "guidance": flux_guidance},
+                "_meta": {"title": "Flux.2 Guidance"},
+            }
+            positive_ref = ["14", 0]
+            workflow["10"]["inputs"]["conditioning"] = positive_ref
+        model_ref, _, _ = _append_lora_chain(workflow, request, ["1", 0], ["2", 0], start_id=20, model_only=True)
+        workflow["10"]["inputs"]["model"] = model_ref
+        if reference_image_name:
+            workflow["15"] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": reference_image_name},
+                "_meta": {"title": "Reference Image"},
+            }
+            workflow["16"] = _image_scale_node(["15", 0], width, height)
+            workflow["16"]["_meta"]["title"] = "Resize Flux.2 Reference To Side Menu"
+            workflow["17"] = {
+                "class_type": "VAEEncode",
+                "inputs": {"pixels": ["16", 0], "vae": ["3", 0]},
+                "_meta": {"title": "Encode Reference"},
+            }
+            workflow["18"] = {
+                "class_type": "ReferenceLatent",
+                "inputs": {"conditioning": positive_ref, "latent": ["17", 0]},
+                "_meta": {"title": "Flux.2 Reference Latent"},
+            }
+            workflow["10"]["inputs"]["conditioning"] = ["18", 0]
+            workflow["11"]["inputs"]["latent_image"] = ["17", 0]
+        return workflow
+
     workflow = {
         "1": loader,
         "2": {
@@ -2061,36 +2162,52 @@ def _append_lora_chain(
     clip_ref: list[Any],
     *,
     start_id: int,
+    model_only: bool = False,
 ) -> tuple[list[Any], list[Any], int]:
     next_id = start_id
-    for lora_name, strength_model, strength_clip in _active_lora_selections(request):
+    for lora_name, strength_model, strength_clip in _active_lora_selections(request, model_name=request.model_name or request.model_path):
         node_id = str(next_id)
-        workflow[node_id] = {
-            "class_type": "LoraLoader",
-            "inputs": {
-                "model": model_ref,
-                "clip": clip_ref,
-                "lora_name": lora_name,
-                "strength_model": strength_model,
-                "strength_clip": strength_clip,
-            },
-            "_meta": {"title": f"LoRA - {Path(lora_name).name}"},
-        }
-        model_ref = [node_id, 0]
-        clip_ref = [node_id, 1]
+        if model_only:
+            workflow[node_id] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": model_ref,
+                    "lora_name": lora_name,
+                    "strength_model": strength_model,
+                },
+                "_meta": {"title": f"Flux.2 LoRA - {Path(lora_name).name}"},
+            }
+            model_ref = [node_id, 0]
+        else:
+            workflow[node_id] = {
+                "class_type": "LoraLoader",
+                "inputs": {
+                    "model": model_ref,
+                    "clip": clip_ref,
+                    "lora_name": lora_name,
+                    "strength_model": strength_model,
+                    "strength_clip": strength_clip,
+                },
+                "_meta": {"title": f"LoRA - {Path(lora_name).name}"},
+            }
+            model_ref = [node_id, 0]
+            clip_ref = [node_id, 1]
         next_id += 1
     return model_ref, clip_ref, next_id
 
 
-def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, float]]:
+def _active_lora_selections(request: GenerateRequest, model_name: str | None = None) -> list[tuple[str, float, float]]:
     selections: list[tuple[str, float, float]] = []
     seen: set[str] = set()
+    flux_family = _flux_family_from_name(model_name or request.model_name or request.model_path or "")
 
     def append_selection(name: str, strength_model: float, strength_clip: float = 0.0) -> None:
         normalized = _normalize_lora_name(name)
         if request.preset.lower() == "ltx" and "\\" not in normalized and normalized.lower().startswith(("ltx", "singularity")):
             normalized = f"ltx\\{normalized}"
         if not normalized or not _lora_is_compatible_with_preset(normalized, request.preset):
+            return
+        if request.preset.lower() == "flux" and not _flux_lora_is_compatible(normalized, flux_family):
             return
         key = normalized.lower()
         if key in seen:
@@ -2105,6 +2222,8 @@ def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, 
             raw_name = item.get("relative_name") or item.get("relative_path") or item.get("lora_name") or item.get("name")
             name = _normalize_lora_name(raw_name)
             if not name or not _lora_is_compatible_with_preset(name, request.preset):
+                continue
+            if request.preset.lower() == "flux" and not _flux_lora_is_compatible(name, flux_family):
                 continue
             if request.preset.lower() == "qwen" and request.activity == "img2img" and _is_incompatible_qwen_edit_lora(name):
                 continue
@@ -2121,6 +2240,8 @@ def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, 
             raw_name = getattr(item, "name", "")
             name = _normalize_lora_name(raw_name)
             if not name or not _lora_is_compatible_with_preset(name, request.preset):
+                continue
+            if request.preset.lower() == "flux" and not _flux_lora_is_compatible(name, flux_family):
                 continue
             if request.preset.lower() == "qwen" and request.activity == "img2img" and _is_incompatible_qwen_edit_lora(name):
                 continue
@@ -2154,6 +2275,33 @@ def _is_incompatible_qwen_edit_lora(name: str) -> bool:
     if "2512" in lower and "edit" not in lower:
         return True
     return False
+
+
+def _flux_family_from_name(value: Any) -> str:
+    lower = str(value or "").lower()
+    if any(token in lower for token in ("flux-2", "flux2", "flux_2", "flux.2", "klein")):
+        if "klein" in lower:
+            if "9b" in lower:
+                return "flux2_klein_9b"
+            return "flux2_klein_4b"
+        return "flux2_dev"
+    return "flux1"
+
+
+def _flux_lora_is_compatible(name: str, flux_family: str) -> bool:
+    lower = str(name or "").replace("\\", "/").lower()
+    is_flux2_model = str(flux_family or "").startswith("flux2")
+    lora_is_flux2 = any(token in lower for token in ("flux2", "flux-2", "flux_2", "flux.2", "klein"))
+    lora_is_flux1 = any(token in lower for token in ("flux1", "flux.1", "flux-1", "schnell", "krea", "kontext", "fill"))
+    if is_flux2_model:
+        if lora_is_flux1 and not lora_is_flux2:
+            return False
+        if "klein" in lower and "klein" not in flux_family:
+            return False
+        if "klein" in flux_family and lora_is_flux2 and "klein" not in lower and "turbo" not in lower:
+            return False
+        return True
+    return not lora_is_flux2
 
 
 def _normalize_lora_name(value: Any) -> str:
@@ -3332,8 +3480,9 @@ def _ensure_external_vae_loader(api: dict[str, Any], assets: dict[str, str]) -> 
 def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> None:
     selections = _active_lora_selections(request)
     is_ltx = request.preset.lower() == "ltx"
-    model_only_lora = request.preset.lower() in {"anima", "flux", "ltx", "qwen", "wan", "zimageturbo", "zimage"}
     checkpoint_name = request.model_name or Path(request.model_path or "").name
+    flux_model_only_lora = request.preset.lower() == "flux" and _flux_family_from_name(checkpoint_name).startswith("flux2")
+    model_only_lora = request.preset.lower() in {"anima", "ltx", "qwen", "wan", "zimageturbo", "zimage"} or flux_model_only_lora
     audio_value = (request.director or {}).get("use_custom_audio")
     if audio_value is None:
         audio_value = (request.video or {}).get("active_audio")

@@ -25,7 +25,9 @@ models/diffusion_models/MelRoFormer  Mel-Band RoFormer audio cleanup model for L
 | --- | --- | --- |
 | SD 1.5 | [stable-diffusion-v1-5/stable-diffusion-v1-5](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5) or a compatible checkpoint | `models/checkpoints/sd15` |
 | SDXL / Pony / Illustrious | [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0) or compatible finetunes | `models/checkpoints/sdxl` |
-| Flux | [black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev) plus Flux VAE/text encoders | `models/checkpoints/flux`, `models/vae`, `models/text_encoders` |
+| Flux / Flux.1 | [black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev) plus Flux AE/text encoders | `models/checkpoints/flux`, `models/vae`, `models/text_encoders` |
+| Flux.2 Dev | [black-forest-labs/FLUX.2-dev](https://github.com/black-forest-labs/flux2) or Comfy split files | `models/checkpoints/flux` or `models/diffusion_models`, `models/text_encoders/mistral_3_small_flux2_bf16.safetensors`, `models/vae/flux2-vae.safetensors` |
+| Flux.2 Klein | [FLUX.2 Klein 4B/9B](https://docs.comfy.org/tutorials/flux/flux-2-klein) | `models/checkpoints/flux` or `models/diffusion_models`, 4B: `qwen_3_4b.safetensors`, 9B: `qwen_3_8b_fp8mixed.safetensors`, plus `models/vae/flux2-vae.safetensors` |
 | WAN 2.2 | [Wan-AI/Wan2.2-I2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B), [Wan-AI/Wan2.2-T2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B), [Wan-AI/Wan2.2-TI2V-5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B), compatible CLIP Vision such as `clip_vision_h.safetensors` | `models/checkpoints/wan`, `models/text_encoders`, `models/vae`, `models/clip_vision` |
 | LTX 2.3 | [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) | `models/checkpoints/ltx`, `models/loras/ltx`, `models/latent_upscale_models`, `models/vae`, `models/text_encoders` |
 
@@ -77,6 +79,7 @@ Nexus enables the embedding picker for SD 1.5, SDXL, Pony and Illustrious-compat
 - WAN 2.2 14B I2V/T2V uses `wan_2.1_vae.safetensors`; reserve `wan22-vae` / `wan2.2_vae` for TI2V 5B-style routes.
 - WAN 2.2 4-step quality depends on the matching high-noise and low-noise distilled/LightX2V LoRA pair in `models/loras/wan`. Nexus auto-detects files whose names include `high`/`low` plus `lightx2v`, `4step`, `4-step`, `lightning` or `distill`.
 - WAN 2.2 first/last-frame mode uses `WanFirstLastFrameToVideo` as motion conditioning, not a post-video crossfade. Keep a compatible CLIP Vision model in `models/clip_vision`; Nexus wires `CLIPVisionEncode` for the start and end images so the model sees both visual anchors.
+- The Flux template auto-detects Flux.1 versus Flux.2/Flux.2 Klein from the selected model name. Flux.1 keeps the CLIP-L + T5 route; Flux.2 uses Comfy's `CLIPLoader(type=flux2)`, `Flux2Scheduler`, `EmptyFlux2LatentImage`, Flux.2 VAE, and model-only Flux.2 LoRAs.
 - LTX 2.3 smoke preset: `512x512`, `4s`, `24 FPS`; distilled checkpoints and distilled LoRA variants usually run at low CFG and short step counts.
 - LTX 2.3 latent upscale is expected for normal `512x512` outputs: Nexus samples the base video latent at half resolution, runs the spatial latent upscaler/refiner, then decodes the final frames. A `256x256` result usually means the smoke test explicitly selected `None` or a `256x256` output size.
 - LTX 2.3 assets include full, distilled, distilled LoRA, spatial upscaler and temporal upscaler variants on the official Hugging Face repository.

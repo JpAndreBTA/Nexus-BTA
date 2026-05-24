@@ -139,8 +139,19 @@ def _resolve_flux(by_category: dict[str, list[ModelFile]], selected_name: str, r
     if primary:
         assets["primary_model"] = _comfy_name(primary)
 
+    family = _flux_family(primary, selected_name)
+    assets["flux_family"] = family
     selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
     selected_vae = _selected_model_choice(by_category, request.vae)
+    if family.startswith("flux2"):
+        text_encoder = _resolve_flux2_text_encoder(by_category, selected_text_encoder, family)
+        vae = _resolve_flux2_vae(by_category, selected_vae)
+        if text_encoder:
+            assets["text_encoder"] = _comfy_name(text_encoder)
+        if vae:
+            assets["vae"] = _comfy_name(vae)
+        return assets
+
     clip_l = (
         selected_text_encoder
         if selected_text_encoder and "clip_l" in " ".join([selected_text_encoder.name, selected_text_encoder.folder, selected_text_encoder.relative_path]).lower()
@@ -171,6 +182,70 @@ def _resolve_flux(by_category: dict[str, list[ModelFile]], selected_name: str, r
         assets["vae"] = _comfy_name(vae)
 
     return assets
+
+
+def _flux_family(model: ModelFile | None, selected_name: str = "") -> str:
+    haystack = " ".join(
+        value
+        for value in [
+            selected_name,
+            model.name if model else "",
+            model.relative_path if model else "",
+            model.folder if model else "",
+        ]
+        if value
+    ).lower()
+    if any(token in haystack for token in ("flux-2", "flux2", "flux_2", "flux.2", "klein")):
+        if "klein" in haystack:
+            if "9b" in haystack:
+                return "flux2_klein_9b"
+            return "flux2_klein_4b"
+        return "flux2_dev"
+    return "flux1"
+
+
+def _resolve_flux2_text_encoder(
+    by_category: dict[str, list[ModelFile]],
+    selected: ModelFile | None,
+    family: str,
+) -> ModelFile | None:
+    if selected:
+        selected_haystack = " ".join([selected.name, selected.folder, selected.relative_path]).lower()
+        if family == "flux2_dev" and "mistral" in selected_haystack:
+            return selected
+        if family == "flux2_klein_9b" and any(token in selected_haystack for token in ("qwen_3_8b", "qwen3_8b", "8b")):
+            return selected
+        if family == "flux2_klein_4b" and any(token in selected_haystack for token in ("qwen_3_4b", "qwen3_4b", "4b")):
+            return selected
+    if family == "flux2_dev":
+        return (
+            _first(by_category, ["text_encoders", "clip"], ["mistral", "flux2"])
+            or _first(by_category, ["text_encoders", "clip"], ["mistral_3_small"])
+            or _first(by_category, ["text_encoders", "clip"], ["mistral"])
+        )
+    if family == "flux2_klein_9b":
+        return (
+            _first(by_category, ["text_encoders", "clip"], ["qwen_3_8b"])
+            or _first(by_category, ["text_encoders", "clip"], ["qwen3", "8b"])
+            or _first(by_category, ["text_encoders", "clip"], ["qwen", "8b"])
+        )
+    return (
+        _first(by_category, ["text_encoders", "clip"], ["qwen_3_4b"])
+        or _first(by_category, ["text_encoders", "clip"], ["qwen3", "4b"])
+        or _first(by_category, ["text_encoders", "clip"], ["qwen", "4b"])
+    )
+
+
+def _resolve_flux2_vae(by_category: dict[str, list[ModelFile]], selected: ModelFile | None) -> ModelFile | None:
+    if selected:
+        haystack = " ".join([selected.name, selected.folder, selected.relative_path]).lower()
+        if "flux2" in haystack or "flux-2" in haystack or "full_encoder" in haystack:
+            return selected
+    return (
+        _first(by_category, ["vae"], ["flux2", "vae"])
+        or _first(by_category, ["vae"], ["flux2-vae"])
+        or _first(by_category, ["vae"], ["full_encoder", "decoder"])
+    )
 
 
 def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:

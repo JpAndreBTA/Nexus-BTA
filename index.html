@@ -3045,7 +3045,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 type: 'image',
                 folder: './models/checkpoints/flux',
                 checkpoint: 'fluxDevQ5KMGGUFQuantizationA_v10.gguf',
-                models: ['fluxDevQ5KMGGUFQuantizationA_v10.gguf', 'fluxUnchainedBySCG_hyfu8StepHybridV10.safetensors', 'fluxAnime77oussam_i.safetensors'],
+                models: ['fluxDevQ5KMGGUFQuantizationA_v10.gguf', 'flux2_dev_fp8mixed.safetensors', 'flux-2-klein-4b-fp8.safetensors', 'flux-2-klein-base-4b-fp8.safetensors', 'flux-2-klein-9b-fp8.safetensors', 'flux-2-klein-base-9b-fp8.safetensors', 'fluxUnchainedBySCG_hyfu8StepHybridV10.safetensors', 'fluxAnime77oussam_i.safetensors'],
                 width: 512,
                 height: 512,
                 steps: 20,
@@ -3054,17 +3054,17 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 samplers: ['FlowMatch Euler', 'Euler', 'UniPC'],
                 scheduler: 'Simple',
                 schedulers: ['Simple', 'Normal', 'SGM Uniform'],
-                vae: ['flux_ae.safetensors', 'Automatic'],
-                encoder: ['T5-XXL fp8', 'T5-XXL fp16', 'CLIP-L'],
-                variants: ['Base', 'Distilled', 'GGUF Quantized'],
+                vae: ['flux_ae.safetensors', 'flux2-vae.safetensors', 'Automatic'],
+                encoder: ['T5-XXL fp8', 'T5-XXL fp16', 'Mistral Flux.2', 'Qwen3 4B Klein', 'Qwen3 8B Klein', 'CLIP-L'],
+                variants: ['Flux.1 Base', 'Flux.2 Dev', 'Flux.2 Klein Base', 'Flux.2 Klein Distilled', 'GGUF Quantized'],
                 precision: ['Auto', 'bf16', 'fp16', 'fp8'],
                 refiners: ['Off', 'Flux Detail Pass', 'Latent upscale pass'],
                 supportsExtend: true,
                 supportsControlNet: false,
-                distilledLoras: ['None', 'flux_schnell_distill_lora.safetensors', 'flux_dev_hyper_lora.safetensors'],
-                distilledRoute: 'Flux distilled LoRA slots are optional for Schnell/Hyper-style acceleration.',
-                summary: 'Flux template with flow matching scheduler, T5 encoder, AE VAE and lower CFG defaults.',
-                chips: ['FLUX', 'T5', 'AE VAE', 'GGUF'],
+                distilledLoras: ['None', 'flux_schnell_distill_lora.safetensors', 'flux_dev_hyper_lora.safetensors', 'Flux_2-Turbo-LoRA_comfyui.safetensors'],
+                distilledRoute: 'Flux LoRA slots are filtered by selected family: Flux.1, Flux.2 Dev or Flux.2 Klein.',
+                summary: 'Flux template with automatic Flux.1/Flux.2 routing, matching text encoder, VAE, scheduler and LoRA loader.',
+                chips: ['FLUX', 'Flux.2', 'Klein', 'LoRA'],
                 video: ''
             },
             Qwen: {
@@ -11596,36 +11596,76 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             if (preset === 'Flux') {
                 const selectedModelName = document.getElementById('modelSelect')?.selectedOptions?.[0]?.dataset?.model || profile.backendModels?.[0]?.name || profile.checkpoint || 'flux model';
+                const selectedFluxLower = selectedModelName.toLowerCase();
+                const fluxIsFlux2 = /flux[-_. ]?2|flux2|klein/.test(selectedFluxLower);
+                const fluxIsKlein = /klein/.test(selectedFluxLower);
+                const fluxIsKlein9B = fluxIsKlein && /9b/.test(selectedFluxLower);
+                const selectedFluxEncoder = document.getElementById('textEncoderSelect')?.value || '';
+                const selectedFluxVae = document.getElementById('vaeSelect')?.value || '';
+                const fluxTextEncoder = fluxIsFlux2
+                    ? (selectedFluxEncoder && !/automatic|auto|none/i.test(selectedFluxEncoder)
+                        ? selectedFluxEncoder
+                        : (fluxIsKlein ? (fluxIsKlein9B ? 'qwen_3_8b_fp8mixed.safetensors' : 'qwen_3_4b.safetensors') : 'mistral_3_small_flux2_bf16.safetensors'))
+                    : (selectedFluxEncoder || 't5xxl_fp8_e4m3fn.safetensors');
+                const fluxVae = fluxIsFlux2
+                    ? (selectedFluxVae && !/automatic|auto|none/i.test(selectedFluxVae) ? selectedFluxVae : 'flux2-vae.safetensors')
+                    : (selectedFluxVae || 'flux_ae.safetensors');
                 const fluxModelSource = hasLora ? 'lora' : 'model';
-                const fluxClipSource = hasLora ? 'lora' : 'clip';
+                const fluxClipSource = fluxIsFlux2 ? 'clip' : (hasLora ? 'lora' : 'clip');
                 const fluxNodes = [
                     { id: 'model', class_type: selectedModelName.toLowerCase().endsWith('.gguf') ? 'UnetLoaderGGUF' : 'UNETLoader', title: 'Load Flux Model', x: 70, y: 120, width: 260, height: 110, inputs: [], outputs: ['MODEL'], widgets: selectedModelName.toLowerCase().endsWith('.gguf') ? [{ name: 'unet_name', value: selectedModelName }] : [{ name: 'unet_name', value: selectedModelName }, { name: 'weight_dtype', value: 'default' }], color: '#1f3b63' },
-                    { id: 'clip', class_type: 'DualCLIPLoader', title: 'Flux CLIP-L + T5', x: 70, y: 270, width: 280, height: 135, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name1', value: 'clip_l.safetensors' }, { name: 'clip_name2', value: document.getElementById('textEncoderSelect')?.value || 't5xxl_fp8_e4m3fn.safetensors' }, { name: 'type', value: 'flux' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
-                    { id: 'vae', class_type: 'VAELoader', title: 'Flux AE VAE', x: 70, y: 450, width: 240, height: 100, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || 'flux_ae.safetensors' }], color: '#62305a' },
+                    fluxIsFlux2
+                        ? { id: 'clip', class_type: 'CLIPLoader', title: 'Flux.2 Text Encoder', x: 70, y: 270, width: 280, height: 135, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: fluxTextEncoder }, { name: 'type', value: 'flux2' }, { name: 'device', value: 'default' }], color: '#1f5f3a' }
+                        : { id: 'clip', class_type: 'DualCLIPLoader', title: 'Flux CLIP-L + T5', x: 70, y: 270, width: 280, height: 135, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name1', value: 'clip_l.safetensors' }, { name: 'clip_name2', value: fluxTextEncoder }, { name: 'type', value: 'flux' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
+                    { id: 'vae', class_type: 'VAELoader', title: fluxIsFlux2 ? 'Flux.2 VAE' : 'Flux AE VAE', x: 70, y: 450, width: 240, height: 100, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: fluxVae }], color: '#62305a' },
                     { id: 'positive', class_type: 'CLIPTextEncode', title: 'Positive Prompt', x: 430, y: 230, width: 290, height: 130, inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic image...' }], color: '#1f5f3a' },
                     { id: 'guidance', class_type: 'FluxGuidance', title: 'Flux Guidance', x: 760, y: 230, width: 230, height: 105, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [{ name: 'guidance', value: document.getElementById('cfgSlider')?.value || profile.cfg || '3.5' }], color: '#0f766e' },
                     { id: 'negative', class_type: 'ConditioningZeroOut', title: 'Flux Empty Negative', x: 430, y: 420, width: 240, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [], color: '#5a2c2c' },
-                    { id: 'sampler', class_type: 'KSampler', title: 'Flux Sampler', x: 1030, y: 240, width: 300, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: '1.0' }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.75' : '1.0' }], color: '#2f3c4f' },
+                    fluxIsFlux2
+                        ? { id: 'noise', class_type: 'RandomNoise', title: 'Seed', x: 1030, y: 120, width: 220, height: 85, inputs: [], outputs: ['NOISE'], widgets: [{ name: 'noise_seed', value: document.getElementById('seedInput')?.value || '-1' }], color: '#2f3c4f' }
+                        : { id: 'sampler', class_type: 'KSampler', title: 'Flux Sampler', x: 1030, y: 240, width: 300, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: '1.0' }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: isImg2Img ? document.getElementById('denoiseSlider')?.value || '0.75' : '1.0' }], color: '#2f3c4f' },
                     { id: 'decode', class_type: 'VAEDecode', title: 'VAE Decode', x: 1390, y: 250, width: 220, height: 112, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [], color: '#62305a' },
                     { id: 'save', class_type: 'SaveImage', title: 'Save Image', x: 1390, y: 410, width: 220, height: 110, inputs: ['images'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA_FLUX' }], color: '#3f3f46' }
                 ];
+                if (fluxIsFlux2) {
+                    fluxNodes.push(
+                        { id: 'sampler_select', class_type: 'KSamplerSelect', title: 'Sampler', x: 1030, y: 230, width: 220, height: 85, inputs: [], outputs: ['SAMPLER'], widgets: [{ name: 'sampler_name', value: sideSampler }], color: '#2f3c4f' },
+                        { id: 'flux2_scheduler', class_type: 'Flux2Scheduler', title: 'Flux.2 Scheduler', x: 1030, y: 340, width: 230, height: 125, inputs: [], outputs: ['SIGMAS'], widgets: [{ name: 'steps', value: sideSteps }, { name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }], color: '#0f766e' },
+                        { id: 'guider', class_type: 'BasicGuider', title: 'Flux.2 Guider', x: 760, y: 350, width: 220, height: 100, inputs: ['model', 'conditioning'], outputs: ['GUIDER'], widgets: [], color: '#0f766e' },
+                        { id: 'sampler', class_type: 'SamplerCustomAdvanced', title: 'Flux.2 Sampler', x: 1270, y: 220, width: 260, height: 170, inputs: ['noise', 'guider', 'sampler', 'sigmas', 'latent_image'], outputs: ['LATENT'], widgets: [], color: '#2f3c4f' }
+                    );
+                }
                 const fluxLinks = [
-                    { from_node: fluxClipSource, from_slot: hasLora ? 1 : 0, to_node: 'positive', to_slot: 0, type: 'CLIP' },
-                    { from_node: 'positive', from_slot: 0, to_node: 'guidance', to_slot: 0, type: 'CONDITIONING' },
-                    { from_node: 'positive', from_slot: 0, to_node: 'negative', to_slot: 0, type: 'CONDITIONING' },
-                    { from_node: fluxModelSource, from_slot: 0, to_node: 'sampler', to_slot: 0, type: 'MODEL' },
-                    { from_node: 'guidance', from_slot: 0, to_node: 'sampler', to_slot: 1, type: 'CONDITIONING' },
-                    { from_node: 'negative', from_slot: 0, to_node: 'sampler', to_slot: 2, type: 'CONDITIONING' },
+                    { from_node: fluxClipSource, from_slot: (!fluxIsFlux2 && hasLora) ? 1 : 0, to_node: 'positive', to_slot: 0, type: 'CLIP' },
                     { from_node: 'sampler', from_slot: 0, to_node: 'decode', to_slot: 0, type: 'LATENT' },
                     { from_node: 'vae', from_slot: 0, to_node: 'decode', to_slot: 1, type: 'VAE' },
                     { from_node: 'decode', from_slot: 0, to_node: 'save', to_slot: 0, type: 'IMAGE' }
                 ];
-                if (hasLora) {
-                    fluxNodes.push({ id: 'lora', class_type: 'LoraLoader', title: 'Flux LoRA Stack', x: 430, y: 70, width: 260, height: 120, inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: activeLoras.slice(0, 4).map(item => ({ name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) })), color: '#4c1d95' });
+                if (fluxIsFlux2) {
+                    if (!fluxIsKlein) fluxLinks.push({ from_node: 'positive', from_slot: 0, to_node: 'guidance', to_slot: 0, type: 'CONDITIONING' });
                     fluxLinks.push(
-                        { from_node: 'model', from_slot: 0, to_node: 'lora', to_slot: 0, type: 'MODEL' },
-                        { from_node: 'clip', from_slot: 0, to_node: 'lora', to_slot: 1, type: 'CLIP' }
+                        { from_node: fluxModelSource, from_slot: 0, to_node: 'guider', to_slot: 0, type: 'MODEL' },
+                        { from_node: fluxIsKlein ? 'positive' : 'guidance', from_slot: 0, to_node: 'guider', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'noise', from_slot: 0, to_node: 'sampler', to_slot: 0, type: 'NOISE' },
+                        { from_node: 'guider', from_slot: 0, to_node: 'sampler', to_slot: 1, type: 'GUIDER' },
+                        { from_node: 'sampler_select', from_slot: 0, to_node: 'sampler', to_slot: 2, type: 'SAMPLER' },
+                        { from_node: 'flux2_scheduler', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'SIGMAS' }
                     );
+                } else {
+                    fluxLinks.push(
+                        { from_node: 'positive', from_slot: 0, to_node: 'guidance', to_slot: 0, type: 'CONDITIONING' },
+                        { from_node: 'positive', from_slot: 0, to_node: 'negative', to_slot: 0, type: 'CONDITIONING' },
+                        { from_node: fluxModelSource, from_slot: 0, to_node: 'sampler', to_slot: 0, type: 'MODEL' },
+                        { from_node: 'guidance', from_slot: 0, to_node: 'sampler', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'negative', from_slot: 0, to_node: 'sampler', to_slot: 2, type: 'CONDITIONING' }
+                    );
+                }
+                if (hasLora) {
+                    fluxNodes.push(fluxIsFlux2
+                        ? { id: 'lora', class_type: 'LoraLoaderModelOnly', title: 'Flux.2 LoRA Stack', x: 430, y: 70, width: 260, height: 120, inputs: ['model'], outputs: ['MODEL'], widgets: activeLoras.slice(0, 4).map(item => ({ name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) })), color: '#4c1d95' }
+                        : { id: 'lora', class_type: 'LoraLoader', title: 'Flux LoRA Stack', x: 430, y: 70, width: 260, height: 120, inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: activeLoras.slice(0, 4).map(item => ({ name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) })), color: '#4c1d95' });
+                    fluxLinks.push({ from_node: 'model', from_slot: 0, to_node: 'lora', to_slot: 0, type: 'MODEL' });
+                    if (!fluxIsFlux2) fluxLinks.push({ from_node: 'clip', from_slot: 0, to_node: 'lora', to_slot: 1, type: 'CLIP' });
                 }
                 if (isImg2Img) {
                     fluxNodes.push(
@@ -11637,11 +11677,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                         { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
                         { from_node: 'resize_reference', from_slot: 0, to_node: 'encode', to_slot: 0, type: 'IMAGE' },
                         { from_node: 'vae', from_slot: 0, to_node: 'encode', to_slot: 1, type: 'VAE' },
-                        { from_node: 'encode', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' }
+                        { from_node: 'encode', from_slot: 0, to_node: 'sampler', to_slot: fluxIsFlux2 ? 4 : 3, type: 'LATENT' }
                     );
                 } else {
-                    fluxNodes.push({ id: 'latent', class_type: 'EmptySD3LatentImage', title: 'Flux Latent', x: 760, y: 430, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'batch_size', value: '1' }], color: '#4338ca' });
-                    fluxLinks.push({ from_node: 'latent', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' });
+                    fluxNodes.push({ id: 'latent', class_type: fluxIsFlux2 ? 'EmptyFlux2LatentImage' : 'EmptySD3LatentImage', title: fluxIsFlux2 ? 'Flux.2 Latent' : 'Flux Latent', x: 760, y: 500, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'batch_size', value: '1' }], color: '#4338ca' });
+                    fluxLinks.push({ from_node: 'latent', from_slot: 0, to_node: 'sampler', to_slot: fluxIsFlux2 ? 4 : 3, type: 'LATENT' });
                 }
                 return {
                     nodes: fluxNodes,
