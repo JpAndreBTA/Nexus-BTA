@@ -3090,8 +3090,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 refiners: ['Off', 'Qwen Edit Refinement'],
                 supportsExtend: true,
                 supportsControlNet: false,
-                distilledLoras: ['None', 'qwen_image_lightning_lora.safetensors'],
-                distilledRoute: 'Qwen image edit can use a single optional distilled acceleration LoRA.',
+                distilledLoras: ['None', 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-fp32.safetensors', 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors'],
+                distilledRoute: 'Qwen image edit uses the Edit 2511 Lightning LoRA for the 4-step route.',
                 summary: 'Qwen image/edit template uses the local 4-step CFG 1 Lightning route for 512px smoke checks.',
                 chips: ['QWEN', 'Edit', 'VL Encoder', 'GGUF'],
                 video: ''
@@ -3568,7 +3568,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (distilled.length) {
                 profile.distilledLoras = uniqueOptions(['None', ...distilled]);
                 if (presetName === 'Qwen') {
-                    profile.distilledDefaults = ['None', 'None'];
+                    const qwenEditFast = distilled.find(name => /qwen.*edit.*2511.*lightning.*4steps|qwen.*edit.*lightning.*4steps/i.test(name));
+                    profile.distilledDefaults = [qwenEditFast || 'None', 'None'];
                 } else if (presetName === 'LTX') {
                     const safeLtx = distilled.find(name => /condsafe/i.test(name))
                         || distilled.find(name => /distill|distilled/i.test(name))
@@ -12054,7 +12055,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (activePreset === 'Qwen' && currentActivity === 'img2img') {
                 payload.batch_size = 1;
                 payload.img2img.batch_count = 1;
-                payload.distilled_loras = payload.distilled_loras.map(item => ({ ...item, name: 'None' }));
+                payload.distilled_loras = payload.distilled_loras.filter(item => /qwen.*edit.*lightning/i.test(String(item.name || '')));
             }
             if (activePreset === 'LTX' && payload.video.omnicine_enabled && isOmnicineLoraName(payload.video.omnicine_lora)) {
                 const existingOmni = payload.distilled_loras.some(item => ltxDirectorNormalizeLoraName(item.name).toLowerCase() === ltxDirectorNormalizeLoraName(payload.video.omnicine_lora).toLowerCase());
@@ -12087,6 +12088,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 };
                 payload.director = director;
                 payload.workflow_override = buildLtxDirectorApiWorkflow(payload);
+            } else if (activePreset === 'Qwen' && currentActivity === 'img2img') {
+                payload.workflow_override = null;
+                payload.workflow_id = null;
             } else if ((activeWorkflowId || activeWorkspace === 'workflow') && activeWorkflowGraph?.nodes?.length) {
                 const graphPreset = activeWorkflowAnalysis
                     ? inferPresetFromWorkflow(activeWorkflowAnalysis)

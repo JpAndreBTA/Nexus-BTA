@@ -398,6 +398,10 @@ def _resolve_qwen(by_category: dict[str, list[ModelFile]], selected_name: str, r
     )
     if vae:
         assets["vae"] = _comfy_name(vae)
+    if has_reference:
+        edit_lightning = _first_qwen_edit_lightning_lora(by_category)
+        if edit_lightning:
+            assets["qwen_edit_lightning_lora"] = _comfy_name(edit_lightning)
     return assets
 
 
@@ -465,6 +469,28 @@ def _first_qwen_base(by_category: dict[str, list[ModelFile]], tokens: list[str])
 def _is_qwen_edit_model(item: ModelFile) -> bool:
     haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
     return "qwen" in haystack and "edit" in haystack
+
+
+def _first_qwen_edit_lightning_lora(by_category: dict[str, list[ModelFile]]) -> ModelFile | None:
+    preferred: list[tuple[int, ModelFile]] = []
+    for item in by_category.get("loras", []):
+        haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+        if "qwen" not in haystack or "edit" not in haystack or "lightning" not in haystack:
+            continue
+        score = 0
+        if "2511" in haystack:
+            score += 40
+        if "4steps" in haystack or "4step" in haystack:
+            score += 20
+        if "fp32" in haystack:
+            score += 5
+        if "2509" in haystack:
+            score += 10
+        preferred.append((score, item))
+    if not preferred:
+        return None
+    preferred.sort(key=lambda pair: pair[0], reverse=True)
+    return preferred[0][1]
 
 
 def _is_ltx_preview_vae(item: ModelFile) -> bool:

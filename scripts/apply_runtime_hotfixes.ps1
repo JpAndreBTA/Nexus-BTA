@@ -148,6 +148,31 @@ def _nexus_segment_resize_method(seg, fallback):
         Set-Content -LiteralPath $ltxDirectorNode -Value $content -Encoding UTF8
         Write-Host "[NEXUS BTA] Applied WhatDreamsCost LTX Director per-segment resize method hotfix."
     }
+    if ($content -notmatch "NEXUS_FRAME_INTENT_GUIDE_HOTFIX") {
+        $intentBlock = @'
+                # NEXUS_FRAME_INTENT_GUIDE_HOTFIX
+                segment_start = max(0, int(seg.get("start", 0)))
+                segment_length = max(1, int(seg.get("length", 1)))
+                frame_intent = str(seg.get("frameIntent") or "").strip().lower()
+                is_end_frame = bool(seg.get("isEndFrame")) or frame_intent in {"end", "last"}
+                insert_frame = segment_start
+                if is_end_frame:
+                    insert_frame = min(duration_frames, segment_start + segment_length - 1)
+'@
+        if ($content -match 'guide_data\["insert_frames"\]\.append\(int\(seg\["start"\]\)\)') {
+            $content = $content.Replace(
+                '                guide_data["insert_frames"].append(int(seg["start"]))',
+                "$intentBlock`r`n                guide_data[`"insert_frames`"].append(insert_frame)"
+            )
+        } elseif ($content -match 'segment_start = max\(0, int\(seg\.get\("start", 0\)\)\)') {
+            $content = $content.Replace(
+                '                segment_start = max(0, int(seg.get("start", 0)))',
+                '                # NEXUS_FRAME_INTENT_GUIDE_HOTFIX' + "`r`n" + '                segment_start = max(0, int(seg.get("start", 0)))'
+            )
+        }
+        Set-Content -LiteralPath $ltxDirectorNode -Value $content -Encoding UTF8
+        Write-Host "[NEXUS BTA] Applied LTX Director start/end frame guide hotfix."
+    }
     if ($content -match "NEXUS_DIRECTOR_AUDIO_NORMALIZE_HOTFIX") {
         $content = $content -replace "    # NEXUS_DIRECTOR_AUDIO_NORMALIZE_HOTFIX\r?\n    peak = float\(out_waveform\.abs\(\)\.max\(\)\.item\(\)\) if out_waveform\.numel\(\) else 0\.0\r?\n    if peak > 0\.001:\r?\n        out_waveform = torch\.clamp\(out_waveform \* min\(64\.0, 0\.85 / peak\), -1\.0, 1\.0\)\r?\n", "    # NEXUS_DIRECTOR_AUDIO_ATTENUATE_ONLY`r`n"
         Set-Content -LiteralPath $ltxDirectorNode -Value $content -Encoding UTF8

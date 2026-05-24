@@ -459,6 +459,35 @@ def _is_omnicine_lora_name(value: object) -> bool:
     return any(token in str(value or "").lower() for token in ("omnicine", "singularity"))
 
 
+def _is_qwen_edit_lightning_lora_name(value: object) -> bool:
+    text = str(value or "").lower()
+    return "qwen" in text and "edit" in text and "lightning" in text
+
+
+def _ensure_qwen_edit_lightning_lora(request: GenerateRequest, assets: dict[str, str]) -> None:
+    if request.preset.lower() != "qwen" or request.activity != "img2img":
+        return
+    name = assets.get("qwen_edit_lightning_lora")
+    if not name:
+        request.distilled_loras = [
+            item for item in request.distilled_loras if _is_qwen_edit_lightning_lora_name(getattr(item, "name", ""))
+        ]
+        return
+    normalized = _normalize_lora_key(name)
+    cleaned: list[DistilledLoraSelection] = []
+    has_edit_lightning = False
+    for item in request.distilled_loras:
+        item_name = getattr(item, "name", "")
+        if not _is_qwen_edit_lightning_lora_name(item_name):
+            continue
+        cleaned.append(item)
+        if _normalize_lora_key(item_name) == normalized:
+            has_edit_lightning = True
+    if not has_edit_lightning:
+        cleaned.insert(0, DistilledLoraSelection(name=name, strength=1.0))
+    request.distilled_loras = cleaned[:1]
+
+
 def _ensure_wan_4step_loras(request: GenerateRequest, assets: dict[str, str]) -> None:
     if request.preset.lower() != "wan":
         return
@@ -1497,6 +1526,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         assets = resolve_generation_assets(settings, request)
         _ensure_ltx_default_distilled_loras(request, assets)
         _ensure_wan_4step_loras(request, assets)
+        _ensure_qwen_edit_lightning_lora(request, assets)
         if request.preset.lower() == "ltx":
             missing_ltx_assets: list[str] = []
             if not assets.get("text_encoder"):
@@ -1537,6 +1567,9 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             request.model_name = assets["primary_model"]
         workflow_path = workflow_registry.find(request.workflow_id, request.preset)
         if request.preset.lower() == "ltx" and not request.workflow_id:
+            workflow_path = None
+        if request.preset.lower() == "qwen" and request.activity == "img2img" and reference_image_name:
+            request.workflow_override = None
             workflow_path = None
 
         if job_id:

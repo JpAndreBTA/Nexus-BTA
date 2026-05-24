@@ -1384,27 +1384,6 @@ def build_basic_qwen_image_workflow(
     height -= height % 16
     refs = [name for name in (reference_image_names or ([reference_image_name] if reference_image_name else [])) if name][:3]
     reference_image_name = refs[0] if refs else None
-    positive_inputs: dict[str, Any]
-    negative_inputs: dict[str, Any]
-    if refs:
-        if len(refs) > 1:
-            prompt_prefix = "Use Picture 1 as the base reference"
-            if len(refs) >= 2:
-                prompt_prefix += ", Picture 2 as the Image 2 style/object reference"
-            if len(refs) >= 3:
-                prompt_prefix += ", and Picture 3 as the Image 3 additional reference"
-            prompt_prefix += ". "
-            positive_inputs = {"clip": ["2", 0], "prompt": prompt_prefix + request.prompt, "vae": ["3", 0]}
-            negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0]}
-            for index, _name in enumerate(refs, start=1):
-                node_id = "4" if index == 1 else str(13 + index)
-                positive_inputs[f"image{index}"] = [str(59 + index), 0]
-        else:
-            positive_inputs = {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0], "image": ["60", 0]}
-            negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0]}
-    else:
-        positive_inputs = {"clip": ["2", 0], "text": request.prompt}
-        negative_inputs = {"clip": ["2", 0], "text": request.negative_prompt}
     loader_class = "UnetLoaderGGUF" if checkpoint_name.lower().endswith(".gguf") else "UNETLoader"
     loader_inputs = (
         {"unet_name": checkpoint_name}
@@ -1428,6 +1407,15 @@ def build_basic_qwen_image_workflow(
         model_ref = [node_id, 0]
         next_lora_id += 1
 
+    prompt_text = request.prompt
+    if len(refs) > 1:
+        prompt_prefix = "Use Image 1 as the base reference"
+        if len(refs) >= 2:
+            prompt_prefix += ", Image 2 as the secondary reference"
+        if len(refs) >= 3:
+            prompt_prefix += ", and Image 3 as the additional reference"
+        prompt_text = prompt_prefix + ". " + request.prompt
+
     workflow = {
         "1": {
             "class_type": loader_class,
@@ -1444,35 +1432,15 @@ def build_basic_qwen_image_workflow(
             "inputs": {"vae_name": vae_name},
             "_meta": {"title": "QWEN VAE"},
         },
-        "4": {
-            "class_type": "LoadImage",
-            "inputs": {"image": reference_image_name or ""},
-            "_meta": {"title": "Reference Image 1"},
-        },
-        "5": {
-            "class_type": "TextEncodeQwenImageEditPlus" if len(refs) > 1 else ("TextEncodeQwenImageEdit" if reference_image_name else "CLIPTextEncode"),
-            "inputs": positive_inputs,
-            "_meta": {"title": "Positive Prompt"},
-        },
-        "6": {
-            "class_type": "TextEncodeQwenImageEditPlus" if len(refs) > 1 else ("TextEncodeQwenImageEdit" if reference_image_name else "CLIPTextEncode"),
-            "inputs": negative_inputs,
-            "_meta": {"title": "Negative Prompt"},
-        },
-        "7": {
-            "class_type": "EmptyQwenImageLayeredLatentImage" if reference_image_name else "EmptySD3LatentImage",
-            "inputs": {
-                "width": width,
-                "height": height,
-                **({"layers": 1} if reference_image_name else {}),
-                "batch_size": 1 if reference_image_name else max(1, request.batch_size),
-            },
-            "_meta": {"title": "QWEN Latent"},
-        },
         "8": {
             "class_type": "ModelSamplingAuraFlow",
-            "inputs": {"model": model_ref, "shift": float((request.video or {}).get("shift") or 3.0)},
+            "inputs": {"model": model_ref, "shift": float((request.video or {}).get("shift") or 3.1)},
             "_meta": {"title": "QWEN AuraFlow Sampling"},
+        },
+        "9": {
+            "class_type": "CFGNorm",
+            "inputs": {"model": ["8", 0], "strength": 1.0},
+            "_meta": {"title": "QWEN CFG Norm"},
         },
         "10": {
             "class_type": "KSampler",
@@ -1483,7 +1451,7 @@ def build_basic_qwen_image_workflow(
                 "sampler_name": normalize_sampler(request.sampler),
                 "scheduler": normalize_scheduler(request.scheduler),
                 "denoise": request.img2img.denoise if reference_image_name else request.denoise,
-                "model": model_ref if reference_image_name else ["8", 0],
+                "model": ["9", 0],
                 "positive": ["5", 0],
                 "negative": ["6", 0],
                 "latent_image": ["7", 0],
@@ -1502,23 +1470,80 @@ def build_basic_qwen_image_workflow(
         },
     }
     workflow.update(qwen_lora_nodes)
+
     if reference_image_name:
-        workflow.pop("8", None)
-        workflow["60"] = _image_scale_node(["4", 0], width, height)
-        workflow["60"]["_meta"]["title"] = "Resize QWEN Reference 1 To Side Menu"
-    for index, name in enumerate(refs[1:], start=2):
-        node_id = str(13 + index)
-        workflow[node_id] = {
-            "class_type": "LoadImage",
-            "inputs": {"image": name},
-            "_meta": {"title": f"Reference Image {index}"},
+        positive_inputs = {"clip": ["2", 0], "prompt": prompt_text, "vae": ["3", 0]}
+        for index, _name in enumerate(refs, start=1):
+            positive_inputs[f"image{index}"] = [str(59 + index), 0]
+        workflow["5"] = {
+            "class_type": "TextEncodeQwenImageEditPlus",
+            "inputs": positive_inputs,
+            "_meta": {"title": "Positive Prompt"},
         }
-        scale_id = str(59 + index)
-        workflow[scale_id] = _image_scale_node([node_id, 0], width, height)
-        workflow[scale_id]["_meta"]["title"] = f"Resize QWEN Reference {index} To Side Menu"
-    if not reference_image_name:
-        workflow.pop("4", None)
-    elif mask_image_name and "inpaint" in request.img2img.mode.lower():
+        workflow["6"] = {
+            "class_type": "ConditioningZeroOut",
+            "inputs": {"conditioning": ["18", 0]},
+            "_meta": {"title": "QWEN Empty Negative"},
+        }
+        workflow["18"] = {
+            "class_type": "TextEncodeQwenImageEditPlus",
+            "inputs": {"clip": ["2", 0], "prompt": request.negative_prompt or "", "vae": ["3", 0]},
+            "_meta": {"title": "Negative Prompt Source"},
+        }
+        previous_conditioning: list[Any] = ["5", 0]
+        for index, name in enumerate(refs, start=1):
+            load_id = "4" if index == 1 else str(13 + index)
+            scale_id = str(59 + index)
+            encode_id = str(69 + index)
+            ref_id = str(79 + index)
+            workflow[load_id] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": name},
+                "_meta": {"title": f"Reference Image {index}"},
+            }
+            workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
+            workflow[scale_id]["_meta"]["title"] = f"Resize QWEN Reference {index} To Side Menu"
+            workflow[encode_id] = {
+                "class_type": "VAEEncode",
+                "inputs": {"pixels": [scale_id, 0], "vae": ["3", 0]},
+                "_meta": {"title": f"Encode Reference {index} Latent"},
+            }
+            workflow[ref_id] = {
+                "class_type": "ReferenceLatent",
+                "inputs": {"conditioning": previous_conditioning, "latent": [encode_id, 0]},
+                "_meta": {"title": f"Reference Latent {index}"},
+            }
+            previous_conditioning = [ref_id, 0]
+        workflow["15"] = {
+            "class_type": "FluxKontextMultiReferenceLatentMethod",
+            "inputs": {"conditioning": previous_conditioning, "reference_latents_method": "index_timestep_zero"},
+            "_meta": {"title": "QWEN Reference Method"},
+        }
+        workflow["16"] = {
+            "class_type": "FluxKontextMultiReferenceLatentMethod",
+            "inputs": {"conditioning": ["6", 0], "reference_latents_method": "index_timestep_zero"},
+            "_meta": {"title": "QWEN Negative Reference Method"},
+        }
+        workflow["10"]["inputs"]["positive"] = ["15", 0]
+        workflow["10"]["inputs"]["negative"] = ["16", 0]
+        workflow["10"]["inputs"]["latent_image"] = ["70", 0]
+    else:
+        workflow["5"] = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": request.prompt, "clip": ["2", 0]},
+            "_meta": {"title": "Positive Prompt"},
+        }
+        workflow["6"] = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": request.negative_prompt, "clip": ["2", 0]},
+            "_meta": {"title": "Negative Prompt"},
+        }
+        workflow["7"] = {
+            "class_type": "EmptySD3LatentImage",
+            "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
+            "_meta": {"title": "QWEN Latent"},
+        }
+    if reference_image_name and mask_image_name and "inpaint" in request.img2img.mode.lower():
         _append_inpaint_mask(
             workflow,
             request,
@@ -2062,6 +2087,8 @@ def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, 
             name = _normalize_lora_name(raw_name)
             if not name or not _lora_is_compatible_with_preset(name, request.preset):
                 continue
+            if request.preset.lower() == "qwen" and request.activity == "img2img" and _is_incompatible_qwen_edit_lora(name):
+                continue
             strength_model = _number_or_none(item.get("strength_model", item.get("strength", 1.0))) or 1.0
             strength_clip_value = _number_or_none(item.get("strength_clip", item.get("clip_strength")))
             if request.preset.lower() in {"anima", "flux", "ltx", "qwen", "wan", "zimageturbo", "zimage"}:
@@ -2076,6 +2103,8 @@ def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, 
             name = _normalize_lora_name(raw_name)
             if not name or not _lora_is_compatible_with_preset(name, request.preset):
                 continue
+            if request.preset.lower() == "qwen" and request.activity == "img2img" and _is_incompatible_qwen_edit_lora(name):
+                continue
             strength_model = _number_or_none(getattr(item, "strength", 1.0)) or 1.0
             append_selection(name, float(strength_model), 0.0)
 
@@ -2083,6 +2112,7 @@ def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, 
         append_distilled_loras()
         append_user_loras()
     elif request.preset.lower() == "qwen" and request.activity == "img2img":
+        append_distilled_loras()
         append_user_loras()
     else:
         append_user_loras()
@@ -2096,6 +2126,15 @@ def _active_lora_selections(request: GenerateRequest) -> list[tuple[str, float, 
         if _is_omnicine_lora(raw_name):
             append_selection(str(raw_name), LTX_OMNICINE_DEFAULT_STRENGTH, 0.0)
     return selections
+
+
+def _is_incompatible_qwen_edit_lora(name: str) -> bool:
+    lower = str(name or "").lower()
+    if "lightning" in lower and "edit" not in lower:
+        return True
+    if "2512" in lower and "edit" not in lower:
+        return True
+    return False
 
 
 def _normalize_lora_name(value: Any) -> str:

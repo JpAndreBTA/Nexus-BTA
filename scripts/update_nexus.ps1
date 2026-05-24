@@ -55,6 +55,7 @@ foreach ($dir in @(
     "models\loras",
     "models\vae",
     "models\text_encoders",
+    "models\clip_vision",
     "models\controlnet",
     "models\upscale_models",
     "models\latent_upscale_models",
