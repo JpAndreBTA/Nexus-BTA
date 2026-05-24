@@ -1482,13 +1482,8 @@ def build_basic_qwen_image_workflow(
         }
         workflow["6"] = {
             "class_type": "ConditioningZeroOut",
-            "inputs": {"conditioning": ["18", 0]},
+            "inputs": {"conditioning": ["5", 0]},
             "_meta": {"title": "QWEN Empty Negative"},
-        }
-        workflow["18"] = {
-            "class_type": "TextEncodeQwenImageEditPlus",
-            "inputs": {"clip": ["2", 0], "prompt": request.negative_prompt or "", "vae": ["3", 0]},
-            "_meta": {"title": "Negative Prompt Source"},
         }
         previous_conditioning: list[Any] = ["5", 0]
         for index, name in enumerate(refs, start=1):
@@ -2224,8 +2219,6 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
             if not name or not _lora_is_compatible_with_preset(name, request.preset):
                 continue
             if request.preset.lower() == "flux" and not _flux_lora_is_compatible(name, flux_family):
-                continue
-            if request.preset.lower() == "qwen" and request.activity == "img2img" and _is_incompatible_qwen_edit_lora(name):
                 continue
             strength_model = _number_or_none(item.get("strength_model", item.get("strength", 1.0))) or 1.0
             strength_clip_value = _number_or_none(item.get("strength_clip", item.get("clip_strength")))

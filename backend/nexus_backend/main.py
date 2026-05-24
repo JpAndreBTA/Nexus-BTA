@@ -491,6 +491,9 @@ def _is_qwen_edit_lightning_lora_name(value: object) -> bool:
 def _ensure_qwen_edit_lightning_lora(request: GenerateRequest, assets: dict[str, str]) -> None:
     if request.preset.lower() != "qwen" or request.activity != "img2img":
         return
+    auto_lightning = (request.video or {}).get("qwen_auto_edit_lora", True)
+    if isinstance(auto_lightning, str):
+        auto_lightning = auto_lightning.lower() not in {"false", "0", "off", "none", "no"}
     name = assets.get("qwen_edit_lightning_lora")
     if not name:
         request.distilled_loras = [
@@ -507,7 +510,7 @@ def _ensure_qwen_edit_lightning_lora(request: GenerateRequest, assets: dict[str,
         cleaned.append(item)
         if _normalize_lora_key(item_name) == normalized:
             has_edit_lightning = True
-    if not has_edit_lightning:
+    if auto_lightning is not False and not has_edit_lightning:
         cleaned.insert(0, DistilledLoraSelection(name=name, strength=1.0))
     request.distilled_loras = cleaned[:1]
 

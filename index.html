@@ -1426,13 +1426,13 @@
                 <!-- Distilled LoRA slots for motion/video templates -->
                 <div class="sortable-panel space-y-1 pt-2" data-panel-key="distilledLora" data-panel-title="Distilled LoRA" draggable="true">
                     <div class="flex justify-between items-center cursor-pointer p-1 rounded-sm" onclick="toggleAccordion('distilledLoraAccordion')">
-                        <label class="text-[10px] font-bold text-nexus-muted uppercase tracking-wider cursor-pointer"><i class="fa-solid fa-grip-vertical panel-drag-handle mr-1"></i>Distilled LoRA</label>
+                        <label id="distilledLoraPanelLabel" class="text-[10px] font-bold text-nexus-muted uppercase tracking-wider cursor-pointer"><i class="fa-solid fa-grip-vertical panel-drag-handle mr-1"></i>Distilled LoRA</label>
                         <i id="distilledLoraAccordionIcon" class="fa-solid fa-chevron-down text-[10px] text-nexus-muted transition-transform"></i>
                     </div>
                     <div id="distilledLoraAccordion" class="hidden space-y-2 mt-1 px-1">
                         <div class="grid grid-cols-[minmax(0,1fr)_56px] gap-2 items-end">
                             <label class="space-y-1">
-                                <span class="mini-label">Distilled LoRA 1</span>
+                                <span id="distilledLoraOneLabel" class="mini-label">Distilled LoRA 1</span>
                                 <select id="distilledLoraOneSelect" class="flat-input appearance-none cursor-pointer">
                                     <option>None</option>
                                 </select>
@@ -1444,7 +1444,7 @@
                         </div>
                         <div class="grid grid-cols-[minmax(0,1fr)_56px] gap-2 items-end">
                             <label class="space-y-1">
-                                <span class="mini-label">Distilled LoRA 2</span>
+                                <span id="distilledLoraTwoLabel" class="mini-label">Distilled LoRA 2</span>
                                 <select id="distilledLoraTwoSelect" class="flat-input appearance-none cursor-pointer">
                                     <option>None</option>
                                 </select>
@@ -4558,6 +4558,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 if (document.getElementById('distilledLoraOneStrength')) document.getElementById('distilledLoraOneStrength').value = String(LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH);
                 if (document.getElementById('distilledLoraTwoStrength')) document.getElementById('distilledLoraTwoStrength').value = String(LTX_DISTILLED_384_DEFAULT_STRENGTH);
             }
+            updateDistilledLoraLabels(presetName);
             document.getElementById('distilledLoraRouteText').innerText = profile.distilledRoute || 'No distilled LoRA required for this template.';
             if (profile.videoSettings) {
                 if (document.getElementById('framesInput')) document.getElementById('framesInput').value = profile.videoSettings.frames;
@@ -4897,6 +4898,45 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const qwenEditBatchSize = activePreset === 'Qwen' && currentActivity === 'img2img' ? '1' : document.getElementById('batchCountInput')?.value;
             const qwenEditLoraName = document.getElementById('distilledLoraOneSelect')?.value || '';
             const qwenEditLoraStrength = document.getElementById('distilledLoraOneStrength')?.value || '1';
+            const conceptLoraSelections = (activeLoras || [])
+                .map(item => ({
+                    name: item?.relative_name || item?.relative_path || item?.lora_name || item?.name || '',
+                    strength: Number(item?.strength_model ?? item?.strength ?? 1),
+                    strength_clip: Number(item?.strength_clip ?? item?.clip_strength ?? 0)
+                }))
+                .filter(item => item.name && !/^(none|automatic|auto)$/i.test(item.name));
+            const conceptLoraNodeIds = new Set(
+                activeWorkflowGraph.nodes
+                    .filter(node => {
+                        const text = `${node.title || ''} ${node.class_type || ''}`.toLowerCase();
+                        return /lora/.test(text) && !/detailer|omni|singularity|control|edit.*lightning/.test(text);
+                    })
+                    .map(node => String(node.id))
+            );
+            const patchConceptLoraWidgets = (node, selection) => {
+                const modelValue = (node.widgets || []).find(widget => String(widget.name || '').toLowerCase() === 'model')?.value;
+                const clipValue = (node.widgets || []).find(widget => String(widget.name || '').toLowerCase() === 'clip')?.value;
+                if (!selection) {
+                    (node.widgets || []).forEach(widget => {
+                        const key = String(widget.name || '').toLowerCase().replace(/\s+/g, '_');
+                        if (['strength_model', 'strength', 'strength_clip', 'clip_strength'].includes(key)) widget.value = '0.00';
+                    });
+                    return;
+                }
+                const strengthModel = Number.isFinite(selection.strength) ? selection.strength : 1;
+                const strengthClip = Number.isFinite(selection.strength_clip) ? selection.strength_clip : 0;
+                const nextWidgets = [];
+                if (modelValue !== undefined) nextWidgets.push({ name: 'model', value: modelValue });
+                if (clipValue !== undefined) nextWidgets.push({ name: 'clip', value: clipValue });
+                nextWidgets.push(
+                    { name: 'lora_name', value: selection.name },
+                    { name: 'strength_model', value: strengthModel.toFixed(2) }
+                );
+                if (!/modelonly/i.test(String(node.class_type || ''))) {
+                    nextWidgets.push({ name: 'strength_clip', value: strengthClip.toFixed(2) });
+                }
+                node.widgets = nextWidgets;
+            };
             const values = {
                 ckpt_name: selectedModelName,
                 unet_name: selectedModelName,
@@ -4962,9 +5002,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 controlnet_strength: document.getElementById('controlNetStrengthSlider')?.value
             };
             syncPromptTextWidgetsFromSideMenu();
+            let conceptLoraIndex = 0;
             activeWorkflowGraph.nodes.forEach(node => {
                 const role = workflowNodeRole(node);
                 const title = `${node.title || ''} ${node.class_type || ''}`.toLowerCase();
+                const isConceptLoraNode = conceptLoraNodeIds.has(String(node.id));
+                const conceptLoraSelection = isConceptLoraNode ? conceptLoraSelections[conceptLoraIndex++] : null;
+                if (isConceptLoraNode) patchConceptLoraWidgets(node, conceptLoraSelection);
                 if (String(node.class_type || '').toLowerCase().includes('controlnet')) {
                     node.bypassed = !controlNetEnabled;
                     node.title = controlNetEnabled ? `ControlNet ${document.getElementById('controlNetTypeSelect')?.value || ''}`.trim() : 'ControlNet (Off)';
@@ -4993,11 +5037,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                         widget.value = values.omnicine_lora;
                         return;
                     }
-                    if (activePreset === 'Qwen' && key === 'lora_name' && /edit.*lightning|qwen.*lora/.test(title) && qwenEditLoraName) {
+                    if (activePreset === 'Qwen' && key === 'lora_name' && /edit.*lightning/.test(title) && qwenEditLoraName) {
                         widget.value = qwenEditLoraName;
                         return;
                     }
-                    if (activePreset === 'Qwen' && (key === 'strength_model' || key === 'strength') && /edit.*lightning|qwen.*lora/.test(title)) {
+                    if (activePreset === 'Qwen' && (key === 'strength_model' || key === 'strength') && /edit.*lightning/.test(title)) {
                         widget.value = qwenEditLoraStrength;
                         return;
                     }
@@ -5033,6 +5077,31 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     if (values[key] !== undefined && values[key] !== '') widget.value = values[key];
                 });
             });
+        }
+
+        function rebuildDefaultWorkflowGraphForSideMenuStructureChange(center = false) {
+            if (activeWorkflowId || !activeWorkflowGraph?.nodes) return false;
+            activeWorkflowGraph = defaultGraphForPreset(activePreset);
+            if (activeWorkflowGraph) activeWorkflowGraph.nexus_preset = activePreset;
+            activeWorkflowLinks = activeWorkflowGraph?.links || [];
+            selectedWorkflowNodeId = null;
+            selectedWorkflowNodeIds = new Set();
+            renderWorkflowGraph(activeWorkflowGraph, center);
+            renderPinnedNodes();
+            return true;
+        }
+
+        function updateDistilledLoraLabels(presetName = activePreset) {
+            const isQwen = presetName === 'Qwen';
+            const panelLabel = document.getElementById('distilledLoraPanelLabel');
+            const oneLabel = document.getElementById('distilledLoraOneLabel');
+            const twoLabel = document.getElementById('distilledLoraTwoLabel');
+            const title = isQwen ? 'Lightning' : 'Distilled LoRA';
+            const first = isQwen ? 'Lightning LoRA 1' : 'Distilled LoRA 1';
+            const second = isQwen ? 'Lightning LoRA 2' : 'Distilled LoRA 2';
+            if (panelLabel) panelLabel.innerHTML = `<i class="fa-solid fa-grip-vertical panel-drag-handle mr-1"></i>${title}`;
+            if (oneLabel) oneLabel.innerText = first;
+            if (twoLabel) twoLabel.innerText = second;
         }
 
         function updateWorkflowPreview() {
@@ -8199,6 +8268,80 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
         }
 
+        function workflowLoraNodeRole(node) {
+            const text = `${node?.title || ''} ${node?.class_type || ''}`.toLowerCase();
+            if (!/lora/.test(text)) return '';
+            if (/detailer/.test(text)) return 'detailer';
+            if (/omni|singularity/.test(text)) return 'omnicine';
+            if (/control/.test(text)) return 'control';
+            if (/edit.*lightning/.test(text)) return 'lightning';
+            return 'concept';
+        }
+
+        function workflowNodeWidgetValue(node, keys) {
+            const wanted = new Set(keys.map(key => String(key).toLowerCase()));
+            const widget = (node?.widgets || []).find(item => wanted.has(String(item?.name || '').toLowerCase().replace(/\s+/g, '_')));
+            return widget?.value;
+        }
+
+        function ensureSelectOption(selectId, value) {
+            const select = document.getElementById(selectId);
+            if (!select || !value) return;
+            if (![...select.options].some(option => option.value === String(value))) {
+                const option = document.createElement('option');
+                option.value = String(value);
+                option.textContent = String(value);
+                select.appendChild(option);
+            }
+        }
+
+        function syncWorkflowLoraNodeToSideMenu(node) {
+            const role = workflowLoraNodeRole(node);
+            if (!role || ['detailer', 'omnicine', 'control'].includes(role)) return false;
+            const widgets = node.widgets || [];
+            const namedLora = workflowNodeWidgetValue(node, ['lora_name', 'lora']);
+            const genericLoraWidget = widgets.find(widget => {
+                const key = String(widget?.name || '');
+                return /\.(safetensors|ckpt|pt|pth)$/i.test(key) || key.includes('\\') || key.includes('/');
+            });
+            const loraName = String(namedLora || genericLoraWidget?.name || '').trim();
+            const rawStrength = workflowNodeWidgetValue(node, ['strength_model', 'strength']) ?? genericLoraWidget?.value ?? 1;
+            const strength = Math.max(0, Math.min(2, Number(rawStrength) || 0));
+            const rawClipStrength = workflowNodeWidgetValue(node, ['strength_clip', 'clip_strength']);
+            const strengthClip = Math.max(0, Math.min(2, Number(rawClipStrength) || 0));
+
+            if (role === 'lightning') {
+                ensureSelectOption('distilledLoraOneSelect', loraName);
+                if (loraName) setSelectValue('distilledLoraOneSelect', loraName);
+                const strengthInput = document.getElementById('distilledLoraOneStrength');
+                if (strengthInput) strengthInput.value = strength.toFixed(2);
+                return true;
+            }
+
+            if (role !== 'concept') return false;
+            const conceptNodes = (activeWorkflowGraph?.nodes || []).filter(item => workflowLoraNodeRole(item) === 'concept');
+            const conceptIndex = Math.max(0, conceptNodes.findIndex(item => String(item.id) === String(node.id)));
+            activeLoras = Array.isArray(activeLoras) ? activeLoras.slice() : [];
+            if (!loraName || /^(none|automatic|auto)$/i.test(loraName) || strength <= 0) {
+                if (conceptIndex >= 0 && conceptIndex < activeLoras.length) activeLoras.splice(conceptIndex, 1);
+            } else {
+                activeLoras[conceptIndex] = {
+                    ...(activeLoras[conceptIndex] || {}),
+                    name: loraName,
+                    relative_name: loraName,
+                    strength,
+                    strength_clip: strengthClip
+                };
+            }
+            activeLoras = activeLoras.filter(item => {
+                const name = String(item?.relative_name || item?.name || '');
+                return name && !/^(none|automatic|auto)$/i.test(name);
+            });
+            renderActiveLoras();
+            updatePromptWithLoras();
+            return true;
+        }
+
         function updateWorkflowWidget(nodeId, index, value) {
             const node = workflowNodeById(nodeId);
             if (!node) return;
@@ -8214,6 +8357,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             syncPromptTextWidgetsFromSideMenu();
             syncKnownWidgetToSide(node.widgets[index].name, value);
+            syncWorkflowLoraNodeToSideMenu(node);
             updateRangeLabel('steps');
             updateRangeLabel('cfg');
             updateWorkflowPreview();
@@ -11695,6 +11839,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (preset === 'Qwen' && isImg2Img && !isCanvasInpaint) {
                 const qwenEditLoraName = document.getElementById('distilledLoraOneSelect')?.value || 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-fp32.safetensors';
                 const qwenEditLoraStrength = document.getElementById('distilledLoraOneStrength')?.value || '1';
+                const qwenHasEditLightning = qwenEditLoraName
+                    && !/^(none|automatic|auto)$/i.test(qwenEditLoraName)
+                    && /qwen.*edit.*lightning/i.test(qwenEditLoraName);
+                const qwenConceptLoras = (activeLoras || []).filter(item => {
+                    const name = String(item?.relative_name || item?.name || '');
+                    return name && !/^(none|automatic|auto)$/i.test(name);
+                });
                 const promptValue = document.getElementById('posPrompt')?.value || 'Change only the requested detail while preserving the reference image.';
                 const qwenNodes = [
                     { id: 'model', class_type: qwenModelIsGguf ? 'UnetLoaderGGUF' : 'UNETLoader', title: 'Load QWEN Edit Model', x: 70, y: 110, width: 260, height: 118, inputs: [], outputs: ['MODEL'], widgets: qwenModelIsGguf ? [{ name: 'unet_name', value: selectedModelName }] : [{ name: 'unet_name', value: selectedModelName }, { name: 'weight_dtype', value: 'default' }], color: '#1f3b63' },
@@ -11704,8 +11855,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { id: 'clip', class_type: 'CLIPLoader', title: 'QWEN 2.5 VL Text Encoder', x: 70, y: 275, width: 260, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || compatibleSideAssetChoice(preset, 'text', '') || 'Automatic' }, { name: 'type', value: 'qwen_image' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
                     { id: 'vae', class_type: 'VAELoader', title: 'QWEN Image VAE', x: 370, y: 275, width: 230, height: 105, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || compatibleSideAssetChoice(preset, 'vae', '') || 'Automatic' }], color: '#62305a' },
                     { id: 'positive', class_type: 'TextEncodeQwenImageEditPlus', title: 'Positive Prompt + Image References', x: 660, y: 275, width: 330, height: 150, inputs: ['clip', 'vae', 'image1', 'image2', 'image3', 'prompt'], outputs: ['CONDITIONING'], widgets: [{ name: 'prompt', value: promptValue }], color: '#1f5f3a' },
-                    { id: 'negative_source', class_type: 'TextEncodeQwenImageEditPlus', title: 'Negative Prompt Source', x: 1030, y: 275, width: 300, height: 130, inputs: ['clip', 'vae', 'prompt'], outputs: ['CONDITIONING'], widgets: [{ name: 'prompt', value: negativeText }], color: '#5a2c2c' },
-                    { id: 'negative', class_type: 'ConditioningZeroOut', title: 'QWEN Empty Negative', x: 1370, y: 295, width: 240, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [], color: '#5a2c2c' },
+                    { id: 'negative', class_type: 'ConditioningZeroOut', title: 'QWEN Empty Negative', x: 1030, y: 295, width: 240, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [], color: '#5a2c2c' },
                     { id: 'reference', class_type: 'LoadImage', title: 'Image 1 Base Reference', x: 70, y: 520, width: 230, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference image' }], color: '#164e63' },
                     { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize Image 1 To Side Menu', x: 330, y: 520, width: 250, height: 116, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
                     { id: 'encode_ref1', class_type: 'VAEEncode', title: 'Encode Image 1 Latent', x: 620, y: 520, width: 220, height: 100, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' },
@@ -11732,9 +11882,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { from_node: 'cfgnorm', from_slot: 0, to_node: 'sampler', to_slot: 0, type: 'MODEL' },
                     { from_node: 'clip', from_slot: 0, to_node: 'positive', to_slot: 0, type: 'CLIP' },
                     { from_node: 'vae', from_slot: 0, to_node: 'positive', to_slot: 1, type: 'VAE' },
-                    { from_node: 'clip', from_slot: 0, to_node: 'negative_source', to_slot: 0, type: 'CLIP' },
-                    { from_node: 'vae', from_slot: 0, to_node: 'negative_source', to_slot: 1, type: 'VAE' },
-                    { from_node: 'negative_source', from_slot: 0, to_node: 'negative', to_slot: 0, type: 'CONDITIONING' },
+                    { from_node: 'positive', from_slot: 0, to_node: 'negative', to_slot: 0, type: 'CONDITIONING' },
                     { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'resize_reference', from_slot: 0, to_node: 'positive', to_slot: 2, type: 'IMAGE' },
                     { from_node: 'resize_reference', from_slot: 0, to_node: 'encode_ref1', to_slot: 0, type: 'IMAGE' },
@@ -11763,6 +11911,43 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { from_node: 'decode', from_slot: 0, to_node: 'preview', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'decode', from_slot: 0, to_node: 'save', to_slot: 0, type: 'IMAGE' }
                 ];
+                if (!qwenHasEditLightning) {
+                    const editIndex = qwenNodes.findIndex(node => node.id === 'edit_lora');
+                    if (editIndex >= 0) qwenNodes.splice(editIndex, 1);
+                    for (let index = qwenLinks.length - 1; index >= 0; index -= 1) {
+                        const link = qwenLinks[index];
+                        if (link.from_node === 'edit_lora' || link.to_node === 'edit_lora') qwenLinks.splice(index, 1);
+                    }
+                }
+                const auraLinkIndex = qwenLinks.findIndex(link => link.to_node === 'aura' && Number(link.to_slot || 0) === 0);
+                let modelTail = qwenHasEditLightning ? 'edit_lora' : 'model';
+                if (auraLinkIndex >= 0) {
+                    modelTail = qwenLinks[auraLinkIndex].from_node || modelTail;
+                    qwenLinks.splice(auraLinkIndex, 1);
+                }
+                qwenConceptLoras.slice(0, 4).forEach((lora, index) => {
+                    const nodeId = `concept_lora_${index + 1}`;
+                    const loraName = lora.relative_name || lora.name;
+                    qwenNodes.push({
+                        id: nodeId,
+                        class_type: 'LoraLoaderModelOnly',
+                        title: `QWEN Concept LoRA ${index + 1}`,
+                        x: 370 + (index * 280),
+                        y: 40,
+                        width: 250,
+                        height: 105,
+                        inputs: ['model'],
+                        outputs: ['MODEL'],
+                        widgets: [
+                            { name: 'lora_name', value: loraName },
+                            { name: 'strength_model', value: Number(lora.strength || 1).toFixed(2) }
+                        ],
+                        color: '#4c1d95'
+                    });
+                    qwenLinks.push({ from_node: modelTail, from_slot: 0, to_node: nodeId, to_slot: 0, type: 'MODEL' });
+                    modelTail = nodeId;
+                });
+                qwenLinks.push({ from_node: modelTail, from_slot: 0, to_node: 'aura', to_slot: 0, type: 'MODEL' });
                 return {
                     nodes: qwenNodes,
                     links: qwenLinks,
@@ -12186,6 +12371,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 payload.batch_size = 1;
                 payload.img2img.batch_count = 1;
                 payload.distilled_loras = payload.distilled_loras.filter(item => /qwen.*edit.*lightning/i.test(String(item.name || '')));
+                payload.video.qwen_auto_edit_lora = payload.distilled_loras.length > 0;
             }
             if (activePreset === 'LTX' && payload.video.omnicine_enabled && isOmnicineLoraName(payload.video.omnicine_lora)) {
                 const existingOmni = payload.distilled_loras.some(item => ltxDirectorNormalizeLoraName(item.name).toLowerCase() === ltxDirectorNormalizeLoraName(payload.video.omnicine_lora).toLowerCase());
@@ -12462,7 +12648,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }));
             renderActiveLoras();
             updatePromptWithLoras();
-            updateWorkflowPreview();
+            if (!rebuildDefaultWorkflowGraphForSideMenuStructureChange(false)) updateWorkflowPreview();
             if (!options.quiet) {
                 showToast("Concepts Applied", `${activeLoras.length} concept LoRA${activeLoras.length === 1 ? '' : 's'} synced to generation.`);
             }
@@ -12732,7 +12918,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             activeLoras = activeLoras.filter(l => (l.relative_name || l.name) !== loraName && l.name !== loraName);
             renderActiveLoras();
             updatePromptWithLoras();
-            updateWorkflowPreview();
+            if (!rebuildDefaultWorkflowGraphForSideMenuStructureChange(false)) updateWorkflowPreview();
         }
 
         function updateLoraStrength(loraName, newStrength) {
@@ -12741,7 +12927,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 lora.strength = Math.max(0.1, Math.min(2.0, parseFloat(newStrength.toFixed(2))));
                 renderActiveLoras();
                 updatePromptWithLoras();
-                updateWorkflowPreview();
+                if (!rebuildDefaultWorkflowGraphForSideMenuStructureChange(false)) updateWorkflowPreview();
             }
         }
 
