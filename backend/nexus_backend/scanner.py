@@ -19,6 +19,7 @@ MODEL_CATEGORIES = [
     "controlnet",
     "upscale_models",
     "latent_upscale_models",
+    "background_removal",
     "embeddings",
     "animatediff_models",
     "animatediff_motion_lora",

@@ -345,6 +345,8 @@ def _target_kind(model_type: Any, filename: str, requested: str) -> str:
         return "diffusion_models"
     if "controlnet" in lower_type or "control" in lower_name:
         return "controlnet"
+    if any(token in lower_name for token in ("biref", "rmbg", "rembg", "background", "inspy", "isnet", "ben2")):
+        return "background_removal"
     if "upscaler" in lower_type or "upscale" in lower_name:
         return "upscale_models"
     if "motion" in lower_type:

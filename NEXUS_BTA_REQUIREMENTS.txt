@@ -101,6 +101,8 @@ Core UI Requirements
    - Image upscale, restore faces, tiled VAE, custom resolution and alpha-aware PNG export.
    - Video upscale, RIFE/FILM interpolation, target FPS, video denoise and deflicker.
    - Alpha-aware video export offers image sequence or MOV ProRes 4444 routes.
+   - Remove BG has a separate tab with recommended Remove BG Image and Remove BG Video presets, supports image/video sources, and routes to 2026 background-removal models under ./models/background_removal.
+   - Remove BG Video exports alpha as either PNG sequence or MOV ProRes 4444.
    - Extras outputs resolve to ./output/image or ./output/video.
    - Batch queue surface.
 6. PNG Info:
@@ -216,6 +218,8 @@ Backend Runtime Requirements
 9. Metadata writer/reader for PNG, WebP and sidecar JSON.
 10. Queue system with progress, cancel, preview and history.
 11. Date/time output naming for default templates, loaded workflows and visual Node Workflow overrides.
+12. Video outputs and image sequences are isolated into a dated per-generation folder under ./output/video.
+13. Gallery navigation exposes output folders as clickable folder cards with Back, Forward, optional folder picker, and date/type sorting.
 
 Optimization Requirements
 -------------------------
@@ -242,6 +246,7 @@ models/
   upscale_models/
   latent_upscale_models/
   frame_interpolation/
+  background_removal/
   video/
 workflows/
   comfyui/

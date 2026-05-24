@@ -862,7 +862,10 @@ def _apply_output_prefixes(prompt: dict[str, Any], request: GenerateRequest) -> 
             continue
         current = _output_slug(Path(str(inputs.get("filename_prefix") or "")).name, "")
         suffix = f"_{current}" if current and current.lower() not in {"comfyui", "nexus_bta"} else ""
-        inputs["filename_prefix"] = f"{kind}/{base}{suffix}"
+        if kind == "video":
+            inputs["filename_prefix"] = f"{kind}/{base}/{base}{suffix}"
+        else:
+            inputs["filename_prefix"] = f"{kind}/{base}{suffix}"
 
 
 def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[str, Any]]:
@@ -1989,17 +1992,19 @@ async def gallery() -> list[dict[str, Any]]:
     if not settings.output_dir.exists():
         return items
     for path in sorted(settings.output_dir.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
-        if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}:
+        if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi"}:
             continue
         relative = path.relative_to(settings.output_dir).as_posix()
         url_path = quote(relative, safe="/")
-        media_type = "video" if path.suffix.lower() in {".mp4", ".webm"} else "image"
+        media_type = "video" if path.suffix.lower() in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "image"
         metadata = _read_output_metadata(path)
         items.append(
             {
                 "title": path.name,
                 "filename": path.name,
                 "path": str(path),
+                "relative_path": relative,
+                "folder": path.parent.relative_to(settings.output_dir).as_posix() if path.parent != settings.output_dir else "",
                 "image": f"/outputs/{url_path}",
                 "thumb": f"/outputs/{url_path}",
                 "media_type": media_type,

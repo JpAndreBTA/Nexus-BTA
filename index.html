@@ -1079,6 +1079,7 @@
                             <option value="controlnet">ControlNet</option>
                             <option value="upscale_models">Upscale models</option>
                             <option value="latent_upscale_models">Latent upscale</option>
+                            <option value="background_removal">Background removal</option>
                             <option value="workflows">Workflows</option>
                         </select>
                     </div>
@@ -2309,17 +2310,22 @@
             <!-- Activity: Extras -->
             <div id="view-extras" class="activity-panel flex-1 flex-col bg-nexus-bg overflow-hidden">
                 <div class="h-12 border-b border-nexus-border flex items-center justify-between px-4 bg-nexus-panel shrink-0">
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-3 min-w-0">
                         <i class="fa-solid fa-expand text-nexus-red"></i>
-                        <span id="extrasTitle" class="text-xs font-bold text-white uppercase tracking-wider">Extras / Image Tools</span>
+                        <span id="extrasTitle" class="text-xs font-bold text-white uppercase tracking-wider whitespace-nowrap">Extras</span>
+                        <div class="flex items-center gap-1 bg-nexus-bg border border-nexus-border p-1 rounded-sm">
+                            <button id="extrasModeImageBtn" type="button" onclick="setExtrasMode('image')" class="extras-mode-tab active px-3 py-1.5 border rounded-sm text-[10px] font-bold uppercase flex items-center gap-1.5 transition-colors">
+                                <i class="fa-regular fa-image"></i> Image
+                            </button>
+                            <button id="extrasModeVideoBtn" type="button" onclick="setExtrasMode('video')" class="extras-mode-tab px-3 py-1.5 border rounded-sm text-[10px] font-bold uppercase flex items-center gap-1.5 transition-colors">
+                                <i class="fa-solid fa-film"></i> Video
+                            </button>
+                            <button id="extrasModeRemoveBgBtn" type="button" onclick="setExtrasMode('remove_bg')" class="extras-mode-tab px-3 py-1.5 border rounded-sm text-[10px] font-bold uppercase flex items-center gap-1.5 transition-colors">
+                                <i class="fa-solid fa-scissors text-[9px]"></i> Remove BG
+                            </button>
+                        </div>
                     </div>
                     <div class="flex items-center gap-2 bg-nexus-bg border border-nexus-border p-1 rounded-sm">
-                        <button id="extrasModeImageBtn" type="button" onclick="setExtrasMode('image')" class="extras-mode-tab active px-3 py-1.5 border rounded-sm text-[10px] font-bold uppercase flex items-center gap-1.5 transition-colors">
-                            <i class="fa-regular fa-image"></i> Image
-                        </button>
-                        <button id="extrasModeVideoBtn" type="button" onclick="setExtrasMode('video')" class="extras-mode-tab px-3 py-1.5 border rounded-sm text-[10px] font-bold uppercase flex items-center gap-1.5 transition-colors">
-                            <i class="fa-solid fa-film"></i> Video
-                        </button>
                         <button id="extrasGalleryToggleBtn" type="button" onclick="toggleExtrasGallery()" class="px-3 py-1.5 border border-nexus-border bg-nexus-bg text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm text-[10px] font-bold uppercase flex items-center gap-1.5 transition-colors">
                             <i class="fa-regular fa-image text-nexus-red"></i> Gallery
                         </button>
@@ -2497,6 +2503,62 @@
                                     <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">Motion smoothing<span class="toggle-switch"><input id="extrasMotionSmooth" type="checkbox" checked><span class="toggle-track"></span></span></label>
                                 </section>
 
+                            </div>
+
+                            <div id="extrasRemoveBgPanel" class="hidden space-y-4">
+                                <section class="data-card p-3.5 space-y-3.5">
+                                    <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                        <span class="text-[10px] font-bold text-white uppercase tracking-wide">Remove Background</span>
+                                        <i class="fa-solid fa-scissors text-nexus-red text-[10px]"></i>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <button id="extrasRemoveBgImagePresetBtn" type="button" onclick="selectExtrasRemoveBgPreset('image')" class="flat-button py-2 text-xs font-bold bg-nexus-red text-white border-nexus-red">Remove BG Image</button>
+                                        <button id="extrasRemoveBgVideoPresetBtn" type="button" onclick="selectExtrasRemoveBgPreset('video')" class="flat-button py-2 text-xs font-bold">Remove BG Video</button>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="mini-label">Removal model</label>
+                                        <select id="extrasRemoveBgModel" class="flat-input appearance-none cursor-pointer">
+                                            <option value="BiRefNet">BiRefNet</option>
+                                            <option value="RMBG-2.0">RMBG-2.0</option>
+                                            <option value="InSPyReNet">InSPyReNet</option>
+                                            <option value="BEN2">BEN2</option>
+                                        </select>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="space-y-1.5">
+                                            <span class="mini-label">Output</span>
+                                            <select id="extrasRemoveBgOutputSelect" class="flat-input appearance-none cursor-pointer">
+                                                <option value="rgba">Transparent RGBA</option>
+                                                <option value="mask">Mask only</option>
+                                                <option value="both">RGBA + mask</option>
+                                            </select>
+                                        </label>
+                                        <label class="space-y-1.5">
+                                            <span class="mini-label">Edge mode</span>
+                                            <select id="extrasRemoveBgEdgeSelect" class="flat-input appearance-none cursor-pointer">
+                                                <option value="alpha_matte">Alpha matte</option>
+                                                <option value="soft">Soft edges</option>
+                                                <option value="sharp">Sharp cutout</option>
+                                            </select>
+                                        </label>
+                                        <label id="extrasRemoveBgVideoFormatWrap" class="hidden space-y-1.5">
+                                            <span class="mini-label">Video format</span>
+                                            <select id="extrasRemoveBgVideoFormatSelect" class="flat-input appearance-none cursor-pointer">
+                                                <option value="image_sequence_png_alpha">PNG sequence</option>
+                                                <option value="mov_prores_4444_alpha">MOV ProRes 4444</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                    <div class="space-y-1">
+                                        <div class="flex justify-between text-[10px] font-mono text-nexus-text"><span>Mask threshold</span><span id="extrasRemoveBgThresholdValue" class="text-nexus-red font-bold">0.50</span></div>
+                                        <input id="extrasRemoveBgThresholdSlider" type="range" min="0" max="1" value="0.50" step="0.01" oninput="document.getElementById('extrasRemoveBgThresholdValue').innerText = Number(this.value).toFixed(2); renderExtrasSource();">
+                                    </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
+                                        <span><span class="font-bold block">Frame batch for video</span><span class="text-[9px] text-nexus-muted font-mono">Apply the same matte pass to extracted frames</span></span>
+                                        <span class="toggle-switch"><input id="extrasRemoveBgVideoBatchToggle" type="checkbox" checked><span class="toggle-track"></span></span>
+                                    </label>
+                                    <p id="extrasRemoveBgStatus" class="text-[10px] text-nexus-muted font-mono leading-4">Uses models from models/background_removal when detected.</p>
+                                </section>
                             </div>
                         </div>
                     </aside>
@@ -2770,6 +2832,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                         <input class="flat-input font-mono text-[11px]" value="./models/controlnet">
                         <input class="flat-input font-mono text-[11px]" value="./models/upscale_models">
                         <input class="flat-input font-mono text-[11px]" value="./models/latent_upscale_models">
+                        <input class="flat-input font-mono text-[11px]" value="./models/background_removal">
                         <input class="flat-input font-mono text-[11px]" value="./models/video">
                         <input class="flat-input font-mono text-[11px]" value="./workflows/comfyui">
                     </section>
@@ -2801,6 +2864,19 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             <!-- Gallery Grid -->
             <div class="flex-1 overflow-y-auto p-2">
                 <div id="nodesPanel" class="space-y-2"></div>
+                <div id="galleryFolderBar" class="hidden mb-2 space-y-2">
+                    <div class="flex items-center gap-1">
+                        <button id="galleryBackBtn" type="button" onclick="navigateGalleryHistory(-1)" class="flat-button h-8 w-8 p-0 flex items-center justify-center" title="Back"><i class="fa-solid fa-chevron-left text-[10px]"></i></button>
+                        <button id="galleryForwardBtn" type="button" onclick="navigateGalleryHistory(1)" class="flat-button h-8 w-8 p-0 flex items-center justify-center" title="Forward"><i class="fa-solid fa-chevron-right text-[10px]"></i></button>
+                        <button id="galleryFolderPickerToggle" type="button" onclick="toggleGalleryFolderPicker()" class="flat-button h-8 w-8 p-0 flex items-center justify-center" title="Folder picker"><i class="fa-solid fa-folder-tree text-[10px]"></i></button>
+                        <select id="gallerySortSelect" class="flat-input appearance-none cursor-pointer text-[10px] h-8" onchange="setGallerySortMode(this.value)">
+                            <option value="date">Organize by date</option>
+                            <option value="type">Organize by type</option>
+                        </select>
+                    </div>
+                    <div id="galleryBreadcrumb" class="min-h-8 px-2 py-1.5 bg-nexus-bg border border-nexus-border rounded-sm text-[10px] font-mono text-nexus-muted truncate">output</div>
+                    <select id="galleryFolderSelect" class="hidden flat-input appearance-none cursor-pointer text-[10px]" onchange="setGalleryFolderFilter(this.value)"></select>
+                </div>
                 <div id="galleryPanel" class="hidden grid grid-cols-2 gap-2"></div>
                 <div id="assetsPanel" class="hidden space-y-2">
                     <div class="bg-nexus-bg border border-nexus-border p-2 rounded-sm">
@@ -2925,6 +3001,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let currentActivity = nexusSafeStorage.get('nexus_current_activity', 'txt2img');
         let activeLoraFolderFilter = 'All';
         let activeGalleryIndex = 0;
+        let activeGalleryFolder = '';
+        let galleryAllItems = [];
+        let galleryFolderHistory = [''];
+        let galleryFolderHistoryIndex = 0;
+        let galleryFolderPickerVisible = false;
+        let gallerySortMode = 'date';
         let viewportDrag = null;
         let nodeDrag = null;
         let activeWorkflowGraph = null;
@@ -3016,12 +3098,17 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let sidebarResizeDrag = null;
 
         let galleryItems = [];
-        let extrasMode = nexusSafeStorage.get('nexus_extras_mode', 'image');
+        function normalizeExtrasMode(mode) {
+            return ['image', 'video', 'remove_bg'].includes(mode) ? mode : 'image';
+        }
+
+        let extrasMode = normalizeExtrasMode(nexusSafeStorage.get('nexus_extras_mode', 'image'));
         let extrasSource = null;
         let extrasOriginalUrl = '';
         let extrasProcessedUrl = '';
         let extrasObjectUrl = '';
         let extrasProcessing = false;
+        let extrasRemoveBgPreset = 'image';
         let activeEmbeddingTarget = 'positive';
         let embeddingSearchQuery = '';
         let loraLibrary = [];
@@ -3739,16 +3826,31 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function renderGallerySidebar() {
             const panel = document.getElementById('galleryPanel');
             if (!panel) return;
-            if (!galleryItems.length) {
+            renderGalleryFolderControls();
+            const childFolders = galleryChildFolders();
+            if (!galleryItems.length && !childFolders.length) {
                 panel.innerHTML = `
                     <div class="col-span-2 border border-dashed border-nexus-border bg-nexus-bg/60 p-4 text-center rounded-sm">
                         <i class="fa-regular fa-images text-lg text-nexus-muted"></i>
-                        <p class="text-[10px] font-mono text-nexus-muted mt-2">No files in ./output</p>
+                        <p class="text-[10px] font-mono text-nexus-muted mt-2">No files in ${escapeHtml(galleryFolderLabel())}</p>
                     </div>
                 `;
                 return;
             }
-            panel.innerHTML = galleryItems.map((item, index) => {
+            const folderCards = childFolders.map(folder => {
+                const label = folder.split('/').pop() || 'output';
+                const count = (galleryAllItems || []).filter(item => galleryFolderFromItem(item) === folder || galleryFolderFromItem(item).startsWith(`${folder}/`)).length;
+                return `
+                    <button type="button" onclick="openGalleryFolder('${escapeHtml(folder)}')" class="relative aspect-square overflow-hidden border border-nexus-border hover:border-nexus-red cursor-pointer bg-nexus-bg text-left rounded-sm p-2 group">
+                        <div class="absolute inset-2 flex items-center justify-center">
+                            <i class="fa-solid fa-folder text-yellow-300 text-5xl drop-shadow"></i>
+                        </div>
+                        <span class="absolute left-1.5 bottom-6 right-1.5 text-center text-[10px] font-bold text-white truncate">${escapeHtml(label)}</span>
+                        <span class="absolute left-1.5 bottom-1.5 right-1.5 text-center text-[8px] font-mono text-nexus-muted">${count} item${count === 1 ? '' : 's'}</span>
+                    </button>
+                `;
+            }).join('');
+            const fileCards = galleryItems.map((item, index) => {
                 const selected = index === activeGalleryIndex ? 'border-nexus-red' : 'border-nexus-border';
                 const url = escapeHtml(item.thumb || item.image || '');
                 const media = item.mediaType === 'video'
@@ -3761,6 +3863,136 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     </div>
                 `;
             }).join('');
+            panel.innerHTML = folderCards + fileCards;
+        }
+
+        function normalizeGalleryFolder(folder) {
+            const clean = String(folder || '').replace(/\\/g, '/').replace(/^output\//i, '').replace(/^\/+|\/+$/g, '');
+            return clean === 'All' || clean === 'Root' ? '' : clean;
+        }
+
+        function galleryFolderFromItem(item) {
+            const explicit = normalizeGalleryFolder(item?.folder || '');
+            if (explicit) return explicit;
+            const relative = normalizeGalleryFolder(item?.relativePath || item?.relative_path || '');
+            if (relative.includes('/')) return relative.split('/').slice(0, -1).join('/');
+            const image = String(item?.image || item?.thumb || '').split('/outputs/', 2)[1] || '';
+            const cleanImage = normalizeGalleryFolder(image.split('?')[0]);
+            return cleanImage.includes('/') ? cleanImage.split('/').slice(0, -1).join('/') : '';
+        }
+
+        function galleryParentFolder(folder) {
+            const clean = normalizeGalleryFolder(folder);
+            if (!clean.includes('/')) return '';
+            return clean.split('/').slice(0, -1).join('/');
+        }
+
+        function galleryKnownFolders() {
+            const folders = new Set();
+            (galleryAllItems || []).forEach(item => {
+                const folder = galleryFolderFromItem(item);
+                const parts = folder.split('/').filter(Boolean);
+                parts.forEach((_, index) => folders.add(parts.slice(0, index + 1).join('/')));
+            });
+            return [...folders].sort((a, b) => a.localeCompare(b));
+        }
+
+        function galleryFolderOptions() {
+            return galleryKnownFolders().map(folder => [
+                folder,
+                (galleryAllItems || []).filter(item => galleryFolderFromItem(item) === folder || galleryFolderFromItem(item).startsWith(`${folder}/`)).length
+            ]);
+        }
+
+        function galleryChildFolders(folder = activeGalleryFolder) {
+            const current = normalizeGalleryFolder(folder);
+            return galleryKnownFolders().filter(item => galleryParentFolder(item) === current);
+        }
+
+        function sortGalleryItems(items) {
+            const sorted = [...(items || [])];
+            if (gallerySortMode === 'type') {
+                return sorted.sort((a, b) => {
+                    const typeCompare = String(a.mediaType || '').localeCompare(String(b.mediaType || ''));
+                    if (typeCompare) return typeCompare;
+                    return String(a.filename || a.title || '').localeCompare(String(b.filename || b.title || ''));
+                });
+            }
+            return sorted.sort((a, b) => Number(b.modified || 0) - Number(a.modified || 0));
+        }
+
+        function filteredGalleryItems() {
+            const current = normalizeGalleryFolder(activeGalleryFolder);
+            return sortGalleryItems((galleryAllItems || []).filter(item => galleryFolderFromItem(item) === current));
+        }
+
+        function galleryFolderLabel(folder = activeGalleryFolder) {
+            const clean = normalizeGalleryFolder(folder);
+            return clean ? `output/${clean}` : 'output';
+        }
+
+        function renderGalleryFolderControls() {
+            const bar = document.getElementById('galleryFolderBar');
+            const select = document.getElementById('galleryFolderSelect');
+            if (!bar || !select) return;
+            const folders = galleryFolderOptions();
+            bar.classList.toggle('hidden', !galleryAllItems.length);
+            const knownFolders = folders.map(([folder]) => folder);
+            if (activeGalleryFolder && !knownFolders.includes(activeGalleryFolder)) activeGalleryFolder = galleryParentFolder(activeGalleryFolder);
+            const options = [['', galleryAllItems.length], ...folders];
+            select.innerHTML = options.map(([folder, count]) => `<option value="${escapeHtml(folder)}">${escapeHtml(folder ? `output/${folder}` : 'output')} (${count})</option>`).join('');
+            select.value = activeGalleryFolder;
+            select.classList.toggle('hidden', !galleryFolderPickerVisible);
+            const crumb = document.getElementById('galleryBreadcrumb');
+            if (crumb) crumb.innerText = galleryFolderLabel();
+            const sort = document.getElementById('gallerySortSelect');
+            if (sort) sort.value = gallerySortMode;
+            const back = document.getElementById('galleryBackBtn');
+            const forward = document.getElementById('galleryForwardBtn');
+            if (back) back.disabled = galleryFolderHistoryIndex <= 0;
+            if (forward) forward.disabled = galleryFolderHistoryIndex >= galleryFolderHistory.length - 1;
+        }
+
+        function setGalleryFolderFilter(folder, options = {}) {
+            const previousKey = galleryItemKey(galleryItems[activeGalleryIndex]);
+            const nextFolder = normalizeGalleryFolder(folder);
+            if (!options.fromHistory && nextFolder !== activeGalleryFolder) {
+                galleryFolderHistory = galleryFolderHistory.slice(0, galleryFolderHistoryIndex + 1);
+                galleryFolderHistory.push(nextFolder);
+                galleryFolderHistoryIndex = galleryFolderHistory.length - 1;
+            }
+            activeGalleryFolder = nextFolder;
+            galleryItems = filteredGalleryItems();
+            const preservedIndex = galleryItems.findIndex(item => galleryItemKey(item) === previousKey);
+            activeGalleryIndex = preservedIndex >= 0 ? preservedIndex : 0;
+            renderGallerySidebar();
+            setLinearOutput(galleryItems[activeGalleryIndex] || null, { force: true });
+            if (document.getElementById('galleryModal') && !document.getElementById('galleryModal').classList.contains('hidden')) {
+                renderGalleryModal();
+            }
+        }
+
+        function openGalleryFolder(folder) {
+            setGalleryFolderFilter(folder);
+        }
+
+        function navigateGalleryHistory(direction) {
+            const nextIndex = galleryFolderHistoryIndex + direction;
+            if (nextIndex < 0 || nextIndex >= galleryFolderHistory.length) return;
+            galleryFolderHistoryIndex = nextIndex;
+            setGalleryFolderFilter(galleryFolderHistory[galleryFolderHistoryIndex], { fromHistory: true });
+        }
+
+        function toggleGalleryFolderPicker() {
+            galleryFolderPickerVisible = !galleryFolderPickerVisible;
+            renderGalleryFolderControls();
+        }
+
+        function setGallerySortMode(mode) {
+            gallerySortMode = mode === 'type' ? 'type' : 'date';
+            galleryItems = filteredGalleryItems();
+            activeGalleryIndex = 0;
+            renderGallerySidebar();
         }
 
         function appendUrlVersion(url, version) {
@@ -3991,28 +4223,34 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function updateExtrasModeUi() {
             const isVideo = extrasMode === 'video';
-            document.getElementById('extrasModeImageBtn')?.classList.toggle('active', !isVideo);
+            const isRemoveBg = extrasMode === 'remove_bg';
+            document.getElementById('extrasModeImageBtn')?.classList.toggle('active', extrasMode === 'image');
             document.getElementById('extrasModeVideoBtn')?.classList.toggle('active', isVideo);
-            document.getElementById('extrasImagePanel')?.classList.toggle('hidden', isVideo);
+            document.getElementById('extrasModeRemoveBgBtn')?.classList.toggle('active', isRemoveBg);
+            document.getElementById('extrasImagePanel')?.classList.toggle('hidden', extrasMode !== 'image');
             document.getElementById('extrasVideoPanel')?.classList.toggle('hidden', !isVideo);
+            document.getElementById('extrasRemoveBgPanel')?.classList.toggle('hidden', !isRemoveBg);
             document.getElementById('extrasVideoEncodeBar')?.classList.toggle('hidden', !isVideo);
             const title = document.getElementById('extrasTitle');
-            if (title) title.innerText = isVideo ? 'Extras / Video Post' : 'Extras / Image Tools';
+            if (title) title.innerText = 'Extras';
             const input = document.getElementById('extrasFileInput');
-            if (input) input.accept = isVideo ? 'video/*' : 'image/*';
+            if (input) input.accept = isRemoveBg ? 'image/*,video/*' : (isVideo ? 'video/*' : 'image/*');
             const dropTitle = document.getElementById('extrasDropTitle');
-            if (dropTitle) dropTitle.innerText = isVideo ? 'Drop video file here' : 'Drop image file here';
+            if (dropTitle) dropTitle.innerText = isRemoveBg ? 'Drop image or video file here' : (isVideo ? 'Drop video file here' : 'Drop image file here');
             const dropIcon = document.getElementById('extrasDropIcon');
-            if (dropIcon) dropIcon.className = isVideo ? 'fa-solid fa-film text-2xl text-nexus-red' : 'fa-solid fa-cloud-arrow-up text-2xl text-nexus-red';
+            if (dropIcon) dropIcon.className = isRemoveBg ? 'fa-solid fa-scissors text-2xl text-nexus-red' : (isVideo ? 'fa-solid fa-film text-2xl text-nexus-red' : 'fa-solid fa-cloud-arrow-up text-2xl text-nexus-red');
             syncExtrasEncodeUi({ render: false });
             renderExtrasSource();
         }
 
         function setExtrasMode(mode, options = {}) {
-            extrasMode = mode === 'video' ? 'video' : 'image';
+            extrasMode = normalizeExtrasMode(mode);
             localStorage.setItem('nexus_extras_mode', extrasMode);
             updateExtrasModeUi();
-            if (!options.quiet) showToast('Extras Mode', extrasMode === 'video' ? 'Video post tools selected.' : 'Image tools selected.');
+            if (!options.quiet) {
+                const label = extrasMode === 'remove_bg' ? 'Remove background tools selected.' : (extrasMode === 'video' ? 'Video post tools selected.' : 'Image tools selected.');
+                showToast('Extras Mode', label);
+            }
         }
 
         function extrasCatalogNames(categories, filter = null) {
@@ -4037,9 +4275,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const rasterUpscalers = extrasCatalogNames(['upscale_models']);
             const latentUpscalers = extrasCatalogNames(['latent_upscale_models']);
             const interpolators = extrasCatalogNames(['frame_interpolation']);
+            const removeBgModels = extrasCatalogNames(['background_removal', 'RMBG'], name => /biref|rmbg|bria|inspy|isnet|ben|rembg|background/i.test(name));
             const imageOptions = setSelectOptions('extrasImageUpscaler', rasterUpscalers, ['Lanczos']);
             const videoOptions = setSelectOptions('extrasVideoUpscaleModel', [...latentUpscalers, ...rasterUpscalers], ['Lanczos']);
             const interpolationOptions = setSelectOptions('extrasVideoInterpolator', interpolators, interpolators.length ? [] : ['No interpolation model detected']);
+            const removeOptions = setSelectOptions('extrasRemoveBgModel', removeBgModels, ['BiRefNet', 'RMBG-2.0', 'InSPyReNet', 'BEN2']);
             const upscaleStatus = document.getElementById('extrasVideoUpscaleStatus');
             if (upscaleStatus) {
                 const latentLabel = latentUpscalers.length ? `${latentUpscalers.length} latent` : 'no latent';
@@ -4058,6 +4298,17 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 videoSelect.dataset.hasModel = videoOptions.length ? '1' : '0';
                 const realVideoOptions = [...latentUpscalers, ...rasterUpscalers];
                 if (realVideoOptions.length && (!videoSelect.value || videoSelect.value === 'Lanczos')) videoSelect.value = realVideoOptions[0];
+            }
+            const removeSelect = document.getElementById('extrasRemoveBgModel');
+            if (removeSelect) {
+                removeSelect.dataset.hasModel = removeBgModels.length ? '1' : '0';
+                if (removeBgModels.length && (!removeSelect.value || removeSelect.value === 'BiRefNet')) removeSelect.value = removeBgModels[0];
+            }
+            const removeStatus = document.getElementById('extrasRemoveBgStatus');
+            if (removeStatus) {
+                removeStatus.innerText = removeBgModels.length
+                    ? `${removeBgModels.length} remove background model${removeBgModels.length === 1 ? '' : 's'} detected.`
+                    : 'No local model detected; add BiRefNet/RMBG weights to models/background_removal.';
             }
             syncExtrasInterpolateUi();
             syncExtrasVideoUpscaleUi();
@@ -4095,6 +4346,28 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function syncExtrasVideoDenoiseUi() {
             const enabled = !!document.getElementById('extrasVideoDenoiseToggle')?.checked;
             document.getElementById('extrasVideoDenoiseControls')?.classList.toggle('hidden', !enabled);
+            renderExtrasSource();
+        }
+
+        function selectExtrasRemoveBgPreset(preset) {
+            extrasRemoveBgPreset = preset === 'video' ? 'video' : 'image';
+            const active = 'flat-button py-2 text-xs font-bold bg-nexus-red text-white border-nexus-red';
+            const inactive = 'flat-button py-2 text-xs font-bold';
+            const imageButton = document.getElementById('extrasRemoveBgImagePresetBtn');
+            const videoButton = document.getElementById('extrasRemoveBgVideoPresetBtn');
+            if (imageButton) imageButton.className = extrasRemoveBgPreset === 'image' ? active : inactive;
+            if (videoButton) videoButton.className = extrasRemoveBgPreset === 'video' ? active : inactive;
+            document.getElementById('extrasRemoveBgVideoFormatWrap')?.classList.toggle('hidden', extrasRemoveBgPreset !== 'video');
+            const output = document.getElementById('extrasRemoveBgOutputSelect');
+            const edge = document.getElementById('extrasRemoveBgEdgeSelect');
+            const threshold = document.getElementById('extrasRemoveBgThresholdSlider');
+            const thresholdValue = document.getElementById('extrasRemoveBgThresholdValue');
+            const batch = document.getElementById('extrasRemoveBgVideoBatchToggle');
+            if (output) output.value = 'rgba';
+            if (edge) edge.value = extrasRemoveBgPreset === 'video' ? 'soft' : 'alpha_matte';
+            if (threshold) threshold.value = extrasRemoveBgPreset === 'video' ? '0.45' : '0.50';
+            if (thresholdValue) thresholdValue.innerText = Number(threshold?.value || 0.5).toFixed(2);
+            if (batch) batch.checked = extrasRemoveBgPreset === 'video';
             renderExtrasSource();
         }
 
@@ -4156,6 +4429,29 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function extrasProcessingPlan() {
+            if (extrasMode === 'remove_bg') {
+                const sourceMediaType = extrasRemoveBgPreset === 'video' ? 'video' : 'image';
+                const videoFormat = document.getElementById('extrasRemoveBgVideoFormatSelect')?.value || 'image_sequence_png_alpha';
+                return {
+                    mediaType: sourceMediaType,
+                    mode: 'remove_bg',
+                    template: sourceMediaType === 'video' ? 'REMOVE_BG_VIDEO_2026' : 'REMOVE_BG_IMAGE_2026',
+                    remove_background: {
+                        enabled: true,
+                        model: document.getElementById('extrasRemoveBgModel')?.value || 'BiRefNet',
+                        output: document.getElementById('extrasRemoveBgOutputSelect')?.value || 'rgba',
+                        edge_mode: document.getElementById('extrasRemoveBgEdgeSelect')?.value || 'alpha_matte',
+                        threshold: Number(document.getElementById('extrasRemoveBgThresholdSlider')?.value || 0.5),
+                        video_frame_batch: sourceMediaType === 'video' && !!document.getElementById('extrasRemoveBgVideoBatchToggle')?.checked,
+                        model_folder: 'models/background_removal',
+                        comfy_nodes: ['Remove Background (BiRefNet)', 'RMBG (Remove Background)', 'Image Remove Background']
+                    },
+                    preserve_alpha: true,
+                    output_dir: sourceMediaType === 'video' ? 'output/video' : 'output/image',
+                    encoder: sourceMediaType === 'video' ? videoFormat : 'png',
+                    pack_metadata: true
+                };
+            }
             const isVideo = extrasMode === 'video' || extrasSource?.mediaType === 'video';
             if (!isVideo) {
                 const scale = extrasScaleFactor();
@@ -4209,11 +4505,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function extrasPlanLabel(plan = extrasProcessingPlan()) {
             if (plan.mediaType === 'image') {
+                if (plan.mode === 'remove_bg') return `remove bg / ${plan.remove_background?.model || 'BiRefNet'} / ${plan.remove_background?.output || 'rgba'}`;
                 const scale = plan.scale === 'custom' && plan.custom_resolution
                     ? `${plan.custom_resolution.width}x${plan.custom_resolution.height}`
                     : plan.scale;
                 return `${plan.upscaler} / ${scale}${plan.preserve_alpha ? ' / alpha' : ''}`;
             }
+            if (plan.mode === 'remove_bg') return `remove bg / ${plan.remove_background?.model || 'BiRefNet'} / ${plan.remove_background?.output || 'rgba'}`;
             const stages = [];
             stages.push(plan.interpolate?.enabled ? `interp ${plan.interpolate.fps} FPS` : 'interp off');
             if (plan.upscale?.enabled) stages.push(`upscale ${plan.upscale.scale}`);
@@ -4266,7 +4564,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function loadExtrasFile(file) {
             const mediaType = isVideoFile(file) ? 'video' : 'image';
-            if (mediaType !== extrasMode) setExtrasMode(mediaType, { quiet: true });
+            if (extrasMode !== 'remove_bg' && mediaType !== extrasMode) setExtrasMode(mediaType, { quiet: true });
             if (extrasObjectUrl) URL.revokeObjectURL(extrasObjectUrl);
             extrasObjectUrl = URL.createObjectURL(file);
             loadExtrasSource({
@@ -4287,7 +4585,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             };
             extrasOriginalUrl = extrasSource.src;
             extrasProcessedUrl = '';
-            if (extrasSource.mediaType !== extrasMode) setExtrasMode(extrasSource.mediaType, { quiet: true });
+            if (extrasMode !== 'remove_bg' && extrasSource.mediaType !== extrasMode) setExtrasMode(extrasSource.mediaType, { quiet: true });
             renderExtrasSource();
             showToast('Extras Source Loaded', `${extrasSource.title} ready.`);
         }
@@ -4483,7 +4781,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 height: item.height || '',
                 activity: item.activity || '',
                 filename: item.filename || item.title || '',
-                path: item.path || item.filename || item.path || '',
+                path: item.path || item.filename || '',
+                relativePath: item.relative_path || item.relativePath || '',
+                folder: item.folder || '',
                 workflow: item.workflow_id || item.workflow || '',
                 loras: Array.isArray(item.loras) ? item.loras : [],
                 distilledLoras: Array.isArray(item.distilled_loras) ? item.distilled_loras : (Array.isArray(item.distilledLoras) ? item.distilledLoras : []),
@@ -4512,7 +4812,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
             const previousKey = galleryItemKey(galleryItems[activeGalleryIndex]);
             const hadItems = galleryItems.length > 0;
-            galleryItems = normalized;
+            galleryAllItems = normalized;
+            if (options.preferNewest && normalized[0]) {
+                activeGalleryFolder = galleryFolderFromItem(normalized[0]);
+                galleryFolderHistory = [activeGalleryFolder];
+                galleryFolderHistoryIndex = 0;
+            }
+            galleryItems = filteredGalleryItems();
             galleryLastSignature = signature;
             if (options.preferNewest || !previousKey) {
                 activeGalleryIndex = 0;
@@ -12804,6 +13110,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 activity: payload.activity,
                 filename: output.filename || '',
                 path: output.path || output.filename || '',
+                relative_path: output.path || output.filename || '',
+                folder: output.subfolder || (String(output.path || '').includes('/') ? String(output.path || '').split('/').slice(0, -1).join('/') : ''),
                 workflow: payload.workflow_id || 'Default',
                 loras: payload.loras || [],
                 distilled_loras: payload.distilled_loras || [],
@@ -12817,7 +13125,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 mediaType: isVideoOutput(output) ? 'video' : 'image'
             }));
             const newKeys = new Set(newItems.map(galleryItemKey));
-            galleryItems = [...newItems, ...galleryItems.filter(item => !newKeys.has(galleryItemKey(item)))];
+            galleryAllItems = [...newItems, ...galleryAllItems.filter(item => !newKeys.has(galleryItemKey(item)))];
+            if (newItems[0]) {
+                activeGalleryFolder = galleryFolderFromItem(newItems[0]);
+                galleryFolderHistory = [activeGalleryFolder];
+                galleryFolderHistoryIndex = 0;
+            }
+            galleryItems = filteredGalleryItems();
             galleryLastSignature = '';
             activeGalleryIndex = 0;
             renderGallerySidebar();
@@ -13783,6 +14097,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             'extrasVideoEncoder',
             'extrasVideoEncodeToggle',
             'extrasPackMetadata',
+            'extrasRemoveBgModel',
+            'extrasRemoveBgOutputSelect',
+            'extrasRemoveBgEdgeSelect',
+            'extrasRemoveBgVideoFormatSelect',
+            'extrasRemoveBgThresholdSlider',
+            'extrasRemoveBgVideoBatchToggle',
             'extrasFaceRestore',
             'extrasColorMatch',
             'extrasImageAlphaToggle',
@@ -13807,6 +14127,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         updateInpaintHistoryButtons();
         populateExtrasModelControls();
         selectExtrasScale(extrasScaleFactor());
+        selectExtrasRemoveBgPreset('image');
         syncExtrasAlphaUi();
         updateExtrasModeUi();
         updateEmbeddingButtonState();

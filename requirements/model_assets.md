@@ -16,6 +16,7 @@ models/clip_vision        Required CLIP vision encoders for WAN first/end-frame 
 models/controlnet         SD 1.5 and SDXL ControlNet models
 models/upscale_models     ESRGAN/RealESRGAN-style upscalers
 models/latent_upscale_models  LTX latent upscalers
+models/background_removal  2026 ComfyUI background-removal models such as BiRefNet
 models/diffusion_models/MelRoFormer  Mel-Band RoFormer audio cleanup model for LTX Director audio workflows
 ```
 
@@ -30,6 +31,7 @@ models/diffusion_models/MelRoFormer  Mel-Band RoFormer audio cleanup model for L
 | Flux.2 Klein | [FLUX.2 Klein 4B/9B](https://docs.comfy.org/tutorials/flux/flux-2-klein) | `models/checkpoints/flux` or `models/diffusion_models`, 4B: `qwen_3_4b.safetensors`, 9B: `qwen_3_8b_fp8mixed.safetensors`, plus `models/vae/flux2-vae.safetensors` |
 | WAN 2.2 | [Wan-AI/Wan2.2-I2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B), [Wan-AI/Wan2.2-T2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B), [Wan-AI/Wan2.2-TI2V-5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B), compatible CLIP Vision such as `clip_vision_h.safetensors` | `models/checkpoints/wan`, `models/text_encoders`, `models/vae`, `models/clip_vision` |
 | LTX 2.3 | [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) | `models/checkpoints/ltx`, `models/loras/ltx`, `models/latent_upscale_models`, `models/vae`, `models/text_encoders` |
+| Extras Remove BG | [Comfy-Org/BiRefNet](https://huggingface.co/Comfy-Org/BiRefNet) | `models/background_removal/birefnet.safetensors` |
 
 ## Lightweight LoRA Starter List
 
