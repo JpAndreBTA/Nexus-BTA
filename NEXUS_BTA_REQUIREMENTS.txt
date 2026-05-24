@@ -103,7 +103,7 @@ Core UI Requirements
    - Alpha-aware video export offers image sequence or MOV ProRes 4444 routes.
    - Remove BG has a separate tab with recommended Remove BG Image and Remove BG Video presets, supports image/video sources, and routes to 2026 background-removal models under ./models/background_removal.
    - Remove BG Video exports alpha as either PNG sequence or MOV ProRes 4444.
-   - Extras outputs resolve to ./output/image or ./output/video.
+   - Extras outputs resolve to ./output/extras/image or ./output/extras/video, with PNG sequences isolated in dated folders.
    - Batch queue surface.
 6. PNG Info:
    - PNG/WebP/video sidecar drop zone.
@@ -218,8 +218,9 @@ Backend Runtime Requirements
 9. Metadata writer/reader for PNG, WebP and sidecar JSON.
 10. Queue system with progress, cancel, preview and history.
 11. Date/time output naming for default templates, loaded workflows and visual Node Workflow overrides.
-12. Video outputs and image sequences are isolated into a dated per-generation folder under ./output/video.
-13. Gallery navigation exposes output folders as clickable folder cards with Back, Forward, optional folder picker, and date/type sorting.
+12. Normal video generations remain in ./output/video root with date/time filenames.
+13. Extras video PNG sequence exports are isolated into a dated folder under ./output/extras/video.
+14. Gallery navigation exposes output folders as clickable folder cards with Back, Forward, optional folder picker, and date/type sorting.
 
 Optimization Requirements
 -------------------------

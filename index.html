@@ -4435,6 +4435,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             return { width, height };
         }
 
+        function extrasRunFolder(kind = 'video') {
+            const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15);
+            return `output/extras/${kind}/${stamp}`;
+        }
+
         function extrasProcessingPlan() {
             if (extrasMode === 'remove_bg') {
                 const sourceMediaType = extrasRemoveBgPreset === 'video' ? 'video' : 'image';
@@ -4454,7 +4459,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                         comfy_nodes: ['Remove Background (BiRefNet)', 'RMBG (Remove Background)', 'Image Remove Background']
                     },
                     preserve_alpha: true,
-                    output_dir: sourceMediaType === 'video' ? 'output/video' : 'output/image',
+                    output_dir: sourceMediaType === 'video'
+                        ? (videoFormat === 'image_sequence_png_alpha' ? extrasRunFolder('video') : 'output/extras/video')
+                        : 'output/extras/image',
                     encoder: sourceMediaType === 'video' ? videoFormat : 'png',
                     pack_metadata: true
                 };
@@ -4500,7 +4507,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     strength: denoiseEnabled ? Number(document.getElementById('extrasVideoDenoiseSlider')?.value || 0.2) : 0
                 },
                 preserve_alpha: !!document.getElementById('extrasVideoAlphaToggle')?.checked,
-                output_dir: 'output/video',
+                output_dir: encodeEnabled && /image_sequence/i.test(document.getElementById('extrasVideoEncoder')?.value || '')
+                    ? extrasRunFolder('video')
+                    : 'output/extras/video',
                 alpha_video_formats: ['image_sequence_png_alpha', 'mov_prores_4444_alpha'],
                 deflicker: Number(document.getElementById('extrasDeflickerSlider')?.value || 0.35),
                 motion_smoothing: !!document.getElementById('extrasMotionSmooth')?.checked,

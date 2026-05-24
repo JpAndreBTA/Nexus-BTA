@@ -101,10 +101,11 @@ Generated media is grouped by type:
 
 ```text
 output/image/YYYYMMDD_HHMMSS_<preset>_<activity>_...
-output/video/YYYYMMDD_HHMMSS_<preset>_<activity>/YYYYMMDD_HHMMSS_<preset>_<activity>_...
+output/video/YYYYMMDD_HHMMSS_<preset>_<activity>_...
+output/extras/video/YYYYMMDD_HHMMSS/...   # Extras PNG sequences
 ```
 
-Nexus applies this naming layer to default templates, loaded workflows and visual workflow overrides before sending the job to ComfyUI. Video routes, including image-sequence exports, receive a per-generation dated folder so PNG sequences do not mix with other runs. The Gallery can navigate output folders with visible folder cards, back/forward history, optional folder picker and date/type sorting.
+Nexus applies this naming layer to default templates, loaded workflows and visual workflow overrides before sending the job to ComfyUI. Normal video generations stay in the `output/video` root. Extras video PNG sequence exports receive a per-run dated folder under `output/extras/video` so frame sequences do not mix with other runs. The Gallery can navigate output folders with visible folder cards, back/forward history, optional folder picker and date/type sorting.
 
 ## Verified Smoke Battery
 

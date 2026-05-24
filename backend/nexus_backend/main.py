@@ -862,10 +862,7 @@ def _apply_output_prefixes(prompt: dict[str, Any], request: GenerateRequest) -> 
             continue
         current = _output_slug(Path(str(inputs.get("filename_prefix") or "")).name, "")
         suffix = f"_{current}" if current and current.lower() not in {"comfyui", "nexus_bta"} else ""
-        if kind == "video":
-            inputs["filename_prefix"] = f"{kind}/{base}/{base}{suffix}"
-        else:
-            inputs["filename_prefix"] = f"{kind}/{base}{suffix}"
+        inputs["filename_prefix"] = f"{kind}/{base}{suffix}"
 
 
 def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[str, Any]]:
