@@ -39,6 +39,7 @@ The Civitai modal helps browse models, download assets, and route them into the 
 - Template-aware side menu: preset changes keep workflow nodes, CFG, steps, resolution, video motion, LoRA stacks, and ControlNet in sync.
 - Template-scoped references: Qwen multi-reference image slots stay on Qwen, while SD/SDXL/Flux/Lumina/Anima/WAN/LTX return to their own img2img or img2video source controls.
 - Clean gallery: final outputs refresh on launch, when the gallery opens, and after a new generation. Temporary Comfy previews are ignored.
+- Organized outputs: image saves land under `output/image/` and video saves land under `output/video/`, with date/time prefixes for easier sorting.
 - Visual workflow view: inspect, link, multi-select, move and tune nodes without leaving the app; edited graphs are sent through the backend as Comfy workflow overrides.
 - Civitai and Concept LoRA modals: browse, download, preview, multi-select, and route assets into the right local folders.
 
@@ -76,6 +77,7 @@ models/text_encoders
 models/controlnet
 models/upscale_models
 models/latent_upscale_models
+models/frame_interpolation
 ```
 
 UNET-style models can live in either `models/unet` or `models/checkpoints`; Nexus resolves both.
@@ -89,6 +91,18 @@ Use [requirements/model_assets.md](requirements/model_assets.md) as the friendly
 - WAN 2.2 and LTX 2.3 use video-specific encoders, so use their model, VAE, text encoder and distilled LoRA assets instead of classic textual inversion. WAN 2.2 4-step runs need the matching high/low 4-step LoRA pair under `models/loras/wan`.
 - LTX 2.3 assets are available from [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3); WAN 2.2 assets are available from [Wan-AI](https://huggingface.co/Wan-AI).
 - LTX 2.3 latent upscale is part of the normal route. For a `512x512` output, Nexus samples the base latent at `256x256`, applies `LatentUpscaleModelLoader` + `LTXVLatentUpsampler`, refines it, and then decodes the final video.
+- Extras uses `models/upscale_models` for image/video raster upscalers and `models/frame_interpolation` for RIFE/FILM frame interpolation. Alpha-aware video export is exposed as PNG sequence or MOV ProRes 4444.
+
+## Output Layout
+
+Generated media is grouped by type:
+
+```text
+output/image/YYYYMMDD_HHMMSS_<preset>_<activity>_...
+output/video/YYYYMMDD_HHMMSS_<preset>_<activity>_...
+```
+
+Nexus applies this naming layer to default templates, loaded workflows and visual workflow overrides before sending the job to ComfyUI.
 
 ## Verified Smoke Battery
 
@@ -98,13 +112,14 @@ Last verified on May 24, 2026:
 - Qwen at 512x512 with CFG 1 and 4 steps.
 - WAN 2.2 at 512x512, 2 seconds, 24 FPS.
 - LTX 2.3 at 512x512, 4-5 seconds, 24 FPS, with latent upscale/refiner routed in both Linear View and Director Suite.
+- Extras image upscale with Remacri/UltraSharp/RealESRGAN, RIFE `rife_v4.26`, video upscale, PNG sequence alpha and MOV ProRes 4444 alpha export.
 - LTX 2.3 Director Suite with custom background audio, generated speech/ambience segments, per-segment negative prompts and non-black video output.
 - Anima with Concept LoRA selection and gallery metadata.
 - Node Workflow editor smoke: menu search, categorized add-node menu, visual multi-selection, grouped drag behavior, port connection/unlink affordances, and workflow override routing from the active graph.
 
 ## Notes
 
-- Generated media stays in `output/`.
+- Generated media stays in `output/image` and `output/video`.
 - Temporary inputs, masks, Comfy previews, and Nexus temp files are cleaned after generation.
 - Runtime files, model weights, generated media, and local settings are ignored by git.
 

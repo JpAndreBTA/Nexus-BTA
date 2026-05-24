@@ -20,8 +20,9 @@ Current Implementation
 6. Custom nodes are managed in ./custom_nodes.
 7. ComfyUI workflows are managed in ./workflows/comfyui.
 8. Models are managed in ./models.
-9. Settings include Reload UI, device probing, VRAM policy and attention toggles.
-10. LTX 2.3 core assets have been imported selectively into ./models; optional large EROS/Sulphur model imports are available through scripts/import_ltx23_assets.ps1 flags.
+9. Generated media is organized under ./output/image and ./output/video with YYYYMMDD_HHMMSS prefixes.
+10. Settings include Reload UI, device probing, VRAM policy and attention toggles.
+11. LTX 2.3 core assets have been imported selectively into ./models; optional large EROS/Sulphur model imports are available through scripts/import_ltx23_assets.ps1 flags.
 
 Backend Commands
 ----------------
@@ -97,8 +98,10 @@ Core UI Requirements
    - Inpaint/outpaint/sketch/reference modes.
    - Denoise, mask blur, resize mode, mask content and control stack.
 5. Extras:
-   - Image upscale, restore faces, tiled VAE.
-   - Video interpolation, target FPS and deflicker.
+   - Image upscale, restore faces, tiled VAE, custom resolution and alpha-aware PNG export.
+   - Video upscale, RIFE/FILM interpolation, target FPS, video denoise and deflicker.
+   - Alpha-aware video export offers image sequence or MOV ProRes 4444 routes.
+   - Extras outputs resolve to ./output/image or ./output/video.
    - Batch queue surface.
 6. PNG Info:
    - PNG/WebP/video sidecar drop zone.
@@ -212,6 +215,7 @@ Backend Runtime Requirements
 8. Video pipeline support for WAN, LTX and adapter-based workflows.
 9. Metadata writer/reader for PNG, WebP and sidecar JSON.
 10. Queue system with progress, cancel, preview and history.
+11. Date/time output naming for default templates, loaded workflows and visual Node Workflow overrides.
 
 Optimization Requirements
 -------------------------
@@ -237,12 +241,13 @@ models/
   controlnet/
   upscale_models/
   latent_upscale_models/
+  frame_interpolation/
   video/
 workflows/
   comfyui/
-outputs/
-  images/
-  videos/
+output/
+  image/
+  video/
 extensions/
 config/
   settings.json

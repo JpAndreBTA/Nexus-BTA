@@ -2446,7 +2446,7 @@
                                     </div>
                                     <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
                                         <span><span class="font-bold block">Preserve alpha</span><span class="text-[9px] text-nexus-muted font-mono">Routes alpha-safe video formats</span></span>
-                                        <span class="toggle-switch"><input id="extrasVideoAlphaToggle" type="checkbox" checked onchange="renderExtrasSource()"><span class="toggle-track"></span></span>
+                                        <span class="toggle-switch"><input id="extrasVideoAlphaToggle" type="checkbox" checked onchange="syncExtrasAlphaUi()"><span class="toggle-track"></span></span>
                                     </label>
                                 </section>
 
@@ -4148,7 +4148,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     color_match: !!document.getElementById('extrasColorMatch')?.checked,
                     preserve_alpha: !!document.getElementById('extrasImageAlphaToggle')?.checked,
                     export_format: document.getElementById('extrasImageExportSelect')?.value || 'png',
-                    output_dir: 'output/extras/image',
+                    output_dir: 'output/image',
                     alpha_nodes: ['SplitImageWithAlpha', 'JoinImageWithAlpha', 'SaveImageWithAlpha'],
                     tiled_vae: !!document.getElementById('extrasTiledVae')?.checked
                 };
@@ -4175,7 +4175,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     strength: denoiseEnabled ? Number(document.getElementById('extrasVideoDenoiseSlider')?.value || 0.2) : 0
                 },
                 preserve_alpha: !!document.getElementById('extrasVideoAlphaToggle')?.checked,
-                output_dir: 'output/extras/video',
+                output_dir: 'output/video',
                 alpha_video_formats: ['image_sequence_png_alpha', 'mov_prores_4444_alpha'],
                 deflicker: Number(document.getElementById('extrasDeflickerSlider')?.value || 0.35),
                 motion_smoothing: !!document.getElementById('extrasMotionSmooth')?.checked,

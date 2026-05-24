@@ -819,6 +819,52 @@ def _annotate_output_metadata(outputs: list[dict[str, Any]], request: GenerateRe
             continue
 
 
+def _output_slug(value: str, fallback: str = "generation") -> str:
+    text = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(value or "").strip())
+    text = text.strip("._-")
+    return text[:80] or fallback
+
+
+def _output_node_kind(node: dict[str, Any]) -> str | None:
+    class_lower = str(node.get("class_type") or "").lower()
+    if class_lower in {"saveimage", "saveimagewithalpha", "rgba_save"}:
+        return "image"
+    if class_lower in {"savevideo", "vhs_videocombine", "videocombine", "decodeandsavevideo"}:
+        return "video"
+    if "filename_prefix" not in (node.get("inputs") or {}):
+        return None
+    if "video" in class_lower or "gif" in class_lower:
+        return "video"
+    if "image" in class_lower or "rgba" in class_lower:
+        return "image"
+    return None
+
+
+def _apply_output_prefixes(prompt: dict[str, Any], request: GenerateRequest) -> None:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base = "_".join(
+        part
+        for part in (
+            timestamp,
+            _output_slug(request.preset, "preset"),
+            _output_slug(request.activity, "generation"),
+        )
+        if part
+    )
+    for node in prompt.values():
+        if not isinstance(node, dict):
+            continue
+        kind = _output_node_kind(node)
+        if not kind:
+            continue
+        inputs = node.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        current = _output_slug(Path(str(inputs.get("filename_prefix") or "")).name, "")
+        suffix = f"_{current}" if current and current.lower() not in {"comfyui", "nexus_bta"} else ""
+        inputs["filename_prefix"] = f"{kind}/{base}{suffix}"
+
+
 def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[str, Any]]:
     if not settings.output_dir.exists():
         return []
@@ -1161,7 +1207,7 @@ async def _runtime_memory_snapshot() -> dict[str, Any]:
         "active_generation_jobs": len(_active_generation_jobs()),
     }
 
-app = FastAPI(title="Nexus BTA Backend", version="0.1.0")
+app = FastAPI(title="Nexus BTA Backend", version="0.1.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -1780,6 +1826,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 )
 
         _materialize_ltx_director_audio(prompt)
+        _apply_output_prefixes(prompt, request)
 
         def progress_callback(update: dict[str, Any]) -> None:
             if job_id:
