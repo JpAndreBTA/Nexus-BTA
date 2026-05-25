@@ -10292,6 +10292,22 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
         }
 
+        function prepareGalleryImg2ImgWorkflow(openCanvas = false) {
+            const mode = openCanvas ? 'Inpaint masked area' : (isMotionTemplateActive() ? img2imgWorkflowModeLabel() : 'Image to Image');
+            const select = document.getElementById('img2imgModeSelect');
+            if (select && [...select.options].some(option => option.value === mode || option.textContent === mode)) {
+                select.value = mode;
+            }
+            primeWorkflowGraphForPreset(activePreset);
+            if (openCanvas) {
+                ensureInpaintWorkflowMode(false);
+            } else {
+                refreshDefaultWorkflowForWorkspace();
+            }
+            updateSidePanelForActivity();
+            updateWorkflowPreview();
+        }
+
         function imageDimensionsFromSource(src) {
             return new Promise(resolve => {
                 if (!src) {
@@ -10534,6 +10550,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 setReferenceImageExtraSlot(slot, src, label);
             } else {
                 loadImageIntoImg2Img(src, label, openCanvas);
+                prepareGalleryImg2ImgWorkflow(openCanvas);
             }
             showToast(openCanvas ? "Sent to Inpaint" : `Sent to ${img2imgActivityLabel()}`, "Gallery image loaded as the reference source.");
         }
@@ -10911,6 +10928,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 document.getElementById('posPrompt').value = item.prompt;
                 document.getElementById('negPrompt').value = item.negative;
                 loadImageIntoImg2Img(item.image || item.thumb || '', item.title || item.filename || 'gallery image', target === 'inpaint');
+                prepareGalleryImg2ImgWorkflow(target === 'inpaint');
                 showToast(target === 'inpaint' ? "Sent to Inpaint" : `Sent to ${img2imgActivityLabel()}`, "Gallery item loaded as reference image.");
             }
 
