@@ -205,12 +205,14 @@ Implemented:
 - Generation state now persists lightweight settings and active workflow selection without persisting image/base64 sources.
 - New `/workflow` React route lists backend workflows, loads workflow analysis, renders nodes/wires, reports missing nodes/dependencies and can activate a workflow for Studio.
 - `frontend/scripts/smoke_app.py` now includes `/app/workflow` in desktop/mobile coverage.
+- `frontend/scripts/smoke_generation_contract.py` intercepts `/api/generate/start` and verifies inpaint mask, ControlNet image and active workflow payload fields without running a heavy model.
 
 Validation:
 
 - `NEXUS_FRONTEND_BASE=/app/ npm run check` passed.
 - Inpaint/ControlNet Playwright smoke drew real mask pixels and loaded a ControlNet image thumbnail.
 - Workflow smoke loaded graph nodes, activated a workflow, reloaded Studio and confirmed the active workflow survived.
+- Generation contract smoke passed for inpaint + ControlNet + workflow_id.
 - `frontend/scripts/smoke_app.py` passed all 12 desktop/mobile route checks.
 
 Screenshots:
@@ -218,3 +220,4 @@ Screenshots:
 - `test-results/backend-app-studio-inpaint-controlnet.png`
 - `test-results/backend-app-studio-controlnet.png`
 - `test-results/backend-app-workflow-graph.png`
+- `test-results/app-smoke-generation-contract.png`
