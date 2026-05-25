@@ -11,12 +11,12 @@ BASE = "http://127.0.0.1:7861/app"
 
 def main() -> None:
     routes = [
-        ("studio", "/", "Studio"),
-        ("extras", "/extras", "Extras"),
-        ("gallery", "/gallery", "Gallery"),
-        ("workflow", "/workflow", "Workflow Graph"),
-        ("models", "/models", "Models"),
-        ("settings", "/settings", "Settings"),
+        ("studio", "/", "studio"),
+        ("extras", "/extras", "extras"),
+        ("gallery", "/gallery", "gallery"),
+        ("workflow", "/workflow", "workflow"),
+        ("models", "/models", "models"),
+        ("settings", "/settings", "settings"),
     ]
     viewports = [
         ("desktop", {"width": 1440, "height": 900}),
@@ -24,15 +24,15 @@ def main() -> None:
     ]
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        for route_name, path, expected in routes:
+        for route_name, path, route_id in routes:
             for viewport_name, viewport in viewports:
                 page = browser.new_page(viewport=viewport)
                 page.goto(f"{BASE}{path}", wait_until="networkidle", timeout=60000)
-                title = page.locator("h1").first.text_content(timeout=30000)
-                if title != expected:
-                    raise AssertionError(f"{path} expected {expected!r}, got {title!r}")
+                page.locator(f".route-sentinel[data-route='{route_id}']").wait_for(state="attached", timeout=30000)
+                if page.locator("h1").count():
+                    raise AssertionError(f"{path} should not render visible page titles.")
                 page.screenshot(path=str(RESULTS / f"app-smoke-{route_name}-{viewport_name}.png"), full_page=True)
-                print(f"ok {route_name} {viewport_name}: {title}")
+                print(f"ok {route_name} {viewport_name}: {route_id}")
                 page.close()
         browser.close()
 

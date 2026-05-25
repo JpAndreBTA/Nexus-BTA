@@ -38,11 +38,8 @@ export function GalleryPage() {
 
   return (
     <section className="page gallery-layout">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Outputs</p>
-          <h1>Gallery</h1>
-        </div>
+      <header className="page-controls">
+        <span className="route-sentinel" data-route="gallery" aria-label="Gallery workspace" />
         <button className="flat-button" type="button" onClick={() => gallery.refetch()}>
           <RefreshCw size={14} />
           Refresh

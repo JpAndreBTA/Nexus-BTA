@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Clapperboard, Image as ImageIcon, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Play, Send, Server, Sparkles, Square, WandSparkles, X } from 'lucide-react';
+import { Clapperboard, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Play, Send, Square, X } from 'lucide-react';
 
 import { nexusApi } from '../../api/nexusClient';
 import type { CatalogAsset, GenerateRequest, GenerationJob } from '../../api/types';
-import { useGalleryQuery, useHealthQuery, useModelCatalogQuery } from '../../api/queries';
+import { useGalleryQuery, useModelCatalogQuery } from '../../api/queries';
 import { useLorasQuery } from '../../api/queries';
 import { queryClient } from '../../shared/queryClient';
 import { useGenerationStore } from '../../stores/generationStore';
@@ -70,15 +70,6 @@ function alignVideoFrames(preset: string, frames: number) {
   return safe % step === 1 ? safe : Math.max(1, Math.round((safe - 1) / step) * step + 1);
 }
 
-const presetOptions = ['Anima', 'SD', 'XL', 'SDXL', 'Flux', 'Qwen', 'ZImageTurbo', 'Lumina', 'Wan', 'LTX'];
-
-function presetIcon(preset: string) {
-  if (['Wan', 'LTX'].includes(preset)) return <Clapperboard size={14} />;
-  if (preset === 'Anima') return <Sparkles size={14} />;
-  if (preset === 'Qwen' || preset === 'Flux') return <WandSparkles size={14} />;
-  return <ImageIcon size={14} />;
-}
-
 async function readFilesAsReferenceImages(files: FileList | File[]) {
   const imageFiles = Array.from(files).filter((file) => file.type.startsWith('image/'));
   return Promise.all(imageFiles.map(async (file) => ({ dataUrl: await readFileAsDataUrl(file), name: file.name })));
@@ -123,7 +114,6 @@ function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>
 }
 
 export function HomePage() {
-  const health = useHealthQuery();
   const catalog = useModelCatalogQuery();
   const gallery = useGalleryQuery();
   const loras = useLorasQuery();
@@ -353,20 +343,9 @@ export function HomePage() {
         .filter(Boolean)
         .join(' ')}
     >
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Nexus BTA Web App</p>
-          <h1>Studio</h1>
-        </div>
+      <header className="page-controls">
+        <span className="route-sentinel" data-route="studio" aria-label="Studio workspace" />
         <div className="studio-header-tools">
-          <div className="preset-strip" aria-label="Preset quick select">
-            {presetOptions.map((preset) => (
-              <button className={generation.preset === preset ? 'active' : ''} type="button" key={preset} onClick={() => generation.setPreset(preset)}>
-                {presetIcon(preset)}
-                <span>{preset}</span>
-              </button>
-            ))}
-          </div>
           <button className="status-pill" type="button" onClick={() => ui.toggleStudioControls()}>
             {ui.studioControlsCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
             Controls
@@ -375,10 +354,6 @@ export function HomePage() {
             {ui.studioGalleryOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
             Gallery
           </button>
-          <span className={health.data?.nexus === 'ok' ? 'status-pill ok' : 'status-pill'}>
-            <Server size={14} />
-            {health.data?.nexus === 'ok' ? 'Backend online' : 'Backend check'}
-          </span>
         </div>
       </header>
 
@@ -847,6 +822,7 @@ export function HomePage() {
         </aside>
 
         <main className="surface preview-panel studio-preview">
+          <div className="preview-title">Live Output Preview</div>
           {previewUrl ? (
             previewIsVideo ? (
               <video className="extras-media" src={previewUrl} controls playsInline />

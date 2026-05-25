@@ -162,11 +162,8 @@ export function ExtrasPage() {
 
   return (
     <section className="page extras-layout">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Responsive rebuild</p>
-          <h1>Extras</h1>
-        </div>
+      <header className="page-controls">
+        <span className="route-sentinel" data-route="extras" aria-label="Extras workspace" />
         <div className="segmented-control">
           {modeOptions.map((option) => {
             const Icon = option.icon;

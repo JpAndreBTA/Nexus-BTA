@@ -16,16 +16,7 @@ export function SettingsPage() {
 
   return (
     <section className="page settings-layout">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Runtime</p>
-          <h1>Settings</h1>
-        </div>
-        <span className={health.data?.nexus === 'ok' ? 'status-pill ok' : 'status-pill'}>
-          <Server size={14} />
-          {health.data?.nexus === 'ok' ? 'Backend online' : 'Checking backend'}
-        </span>
-      </header>
+      <span className="route-sentinel" data-route="settings" aria-label="Settings workspace" />
 
       <div className="settings-grid">
         <article className="surface settings-card">

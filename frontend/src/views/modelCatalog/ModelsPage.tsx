@@ -37,11 +37,8 @@ export function ModelsPage() {
 
   return (
     <section className="page models-layout">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Catalog</p>
-          <h1>Models</h1>
-        </div>
+      <header className="page-controls">
+        <span className="route-sentinel" data-route="models" aria-label="Models workspace" />
         <button className="flat-button" type="button" onClick={() => catalog.refetch()}>
           <RefreshCw size={14} />
           Refresh

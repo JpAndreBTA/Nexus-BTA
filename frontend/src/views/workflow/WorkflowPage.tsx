@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { FileInput, GitBranch, LoaderCircle, LocateFixed, Upload, Workflow, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 
@@ -39,6 +39,7 @@ export function WorkflowPage() {
   const [localError, setLocalError] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [zoom, setZoom] = useState(0.82);
+  const dragRef = useRef<{ nodeId: string; startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   useEffect(() => {
     if (!selectedId && workflows.data?.[0]) {
@@ -159,13 +160,34 @@ export function WorkflowPage() {
     });
   }
 
+  function startNodeDrag(event: PointerEvent<HTMLElement>, node: WorkflowGraphNode) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      nodeId: node.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: Number(node.x || 0),
+      originY: Number(node.y || 0),
+    };
+    setSelectedNodeId(node.id);
+  }
+
+  function moveNode(event: PointerEvent<HTMLElement>) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const nextX = Math.max(0, drag.originX + (event.clientX - drag.startX) / zoom);
+    const nextY = Math.max(0, drag.originY + (event.clientY - drag.startY) / zoom);
+    setEditableNodes((current) => current.map((node) => (node.id === drag.nodeId ? { ...node, x: Math.round(nextX), y: Math.round(nextY) } : node)));
+  }
+
+  function stopNodeDrag() {
+    dragRef.current = null;
+  }
+
   return (
     <section className="page workflow-layout">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">ComfyUI</p>
-          <h1>Workflow Graph</h1>
-        </div>
+      <header className="page-controls">
+        <span className="route-sentinel" data-route="workflow" aria-label="Workflow workspace" />
         <span className="status-pill ok">
           <GitBranch size={14} />
           {workflows.data?.length ?? 0} workflows
@@ -314,7 +336,7 @@ export function WorkflowPage() {
                     width: Math.max(190, Math.min(360, Number(node.width || 220))),
                   }}
                 >
-                  <header>
+                  <header onPointerDown={(event) => startNodeDrag(event, node)} onPointerMove={moveNode} onPointerUp={stopNodeDrag} onPointerCancel={stopNodeDrag}>
                     <strong>{nodeLabel(node)}</strong>
                     <span>#{node.id}</span>
                   </header>
