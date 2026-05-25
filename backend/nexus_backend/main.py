@@ -8,6 +8,7 @@ import os
 import random
 import re
 import shutil
+import subprocess
 import time
 import uuid
 from datetime import datetime
@@ -15,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -60,9 +61,12 @@ from .workflows import (
 
 settings = load_settings()
 generation_jobs: dict[str, dict[str, Any]] = {}
+extras_jobs: dict[str, dict[str, Any]] = {}
 download_jobs: dict[str, dict[str, Any]] = {}
 generation_lock = asyncio.Lock()
 comfy_idle_task: asyncio.Task[None] | None = None
+_birefnet_cache: dict[str, Any] = {}
+_frame_interpolation_cache: dict[str, Any] = {}
 
 ANSI = {
     "reset": "\033[0m",
@@ -929,6 +933,688 @@ async def _recover_outputs_from_history(prompt_id: str | None, start_timestamp: 
     return _recent_output_files(start_timestamp - 300)
 
 
+def _public_extras_job(job: dict[str, Any]) -> dict[str, Any]:
+    public = {key: value for key, value in job.items() if not key.startswith("_")}
+    public["updated_at"] = job.get("updated_at") or datetime.now().isoformat(timespec="seconds")
+    return public
+
+
+def _update_extras_job(job_id: str, update: dict[str, Any], force: bool = False) -> None:
+    job = extras_jobs.get(job_id)
+    if not job:
+        return
+    if job.get("status") == "cancelled" and not force:
+        return
+    job.update({key: value for key, value in update.items() if value is not None})
+    job["updated_at"] = datetime.now().isoformat(timespec="seconds")
+
+
+def _ffmpeg_binary() -> str:
+    binary = shutil.which("ffmpeg")
+    if binary:
+        return binary
+    for candidate in (Path(r"C:\ffmpeg\ffmpeg.exe"), Path(r"C:\Users\jpzin\anaconda3\Library\bin\ffmpeg.exe")):
+        if candidate.exists():
+            return str(candidate)
+    raise RuntimeError("FFmpeg was not found in PATH.")
+
+
+def _ffprobe_binary() -> str | None:
+    binary = shutil.which("ffprobe")
+    if binary:
+        return binary
+    for candidate in (Path(r"C:\ffmpeg\ffprobe.exe"), Path(r"C:\Users\jpzin\anaconda3\Library\bin\ffprobe.exe")):
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def _safe_upload_name(name: str, fallback: str = "source") -> str:
+    suffix = Path(name or "").suffix.lower()
+    stem = re.sub(r"[^a-zA-Z0-9._-]+", "_", Path(name or fallback).stem).strip("._-") or fallback
+    return f"{stem[:48]}{suffix}"
+
+
+async def _save_extras_uploads(files: list[UploadFile]) -> list[Path]:
+    upload_root = settings.temp_dir / "extras_uploads" / uuid.uuid4().hex[:12]
+    upload_root.mkdir(parents=True, exist_ok=True)
+    saved: list[Path] = []
+    for index, upload in enumerate(files):
+        if not upload.filename:
+            continue
+        suffix = Path(upload.filename).suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".mp4", ".mov", ".webm", ".mkv", ".avi"}:
+            continue
+        target = upload_root / f"{index + 1:04d}_{_safe_upload_name(upload.filename)}"
+        with target.open("wb") as handle:
+            while True:
+                chunk = await upload.read(1024 * 1024)
+                if not chunk:
+                    break
+                handle.write(chunk)
+        saved.append(target)
+    return saved
+
+
+def _resolve_extras_source_url(value: str) -> Path | None:
+    value = (value or "").strip()
+    if not value or value.startswith("blob:") or value.startswith("data:"):
+        return None
+    if value.startswith("/outputs/") or "/outputs/" in value:
+        relative = _output_relative_from_url(value)
+        source = (settings.output_dir / relative).resolve()
+        if source.exists() and source.is_relative_to(settings.output_dir.resolve()):
+            return source
+    candidate = Path(value)
+    if candidate.exists():
+        return candidate.resolve()
+    return None
+
+
+def _extras_output(kind: str, suffix: str, stem: str = "extras") -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    folder = settings.output_dir / "extras" / kind
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"{timestamp}_{_output_slug(stem, 'extras')}_{uuid.uuid4().hex[:6]}{suffix}"
+
+
+def _output_item(path: Path, kind: str | None = None) -> dict[str, Any]:
+    relative = path.resolve().relative_to(settings.output_dir.resolve()).as_posix()
+    suffix = path.suffix.lower()
+    media_kind = kind or ("video" if suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "image")
+    return {
+        "kind": media_kind,
+        "filename": path.name,
+        "subfolder": "" if path.parent == settings.output_dir else path.parent.relative_to(settings.output_dir).as_posix(),
+        "type": "output",
+        "path": relative,
+        "url": f"/outputs/{quote(relative, safe='/')}",
+    }
+
+
+def _write_extras_metadata(outputs: list[dict[str, Any]], plan: dict[str, Any]) -> None:
+    for output in outputs:
+        relative = str(output.get("path") or "")
+        if not relative:
+            continue
+        path = (settings.output_dir / relative).resolve()
+        if not path.exists() or not path.is_relative_to(settings.output_dir.resolve()):
+            continue
+        metadata = {
+            "preset": "Extras",
+            "activity": "extras",
+            "mode": plan.get("mode") or plan.get("mediaType"),
+            "extras": plan,
+            "file": path.name,
+            "path": relative.replace("\\", "/"),
+            "kind": output.get("kind") or path.suffix.lower().lstrip("."),
+        }
+        try:
+            path.with_suffix(path.suffix + ".nexus.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+
+def _image_scale_size(width: int, height: int, plan: dict[str, Any]) -> tuple[int, int]:
+    upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+    scale = str(upscale.get("scale") or plan.get("scale") or "2x").lower()
+    custom_resolution = upscale.get("custom_resolution") or plan.get("custom_resolution")
+    if scale == "custom" and isinstance(custom_resolution, dict):
+        custom = custom_resolution
+        return max(1, int(custom.get("width") or width)), max(1, int(custom.get("height") or height))
+    factor = 4 if scale.startswith("4") else 2
+    return max(1, width * factor), max(1, height * factor)
+
+
+def _load_birefnet_model() -> Any:
+    import sys
+
+    import torch
+    from safetensors.torch import load_file
+
+    model_path = settings.models_dir / "background_removal" / "birefnet.safetensors"
+    if not model_path.exists():
+        raise FileNotFoundError(f"BiRefNet model not found: {model_path}")
+
+    cache_key = str(model_path.resolve())
+    cached = _birefnet_cache.get(cache_key)
+    if cached:
+        return cached
+
+    layerstyle_path = settings.custom_nodes_dir / "comfyui_layerstyle" / "py"
+    birefnet_path = layerstyle_path / "BiRefNet_v2"
+    for candidate in (str(layerstyle_path), str(birefnet_path)):
+        if candidate not in sys.path:
+            sys.path.insert(0, candidate)
+
+    from BiRefNet_v2.models.birefnet import BiRefNet
+    from BiRefNet_v2.utils import check_state_dict
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = BiRefNet(bb_pretrained=False)
+    state_dict = check_state_dict(load_file(str(model_path), device="cpu"))
+    model.load_state_dict(state_dict, strict=True)
+    model.to(device)
+    model.eval()
+    _birefnet_cache[cache_key] = {"model": model, "device": device, "name": model_path.name}
+    return _birefnet_cache[cache_key]
+
+
+def _remove_bg_image_birefnet(image: Any, threshold: float = 0.45) -> tuple[Any, Any]:
+    import torch
+    from torchvision import transforms
+    from PIL import Image, ImageEnhance, ImageFilter
+
+    loaded = _load_birefnet_model()
+    model = loaded["model"]
+    device = loaded["device"]
+    original = image.convert("RGB")
+    inference_size = (1024, 1024)
+    transform_image = transforms.Compose(
+        [
+            transforms.Resize(inference_size),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ]
+    )
+    inference_image = transform_image(original).unsqueeze(0).to(device)
+    with torch.no_grad():
+        preds = model(inference_image)[-1].sigmoid().cpu()
+    pred = preds[0].squeeze().clamp(0, 1)
+    mask = transforms.ToPILImage()(pred).resize(original.size, Image.Resampling.BILINEAR).convert("L")
+    mask = ImageEnhance.Brightness(mask).enhance(1.05)
+    if threshold > 0:
+        black = int(255 * max(0.0, min(0.45, threshold * 0.35)))
+        white = int(255 * max(0.55, min(1.0, 1.0 - threshold * 0.08)))
+        if white > black:
+            scale = 255.0 / max(1, white - black)
+            mask = mask.point(lambda px: max(0, min(255, int((px - black) * scale))))
+    mask = mask.filter(ImageFilter.GaussianBlur(radius=0.35))
+    result = original.convert("RGBA")
+    result.putalpha(mask)
+    return result, mask
+
+
+def _remove_bg_image_fallback(image: Any, threshold: float = 0.45) -> tuple[Any, Any]:
+    from PIL import Image, ImageChops, ImageFilter, ImageStat
+
+    rgba = image.convert("RGBA")
+    width, height = rgba.size
+    sample = max(1, min(width, height) // 12)
+    corners = [
+        rgba.crop((0, 0, sample, sample)),
+        rgba.crop((width - sample, 0, width, sample)),
+        rgba.crop((0, height - sample, sample, height)),
+        rgba.crop((width - sample, height - sample, width, height)),
+    ]
+    stats = [ImageStat.Stat(corner.convert("RGB")).mean for corner in corners]
+    bg = tuple(int(sum(values) / len(values)) for values in zip(*stats))
+    bg_image = Image.new("RGB", rgba.size, bg)
+    diff = ImageChops.difference(rgba.convert("RGB"), bg_image).convert("L")
+    cutoff = max(8, min(245, int(255 * max(0.08, min(0.9, threshold)))))
+    mask = diff.point(lambda px: 255 if px > cutoff else 0).filter(ImageFilter.GaussianBlur(radius=1.2))
+    result = rgba.copy()
+    result.putalpha(mask)
+    return result, mask
+
+
+def _remove_bg_image_model(image: Any, threshold: float = 0.45) -> tuple[Any, Any]:
+    try:
+        return _remove_bg_image_birefnet(image, threshold)
+    except Exception:
+        return _remove_bg_image_fallback(image, threshold)
+
+
+def _process_extras_image(source: Path, plan: dict[str, Any], remove_bg: bool = False) -> list[dict[str, Any]]:
+    from PIL import Image
+
+    with Image.open(source) as image:
+        working = image.convert("RGBA" if (plan.get("preserve_alpha") or remove_bg) else "RGB")
+        mask = None
+        if remove_bg:
+            working, mask = _remove_bg_image_model(working, float(plan.get("remove_background", {}).get("threshold") or plan.get("threshold") or 0.45))
+        else:
+            upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+            upscale_enabled = bool(upscale.get("enabled") or plan.get("upscaler") or plan.get("scale"))
+            if upscale_enabled:
+                target = _image_scale_size(working.width, working.height, plan)
+                working = working.resize(target, Image.Resampling.LANCZOS)
+
+        outputs: list[dict[str, Any]] = []
+        if remove_bg and plan.get("remove_background", {}).get("output") == "mask" and mask is not None:
+            output = _extras_output("image", ".png", "remove_bg_mask")
+            mask.save(output)
+            outputs.append(_output_item(output, "image"))
+            return outputs
+
+        export = str(plan.get("export_format") or ("png" if plan.get("preserve_alpha") or remove_bg else "png")).lower()
+        if remove_bg:
+            export = "png"
+        if export in {"jpg", "jpeg"} and working.mode == "RGBA":
+            working = working.convert("RGB")
+        suffix = ".jpg" if export in {"jpg", "jpeg"} else f".{export if export in {'png', 'webp'} else 'png'}"
+        output = _extras_output("image", suffix, "remove_bg" if remove_bg else "upscale")
+        working.save(output)
+        outputs.append(_output_item(output, "image"))
+        if remove_bg and plan.get("remove_background", {}).get("output") == "both" and mask is not None:
+            mask_output = _extras_output("image", ".png", "remove_bg_mask")
+            mask.save(mask_output)
+            outputs.append(_output_item(mask_output, "image"))
+        return outputs
+
+
+def _ffprobe_fps(source: Path) -> float:
+    ffprobe = _ffprobe_binary()
+    if not ffprobe:
+        return 30.0
+    command = [
+        ffprobe,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=avg_frame_rate",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(source),
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        raw = result.stdout.strip()
+        if "/" in raw:
+            num, den = raw.split("/", 1)
+            value = float(num) / max(1.0, float(den))
+        else:
+            value = float(raw)
+        return value if value > 0 else 30.0
+    except Exception:
+        return 30.0
+
+
+def _prepare_sequence_input(files: list[Path]) -> tuple[Path, str]:
+    from PIL import Image
+
+    sequence_dir = settings.temp_dir / "extras_sequences" / uuid.uuid4().hex[:12]
+    sequence_dir.mkdir(parents=True, exist_ok=True)
+    for index, source in enumerate(files, start=1):
+        with Image.open(source) as image:
+            image.convert("RGBA").save(sequence_dir / f"frame_{index:06d}.png")
+    return sequence_dir, str(sequence_dir / "frame_%06d.png")
+
+
+def _load_frame_interpolation_model(model_name: str | None = None) -> Any:
+    import sys
+
+    comfy_root = settings.comfy_root
+    comfy_root_text = str(comfy_root)
+    if comfy_root_text not in sys.path:
+        sys.path.insert(0, comfy_root_text)
+
+    import folder_paths
+    from comfy_extras.nodes_frame_interpolation import FrameInterpolationModelLoader
+
+    model_folder = settings.models_dir / "frame_interpolation"
+    folder_paths.add_model_folder_path("frame_interpolation", str(model_folder))
+    selected = Path(str(model_name or "rife_v4.26.safetensors")).name
+    if selected.lower() in {"", "automatic", "auto", "off", "none", "no interpolation model detected"}:
+        selected = "rife_v4.26.safetensors"
+    cache_key = selected.lower()
+    if cache_key not in _frame_interpolation_cache:
+        _frame_interpolation_cache[cache_key] = FrameInterpolationModelLoader.execute(selected)[0]
+    return _frame_interpolation_cache[cache_key]
+
+
+def _pil_to_comfy_tensor(path: Path) -> Any:
+    import numpy as np
+    import torch
+    from PIL import Image
+
+    with Image.open(path) as image:
+        rgb = image.convert("RGB")
+        array = np.asarray(rgb).astype("float32") / 255.0
+    return torch.from_numpy(array)
+
+
+def _save_comfy_tensor_image(frame: Any, path: Path) -> None:
+    import numpy as np
+    from PIL import Image
+
+    array = (frame.detach().cpu().clamp(0, 1).numpy() * 255.0).round().astype(np.uint8)
+    Image.fromarray(array, "RGB").save(path)
+
+
+def _rife_interpolate_frame_paths(source_frames: list[Path], output_dir: Path, source_fps: float, target_fps: float, model_name: str | None = None) -> tuple[list[Path], float]:
+    import math
+
+    import torch
+    from PIL import Image
+
+    if len(source_frames) < 2 or target_fps <= source_fps + 0.01:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        outputs: list[Path] = []
+        for index, frame in enumerate(source_frames, start=1):
+            target = output_dir / f"frame_{index:06d}.png"
+            shutil.copy2(frame, target)
+            outputs.append(target)
+        return outputs, source_fps
+
+    comfy_root_text = str(settings.comfy_root)
+    import sys
+    if comfy_root_text not in sys.path:
+        sys.path.insert(0, comfy_root_text)
+    import comfy.utils
+    from comfy import model_management
+    from comfy.ldm.common_dit import pad_to_patch_size
+
+    interp_model = _load_frame_interpolation_model(model_name)
+    with Image.open(source_frames[0]) as first_image:
+        width, height = first_image.convert("RGB").size
+
+    num_frames = len(source_frames)
+    target_count = max(num_frames, int(round((num_frames / max(1e-6, source_fps)) * target_fps)))
+
+    device = interp_model.load_device
+    dtype = interp_model.model_dtype()
+    inference_model = interp_model.model
+    sample_shape = (1, height, width, 3)
+    activation_mem = inference_model.memory_used_forward(sample_shape, dtype)
+    model_management.load_models_gpu([interp_model], memory_required=activation_mem)
+    align = getattr(inference_model, "pad_align", 1)
+    out_dtype = model_management.intermediate_dtype()
+    offload_device = model_management.intermediate_device()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def prepare_frame(idx: int) -> Any:
+        frame = _pil_to_comfy_tensor(source_frames[idx]).unsqueeze(0).movedim(-1, 1).to(dtype=dtype, device=device)
+        if align > 1:
+            frame = pad_to_patch_size(frame, (align, align), padding_mode="reflect")
+        return frame
+
+    def output_path(output_index: int) -> Path:
+        return output_dir / f"frame_{output_index + 1:06d}.png"
+
+    output_slots: list[tuple[int, int | None, float]] = []
+    grouped: dict[int, list[tuple[int, float]]] = {}
+    for output_index in range(target_count):
+        source_position = output_index * source_fps / target_fps
+        pair_index = int(math.floor(source_position))
+        fraction = source_position - pair_index
+        if pair_index >= num_frames - 1:
+            output_slots.append((output_index, num_frames - 1, 0.0))
+        elif fraction <= 1e-4:
+            output_slots.append((output_index, pair_index, 0.0))
+        elif fraction >= 1.0 - 1e-4:
+            output_slots.append((output_index, pair_index + 1, 0.0))
+        else:
+            output_slots.append((output_index, None, fraction))
+            grouped.setdefault(pair_index, []).append((output_index, fraction))
+
+    output_paths = [output_path(index) for index in range(target_count)]
+    for output_index, original_index, _ in output_slots:
+        if original_index is not None:
+            _save_comfy_tensor_image(_pil_to_comfy_tensor(source_frames[original_index]), output_path(output_index))
+
+    pbar = comfy.utils.ProgressBar(sum(len(items) for items in grouped.values()))
+    multi_fn = getattr(inference_model, "forward_multi_timestep", None)
+    batch_limit = 1
+    prev_frame = None
+    feat_cache: dict[str, Any] = {}
+
+    for pair_index in range(num_frames - 1):
+        items = grouped.get(pair_index)
+        if not items:
+            prev_frame = prepare_frame(pair_index + 1)
+            feat_cache.pop("img0", None)
+            feat_cache.pop("img1", None)
+            feat_cache.pop("next", None)
+            continue
+
+        img0_single = prev_frame if prev_frame is not None else prepare_frame(pair_index)
+        img1_single = prepare_frame(pair_index + 1)
+        prev_frame = img1_single
+        feat_cache["img0"] = feat_cache.pop("next") if "next" in feat_cache else inference_model.extract_features(img0_single)
+        feat_cache["img1"] = inference_model.extract_features(img1_single)
+        feat_cache["next"] = feat_cache["img1"]
+
+        start = 0
+        while start < len(items):
+            chunk = items[start:start + batch_limit]
+            timestep_values = [fraction for _, fraction in chunk]
+            try:
+                with torch.inference_mode():
+                    if multi_fn is not None:
+                        mids = multi_fn(img0_single, img1_single, timestep_values, cache=feat_cache)
+                    else:
+                        sample = img0_single
+                        p_height, p_width = sample.shape[2], sample.shape[3]
+                        ts = torch.tensor(timestep_values, device=device, dtype=dtype).reshape(len(chunk), 1, 1, 1)
+                        ts = ts.expand(-1, 1, p_height, p_width)
+                        mids = inference_model(
+                            img0_single.expand(len(chunk), -1, -1, -1),
+                            img1_single.expand(len(chunk), -1, -1, -1),
+                            timestep=ts,
+                            cache=feat_cache,
+                        )
+                for mid, (output_index, _) in zip(mids, chunk):
+                    frame = mid[:, :height, :width].movedim(0, -1).to(dtype=out_dtype, device=offload_device)
+                    _save_comfy_tensor_image(frame, output_path(output_index))
+                pbar.update(len(chunk))
+                start += len(chunk)
+            except model_management.OOM_EXCEPTION:
+                if batch_limit <= 1:
+                    raise
+                batch_limit = max(1, batch_limit // 2)
+                model_management.soft_empty_cache()
+        model_management.soft_empty_cache()
+
+    return output_paths, target_fps
+
+
+def _extract_video_frames_for_extras(source_files: list[Path], source_fps: float, target_dir: Path) -> tuple[list[Path], float]:
+    image_files = [path for path in source_files if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}]
+    video_files = [path for path in source_files if path.suffix.lower() in {".mp4", ".mov", ".webm", ".mkv", ".avi"}]
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if len(image_files) > 1:
+        output_paths: list[Path] = []
+        for index, frame in enumerate(sorted(image_files, key=lambda item: item.name.lower()), start=1):
+            target = target_dir / f"frame_{index:06d}.png"
+            shutil.copy2(frame, target)
+            output_paths.append(target)
+        return output_paths, source_fps or 30.0
+    if image_files:
+        target = target_dir / "frame_000001.png"
+        shutil.copy2(image_files[0], target)
+        return [target], source_fps or 1.0
+    if not video_files:
+        raise ValueError("No video or image sequence source was provided.")
+    source = video_files[0]
+    detected_fps = source_fps or _ffprobe_fps(source)
+    pattern = target_dir / "frame_%06d.png"
+    _run_ffmpeg([_ffmpeg_binary(), "-y", "-i", str(source), str(pattern)])
+    frames = sorted(target_dir.glob("frame_*.png"))
+    if not frames:
+        raise RuntimeError("FFmpeg did not extract any frames for interpolation.")
+    return frames, detected_fps
+
+
+def _run_ffmpeg(command: list[str]) -> None:
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout or "FFmpeg failed.").strip()
+        raise RuntimeError(message[-1800:])
+
+
+def _video_encoder_args(encoder: str, output: Path) -> list[str]:
+    encoder = (encoder or "mp4_h264").lower()
+    if encoder == "webm_vp9":
+        return ["-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", "30", "-b:v", "0", str(output)]
+    if encoder == "mov_prores_4444_alpha":
+        return ["-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuva444p10le", str(output)]
+    if encoder == "mov_prores_422":
+        return ["-c:v", "prores_ks", "-profile:v", "2", "-pix_fmt", "yuv422p10le", str(output)]
+    return ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium", str(output)]
+
+
+def _encode_extras_frame_sequence(frames: list[Path], fps: float, encoder: str, stem: str) -> list[dict[str, Any]]:
+    if not frames:
+        return []
+    source_dir = frames[0].parent
+    pattern = source_dir / "frame_%06d.png"
+    encoder = str(encoder or "mp4_h264")
+    if encoder.startswith("image_sequence"):
+        outputs: list[dict[str, Any]] = []
+        for frame in sorted(frames)[:12]:
+            if frame.resolve().is_relative_to(settings.output_dir.resolve()):
+                outputs.append(_output_item(frame, "image"))
+        return outputs
+    suffix = ".webm" if encoder == "webm_vp9" else ".mov" if encoder.startswith("mov_") else ".mp4"
+    output = _extras_output("video", suffix, stem)
+    command = [_ffmpeg_binary(), "-y", "-framerate", str(max(1.0, fps)), "-i", str(pattern), *_video_encoder_args(encoder, output)]
+    _run_ffmpeg(command)
+    return [_output_item(output, "video")]
+
+
+def _process_extras_remove_bg_video(source_files: list[Path], plan: dict[str, Any]) -> list[dict[str, Any]]:
+    source_fps = float(plan.get("source_fps") or 0)
+    work_dir = settings.temp_dir / "extras_remove_bg_frames" / uuid.uuid4().hex[:12]
+    input_dir = work_dir / "input"
+    output_dir = settings.output_dir / "extras" / "video" / datetime.now().strftime("%Y%m%d_%H%M%S")
+    source_frames, detected_fps = _extract_video_frames_for_extras(source_files, source_fps, input_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    threshold = float(plan.get("remove_background", {}).get("threshold") or 0.45)
+    from PIL import Image
+
+    output_frames: list[Path] = []
+    for index, frame_path in enumerate(source_frames, start=1):
+        with Image.open(frame_path) as frame:
+            rgba, _ = _remove_bg_image_model(frame, threshold)
+        target = output_dir / f"frame_{index:06d}.png"
+        rgba.save(target)
+        output_frames.append(target)
+    return _encode_extras_frame_sequence(output_frames, detected_fps, str(plan.get("encoder") or "image_sequence_png_alpha"), "remove_bg_video")
+
+
+def _process_extras_video(source_files: list[Path], plan: dict[str, Any], remove_bg: bool = False) -> list[dict[str, Any]]:
+    if remove_bg:
+        return _process_extras_remove_bg_video(source_files, plan)
+
+    ffmpeg = _ffmpeg_binary()
+    image_files = [path for path in source_files if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}]
+    video_files = [path for path in source_files if path.suffix.lower() in {".mp4", ".mov", ".webm", ".mkv", ".avi"}]
+    source_fps = float(plan.get("source_fps") or 0)
+    interpolate = plan.get("interpolate") or {}
+    target_fps = max(1.0, min(240.0, float(interpolate.get("fps") or plan.get("target_fps") or source_fps or 30.0)))
+
+    input_args: list[str]
+    active_fps = source_fps
+    intermediate_dir: Path | None = None
+    if interpolate.get("enabled"):
+        frame_root = settings.temp_dir / "extras_interpolation" / uuid.uuid4().hex[:12]
+        source_frames, detected_fps = _extract_video_frames_for_extras(source_files, source_fps, frame_root / "source")
+        active_fps = detected_fps
+        interpolated_frames, active_fps = _rife_interpolate_frame_paths(
+            source_frames,
+            frame_root / "rife",
+            detected_fps,
+            target_fps,
+            str(interpolate.get("model") or "rife_v4.26.safetensors"),
+        )
+        intermediate_dir = interpolated_frames[0].parent
+        input_args = ["-framerate", str(active_fps), "-i", str(intermediate_dir / "frame_%06d.png")]
+    elif len(image_files) > 1:
+        _, sequence_pattern = _prepare_sequence_input(sorted(image_files, key=lambda item: item.name.lower()))
+        active_fps = source_fps or 30.0
+        input_args = ["-framerate", str(active_fps), "-i", sequence_pattern]
+    elif video_files:
+        source = video_files[0]
+        active_fps = source_fps or _ffprobe_fps(source)
+        input_args = ["-i", str(source)]
+    elif image_files:
+        active_fps = source_fps or 1.0
+        input_args = ["-loop", "1", "-framerate", str(active_fps), "-t", "1", "-i", str(image_files[0])]
+    else:
+        raise ValueError("No video or image sequence source was provided.")
+
+    filters: list[str] = []
+    upscale = plan.get("upscale") or {}
+    if upscale.get("enabled"):
+        factor = 4 if str(upscale.get("scale") or "2x").startswith("4") else 2
+        filters.append(f"scale=iw*{factor}:ih*{factor}:flags=lanczos")
+    denoise = plan.get("denoise") or {}
+    if denoise.get("enabled"):
+        filters.append("hqdn3d=1.5:1.5:6:6")
+    if plan.get("preserve_alpha"):
+        filters.append("format=rgba")
+
+    encoder = str(plan.get("encoder") or ("image_sequence_png_alpha" if remove_bg else "mp4_h264"))
+    outputs: list[dict[str, Any]] = []
+    command = [ffmpeg, "-y", *input_args]
+    if filters:
+        command.extend(["-vf", ",".join(filters)])
+
+    if encoder.startswith("image_sequence"):
+        folder = settings.output_dir / "extras" / "video" / datetime.now().strftime("%Y%m%d_%H%M%S")
+        folder.mkdir(parents=True, exist_ok=True)
+        pattern = folder / "frame_%06d.png"
+        _run_ffmpeg([*command, str(pattern)])
+        for frame in sorted(folder.glob("frame_*.png"))[:12]:
+            outputs.append(_output_item(frame, "image"))
+        return outputs
+
+    suffix = ".webm" if encoder == "webm_vp9" else ".mov" if encoder.startswith("mov_") else ".mp4"
+    output = _extras_output("video", suffix, "remove_bg_video" if remove_bg else "video")
+    _run_ffmpeg([*command, *_video_encoder_args(encoder, output)])
+    outputs.append(_output_item(output, "video"))
+    return outputs
+
+
+async def _run_extras_job(job_id: str, source_files: list[Path], plan: dict[str, Any]) -> None:
+    try:
+        _update_extras_job(job_id, {"status": "running", "progress": 8, "message": "Preparing Extras source."})
+        mode = str(plan.get("mode") or "").lower()
+        remove_bg = mode == "remove_bg"
+        media_type = str(plan.get("mediaType") or "").lower()
+        if not source_files and plan.get("source_url"):
+            source = _resolve_extras_source_url(str(plan.get("source_url") or ""))
+            if source:
+                source_files = [source]
+        if not source_files:
+            raise ValueError("No source files were received by Extras.")
+
+        _update_extras_job(job_id, {"progress": 18, "message": "Running Extras pipeline."})
+        video_exts = {".mp4", ".mov", ".webm", ".mkv", ".avi"}
+        is_video = media_type in {"video", "image_sequence"} or any(path.suffix.lower() in video_exts for path in source_files) or len(source_files) > 1
+        if is_video:
+            outputs = await asyncio.to_thread(_process_extras_video, source_files, plan, remove_bg)
+        else:
+            outputs = await asyncio.to_thread(_process_extras_image, source_files[0], plan, remove_bg)
+        _write_extras_metadata(outputs, plan)
+        _update_extras_job(
+            job_id,
+            {
+                "status": "completed",
+                "progress": 100,
+                "message": "Extras completed.",
+                "outputs": outputs,
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
+            },
+            force=True,
+        )
+    except Exception as exc:
+        _update_extras_job(
+            job_id,
+            {
+                "status": "failed",
+                "progress": 100,
+                "message": str(exc),
+                "error": str(exc),
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
+            },
+            force=True,
+        )
+
+
 def _read_output_metadata(path: Path) -> dict[str, Any]:
     sidecar = path.with_suffix(path.suffix + ".nexus.json")
     if sidecar.exists():
@@ -1695,6 +2381,41 @@ async def import_endpoint(request: ImportRequest) -> dict[str, str]:
         return import_resource(settings, request)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/extras/start")
+async def extras_start(plan: str = Form("{}"), files: list[UploadFile] = File(default=[])) -> dict[str, Any]:
+    try:
+        parsed_plan = json.loads(plan or "{}")
+        if not isinstance(parsed_plan, dict):
+            raise ValueError("Extras plan must be a JSON object.")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid Extras plan: {exc}") from exc
+    source_files = await _save_extras_uploads(files or [])
+    job_id = uuid.uuid4().hex[:12]
+    extras_jobs[job_id] = {
+        "job_id": job_id,
+        "prompt_id": None,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued Extras job.",
+        "outputs": [],
+        "error": None,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "preset": "Extras",
+        "workflow_id": parsed_plan.get("template") or parsed_plan.get("mode") or "extras",
+    }
+    asyncio.create_task(_run_extras_job(job_id, source_files, parsed_plan))
+    return _public_extras_job(extras_jobs[job_id])
+
+
+@app.get("/api/extras/{job_id}")
+async def extras_status(job_id: str) -> dict[str, Any]:
+    job = extras_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Extras job not found.")
+    return _public_extras_job(job)
 
 
 async def _run_generation_core(request: GenerateRequest, job_id: str | None = None) -> GenerateResponse:

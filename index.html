@@ -2339,7 +2339,7 @@
                 <div class="flex-1 grid grid-cols-1 xl:grid-cols-[minmax(410px,48%)_1fr] overflow-hidden">
                     <aside class="border-b xl:border-b-0 xl:border-r border-nexus-border bg-zinc-950 overflow-y-auto">
                         <div class="p-4 space-y-4">
-                            <input id="extrasFileInput" type="file" accept="image/*" class="hidden" onchange="handleExtrasFileInput(event)">
+                            <input id="extrasFileInput" type="file" accept="image/*" multiple class="hidden" onchange="handleExtrasFileInput(event)">
                             <div id="extrasDropzone" onclick="triggerExtrasFilePicker()" ondragover="event.preventDefault(); this.classList.add('border-nexus-red')" ondragleave="this.classList.remove('border-nexus-red')" ondrop="handleExtrasDrop(event)" class="extras-drop-zone border border-dashed border-[#1d2434] min-h-36 flex items-center justify-center text-center cursor-pointer transition-colors hover:border-nexus-red rounded-sm">
                                 <div id="extrasDropEmpty" class="flex flex-col items-center px-5">
                                     <i id="extrasDropIcon" class="fa-solid fa-cloud-arrow-up text-2xl text-nexus-red"></i>
@@ -2480,9 +2480,15 @@
                                     </div>
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="space-y-1.5">
+                                            <span class="mini-label">Source FPS</span>
+                                            <input id="extrasSourceFps" class="flat-input font-mono" type="number" value="24" min="1" max="240">
+                                        </label>
+                                        <label class="space-y-1.5">
                                             <span class="mini-label">Target FPS</span>
                                             <input id="extrasTargetFps" class="flat-input font-mono" type="number" value="30" min="1" max="120">
                                         </label>
+                                    </div>
+                                    <div class="grid grid-cols-1 gap-2">
                                         <label class="space-y-1.5">
                                             <span class="mini-label">Speed</span>
                                             <select id="extrasVideoSpeed" class="flat-input appearance-none cursor-pointer"><option>1x</option><option>0.5x</option><option>2x</option></select>
@@ -2609,7 +2615,7 @@
                         </div>
 
                         <div class="p-3 border-t border-nexus-border bg-zinc-950 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3 shrink-0">
-                            <div class="flex flex-col lg:flex-row lg:items-center gap-2 min-w-0">
+                            <div class="flex flex-col lg:flex-row lg:items-center gap-2 min-w-0 lg:flex-1 overflow-hidden">
                                 <span id="extrasStatusText" class="text-[10px] font-mono text-nexus-muted min-w-0 truncate">Extras pipeline ready</span>
                                 <div id="extrasVideoEncodeBar" class="hidden flex flex-col sm:flex-row sm:items-center gap-2 min-w-0">
                                     <label class="h-10 px-3 bg-nexus-bg border border-nexus-border rounded-sm flex items-center justify-between sm:justify-start gap-3 text-xs text-white">
@@ -2623,7 +2629,7 @@
                                     </label>
                                 </div>
                             </div>
-                            <div class="flex gap-2 w-full sm:w-auto">
+                            <div class="flex gap-2 w-full sm:w-auto shrink-0 relative z-10">
                                 <button id="extrasClearBtn" type="button" onclick="clearExtrasSource()" class="flat-button hidden px-4 py-2.5 text-xs font-bold uppercase">Clear</button>
                                 <button id="extrasProcessBtn" type="button" onclick="startExtrasProcessing()" class="flex-1 sm:flex-initial px-6 py-2.5 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-xs uppercase tracking-wider rounded-sm transition-all flex items-center justify-center gap-2">
                                     <i class="fa-solid fa-bolt-lightning text-[10px]"></i> Process File
@@ -3119,6 +3125,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let extrasOriginalUrl = '';
         let extrasProcessedUrl = '';
         let extrasObjectUrl = '';
+        let extrasObjectUrls = [];
         let extrasProcessing = false;
         let extrasRemoveBgPreset = 'image';
         let activeEmbeddingTarget = 'positive';
@@ -3434,6 +3441,26 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         async function nexusFetch(path, options = {}) {
             const response = await fetch(`${NEXUS_API}${path}`, {
                 headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+                ...options
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                try {
+                    const parsed = JSON.parse(text);
+                    const detail = parsed?.detail;
+                    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail || parsed));
+                } catch (error) {
+                    if (error instanceof SyntaxError) throw new Error(text || response.statusText);
+                    throw error;
+                }
+            }
+            return response.json();
+        }
+
+        async function nexusFetchForm(path, formData, options = {}) {
+            const response = await fetch(`${NEXUS_API}${path}`, {
+                method: 'POST',
+                body: formData,
                 ...options
             });
             if (!response.ok) {
@@ -4258,9 +4285,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const title = document.getElementById('extrasTitle');
             if (title) title.innerText = 'Extras';
             const input = document.getElementById('extrasFileInput');
-            if (input) input.accept = isRemoveBg ? 'image/*,video/*' : (isVideo ? 'video/*' : 'image/*');
+            if (input) {
+                input.accept = isRemoveBg ? 'image/*,video/*' : (isVideo ? 'video/*,image/*' : 'image/*');
+                input.multiple = isVideo || isRemoveBg;
+            }
             const dropTitle = document.getElementById('extrasDropTitle');
-            if (dropTitle) dropTitle.innerText = isRemoveBg ? 'Drop image or video file here' : (isVideo ? 'Drop video file here' : 'Drop image file here');
+            if (dropTitle) dropTitle.innerText = isRemoveBg ? 'Drop image, video, or frame sequence here' : (isVideo ? 'Drop video or image sequence here' : 'Drop image file here');
             const dropIcon = document.getElementById('extrasDropIcon');
             if (dropIcon) dropIcon.className = isRemoveBg ? 'fa-solid fa-scissors text-2xl text-nexus-red' : (isVideo ? 'fa-solid fa-film text-2xl text-nexus-red' : 'fa-solid fa-cloud-arrow-up text-2xl text-nexus-red');
             syncExtrasEncodeUi({ render: false });
@@ -4301,8 +4331,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const interpolators = extrasCatalogNames(['frame_interpolation']);
             const removeBgModels = extrasCatalogNames(['background_removal', 'RMBG'], name => /biref|rmbg|bria|inspy|isnet|ben|rembg|background/i.test(name));
             const imageOptions = setSelectOptions('extrasImageUpscaler', rasterUpscalers, ['Lanczos']);
-            const videoOptions = setSelectOptions('extrasVideoUpscaleModel', [...latentUpscalers, ...rasterUpscalers], ['Lanczos']);
-            const interpolationOptions = setSelectOptions('extrasVideoInterpolator', interpolators, interpolators.length ? [] : ['No interpolation model detected']);
+            const videoOptions = setSelectOptions('extrasVideoUpscaleModel', [...rasterUpscalers, ...latentUpscalers], ['Lanczos']);
+            const interpolationOptions = setSelectOptions('extrasVideoInterpolator', interpolators, ['frame_interpolation/rife_v4.26.safetensors']);
             const removeOptions = setSelectOptions('extrasRemoveBgModel', removeBgModels, ['BiRefNet', 'RMBG-2.0', 'InSPyReNet', 'BEN2']);
             const upscaleStatus = document.getElementById('extrasVideoUpscaleStatus');
             if (upscaleStatus) {
@@ -4320,7 +4350,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const videoSelect = document.getElementById('extrasVideoUpscaleModel');
             if (videoSelect) {
                 videoSelect.dataset.hasModel = videoOptions.length ? '1' : '0';
-                const realVideoOptions = [...latentUpscalers, ...rasterUpscalers];
+                const realVideoOptions = [...rasterUpscalers, ...latentUpscalers];
                 if (realVideoOptions.length && (!videoSelect.value || videoSelect.value === 'Lanczos')) videoSelect.value = realVideoOptions[0];
             }
             const removeSelect = document.getElementById('extrasRemoveBgModel');
@@ -4344,11 +4374,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function syncExtrasInterpolateUi() {
             const toggle = document.getElementById('extrasVideoInterpolateToggle');
             const model = document.getElementById('extrasVideoInterpolator');
+            const sourceFps = document.getElementById('extrasSourceFps');
             const fps = document.getElementById('extrasTargetFps');
             const speed = document.getElementById('extrasVideoSpeed');
             const enabled = !!toggle?.checked;
-            const hasModel = model?.dataset.hasModel !== '0';
+            const hasModel = true;
             if (model) model.disabled = !enabled || !hasModel;
+            if (sourceFps) sourceFps.disabled = !enabled;
             if (fps) fps.disabled = !enabled;
             if (speed) speed.disabled = !enabled;
             renderExtrasSource();
@@ -4459,11 +4491,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function extrasProcessingPlan() {
             if (extrasMode === 'remove_bg') {
-                const sourceMediaType = extrasRemoveBgPreset === 'video' ? 'video' : 'image';
+                const sourceMediaType = extrasRemoveBgPreset === 'video' || extrasSource?.mediaType === 'video' || extrasSource?.mediaType === 'image_sequence' ? 'video' : 'image';
                 const videoFormat = document.getElementById('extrasRemoveBgVideoFormatSelect')?.value || 'image_sequence_png_alpha';
                 return {
                     mediaType: sourceMediaType,
                     mode: 'remove_bg',
+                    source_type: extrasSource?.mediaType || sourceMediaType,
+                    source_url: extrasSource?.sourceUrl || extrasSource?.src || '',
                     template: sourceMediaType === 'video' ? 'REMOVE_BG_VIDEO_2026' : 'REMOVE_BG_IMAGE_2026',
                     remove_background: {
                         enabled: true,
@@ -4489,6 +4523,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 const custom = scale === 'custom' ? extrasCustomResolution() : null;
                 return {
                     mediaType: 'image',
+                    mode: 'image',
+                    source_type: extrasSource?.mediaType || 'image',
+                    source_url: extrasSource?.sourceUrl || extrasSource?.src || '',
                     upscaler: document.getElementById('extrasImageUpscaler')?.value || 'Lanczos',
                     scale,
                     custom_resolution: custom,
@@ -4507,6 +4544,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const encodeEnabled = !!document.getElementById('extrasVideoEncodeToggle')?.checked;
             return {
                 mediaType: 'video',
+                mode: 'video',
+                source_type: extrasSource?.mediaType || 'video',
+                source_url: extrasSource?.sourceUrl || extrasSource?.src || '',
+                source_fps: extrasSource?.mediaType === 'image_sequence'
+                    ? Math.max(1, Math.min(240, Number(document.getElementById('extrasSourceFps')?.value) || 24))
+                    : 0,
                 interpolate: {
                     enabled: interpolateEnabled,
                     model: interpolateEnabled ? (document.getElementById('extrasVideoInterpolator')?.value || 'Automatic') : 'Off',
@@ -4571,8 +4614,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function handleExtrasFileInput(event) {
-            const file = event.target?.files?.[0];
-            if (file) loadExtrasFile(file);
+            const files = [...event.target?.files || []];
+            if (files.length) loadExtrasFiles(files);
         }
 
         function handleExtrasDrop(event) {
@@ -4591,20 +4634,45 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 return;
             }
 
-            const file = [...event.dataTransfer?.files || []].find(item => isImageFile(item) || isVideoFile(item));
-            if (file) loadExtrasFile(file);
+            const files = [...event.dataTransfer?.files || []].filter(item => isImageFile(item) || isVideoFile(item));
+            if (files.length) loadExtrasFiles(files);
         }
 
         function loadExtrasFile(file) {
-            const mediaType = isVideoFile(file) ? 'video' : 'image';
-            if (extrasMode !== 'remove_bg' && mediaType !== extrasMode) setExtrasMode(mediaType, { quiet: true });
+            loadExtrasFiles([file]);
+        }
+
+        function revokeExtrasObjectUrls() {
+            extrasObjectUrls.forEach(url => URL.revokeObjectURL(url));
+            extrasObjectUrls = [];
             if (extrasObjectUrl) URL.revokeObjectURL(extrasObjectUrl);
-            extrasObjectUrl = URL.createObjectURL(file);
+            extrasObjectUrl = '';
+        }
+
+        function extrasSourceMediaTypeForFiles(files) {
+            const valid = [...files || []].filter(file => isImageFile(file) || isVideoFile(file));
+            const video = valid.find(file => isVideoFile(file));
+            const images = valid.filter(file => isImageFile(file));
+            if (video) return 'video';
+            if (images.length > 1) return 'image_sequence';
+            return 'image';
+        }
+
+        function loadExtrasFiles(files) {
+            const valid = [...files || []].filter(file => isImageFile(file) || isVideoFile(file));
+            if (!valid.length) return;
+            const mediaType = extrasSourceMediaTypeForFiles(valid);
+            const modeMedia = mediaType === 'image_sequence' ? 'video' : mediaType;
+            if (extrasMode !== 'remove_bg' && modeMedia !== extrasMode) setExtrasMode(modeMedia, { quiet: true });
+            revokeExtrasObjectUrls();
+            extrasObjectUrls = valid.map(file => URL.createObjectURL(file));
+            extrasObjectUrl = extrasObjectUrls[0] || '';
             loadExtrasSource({
                 src: extrasObjectUrl,
-                title: file.name || `${mediaType} file`,
+                title: valid.length > 1 ? `${valid.length} frame sequence` : (valid[0].name || `${mediaType} file`),
                 mediaType,
-                size: file.size || 0
+                size: valid.reduce((total, file) => total + (file.size || 0), 0),
+                files: valid
             });
         }
 
@@ -4613,19 +4681,21 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             extrasSource = {
                 src: source.src,
                 title: source.title || 'extras source',
-                mediaType: source.mediaType === 'video' ? 'video' : 'image',
-                size: source.size || 0
+                mediaType: source.mediaType === 'video' ? 'video' : (source.mediaType === 'image_sequence' ? 'image_sequence' : 'image'),
+                size: source.size || 0,
+                files: source.files || [],
+                sourceUrl: source.sourceUrl || source.src
             };
             extrasOriginalUrl = extrasSource.src;
             extrasProcessedUrl = '';
-            if (extrasMode !== 'remove_bg' && extrasSource.mediaType !== extrasMode) setExtrasMode(extrasSource.mediaType, { quiet: true });
+            const modeMedia = extrasSource.mediaType === 'image_sequence' ? 'video' : extrasSource.mediaType;
+            if (extrasMode !== 'remove_bg' && modeMedia !== extrasMode) setExtrasMode(modeMedia, { quiet: true });
             renderExtrasSource();
             showToast('Extras Source Loaded', `${extrasSource.title} ready.`);
         }
 
         function clearExtrasSource() {
-            if (extrasObjectUrl) URL.revokeObjectURL(extrasObjectUrl);
-            extrasObjectUrl = '';
+            revokeExtrasObjectUrls();
             extrasSource = null;
             extrasOriginalUrl = '';
             extrasProcessedUrl = '';
@@ -4636,6 +4706,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function renderExtrasSource() {
             const hasSource = !!extrasSource?.src;
             const isVideo = extrasSource?.mediaType === 'video';
+            const isSequence = extrasSource?.mediaType === 'image_sequence';
             const dropzone = document.getElementById('extrasDropzone');
             dropzone?.classList.toggle('is-loaded', hasSource);
             document.getElementById('extrasDropEmpty')?.classList.toggle('hidden', hasSource);
@@ -4653,7 +4724,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
             const image = document.getElementById('extrasImageElement');
             const video = document.getElementById('extrasVideoElement');
-            if (image) image.src = hasSource && !isVideo ? (extrasProcessedUrl || extrasSource.src) : '';
+            if (image) image.src = hasSource && (!isVideo || isSequence) ? (extrasProcessedUrl || extrasSource.src) : '';
             if (video) video.src = hasSource && isVideo ? (extrasProcessedUrl || extrasSource.src) : '';
 
             const imageBadge = document.getElementById('extrasImageBadge');
@@ -4663,7 +4734,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
             const status = document.getElementById('extrasStatusText');
             if (status) status.innerText = hasSource
-                ? `${extrasSource.mediaType === 'video' ? 'Video' : 'Image'} ready: ${extrasSource.title} / ${extrasPlanLabel(extrasProcessingPlan())}`
+                ? `${extrasSource.mediaType === 'image_sequence' ? 'Image sequence' : (extrasSource.mediaType === 'video' ? 'Video' : 'Image')} ready: ${extrasSource.title} / ${extrasPlanLabel(extrasProcessingPlan())}`
                 : 'Extras pipeline ready';
         }
 
@@ -4700,7 +4771,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
         }
 
-        function startExtrasProcessing() {
+        async function startExtrasProcessing() {
             if (!extrasSource?.src) {
                 showToast('Extras Source Required', 'Load an image or video before processing.');
                 return;
@@ -4718,20 +4789,30 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 ? `Video extras: ${extrasPlanLabel(plan)}`
                 : `Image extras: ${extrasPlanLabel(plan)}`;
             if (label) label.innerText = detail;
-            const timer = setInterval(() => {
-                progress += 12.5;
-                const clamped = Math.min(100, progress);
-                if (circle) circle.style.strokeDashoffset = String(213 - (clamped / 100) * 213);
-                if (percent) percent.innerText = `${Math.round(clamped)}%`;
-                if (clamped >= 100) {
-                    clearInterval(timer);
-                    extrasProcessing = false;
-                    extrasProcessedUrl = extrasOriginalUrl;
-                    overlay?.classList.add('hidden');
-                    renderExtrasSource();
-                    showToast('Extras Complete', extrasSource.mediaType === 'video' ? 'Video post pass completed.' : 'Image extras pass completed.');
-                }
-            }, 120);
+            if (!backendOnline) {
+                extrasProcessing = false;
+                overlay?.classList.add('hidden');
+                setBootState('Waiting for backend before Extras processing...');
+                showToast('Backend Offline', 'Extras needs the Nexus backend to process files.');
+                initializeBackendBridge();
+                return;
+            }
+            try {
+                const form = new FormData();
+                form.append('plan', JSON.stringify(plan));
+                (extrasSource.files || []).forEach(file => form.append('files', file, file.name));
+                const job = await nexusFetchForm('/extras/start', form);
+                const response = await pollExtrasJob(job.job_id, plan);
+                const firstOutput = (response.outputs || [])[0];
+                extrasProcessedUrl = firstOutput?.url ? `${NEXUS_API.replace(/\/api$/, '')}${firstOutput.url}` : extrasOriginalUrl;
+                showToast('Extras Complete', extrasSource.mediaType === 'video' || extrasSource.mediaType === 'image_sequence' ? 'Video post pass completed.' : 'Image extras pass completed.');
+            } catch (error) {
+                showToast('Extras Failed', (error.message || 'Extras failed.').slice(0, 180));
+            } finally {
+                extrasProcessing = false;
+                overlay?.classList.add('hidden');
+                renderExtrasSource();
+            }
         }
 
         function setMediaElementSource(element, url) {
@@ -13605,6 +13686,71 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             throw new Error('Generation cancelled.');
         }
 
+        function addExtrasOutputsToGallery(response, plan) {
+            const outputs = response.outputs || [];
+            if (!outputs.length) return;
+            const newItems = outputs.map((output, index) => normalizeGalleryItem({
+                title: output.filename || `Extras output ${index + 1}`,
+                image: output.url,
+                thumb: output.url,
+                prompt: '',
+                negative: '',
+                model: plan.upscaler || plan.upscale?.model || plan.remove_background?.model || 'Extras',
+                seed: '',
+                steps: '',
+                cfg: '',
+                sampler: 'Extras',
+                scheduler: '',
+                preset: 'Extras',
+                width: '',
+                height: '',
+                activity: 'extras',
+                filename: output.filename || '',
+                path: output.path || output.filename || '',
+                relative_path: output.path || output.filename || '',
+                folder: output.subfolder || (String(output.path || '').includes('/') ? String(output.path || '').split('/').slice(0, -1).join('/') : ''),
+                workflow: plan.template || plan.mode || 'Extras',
+                loras: [],
+                distilled_loras: [],
+                controlnet: {},
+                vae: '',
+                text_encoder: '',
+                video: plan.mediaType === 'video' ? plan : {},
+                director: {},
+                metadata: { extras: plan },
+                modified: Date.now() / 1000,
+                mediaType: isVideoOutput(output) ? 'video' : 'image'
+            }));
+            const newKeys = new Set(newItems.map(galleryItemKey));
+            galleryAllItems = [...newItems, ...galleryAllItems.filter(item => !newKeys.has(galleryItemKey(item)))];
+            if (newItems[0]) resetGalleryHistoryToFolder(galleryFolderFromItem(newItems[0]));
+            galleryItems = filteredGalleryItems();
+            galleryLastSignature = '';
+            activeGalleryIndex = 0;
+            renderGallerySidebar();
+            setLinearOutput(galleryItems[0], { force: true });
+        }
+
+        async function pollExtrasJob(jobId, plan) {
+            while (extrasProcessing) {
+                const job = await nexusFetch(`/extras/${encodeURIComponent(jobId)}`);
+                const value = Math.max(0, Math.min(100, Number(job.progress || 0)));
+                const circle = document.getElementById('extrasProgressCircle');
+                const percent = document.getElementById('extrasProgressPercent');
+                const label = document.getElementById('extrasProgressLabel');
+                if (circle) circle.style.strokeDashoffset = String(213 - (value / 100) * 213);
+                if (percent) percent.innerText = `${Math.round(value)}%`;
+                if (label) label.innerText = job.message || extrasPlanLabel(plan);
+                if (job.status === 'completed') {
+                    addExtrasOutputsToGallery(job, plan);
+                    return job;
+                }
+                if (job.status === 'failed') throw new Error(job.error || job.message || 'Extras failed.');
+                await sleep(700);
+            }
+            throw new Error('Extras cancelled.');
+        }
+
         async function requestGenerationCancel(jobId) {
             if (!backendOnline || !jobId) return null;
             const job = await nexusFetch(`/generate/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
@@ -14498,6 +14644,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         [
             'extrasImageUpscaler',
             'extrasVideoInterpolator',
+            'extrasSourceFps',
             'extrasTargetFps',
             'extrasVideoSpeed',
             'extrasVideoUpscaleModel',
