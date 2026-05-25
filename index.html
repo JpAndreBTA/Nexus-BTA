@@ -3369,8 +3369,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 distilledRoute: 'LTX 2.3 route uses distilled motion LoRAs; OmniCine is opt-in when a compatible Singularity model is installed.',
                 summary: 'LTX template favors fast latent video, short step counts and low CFG defaults.',
                 chips: ['LTX 2.3', 'Video', 'Distilled', 'Fast'],
-                video: 'LTX 2.3 Director route enabled: 289 frames, 24 FPS, 12s keyframed timeline.',
-                videoSettings: { frames: 289, fps: 24, seconds: 12 }
+                video: 'LTX 2.3 Director route enabled: fast 16 FPS aligned video timing.',
+                videoSettings: { frames: 81, fps: 16, seconds: 5 }
             },
             Anima: {
                 template: 'ANIMA_PORTRAIT',
@@ -3713,7 +3713,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     ? uniqueOptions([audioVaes.find(name => /ltx23.*audio|audio.*ltx23|audio_vae/i.test(name)) || audioVaes[0], ...audioVaes, 'Automatic', 'None'])
                     : uniqueOptions(['Automatic', ...audioVaes, 'None']);
                 if (latentUpscale.length) profile.latentUpscaleModels = presetName === 'LTX'
-                    ? uniqueOptions([latentUpscale[0], 'Automatic', ...latentUpscale, 'None'])
+                    ? uniqueOptions(['None', 'Automatic', ...latentUpscale])
                     : uniqueOptions(['Automatic', ...latentUpscale, 'None']);
             }
             if (presetName === 'LTX') {
@@ -5165,7 +5165,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             setSelectValue('latentUpscaleSelect', profile.latentUpscaleModels?.[0] || 'Automatic');
             setSelectValue('ltxDetailerLoraSelect', profile.detailerLoras?.[0] || 'Automatic');
             setSelectValue('omnicineSelect', 'Off');
-            if (presetName === 'LTX' && profile.latentUpscaleModels?.[0]) setSelectValue('latentUpscaleSelect', profile.latentUpscaleModels[0]);
+            if (presetName === 'LTX') {
+                setSelectValue('latentUpscaleSelect', 'None');
+                const audioToggle = document.getElementById('activeAudioToggle');
+                if (audioToggle) audioToggle.checked = false;
+            }
             setElementOptions('distilledLoraOneSelect', profile.distilledLoras || ['None']);
             setElementOptions('distilledLoraTwoSelect', profile.distilledLoras || ['None']);
             setSelectValue('distilledLoraOneSelect', profile.distilledDefaults?.[0] || 'None');
@@ -5226,6 +5230,15 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 modelProfiles[presetName].checkpoint = option.dataset.model || option.textContent.trim();
                 modelProfiles[presetName].selectedModelPath = option.value;
                 applyModelProfile(presetName);
+                if (presetName === 'LTX') {
+                    const minSteps = ltxMinimumSteps(modelProfiles[presetName].checkpoint || option.value);
+                    const stepsSlider = document.getElementById('stepsSlider');
+                    if (stepsSlider) {
+                        stepsSlider.value = String(minSteps);
+                        updateRangeLabel('steps');
+                    }
+                    updateWorkflowPreview();
+                }
             } else {
                 showToast("Model Selected", "No exact template was found; keeping current settings.");
             }
@@ -7830,17 +7843,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const selected = ['distilledLoraOneSelect', 'distilledLoraTwoSelect']
                 .map(id => ltxDirectorNormalizeLoraName(document.getElementById(id)?.value || ''))
                 .filter(name => name && !/^(none|automatic|auto)$/i.test(name));
-            const library = Array.isArray(loraLibrary)
-                ? loraLibrary
-                    .map(item => ltxDirectorNormalizeLoraName(item?.relativeName || item?.relative_name || item?.path || item?.name || ''))
-                    .filter(name => /ltx/i.test(name) && /distill|distilled|lightning|turbo|motion/i.test(name))
-                : [];
-            const profileDefaults = (modelProfiles.LTX?.distilledDefaults || [])
-                .map(name => ltxDirectorNormalizeLoraName(name))
-                .filter(name => name && !/^(none|automatic|auto)$/i.test(name));
-            const preferred = [...selected, ...profileDefaults, ...library];
             const seen = new Set();
-            return preferred
+            return selected
                 .filter(name => /ltx/i.test(name) && !seen.has(name.toLowerCase()) && seen.add(name.toLowerCase()))
                 .slice(0, 2)
                 .map(name => ({
@@ -7882,16 +7886,47 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     seen.add(key);
                     return true;
                 });
-            const hasDistilled = mapped.some(item => /distill|distilled|lightning|turbo|motion/i.test(item.name));
-            if (hasDistilled) return mapped;
+            if (payload) return mapped;
             const finalSeen = new Set();
-            return [...ltxDirectorDefaultDistilledLoras(), ...mapped]
-                .filter(item => {
-                    const key = item.name.toLowerCase();
-                    if (finalSeen.has(key)) return false;
-                    finalSeen.add(key);
-                    return true;
-                });
+            return [...ltxDirectorDefaultDistilledLoras(), ...mapped].filter(item => {
+                const key = item.name.toLowerCase();
+                if (finalSeen.has(key)) return false;
+                finalSeen.add(key);
+                return true;
+            });
+        }
+
+        function isFastLtxCheckpointName(value) {
+            return /daiswa|lightspeed|lightning|turbo|distill|distilled/i.test(String(value || ''));
+        }
+
+        function ltxLatentUpscaleFactor(modelName = '') {
+            const text = String(modelName || '');
+            const explicit = text.match(/x\s*(\d+(?:\.\d+)?)/i);
+            if (explicit) {
+                const factor = Number(explicit[1]);
+                if (Number.isFinite(factor) && factor > 1) return factor;
+            }
+            return /ltx|spatial|upscal/i.test(text) ? 2 : 1;
+        }
+
+        function ltxBaseDimensionForLatentUpscale(value, latentUpscaleName = '') {
+            const numeric = Math.max(0, Math.round(Number(value || 0)));
+            const factor = ltxLatentUpscaleFactor(latentUpscaleName);
+            if (!numeric || factor <= 1) return numeric;
+            const units = Math.max(2, Math.round(numeric / factor / 32));
+            return Math.max(64, units * 32);
+        }
+
+        function ltxHasSelectedDistilledLora() {
+            return ['distilledLoraOneSelect', 'distilledLoraTwoSelect'].some(id => {
+                const value = document.getElementById(id)?.value || '';
+                return value && !/^(none|automatic|auto)$/i.test(value);
+            });
+        }
+
+        function ltxMinimumSteps(checkpointName = '', options = {}) {
+            return (isFastLtxCheckpointName(checkpointName) || options.distilled === true || ltxHasSelectedDistilledLora()) ? 4 : 8;
         }
 
         function ltxEffectiveLoraStrength(loraName, requestedStrength, checkpointName = '') {
@@ -7924,16 +7959,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const decodeTilesX = Math.max(1, Math.min(8, parseInt(document.getElementById('ltxDecodeTilesXInput')?.value || payload?.video?.decode_tiles_x || '2', 10) || 2));
             const decodeTilesY = Math.max(1, Math.min(8, parseInt(document.getElementById('ltxDecodeTilesYInput')?.value || payload?.video?.decode_tiles_y || '2', 10) || 2));
             const decodeOverlap = Math.max(0, Math.min(256, parseInt(document.getElementById('ltxDecodeOverlapInput')?.value || payload?.video?.decode_overlap || '6', 10) || 6));
-            const ltxBaseDimension = value => {
-                const numeric = Math.max(0, Math.round(Number(value || 0)));
-                if (!latentUpscale || !numeric) return numeric;
-                const half = Math.max(64, Math.floor(numeric / 2));
-                return Math.max(64, half - (half % 32));
-            };
-            const directorBaseWidth = ltxBaseDimension(director.custom_width || payload?.width || 512);
-            const directorBaseHeight = ltxBaseDimension(director.custom_height || payload?.height || 512);
+            const ltxBaseDimension = value => latentUpscale ? ltxBaseDimensionForLatentUpscale(value, latentUpscale) : Math.max(0, Math.round(Number(value || 0)));
+            const directorFinalWidth = Math.max(64, Math.round(Number(director.custom_width || payload?.width || 512)));
+            const directorFinalHeight = Math.max(64, Math.round(Number(director.custom_height || payload?.height || 512)));
+            const directorBaseWidth = ltxBaseDimension(directorFinalWidth);
+            const directorBaseHeight = ltxBaseDimension(directorFinalHeight);
             const useCustomAudio = !!director.use_custom_audio;
-            const steps = Math.max(8, parseInt(payload?.steps || document.getElementById('stepsSlider')?.value || 8, 10) || 8);
+            const minSteps = ltxMinimumSteps(checkpointName);
+            const steps = Math.max(minSteps, parseInt(payload?.steps || document.getElementById('stepsSlider')?.value || minSteps, 10) || minSteps);
             const cfg = Number(payload?.cfg || document.getElementById('cfgSlider')?.value || 1) || 1;
             const loraNodes = {};
             let directorModelRef = ['1', 0];
@@ -8156,8 +8189,21 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 };
                 decodeLatentRef = ['32', 0];
             }
+            const finalScaleNodes = {};
+            const latentFactor = ltxLatentUpscaleFactor(latentUpscale);
+            const latentOutputWidth = Math.round(directorBaseWidth * latentFactor);
+            const latentOutputHeight = Math.round(directorBaseHeight * latentFactor);
+            let decodedFramesRef = ['15', 0];
+            if (latentUpscale && (latentOutputWidth !== directorFinalWidth || latentOutputHeight !== directorFinalHeight)) {
+                finalScaleNodes['39'] = {
+                    class_type: 'ImageScale',
+                    inputs: { image: ['15', 0], upscale_method: 'lanczos', width: directorFinalWidth, height: directorFinalHeight, crop: 'center' },
+                    _meta: { title: 'Match Requested LTX Output Size' }
+                };
+                decodedFramesRef = ['39', 0];
+            }
             const trimFrameCount = Math.max(1, Math.round(Number(director.duration_frames || 0)) + 1);
-            const createVideoImageRef = trimFrameCount > 1 ? ['33', 0] : ['15', 0];
+            const createVideoImageRef = trimFrameCount > 1 ? ['33', 0] : decodedFramesRef;
             if (shouldLayerGeneratedAudio) {
                 directorGeneratedAudioNodes['34'] = {
                     class_type: 'LTXVAudioVAEDecode',
@@ -8305,11 +8351,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 '12': { class_type: 'CFGGuider', inputs: { model: samplerModelRef, positive: samplerPositiveRef, negative: samplerNegativeRef, cfg }, _meta: { title: 'CFG Guider' } },
                 '13': { class_type: 'SamplerCustomAdvanced', inputs: { noise: ['9', 0], guider: ['12', 0], sampler: ['10', 0], sigmas: ['11', 0], latent_image: samplerLatentRef }, _meta: { title: 'LTX Sampler' } },
                 '15': { class_type: 'LTXVTiledVAEDecode', inputs: { vae: videoVaeRef, latents: decodeLatentRef, horizontal_tiles: decodeTilesX, vertical_tiles: decodeTilesY, overlap: decodeOverlap, last_frame_fix: false, working_device: 'auto', working_dtype: 'auto' }, _meta: { title: 'Decode Frames' } },
-                '33': { class_type: 'VHS_SelectImages', inputs: { image: ['15', 0], indexes: `0:${trimFrameCount}`, err_if_missing: false, err_if_empty: true }, _meta: { title: 'Trim Director Frames To Timeline' } },
+                '33': { class_type: 'VHS_SelectImages', inputs: { image: decodedFramesRef, indexes: `0:${trimFrameCount}`, err_if_missing: false, err_if_empty: true }, _meta: { title: 'Trim Director Frames To Timeline' } },
                 '21': { class_type: 'CreateVideo', inputs: createVideoInputs, _meta: { title: 'Create Video' } },
                 '22': { class_type: 'SaveVideo', inputs: { video: ['21', 0], filename_prefix: 'NEXUS_BTA_LTX23_DIRECTOR', format: 'mp4', codec: 'h264' }, _meta: { title: 'Save Sequenced Video' } }
             };
-            return { ...workflow, ...audioWorkflowNodes, ...directorGeneratedAudioNodes, ...latentUpscaleNodes, ...loraNodes };
+            return { ...workflow, ...audioWorkflowNodes, ...directorGeneratedAudioNodes, ...latentUpscaleNodes, ...finalScaleNodes, ...loraNodes };
         }
 
         function normalizeSamplerForWorkflow(value) {
@@ -8329,26 +8375,41 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function buildLtxDirectorVisualGraph() {
             const director = serializeLtxDirectorState();
             const useCustomAudio = !!director.use_custom_audio;
-            const ltxSteps = Math.max(8, parseInt(document.getElementById('stepsSlider')?.value || 8, 10) || 8);
+            const checkpointName = comfyCheckpointNameFromSelection(document.getElementById('modelSelect')?.selectedOptions?.[0]);
+            const minSteps = ltxMinimumSteps(checkpointName);
+            const ltxSteps = Math.max(minSteps, parseInt(document.getElementById('stepsSlider')?.value || minSteps, 10) || minSteps);
             const loras = ltxDirectorWorkflowLoras().slice(0, 4);
-            const loraNodes = loras.map((lora, index) => ({
-                id: `ltx_lora_${index + 1}`,
-                class_type: 'LTX2LoraLoaderAdvanced',
-                title: `LTX2 LoRA ${index + 1}`,
-                x: 360 + index * 230,
-                y: 60,
-                width: 215,
-                height: 112,
-                inputs: ['model'],
-                outputs: ['MODEL', 'STRING', 'STRING'],
-                widgets: [
-                    { name: 'lora_name', value: lora.name },
-                    { name: 'strength_model', value: Number(lora.strength || 1).toFixed(2) },
-                    { name: 'video', value: Math.max(0, Math.min(1, Math.abs(Number(lora.strength || 1)))).toFixed(2) },
-                    { name: 'audio', value: director.use_custom_audio ? Math.max(0, Math.min(1, Math.abs(Number(lora.strength || 1)))).toFixed(2) : '0.00' }
-                ],
-                color: '#4c1d95'
-            }));
+            const loraNodes = loras.map((lora, index) => {
+                const strength = Number(lora.strength || 1);
+                const routed = Math.max(0, Math.min(1, Math.abs(strength))).toFixed(2);
+                const advanced = ltxLoraPrefersAdvancedLoader(lora.name);
+                return {
+                    id: `ltx_lora_${index + 1}`,
+                    class_type: advanced ? 'LTX2LoraLoaderAdvanced' : 'LoraLoaderModelOnly',
+                    title: advanced ? `LTX2 Omni LoRA ${index + 1}` : `LTX LoRA ${index + 1}`,
+                    x: 360 + index * 230,
+                    y: 60,
+                    width: 215,
+                    height: 112,
+                    inputs: ['model'],
+                    outputs: ['MODEL'],
+                    widgets: advanced
+                        ? [
+                            { name: 'lora_name', value: lora.name },
+                            { name: 'strength_model', value: strength.toFixed(2) },
+                            { name: 'video', value: routed },
+                            { name: 'video_to_audio', value: director.use_custom_audio ? routed : '0.00' },
+                            { name: 'audio', value: director.use_custom_audio ? routed : '0.00' },
+                            { name: 'audio_to_video', value: director.use_custom_audio ? routed : '0.00' },
+                            { name: 'other', value: routed }
+                        ]
+                        : [
+                            { name: 'lora_name', value: lora.name },
+                            { name: 'strength_model', value: strength.toFixed(2) }
+                        ],
+                    color: '#4c1d95'
+                };
+            });
             const loraLinks = loras.length
                 ? [
                     { from_node: 'ltx_model', from_slot: 0, to_node: 'ltx_lora_1', to_slot: 0, type: 'MODEL' },
@@ -12772,9 +12833,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             } else {
                 nodes.push({ id: 'latent', class_type: 'EmptyLatentImage', title: isVideo ? 'Empty Video Latent' : 'Empty Latent', x: 470, y: 90, width: 240, height: 125, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'batch_size', value: '1' }], color: '#4338ca' });
             }
+            const ltxModelOnlyLora = preset === 'LTX';
             if (hasLora) nodes.push(qwenModelOnlyLora
                 ? { id: 'lora', class_type: 'LoraLoaderModelOnly', title: 'QWEN LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: activeLoras[0]?.relative_name || activeLoras[0]?.name || 'select_lora.safetensors' }, { name: 'strength_model', value: Number(activeLoras[0]?.strength || 0.65).toFixed(2) }], color: '#4c1d95' }
-                : { id: 'lora', class_type: isVideo ? (preset === 'LTX' ? 'LTX2LoraLoaderAdvanced' : 'LoraLoaderModelOnly') : 'LoraLoader', title: 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: isVideo ? ['model'] : ['model', 'clip'], outputs: isVideo ? ['MODEL'] : ['MODEL', 'CLIP'], widgets: activeLoras.slice(0, 4).map(item => ({ name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) })), color: '#4c1d95' });
+                : { id: 'lora', class_type: isVideo ? 'LoraLoaderModelOnly' : 'LoraLoader', title: ltxModelOnlyLora ? 'LTX LoRA Stack' : 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: isVideo ? ['model'] : ['model', 'clip'], outputs: isVideo ? ['MODEL'] : ['MODEL', 'CLIP'], widgets: activeLoras.slice(0, 4).map((item, index) => index === 0 ? { name: 'lora_name', value: item.relative_name || item.name } : { name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) }), color: '#4c1d95' });
             if (isVideo) {
                 nodes.push(
                     { id: 'video_settings', class_type: 'PrimitiveNode', title: 'Video / Motion Settings', x: 760, y: 90, width: 260, height: 150, inputs: [], outputs: ['INT', 'FLOAT', 'STRING'], widgets: [{ name: 'frames', value: document.getElementById('framesInput')?.value || profile.videoSettings?.frames || 49 }, { name: 'seconds', value: document.getElementById('secondsInput')?.value || profile.videoSettings?.seconds || 4 }, { name: 'fps', value: document.getElementById('fpsInput')?.value || profile.videoSettings?.fps || 8 }, { name: 'motion_adapter', value: document.getElementById('motionSelect')?.value || profile.motionAdapters?.[0] || 'Auto by model' }, { name: 'omnicine_lora', value: activeOmnicineSelection() || 'Off' }, { name: 'omnicine_enabled', value: activeOmnicineSelection() ? 'true' : 'false' }, { name: 'active_audio', value: document.getElementById('activeAudioToggle')?.checked ? 'true' : 'false' }, { name: 'latent_upscale', value: document.getElementById('latentUpscaleSelect')?.value || 'Automatic' }], color: '#2f3c4f' },
@@ -12971,7 +13033,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const selectedOption = modelSelect?.selectedOptions?.[0];
             const seed = parseInt(document.getElementById('seedInput')?.value || '-1', 10);
             const rawSteps = parseInt(document.getElementById('stepsSlider')?.value || profile.steps || 25, 10);
-            const effectiveSteps = activePreset === 'LTX' ? Math.max(8, rawSteps || 8) : (activePreset === 'Wan' ? 4 : rawSteps);
+            const ltxStepFloor = activePreset === 'LTX'
+                ? ltxMinimumSteps(selectedOption?.dataset?.model || profile.checkpoint || modelSelect?.value || '')
+                : 8;
+            const effectiveSteps = activePreset === 'LTX' ? Math.max(ltxStepFloor, rawSteps || ltxStepFloor) : (activePreset === 'Wan' ? 4 : rawSteps);
             const selectedImg2ImgMode = currentImg2ImgMode();
             const canvasInpaintActive = currentActivity === 'img2img' && activeWorkspace === 'canvas';
             const effectiveImg2ImgMode = selectedImg2ImgMode;

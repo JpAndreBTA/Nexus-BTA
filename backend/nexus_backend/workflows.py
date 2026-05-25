@@ -2352,6 +2352,44 @@ def _effective_ltx_lora_strength(checkpoint_name: str, lora_name: str, requested
     return min(strength, recommended)
 
 
+def _ltx_request_has_distilled_lora(request: GenerateRequest) -> bool:
+    for item in request.distilled_loras:
+        name = _normalize_lora_name(getattr(item, "name", ""))
+        if name and any(token in name.lower() for token in ("distill", "distilled", "lightning", "turbo")):
+            return True
+    return False
+
+
+def _ltx_min_steps_for_request(checkpoint_name: str, request: GenerateRequest) -> int:
+    checkpoint_lower = str(checkpoint_name or "").lower()
+    if any(token in checkpoint_lower for token in ("daiswa", "lightspeed", "lightning", "turbo", "distill", "distilled")):
+        return 4
+    if _ltx_request_has_distilled_lora(request):
+        return 4
+    return 8
+
+
+def _ltx_latent_upscale_factor(model_name: str | None) -> float:
+    text = str(model_name or "")
+    match = re.search(r"x\s*(\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
+    if match:
+        try:
+            factor = float(match.group(1))
+        except ValueError:
+            factor = 1.0
+        if factor > 1.0:
+            return factor
+    return 2.0 if re.search(r"ltx|spatial|upscal", text, flags=re.IGNORECASE) else 1.0
+
+
+def _ltx_base_dimension_for_upscale(final_dimension: int, latent_upscale_name: str | None) -> int:
+    factor = _ltx_latent_upscale_factor(latent_upscale_name)
+    if factor <= 1.0:
+        return max(64, int(final_dimension))
+    units = max(2, int(round(int(final_dimension) / factor / 32)))
+    return max(64, units * 32)
+
+
 def _ltx_lora_prefers_advanced_loader(lora_name: str) -> bool:
     lower = lora_name.lower()
     return "singularity" in lower or "omnicine" in lower
@@ -2390,16 +2428,15 @@ def build_basic_ltx_img2video_workflow(
     sampler = normalize_sampler(request.sampler or "euler_ancestral_cfg_pp")
     if sampler == "euler_ancestral":
         sampler = "euler_ancestral_cfg_pp"
-    steps = max(8, int(request.steps or 8))
+    min_steps = _ltx_min_steps_for_request(checkpoint_name, request)
+    steps = max(min_steps, int(request.steps or min_steps))
     img_compression = max(0, min(100, int(_number_or_none(video_options.get("img_compression")) or 18)))
     use_latent_upscale = bool(latent_upscale_name)
     width = final_width
     height = final_height
     if use_latent_upscale:
-        half_width = final_width // 2
-        half_height = final_height // 2
-        width = max(64, half_width - (half_width % 32))
-        height = max(64, half_height - (half_height % 32))
+        width = _ltx_base_dimension_for_upscale(final_width, latent_upscale_name)
+        height = _ltx_base_dimension_for_upscale(final_height, latent_upscale_name)
     ltx_model_ref: list[Any] = ["1", 0]
     video_vae_ref: list[Any] = ["21", 0] if video_vae_name else ["1", 2]
     ltx_lora_nodes: dict[str, Any] = {}
@@ -2441,8 +2478,9 @@ def build_basic_ltx_img2video_workflow(
     sampler_latent_ref: list[Any] = ["7", 2] if not text_to_video else ["7", 0]
     scheduler_latent_ref: list[Any] = sampler_latent_ref
     decode_latent_ref: list[Any] = ["12", 0]
-    create_video_inputs: dict[str, Any] = {"images": ["13", 0], "fps": float(fps)}
-    has_audio_context = bool(audio_vae_name)
+    create_video_image_ref: list[Any] = ["13", 0]
+    create_video_inputs: dict[str, Any] = {"images": create_video_image_ref, "fps": float(fps)}
+    has_audio_context = active_audio and bool(audio_vae_name)
     first_audio_latent_ref: list[Any] | None = None
 
     audio_nodes: dict[str, Any] = {}
@@ -2589,6 +2627,26 @@ def build_basic_ltx_img2video_workflow(
         }
         create_video_inputs["audio"] = ["33", 0]
 
+    final_scale_nodes: dict[str, Any] = {}
+    if use_latent_upscale:
+        factor = _ltx_latent_upscale_factor(latent_upscale_name)
+        latent_output_width = int(round(width * factor))
+        latent_output_height = int(round(height * factor))
+        if latent_output_width != final_width or latent_output_height != final_height:
+            final_scale_nodes["34"] = {
+                "class_type": "ImageScale",
+                "inputs": {
+                    "image": ["13", 0],
+                    "upscale_method": "lanczos",
+                    "width": final_width,
+                    "height": final_height,
+                    "crop": "center",
+                },
+                "_meta": {"title": "Match Requested LTX Output Size"},
+            }
+            create_video_image_ref = ["34", 0]
+            create_video_inputs["images"] = create_video_image_ref
+
     sigma_node: dict[str, Any]
     if steps == 8:
         sigma_node = {
@@ -2733,6 +2791,7 @@ def build_basic_ltx_img2video_workflow(
     workflow.update(preprocess_nodes)
     workflow.update(audio_nodes)
     workflow.update(latent_upscale_nodes)
+    workflow.update(final_scale_nodes)
     workflow.update(ltx_lora_nodes)
     return workflow
 

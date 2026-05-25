@@ -276,6 +276,8 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, re
 
     selected_video_vae = _selected_asset(video_options.get("video_vae")) or _selected_asset(request.vae)
     selected_audio_vae = _selected_asset(video_options.get("audio_vae"))
+    raw_latent_upscale = str(video_options.get("latent_upscale") or "").strip().lower()
+    latent_upscale_disabled = raw_latent_upscale in {"none", "off", "disabled", "false", "0", "no"}
     selected_upscale = _selected_asset(video_options.get("latent_upscale"))
     video_vae = _find_name(by_category, selected_video_vae)
     if video_vae and _is_ltx_preview_vae(video_vae):
@@ -291,7 +293,10 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, re
     if preview_vae:
         assets["preview_vae"] = _comfy_name(preview_vae)
 
-    upscale = _find_name(by_category, selected_upscale) or _first(by_category, ["latent_upscale_models", "upscale_models"], ["ltx", "spatial"])
+    upscale = None if latent_upscale_disabled else (
+        _find_name(by_category, selected_upscale)
+        or _first(by_category, ["latent_upscale_models", "upscale_models"], ["ltx", "spatial"])
+    )
     if upscale:
         assets["latent_upscale"] = _comfy_name(upscale)
 

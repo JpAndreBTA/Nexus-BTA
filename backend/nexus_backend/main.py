@@ -445,6 +445,7 @@ def _normalize_lora_key(value: object) -> str:
 def _ensure_ltx_default_distilled_loras(request: GenerateRequest, assets: dict[str, str]) -> None:
     if request.preset.lower() != "ltx":
         return
+    explicit_distilled_slots = bool(request.distilled_loras)
     existing = {
         _normalize_lora_key(getattr(item, "name", ""))
         for item in request.distilled_loras
@@ -456,13 +457,14 @@ def _ensure_ltx_default_distilled_loras(request: GenerateRequest, assets: dict[s
         "distilled_lora_1": 0.35,
         "distilled_lora_2": 0.50,
     }
-    for key in ("distilled_lora_1", "distilled_lora_2"):
-        name = assets.get(key)
-        normalized = _normalize_lora_key(name)
-        if not normalized or normalized in existing:
-            continue
-        existing.add(normalized)
-        additions.append(DistilledLoraSelection(name=name, strength=default_strengths[key]))
+    if not explicit_distilled_slots:
+        for key in ("distilled_lora_1", "distilled_lora_2"):
+            name = assets.get(key)
+            normalized = _normalize_lora_key(name)
+            if not normalized or normalized in existing:
+                continue
+            existing.add(normalized)
+            additions.append(DistilledLoraSelection(name=name, strength=default_strengths[key]))
     video_options = request.video or {}
     omnicine_enabled = video_options.get("omnicine_enabled", False)
     if isinstance(omnicine_enabled, str):
@@ -1611,8 +1613,6 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 missing_ltx_assets.append("LTX 2.3 video VAE")
             if not assets.get("audio_vae"):
                 missing_ltx_assets.append("LTX 2.3 audio VAE")
-            if not assets.get("latent_upscale"):
-                missing_ltx_assets.append("LTX 2.3 latent upscale model")
             if missing_ltx_assets:
                 raise ValueError("LTX 2.3 missing required assets: " + ", ".join(missing_ltx_assets) + ".")
         if request.preset.lower() in {"zimageturbo", "zimage"}:
@@ -1699,8 +1699,6 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     raise ValueError("LTX 2.3 requires the video VAE in models/vae; Automatic cannot fall back to None.")
                 if not assets.get("audio_vae"):
                     raise ValueError("LTX 2.3 requires the audio VAE in models/vae, even when audio output is disabled.")
-                if not assets.get("latent_upscale"):
-                    raise ValueError("LTX 2.3 requires the latent upscale model in models/latent_upscale_models.")
                 if checkpoint_name.lower().endswith(".gguf"):
                     raise ValueError("LTX img2vid default requires an LTX checkpoint file. GGUF workflows can still be loaded explicitly.")
                 prompt = build_basic_ltx_img2video_workflow(
