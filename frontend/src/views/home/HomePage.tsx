@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { LoaderCircle, Play, Server, Square } from 'lucide-react';
+import { Clapperboard, Image as ImageIcon, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Play, Send, Server, Sparkles, Square, WandSparkles } from 'lucide-react';
 
 import { nexusApi } from '../../api/nexusClient';
 import type { CatalogAsset, GenerateRequest, GenerationJob } from '../../api/types';
@@ -9,6 +9,7 @@ import { useLorasQuery } from '../../api/queries';
 import { queryClient } from '../../shared/queryClient';
 import { useGenerationStore } from '../../stores/generationStore';
 import { useLoraStore } from '../../stores/loraStore';
+import { useUiStore } from '../../stores/uiStore';
 import { InpaintCanvas } from './InpaintCanvas';
 
 function terminalStatus(job: GenerationJob | undefined) {
@@ -69,6 +70,15 @@ function alignVideoFrames(preset: string, frames: number) {
   return safe % step === 1 ? safe : Math.max(1, Math.round((safe - 1) / step) * step + 1);
 }
 
+const presetOptions = ['Anima', 'SD', 'XL', 'SDXL', 'Flux', 'Qwen', 'ZImageTurbo', 'Lumina', 'Wan', 'LTX'];
+
+function presetIcon(preset: string) {
+  if (['Wan', 'LTX'].includes(preset)) return <Clapperboard size={14} />;
+  if (preset === 'Anima') return <Sparkles size={14} />;
+  if (preset === 'Qwen' || preset === 'Flux') return <WandSparkles size={14} />;
+  return <ImageIcon size={14} />;
+}
+
 function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data'], preset: string, type: string) {
   const lowerPreset = preset.toLowerCase();
   if (lowerPreset === 'ltx') {
@@ -114,6 +124,7 @@ export function HomePage() {
   const loras = useLorasQuery();
   const generation = useGenerationStore();
   const loraStore = useLoraStore();
+  const ui = useUiStore();
   const [jobId, setJobId] = useState('');
   const [localError, setLocalError] = useState('');
   const [loraSearch, setLoraSearch] = useState('');
@@ -289,20 +300,50 @@ export function HomePage() {
   }
 
   return (
-    <section className="page studio-layout">
+    <section
+      className={[
+        'page studio-layout',
+        ui.studioGalleryOpen ? 'studio-gallery-open' : '',
+        ui.studioGalleryExpanded ? 'studio-gallery-expanded' : '',
+        ui.studioControlsCollapsed ? 'studio-controls-collapsed' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <header className="page-header">
         <div>
           <p className="eyebrow">Nexus BTA Web App</p>
           <h1>Studio</h1>
         </div>
-        <span className={health.data?.nexus === 'ok' ? 'status-pill ok' : 'status-pill'}>
-          <Server size={14} />
-          {health.data?.nexus === 'ok' ? 'Backend online' : 'Backend check'}
-        </span>
+        <div className="studio-header-tools">
+          <div className="preset-strip" aria-label="Preset quick select">
+            {presetOptions.map((preset) => (
+              <button className={generation.preset === preset ? 'active' : ''} type="button" key={preset} onClick={() => generation.setPreset(preset)}>
+                {presetIcon(preset)}
+                <span>{preset}</span>
+              </button>
+            ))}
+          </div>
+          <button className="status-pill" type="button" onClick={() => ui.toggleStudioControls()}>
+            {ui.studioControlsCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+            Controls
+          </button>
+          <button className="status-pill" type="button" onClick={() => ui.toggleStudioGallery()}>
+            {ui.studioGalleryOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+            Gallery
+          </button>
+          <span className={health.data?.nexus === 'ok' ? 'status-pill ok' : 'status-pill'}>
+            <Server size={14} />
+            {health.data?.nexus === 'ok' ? 'Backend online' : 'Backend check'}
+          </span>
+        </div>
       </header>
 
       <div className="studio-columns">
-        <aside className="surface tool-panel">
+        <aside className="surface tool-panel studio-controls-panel">
+          <button className="collapse-handle" type="button" onClick={() => ui.toggleStudioControls()} title={ui.studioControlsCollapsed ? 'Show controls' : 'Hide controls'}>
+            {ui.studioControlsCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
           <div className="button-grid">
             <button className={generation.activity === 'txt2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('txt2img')}>
               txt2img
@@ -700,6 +741,45 @@ export function HomePage() {
             </div>
           )}
         </main>
+
+        {ui.studioGalleryOpen && (
+          <aside className="surface studio-gallery-panel">
+            <div className="control-row">
+              <span>Gallery</span>
+              <button className="mini-button" type="button" onClick={() => ui.toggleStudioGalleryExpanded()} title={ui.studioGalleryExpanded ? 'Compact gallery' : 'Expand gallery'}>
+                {ui.studioGalleryExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+            </div>
+            <div className="studio-gallery-list">
+              {(gallery.data ?? []).slice(0, 18).map((item) => {
+                const itemUrl = outputUrl(item.image || item.thumb);
+                const isVideo = /\.(mp4|mov|webm|mkv|avi)$/i.test(item.filename || item.path || '');
+                return (
+                  <button
+                    className="studio-gallery-item"
+                    key={item.relative_path || item.path}
+                    type="button"
+                    onClick={() => {
+                      generation.setActivity('img2img');
+                      generation.setReferenceImage(outputUrl(item.image), item.filename);
+                    }}
+                    title="Send to img2img"
+                  >
+                    {isVideo ? (
+                      <span className="studio-gallery-video">
+                        <Clapperboard size={18} />
+                      </span>
+                    ) : (
+                      <img src={itemUrl} alt={item.title || item.filename} />
+                    )}
+                    <span>{item.filename}</span>
+                    <Send size={13} />
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+        )}
       </div>
 
       <footer className="extras-action-bar">

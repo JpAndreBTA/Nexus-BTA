@@ -1,5 +1,5 @@
 import { Link, Outlet, createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
-import { Activity, GalleryHorizontalEnd, GitBranch, ImageUp, Images, MonitorCog, Settings, Sparkles } from 'lucide-react';
+import { Activity, GalleryHorizontalEnd, GitBranch, ImageUp, Images, MonitorCog, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from 'lucide-react';
 
 import { ExtrasPage } from '../views/extras/ExtrasPage';
 import { GalleryPage } from '../views/gallery/GalleryPage';
@@ -7,14 +7,18 @@ import { HomePage } from '../views/home/HomePage';
 import { ModelsPage } from '../views/modelCatalog/ModelsPage';
 import { SettingsPage } from '../views/settings/SettingsPage';
 import { WorkflowPage } from '../views/workflow/WorkflowPage';
+import { useUiStore } from '../stores/uiStore';
 
 function RootLayout() {
+  const ui = useUiStore();
+
   return (
-    <div className="app-shell">
+    <div className={ui.sidebarCollapsed ? 'app-shell rail-collapsed' : 'app-shell'}>
       <aside className="activity-rail" aria-label="Nexus navigation">
-        <div className="brand-mark">
+        <button className="brand-mark" type="button" onClick={() => ui.toggleSidebar()} title={ui.sidebarCollapsed ? 'Show navigation' : 'Hide navigation'}>
           <Sparkles size={18} />
-        </div>
+          {ui.sidebarCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />}
+        </button>
         <nav className="activity-nav">
           <Link to="/" activeProps={{ className: 'nav-item active' }} inactiveProps={{ className: 'nav-item' }}>
             <Activity size={18} />

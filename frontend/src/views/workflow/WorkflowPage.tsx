@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileInput, GitBranch, LoaderCircle, Upload, Workflow } from 'lucide-react';
+import { FileInput, GitBranch, LoaderCircle, LocateFixed, Upload, Workflow, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 
 import { nexusApi } from '../../api/nexusClient';
@@ -21,12 +21,24 @@ function numberValue(value: unknown, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function nodeKind(node: WorkflowGraphNode) {
+  const text = `${node.class_type} ${node.title || ''}`.toLowerCase();
+  if (text.includes('control')) return 'control';
+  if (text.includes('checkpoint') || text.includes('unet') || text.includes('model') || text.includes('loader')) return 'model';
+  if (text.includes('prompt') || text.includes('text') || text.includes('clip')) return 'text';
+  if (text.includes('sampler') || text.includes('scheduler') || text.includes('latent')) return 'sample';
+  if (text.includes('vae') || text.includes('decode') || text.includes('image') || text.includes('video')) return 'media';
+  return 'utility';
+}
+
 export function WorkflowPage() {
   const workflows = useWorkflowsQuery();
   const generation = useGenerationStore();
   const [selectedId, setSelectedId] = useState('');
   const [editableNodes, setEditableNodes] = useState<WorkflowGraphNode[]>([]);
   const [localError, setLocalError] = useState('');
+  const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [zoom, setZoom] = useState(0.82);
 
   useEffect(() => {
     if (!selectedId && workflows.data?.[0]) {
@@ -45,9 +57,11 @@ export function WorkflowPage() {
   const selectedWorkflow = workflows.data?.find((workflow) => workflow.id === selectedId) || analysis.data?.workflow;
   const graphWidth = Math.max(900, Number(graph?.width || 1200));
   const graphHeight = Math.max(520, Number(graph?.height || 680));
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId) || nodes[0];
 
   useEffect(() => {
     setEditableNodes(graphNodes.map((node) => ({ ...node, widgets: node.widgets?.map((widget) => ({ ...widget })) ?? [] })));
+    setSelectedNodeId(graphNodes[0]?.id || '');
     setLocalError('');
   }, [graphNodes]);
 
@@ -239,15 +253,41 @@ export function WorkflowPage() {
           ) : (
             <p className="compact-note">No missing workflow nodes reported.</p>
           )}
+
+          {selectedNode && (
+            <div className="workflow-inspector">
+              <strong>{nodeLabel(selectedNode)}</strong>
+              <span>{selectedNode.class_type}</span>
+              <span>{(selectedNode.inputs ?? []).length} inputs / {(selectedNode.outputs ?? []).length} outputs</span>
+              {(selectedNode.widgets ?? []).slice(0, 8).map((widget) => (
+                <label className="field" key={`inspect-${selectedNode.id}-${widget.name}`}>
+                  <span>{widget.name}</span>
+                  <input value={String(widget.value ?? '')} onChange={(event) => updateWidget(selectedNode, String(widget.name || ''), event.currentTarget.value)} />
+                </label>
+              ))}
+            </div>
+          )}
         </aside>
 
         <main className="surface workflow-canvas">
+          <div className="workflow-toolbar">
+            <button className="mini-button" type="button" onClick={() => setZoom((value) => Math.max(0.45, Number((value - 0.1).toFixed(2))))} title="Zoom out">
+              <ZoomOut size={14} />
+            </button>
+            <span>{Math.round(zoom * 100)}%</span>
+            <button className="mini-button" type="button" onClick={() => setZoom((value) => Math.min(1.4, Number((value + 0.1).toFixed(2))))} title="Zoom in">
+              <ZoomIn size={14} />
+            </button>
+            <button className="mini-button" type="button" onClick={() => setZoom(0.82)} title="Reset zoom">
+              <LocateFixed size={14} />
+            </button>
+          </div>
           {analysis.isFetching && (
             <div className="workflow-loading">
               <LoaderCircle className="spin" size={28} />
             </div>
           )}
-          <div className="workflow-plane" style={{ width: graphWidth, height: graphHeight }}>
+          <div className="workflow-plane" style={{ width: graphWidth, height: graphHeight, transform: `scale(${zoom})` }}>
             <svg className="workflow-wires" width={graphWidth} height={graphHeight}>
               {links.map((link, index) => {
                 const from = nodeMap.get(link.from_node);
@@ -262,10 +302,12 @@ export function WorkflowPage() {
             </svg>
             {nodes.map((node) => {
               const isMissing = missing.has(node.class_type);
+              const selected = selectedNodeId === node.id;
               return (
                 <article
-                  className={isMissing ? 'workflow-node-card missing' : 'workflow-node-card'}
+                  className={['workflow-node-card', `node-${nodeKind(node)}`, isMissing ? 'missing' : '', selected ? 'selected' : ''].filter(Boolean).join(' ')}
                   key={node.id}
+                  onClick={() => setSelectedNodeId(node.id)}
                   style={{
                     left: Number(node.x || 0),
                     top: Number(node.y || 0),
