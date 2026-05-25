@@ -2013,6 +2013,10 @@ if settings.models_dir.exists():
 assets_dir = settings.project_root / "assets"
 if assets_dir.exists():
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+react_dist = settings.project_root / "frontend" / "dist"
+react_static_dir = react_dist / "static"
+if react_static_dir.exists():
+    app.mount("/app/static", StaticFiles(directory=react_static_dir), name="react-static")
 
 
 @app.on_event("startup")
@@ -2892,3 +2896,12 @@ async def index_html() -> FileResponse:
         settings.project_root / "index.html",
         headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
     )
+
+
+@app.get("/app")
+@app.get("/app/{full_path:path}")
+async def react_app(full_path: str = "") -> FileResponse:
+    index = react_dist / "index.html"
+    if not index.exists():
+        raise HTTPException(status_code=404, detail="React frontend build not found. Run npm run build in frontend/.")
+    return FileResponse(index, headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
