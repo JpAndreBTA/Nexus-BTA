@@ -36,3 +36,20 @@ export function useLorasQuery() {
     staleTime: 60_000,
   });
 }
+
+export function useWorkflowsQuery() {
+  return useQuery({
+    queryKey: ['workflows'],
+    queryFn: nexusApi.workflows,
+    staleTime: 60_000,
+  });
+}
+
+export function useWorkflowAnalysisQuery(workflowId: string) {
+  return useQuery({
+    queryKey: ['workflow-analysis', workflowId],
+    queryFn: () => nexusApi.workflowAnalysis(workflowId),
+    enabled: !!workflowId,
+    staleTime: 30_000,
+  });
+}

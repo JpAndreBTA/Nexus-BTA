@@ -1,4 +1,4 @@
-import type { ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, LoraAsset, ModelCatalog } from './types';
+import type { ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, LoraAsset, ModelCatalog, WorkflowAnalysis, WorkflowSummary } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -41,6 +41,8 @@ export const nexusApi = {
   },
   extrasJob: (jobId: string) => nexusFetch<ExtrasJob>(`/extras/${encodeURIComponent(jobId)}`),
   gallery: () => nexusFetch<GalleryItem[]>('/gallery'),
+  workflows: () => nexusFetch<WorkflowSummary[]>('/workflows'),
+  workflowAnalysis: (workflowId: string) => nexusFetch<WorkflowAnalysis>(`/workflows/${encodeURIComponent(workflowId)}/analysis`),
   startGeneration: (payload: GenerateRequest) =>
     nexusFetch<GenerationJob>('/generate/start', {
       method: 'POST',

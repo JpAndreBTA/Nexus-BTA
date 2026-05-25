@@ -151,6 +151,58 @@ export interface GenerateRequest {
   runtime?: Record<string, unknown>;
 }
 
+export interface WorkflowSummary {
+  id: string;
+  name: string;
+  path: string;
+  format: 'api' | 'ui' | 'unknown' | string;
+  node_count: number;
+  class_types: string[];
+  tags: string[];
+}
+
+export interface WorkflowGraphNode {
+  id: string;
+  class_type: string;
+  title?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  inputs?: string[];
+  outputs?: string[];
+  widgets?: Array<{ name?: string; value?: unknown }>;
+  bypassed?: boolean;
+}
+
+export interface WorkflowGraphLink {
+  from_node: string;
+  from_slot?: number;
+  to_node: string;
+  to_slot?: number;
+  type?: string;
+}
+
+export interface WorkflowVisualGraph {
+  nodes?: WorkflowGraphNode[];
+  links?: WorkflowGraphLink[];
+  groups?: unknown[];
+  width?: number;
+  height?: number;
+}
+
+export interface WorkflowAnalysis {
+  workflow: WorkflowSummary;
+  missing_nodes: string[];
+  available_nodes: number;
+  manager_suggestions: Record<string, string[]>;
+  dependency_targets: string[];
+  dependencies_installed: string[];
+  dependency_errors: Record<string, string>;
+  visual_graph: WorkflowVisualGraph;
+  workflow_settings: Record<string, unknown>;
+}
+
 export interface GenerationJob {
   job_id: string;
   prompt_id: string | null;

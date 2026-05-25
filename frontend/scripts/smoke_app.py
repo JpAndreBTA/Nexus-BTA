@@ -14,6 +14,7 @@ def main() -> None:
         ("studio", "/", "Studio"),
         ("extras", "/extras", "Extras"),
         ("gallery", "/gallery", "Gallery"),
+        ("workflow", "/workflow", "Workflow Graph"),
         ("models", "/models", "Models"),
         ("settings", "/settings", "Settings"),
     ]
