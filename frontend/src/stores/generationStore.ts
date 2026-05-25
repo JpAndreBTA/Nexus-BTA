@@ -6,7 +6,7 @@ interface ReferenceImage {
   name: string;
 }
 
-interface GenerationState {
+export interface GenerationState {
   activity: 'txt2img' | 'img2img';
   img2imgMode: 'image' | 'inpaint';
   preset: string;
@@ -47,6 +47,13 @@ interface GenerationState {
   videoSeconds: number;
   videoMotionStrength: number;
   videoActiveAudio: boolean;
+  vaeOverrideEnabled: boolean;
+  textEncoderOverrideEnabled: boolean;
+  audioVaeEnabled: boolean;
+  latentUpscaleEnabled: boolean;
+  distilledLoraEnabled: boolean;
+  lightningLoraEnabled: boolean;
+  textEncoder: string;
   videoVae: string;
   audioVae: string;
   latentUpscale: string;
@@ -96,6 +103,13 @@ interface GenerationState {
   setVideoTiming: (frames: number, fps: number, seconds: number) => void;
   setVideoMotionStrength: (strength: number) => void;
   setVideoActiveAudio: (enabled: boolean) => void;
+  setVaeOverrideEnabled: (enabled: boolean) => void;
+  setTextEncoderOverrideEnabled: (enabled: boolean) => void;
+  setAudioVaeEnabled: (enabled: boolean) => void;
+  setLatentUpscaleEnabled: (enabled: boolean) => void;
+  setDistilledLoraEnabled: (enabled: boolean) => void;
+  setLightningLoraEnabled: (enabled: boolean) => void;
+  setTextEncoder: (textEncoder: string) => void;
   setVideoVae: (videoVae: string) => void;
   setAudioVae: (audioVae: string) => void;
   setLatentUpscale: (latentUpscale: string) => void;
@@ -151,6 +165,13 @@ export const useGenerationStore = create<GenerationState>()(
   videoSeconds: 5,
   videoMotionStrength: 0.85,
   videoActiveAudio: false,
+  vaeOverrideEnabled: false,
+  textEncoderOverrideEnabled: false,
+  audioVaeEnabled: true,
+  latentUpscaleEnabled: true,
+  distilledLoraEnabled: true,
+  lightningLoraEnabled: true,
+  textEncoder: 'Automatic',
   videoVae: 'Automatic',
   audioVae: 'Automatic',
   latentUpscale: 'Automatic',
@@ -186,6 +207,7 @@ export const useGenerationStore = create<GenerationState>()(
           videoFps: 16,
           videoSeconds: 5,
           videoMotionStrength: 0.85,
+          latentUpscaleEnabled: false,
         };
       }
       if (lower === 'ltx') {
@@ -202,6 +224,9 @@ export const useGenerationStore = create<GenerationState>()(
           videoFps: 24,
           videoSeconds: 5,
           videoMotionStrength: 0.85,
+          audioVaeEnabled: true,
+          latentUpscaleEnabled: true,
+          distilledLoraEnabled: true,
           latentUpscaleRefine: true,
           decodeTilesX: 2,
           decodeTilesY: 2,
@@ -240,6 +265,13 @@ export const useGenerationStore = create<GenerationState>()(
   setVideoTiming: (videoFrames, videoFps, videoSeconds) => set({ videoFrames, videoFps, videoSeconds }),
   setVideoMotionStrength: (videoMotionStrength) => set({ videoMotionStrength }),
   setVideoActiveAudio: (videoActiveAudio) => set({ videoActiveAudio }),
+  setVaeOverrideEnabled: (vaeOverrideEnabled) => set({ vaeOverrideEnabled }),
+  setTextEncoderOverrideEnabled: (textEncoderOverrideEnabled) => set({ textEncoderOverrideEnabled }),
+  setAudioVaeEnabled: (audioVaeEnabled) => set({ audioVaeEnabled }),
+  setLatentUpscaleEnabled: (latentUpscaleEnabled) => set({ latentUpscaleEnabled }),
+  setDistilledLoraEnabled: (distilledLoraEnabled) => set({ distilledLoraEnabled }),
+  setLightningLoraEnabled: (lightningLoraEnabled) => set({ lightningLoraEnabled }),
+  setTextEncoder: (textEncoder) => set({ textEncoder }),
   setVideoVae: (videoVae) => set({ videoVae }),
   setAudioVae: (audioVae) => set({ audioVae }),
   setLatentUpscale: (latentUpscale) => set({ latentUpscale }),
@@ -288,6 +320,13 @@ export const useGenerationStore = create<GenerationState>()(
         videoSeconds: state.videoSeconds,
         videoMotionStrength: state.videoMotionStrength,
         videoActiveAudio: state.videoActiveAudio,
+        vaeOverrideEnabled: state.vaeOverrideEnabled,
+        textEncoderOverrideEnabled: state.textEncoderOverrideEnabled,
+        audioVaeEnabled: state.audioVaeEnabled,
+        latentUpscaleEnabled: state.latentUpscaleEnabled,
+        distilledLoraEnabled: state.distilledLoraEnabled,
+        lightningLoraEnabled: state.lightningLoraEnabled,
+        textEncoder: state.textEncoder,
         videoVae: state.videoVae,
         audioVae: state.audioVae,
         latentUpscale: state.latentUpscale,

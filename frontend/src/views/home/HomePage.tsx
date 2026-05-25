@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type WheelEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Play, Save, Send, SlidersHorizontal, Square, Workflow, X } from 'lucide-react';
+import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Play, Save, Send, SlidersHorizontal, Workflow, X } from 'lucide-react';
 
 import { nexusApi } from '../../api/nexusClient';
 import type { CatalogAsset, GenerateRequest, GenerationJob } from '../../api/types';
-import { useGalleryQuery, useModelCatalogQuery } from '../../api/queries';
+import { useGalleryQuery, useModelCatalogQuery, useWorkflowAnalysisQuery, useWorkflowsQuery } from '../../api/queries';
 import { useLorasQuery } from '../../api/queries';
-import { queryClient } from '../../shared/queryClient';
-import { useGenerationStore } from '../../stores/generationStore';
+import type { WorkflowGraphLink, WorkflowGraphNode, WorkflowSummary } from '../../api/types';
+import { useGenerationStore, type GenerationState } from '../../stores/generationStore';
 import { useLoraStore } from '../../stores/loraStore';
 import { useUiStore } from '../../stores/uiStore';
 import { InpaintCanvas } from './InpaintCanvas';
@@ -36,6 +36,22 @@ function modelOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data']) 
     value: asset.relative_path || asset.path,
     name: asset.name,
   }));
+}
+
+function assetSelectOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data'], categories: string[], tokens: string[] = []) {
+  const lowered = tokens.map((token) => token.toLowerCase());
+  return categories
+    .flatMap((category) => ((catalog?.categories[category] ?? []) as CatalogAsset[]))
+    .filter((asset) => {
+      if (!lowered.length) return true;
+      const haystack = `${asset.name} ${asset.folder} ${asset.relative_path} ${asset.tags?.join(' ')}`.toLowerCase();
+      return lowered.some((token) => haystack.includes(token));
+    })
+    .sort((a, b) => (a.relative_path || a.name).localeCompare(b.relative_path || b.name))
+    .map((asset) => ({
+      label: asset.relative_path || asset.name,
+      value: asset.relative_path || asset.path || asset.name,
+    }));
 }
 
 function modelMatchesPreset(model: { label: string; name: string }, preset: string) {
@@ -113,10 +129,200 @@ function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>
     }));
 }
 
+function workflowNodeKind(node: WorkflowGraphNode) {
+  const text = `${node.class_type} ${node.title || ''}`.toLowerCase();
+  if (text.includes('director') || text.includes('timeline')) return 'director';
+  if (text.includes('checkpoint') || text.includes('unet') || text.includes('model') || text.includes('loader')) return 'model';
+  if (text.includes('prompt') || text.includes('text') || text.includes('clip')) return 'text';
+  if (text.includes('sampler') || text.includes('scheduler') || text.includes('noise') || text.includes('latent')) return 'sample';
+  if (text.includes('vae') || text.includes('image') || text.includes('video') || text.includes('audio')) return 'media';
+  if (text.includes('lora') || text.includes('guide') || text.includes('control')) return 'control';
+  return 'utility';
+}
+
+function shortWorkflowValue(value: unknown) {
+  const text = String(value ?? '');
+  return text.length > 42 ? `${text.slice(0, 39)}...` : text;
+}
+
+function patchedWorkflowNode(
+  node: WorkflowGraphNode,
+  generation: GenerationState,
+  alignedFrames: number,
+  directorFrames: number,
+): WorkflowGraphNode {
+  const title = `${node.title || ''} ${node.class_type}`.toLowerCase();
+  const widgets = (node.widgets ?? []).map((widget) => {
+    const name = String(widget.name || '').toLowerCase();
+    let value = widget.value;
+    if (name === 'ckpt_name' || name === 'unet_name') value = generation.modelPath || generation.modelName || value;
+    if (name === 'text' && title.includes('positive')) value = generation.prompt || value;
+    if (name === 'text' && title.includes('negative')) value = generation.negativePrompt || value;
+    if (name === 'width' || name === 'custom_width') value = generation.width;
+    if (name === 'height' || name === 'custom_height') value = generation.height;
+    if (name === 'length' || name.includes('frame')) value = title.includes('director') ? directorFrames : alignedFrames;
+    if (name === 'fps' || name === 'frame_rate') value = generation.videoFps;
+    if (name === 'steps') value = generation.preset.toLowerCase() === 'ltx' ? Math.max(8, generation.steps) : generation.steps;
+    if (name === 'cfg') value = generation.cfg;
+    if (name === 'noise_seed') value = generation.seed;
+    if (name === 'sampler_name') value = generation.sampler;
+    if (name === 'strength' || name === 'guide_strength') value = generation.directorGuideStrength;
+    return { ...widget, value };
+  });
+  return { ...node, widgets };
+}
+
+function preferredWorkflow(workflows: WorkflowSummary[] | undefined, preset: string, activeId: string) {
+  if (!workflows?.length) return undefined;
+  const active = workflows.find((workflow) => workflow.id === activeId);
+  if (active) return active;
+  const key = preset.toLowerCase();
+  const tokens: Record<string, string[]> = {
+    ltx: ['ltx23-img2vid-512-base', 'ltx'],
+    wan: ['wan'],
+    qwen: ['qwen-img2img-base', 'qwen'],
+    anima: ['anima-base', 'anima'],
+    zimageturbo: ['zimage-turbo-base', 'zimage'],
+    flux: ['flux'],
+    xl: ['sdxl-base', 'sdxl'],
+    sdxl: ['sdxl-base', 'sdxl'],
+    sd: ['sd15-base', 'sd15'],
+  };
+  const wanted = tokens[key] || [key];
+  return workflows.find((workflow) => wanted.some((token) => workflow.id.toLowerCase().includes(token) || workflow.name.toLowerCase().includes(token) || workflow.tags?.includes(token))) || workflows[0];
+}
+
+function directorPatchNodes(generation: GenerationState, directorFrames: number): WorkflowGraphNode[] {
+  if (generation.preset.toLowerCase() !== 'ltx' || !generation.directorEnabled) return [];
+  return [
+    {
+      id: 'director_patch',
+      class_type: 'LTXDirector',
+      title: 'LTX Director Timeline Patch',
+      x: 330,
+      y: 530,
+      width: 260,
+      height: 148,
+      inputs: ['global_prompt', 'timeline_data', 'guide_strength', 'custom_audio'],
+      widgets: [
+        { name: 'duration_frames', value: directorFrames - 1 },
+        { name: 'duration_seconds', value: generation.directorDuration.toFixed(2) },
+        { name: 'guide_strength', value: generation.directorGuideStrength.toFixed(2) },
+        { name: 'resize_method', value: generation.directorResizeMethod },
+      ],
+    },
+    {
+      id: 'director_trim',
+      class_type: 'VHS_SelectImages',
+      title: 'Trim Director Frames To Timeline',
+      x: 1680,
+      y: 265,
+      width: 260,
+      height: 116,
+      inputs: ['image', 'indexes'],
+      widgets: [{ name: 'indexes', value: `0:${directorFrames}` }],
+    },
+  ];
+}
+
+function buildStudioWorkflowGraph(
+  backendNodes: WorkflowGraphNode[],
+  backendLinks: WorkflowGraphLink[],
+  generation: GenerationState,
+  alignedFrames: number,
+  directorFrames: number,
+) {
+  const nodes = backendNodes.map((node) => patchedWorkflowNode(node, generation, alignedFrames, directorFrames));
+  const links = [...backendLinks];
+  const directorNodes = directorPatchNodes(generation, directorFrames);
+  if (directorNodes.length) {
+    nodes.push(...directorNodes);
+    links.push(
+      { from_node: 'director_patch', to_node: '4', type: 'PROMPT' },
+      { from_node: 'director_patch', to_node: '7', type: 'DIRECTOR' },
+      { from_node: '13', to_node: 'director_trim', type: 'IMAGE' },
+      { from_node: 'director_trim', to_node: '14', type: 'IMAGE' },
+    );
+  }
+  const width = Math.max(2400, ...nodes.map((node) => Number(node.x || 0) + Number(node.width || 230) + 120));
+  const height = Math.max(920, ...nodes.map((node) => Number(node.y || 0) + Number(node.height || 118) + 120));
+  return { nodes, links, width, height };
+}
+
+function StudioWorkflowGraph({
+  nodes,
+  links,
+  width,
+  height,
+  workflowName,
+  synced,
+}: {
+  nodes: WorkflowGraphNode[];
+  links: WorkflowGraphLink[];
+  width: number;
+  height: number;
+  workflowName: string;
+  synced: boolean;
+}) {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const scaledWidth = Math.max(width, 1600);
+  const scaledHeight = Math.max(height, 900);
+
+  return (
+    <div className="studio-workflow-scroll">
+      <div className="studio-workflow-plane" style={{ width: scaledWidth, height: scaledHeight }}>
+        <div className="studio-node-group">{workflowName || 'Backend workflow'} {synced ? 'SYNCED' : 'FALLBACK'}</div>
+        <svg className="studio-workflow-wires" width={scaledWidth} height={scaledHeight}>
+          {links.map((link, index) => {
+            const from = nodeMap.get(String(link.from_node));
+            const to = nodeMap.get(String(link.to_node));
+            if (!from || !to) return null;
+            const x1 = Number(from.x || 0) + Number(from.width || 230);
+            const y1 = Number(from.y || 0) + 34 + Number(link.from_slot || 0) * 12;
+            const x2 = Number(to.x || 0);
+            const y2 = Number(to.y || 0) + 34 + Number(link.to_slot || 0) * 12;
+            const mid = Math.max(60, Math.abs(x2 - x1) * 0.45);
+            return (
+              <path
+                key={`${link.from_node}-${link.to_node}-${index}`}
+                className={`studio-workflow-wire wire-${workflowNodeKind(from)} wire-${workflowNodeKind(to)}`}
+                d={`M ${x1} ${y1} C ${x1 + mid} ${y1}, ${x2 - mid} ${y2}, ${x2} ${y2}`}
+              />
+            );
+          })}
+        </svg>
+        {nodes.map((node) => (
+          <article
+            className={`studio-template-node node-${workflowNodeKind(node)}`}
+            key={node.id}
+            style={{ left: Number(node.x || 0), top: Number(node.y || 0), width: Number(node.width || 230), minHeight: Number(node.height || 118) }}
+          >
+            <header><strong>{node.title || node.class_type}</strong><span>#{node.id}</span></header>
+            <small>{node.class_type}</small>
+            <div className="studio-node-ports">
+              <span>{(node.inputs ?? []).slice(0, 4).join(' / ') || 'input'}</span>
+              <span>{(node.outputs ?? []).slice(0, 3).join(' / ') || 'output'}</span>
+            </div>
+            <div className="studio-node-widgets">
+              {(node.widgets ?? []).slice(0, 5).map((widget, index) => (
+                <div key={`${node.id}-${widget.name || index}`}>
+                  <span>{widget.name || `value ${index + 1}`}</span>
+                  <b>{shortWorkflowValue(widget.value)}</b>
+                </div>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function HomePage() {
   const catalog = useModelCatalogQuery();
   const gallery = useGalleryQuery();
   const loras = useLorasQuery();
+  const workflows = useWorkflowsQuery();
   const generation = useGenerationStore();
   const loraStore = useLoraStore();
   const ui = useUiStore();
@@ -125,8 +331,15 @@ export function HomePage() {
   const [loraSearch, setLoraSearch] = useState('');
   const [loraModalOpen, setLoraModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'director' | 'linear' | 'inpaint' | 'workflow'>('linear');
+  const [linearZoom, setLinearZoom] = useState(1);
 
   const allModels = useMemo(() => modelOptions(catalog.data), [catalog.data]);
+  const vaeOptions = useMemo(() => assetSelectOptions(catalog.data, ['vae']), [catalog.data]);
+  const textEncoderOptions = useMemo(() => assetSelectOptions(catalog.data, ['text_encoders', 'clip']), [catalog.data]);
+  const audioVaeOptions = useMemo(() => assetSelectOptions(catalog.data, ['vae'], ['audio', 'ltx']), [catalog.data]);
+  const latentUpscaleOptions = useMemo(() => assetSelectOptions(catalog.data, ['latent_upscale_models', 'upscale_models'], ['ltx', 'spatial']), [catalog.data]);
+  const studioWorkflow = useMemo(() => preferredWorkflow(workflows.data, generation.preset, generation.workflowId), [generation.preset, generation.workflowId, workflows.data]);
+  const workflowAnalysis = useWorkflowAnalysisQuery(studioWorkflow?.id || '');
   const models = useMemo(() => {
     const filtered = allModels.filter((model) => modelMatchesPreset(model, generation.preset));
     return filtered.length ? filtered : allModels;
@@ -134,6 +347,8 @@ export function HomePage() {
   const newestGalleryItem = gallery.data?.[0];
   const controlNetCompatible = controlNetCompatiblePreset(generation.preset);
   const videoMode = videoPreset(generation.preset);
+  const qwenImageEdit = generation.preset.toLowerCase() === 'qwen';
+  const ltxDirectorView = generation.preset.toLowerCase() === 'ltx' && viewMode === 'director';
   const directorMode = generation.preset.toLowerCase() === 'ltx' && generation.directorEnabled;
   const alignedFrames = alignVideoFrames(generation.preset, generation.videoFrames);
   const allReferenceImages = useMemo(
@@ -142,6 +357,10 @@ export function HomePage() {
   );
   const directorFrames = alignVideoFrames('ltx', Math.round(generation.directorDuration * generation.videoFps));
   const controlNetModels = useMemo(() => controlNetModelOptions(catalog.data, generation.preset, generation.controlNetType), [catalog.data, generation.preset, generation.controlNetType]);
+  const studioWorkflowGraph = useMemo(() => {
+    const graph = workflowAnalysis.data?.visual_graph;
+    return buildStudioWorkflowGraph(graph?.nodes ?? [], graph?.links ?? [], generation, alignedFrames, directorFrames);
+  }, [alignedFrames, directorFrames, generation, workflowAnalysis.data?.visual_graph]);
   const visibleLoras = useMemo(() => {
     const q = loraSearch.trim().toLowerCase();
     return (loras.data ?? [])
@@ -167,6 +386,16 @@ export function HomePage() {
     }
   }, [controlNetCompatible, controlNetModels, generation]);
 
+  useEffect(() => {
+    if (!qwenImageEdit) return;
+    if (generation.activity !== 'img2img') {
+      generation.setActivity('img2img');
+    }
+    if (generation.img2imgMode !== 'image') {
+      generation.setImg2ImgMode('image');
+    }
+  }, [generation, qwenImageEdit]);
+
   const payload = useMemo<GenerateRequest>(
     () => ({
       activity: directorMode ? 'txt2img' : generation.activity,
@@ -187,10 +416,10 @@ export function HomePage() {
       seed: generation.seed,
       batch_size: 1,
       denoise: generation.activity === 'img2img' ? generation.denoise : 1,
-      vae: 'Automatic',
-      text_encoder: 'Automatic',
+      vae: generation.vaeOverrideEnabled ? generation.videoVae : 'Automatic',
+      text_encoder: generation.textEncoderOverrideEnabled ? generation.textEncoder : 'Automatic',
       loras: loraStore.activeLoras,
-      distilled_loras: [],
+      distilled_loras: generation.preset.toLowerCase() === 'ltx' && !generation.distilledLoraEnabled ? [{ name: 'None', strength: 0 }] : [],
       img2img: {
         mode: generation.img2imgMode === 'inpaint' ? 'Inpaint masked area' : 'Image to Image',
         resize_mode: generation.resizeMode,
@@ -224,10 +453,11 @@ export function HomePage() {
             motion_adapter: generation.preset.toLowerCase() === 'wan' ? 'WAN T2V / I2V' : 'LTX latent video',
             motion_strength: generation.videoMotionStrength,
             active_audio: generation.videoActiveAudio,
-            video_vae: generation.videoVae,
-            audio_vae: generation.audioVae,
-            latent_upscale: generation.latentUpscale,
+            video_vae: generation.vaeOverrideEnabled ? generation.videoVae : 'Automatic',
+            audio_vae: generation.audioVaeEnabled ? generation.audioVae : 'None',
+            latent_upscale: generation.latentUpscaleEnabled ? generation.latentUpscale : 'None',
             latent_upscale_refine: generation.latentUpscaleRefine,
+            qwen_auto_edit_lora: generation.lightningLoraEnabled,
             decode_tiles_x: generation.decodeTilesX,
             decode_tiles_y: generation.decodeTilesY,
             decode_overlap: generation.decodeOverlap,
@@ -289,16 +519,17 @@ export function HomePage() {
     },
   });
 
-  const cancelMutation = useMutation({
-    mutationFn: () => nexusApi.cancelGeneration(jobId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['generation-job', jobId] }),
-  });
-
   const activeJob = jobQuery.data ?? startMutation.data;
   const processing = startMutation.isPending || (!!activeJob && !terminalStatus(activeJob));
   const generatedOutput = activeJob?.status === 'completed' ? activeJob.outputs?.[0] : null;
   const previewUrl = outputUrl(generatedOutput?.url || newestGalleryItem?.image);
   const previewIsVideo = /\.(mp4|mov|webm|mkv|avi)$/i.test(generatedOutput?.filename || newestGalleryItem?.filename || '');
+
+  function handleLinearViewerWheel(event: WheelEvent<HTMLDivElement>) {
+    if (viewMode !== 'linear') return;
+    event.preventDefault();
+    setLinearZoom((value) => Math.max(0.25, Math.min(3, Number((value + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2)))));
+  }
 
   async function generate() {
     if (!generation.prompt.trim()) {
@@ -356,10 +587,23 @@ export function HomePage() {
             {processing ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}
             Generate
           </button>
-          <div className="button-grid mode-switch">
-            <button className={generation.activity === 'txt2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('txt2img')}>txt2img</button>
-            <button className={generation.activity === 'img2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('img2img')}>img2img</button>
-          </div>
+          {(localError || activeJob?.status === 'failed' || activeJob?.status === 'completed') && (
+            <div className={localError || activeJob?.status === 'failed' ? 'studio-inline-status error' : 'studio-inline-status'}>
+              {localError || activeJob?.error || activeJob?.message || generatedOutput?.filename}
+            </div>
+          )}
+          {!ltxDirectorView && (
+            <div className="button-grid mode-switch">
+              {qwenImageEdit ? (
+                <button className="active" type="button" onClick={() => generation.setActivity('img2img')}>img2img</button>
+              ) : (
+                <>
+                  <button className={generation.activity === 'txt2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('txt2img')}>txt2img</button>
+                  <button className={generation.activity === 'img2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('img2img')}>img2img</button>
+                </>
+              )}
+            </div>
+          )}
 
           <label className="field">
             <span>Prompt</span>
@@ -370,6 +614,79 @@ export function HomePage() {
             <span>Negative Prompt</span>
             <textarea value={generation.negativePrompt} onChange={(event) => generation.setNegativePrompt(event.currentTarget.value)} placeholder="Avoid..." />
           </label>
+
+          <div className="img2img-source reference-source-block">
+            <label className="dropzone small-dropzone">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={async (event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (!file) return;
+                  generation.setReferenceImage(await readFileAsDataUrl(file), file.name);
+                  if (qwenImageEdit) generation.setActivity('img2img');
+                }}
+              />
+              <span>{generation.referenceImageName || (qwenImageEdit ? 'Select Qwen edit reference image' : 'Select reference image')}</span>
+            </label>
+            <label className="dropzone small-dropzone multi-reference-dropzone">
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={async (event) => {
+                  if (!event.currentTarget.files?.length) return;
+                  generation.addExtraReferenceImages(await readFilesAsReferenceImages(event.currentTarget.files));
+                  event.currentTarget.value = '';
+                }}
+              />
+              <Images size={16} />
+              <span>{generation.extraReferenceImages.length ? `${generation.extraReferenceImages.length} extra reference(s)` : 'Add multi-image references'}</span>
+            </label>
+            {generation.extraReferenceImages.length > 0 && (
+              <div className="reference-chip-list">
+                {generation.extraReferenceImages.map((image, index) => (
+                  <button type="button" key={`${image.name}-${index}`} onClick={() => generation.removeExtraReferenceImage(index)} title="Remove reference">
+                    <img src={image.dataUrl} alt={image.name} />
+                    <span>{index === 0 && generation.preset === 'Wan' ? 'End frame' : image.name}</span>
+                    <X size={12} />
+                  </button>
+                ))}
+              </div>
+            )}
+            {generation.referenceImage && <img src={generation.referenceImage} alt="img2img reference" />}
+            {(generation.activity === 'img2img' || viewMode === 'inpaint' || qwenImageEdit) && (
+              <>
+                <label className="field">
+                  <span>Denoise {generation.denoise.toFixed(2)}</span>
+                  <input type="range" min={0.05} max={1} step={0.01} value={generation.denoise} onChange={(event) => generation.setDenoise(Number(event.currentTarget.value))} />
+                </label>
+                <label className="field">
+                  <span>Resize</span>
+                  <select value={generation.resizeMode} onChange={(event) => generation.setResizeMode(event.currentTarget.value)}>
+                    <option>Just Resize</option>
+                    <option>Crop and Resize</option>
+                    <option>Resize and Fill</option>
+                    <option>Latent Upscale 2x</option>
+                  </select>
+                </label>
+                {generation.img2imgMode === 'inpaint' && (
+                  <div className="two-col">
+                    <label className="field">
+                      <span>Mask Blur</span>
+                      <input type="number" min={0} max={64} value={generation.maskBlur} onChange={(event) => generation.setMaskBlur(Number(event.currentTarget.value))} />
+                    </label>
+                    <label className="field">
+                      <span>Fill</span>
+                      <select value={generation.maskContent} onChange={(event) => generation.setMaskContent(event.currentTarget.value)}>
+                        <option>Original</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
 
           <details className="control-section" open>
             <summary>Concepts (LoRA) <button className="mini-button" type="button" onClick={(event) => { event.preventDefault(); setLoraModalOpen(true); }}><FilePlus2 size={13} /> Add</button></summary>
@@ -393,15 +710,58 @@ export function HomePage() {
           <details className="control-section">
             <summary>VAE / Text Encoder</summary>
             <div className="control-stack">
-              <label className="field"><span>Video VAE</span><input value={generation.videoVae} onChange={(event) => generation.setVideoVae(event.currentTarget.value)} /></label>
-              <label className="field"><span>Audio VAE</span><input value={generation.audioVae} onChange={(event) => generation.setAudioVae(event.currentTarget.value)} /></label>
+              <div className="control-row">
+                <span>Text encoder override</span>
+                <button className={generation.textEncoderOverrideEnabled ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setTextEncoderOverrideEnabled(!generation.textEncoderOverrideEnabled)} aria-label="Toggle text encoder override">
+                  <span />
+                </button>
+              </div>
+              {generation.textEncoderOverrideEnabled && (
+                <label className="field">
+                  <span>Text Encoder</span>
+                  <select value={generation.textEncoder} onChange={(event) => generation.setTextEncoder(event.currentTarget.value)}>
+                    <option value="Automatic">Automatic</option>
+                    {textEncoderOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              )}
+              <div className="control-row">
+                <span>VAE override</span>
+                <button className={generation.vaeOverrideEnabled ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setVaeOverrideEnabled(!generation.vaeOverrideEnabled)} aria-label="Toggle VAE override">
+                  <span />
+                </button>
+              </div>
+              {generation.vaeOverrideEnabled && (
+                <label className="field">
+                  <span>VAE / Video VAE</span>
+                  <select value={generation.videoVae} onChange={(event) => generation.setVideoVae(event.currentTarget.value)}>
+                    <option value="Automatic">Automatic</option>
+                    {vaeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              )}
             </div>
           </details>
 
           <details className="control-section">
             <summary>{generation.preset === 'Qwen' ? 'Lightning LoRA' : 'Distilled LoRA'}</summary>
             <div className="control-stack">
-              <p className="compact-note">{generation.preset === 'Qwen' ? 'Qwen routes use lightning/reference helpers when available.' : 'Distilled route helpers are resolved by the backend template.'}</p>
+              {generation.preset === 'Qwen' ? (
+                <div className="control-row">
+                  <span>Auto Qwen edit lightning LoRA</span>
+                  <button className={generation.lightningLoraEnabled ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setLightningLoraEnabled(!generation.lightningLoraEnabled)} aria-label="Toggle Qwen lightning LoRA">
+                    <span />
+                  </button>
+                </div>
+              ) : (
+                <div className="control-row">
+                  <span>Auto distilled route LoRAs</span>
+                  <button className={generation.distilledLoraEnabled ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setDistilledLoraEnabled(!generation.distilledLoraEnabled)} aria-label="Toggle distilled LoRAs">
+                    <span />
+                  </button>
+                </div>
+              )}
+              <p className="compact-note">{generation.preset === 'Qwen' ? 'Sends qwen_auto_edit_lora directly to backend.' : 'When enabled, backend resolves the default distilled LoRA stack for the selected route.'}</p>
             </div>
           </details>
 
@@ -434,170 +794,6 @@ export function HomePage() {
             </div>
           </details>
 
-          {(viewMode === 'inpaint' || generation.activity === 'img2img') && (
-            <div className="img2img-source">
-              <label className="dropzone small-dropzone">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={async (event) => {
-                    const file = event.currentTarget.files?.[0];
-                    if (!file) return;
-                    generation.setReferenceImage(await readFileAsDataUrl(file), file.name);
-                  }}
-                />
-                <span>{generation.referenceImageName || 'Select reference image'}</span>
-              </label>
-              <label className="dropzone small-dropzone multi-reference-dropzone">
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={async (event) => {
-                    if (!event.currentTarget.files?.length) return;
-                    generation.addExtraReferenceImages(await readFilesAsReferenceImages(event.currentTarget.files));
-                    event.currentTarget.value = '';
-                  }}
-                />
-                <Images size={16} />
-                <span>{generation.extraReferenceImages.length ? `${generation.extraReferenceImages.length} extra reference(s)` : 'Add multi-image references'}</span>
-              </label>
-              {generation.extraReferenceImages.length > 0 && (
-                <div className="reference-chip-list">
-                  {generation.extraReferenceImages.map((image, index) => (
-                    <button type="button" key={`${image.name}-${index}`} onClick={() => generation.removeExtraReferenceImage(index)} title="Remove reference">
-                      <img src={image.dataUrl} alt={image.name} />
-                      <span>{index === 0 && generation.preset === 'Wan' ? 'End frame' : image.name}</span>
-                      <X size={12} />
-                    </button>
-                  ))}
-                </div>
-              )}
-              {generation.referenceImage && generation.img2imgMode === 'image' && <img src={generation.referenceImage} alt="img2img reference" />}
-              {generation.referenceImage && generation.img2imgMode === 'inpaint' && (
-                <InpaintCanvas image={generation.referenceImage} brushSize={generation.brushSize} onBrushSizeChange={generation.setBrushSize} onMaskChange={generation.setInpaintMaskImage} />
-              )}
-              <label className="field">
-                <span>Denoise {generation.denoise.toFixed(2)}</span>
-                <input type="range" min={0.05} max={1} step={0.01} value={generation.denoise} onChange={(event) => generation.setDenoise(Number(event.currentTarget.value))} />
-              </label>
-              <label className="field">
-                <span>Resize</span>
-                <select value={generation.resizeMode} onChange={(event) => generation.setResizeMode(event.currentTarget.value)}>
-                  <option>Just Resize</option>
-                  <option>Crop and Resize</option>
-                  <option>Resize and Fill</option>
-                  <option>Latent Upscale 2x</option>
-                </select>
-              </label>
-              {generation.img2imgMode === 'inpaint' && (
-                <div className="two-col">
-                  <label className="field">
-                    <span>Mask Blur</span>
-                    <input type="number" min={0} max={64} value={generation.maskBlur} onChange={(event) => generation.setMaskBlur(Number(event.currentTarget.value))} />
-                  </label>
-                  <label className="field">
-                    <span>Fill</span>
-                    <select value={generation.maskContent} onChange={(event) => generation.setMaskContent(event.currentTarget.value)}>
-                      <option>Original</option>
-                    </select>
-                  </label>
-                </div>
-              )}
-            </div>
-          )}
-
-          <details className="control-section">
-            <summary>ControlNet / Reference</summary>
-          <section className="controlnet-panel">
-            <div className="control-row">
-              <span>ControlNet</span>
-              <button
-                className={generation.controlNetEnabled ? 'toggle active' : 'toggle'}
-                type="button"
-                onClick={() => generation.setControlNetEnabled(!generation.controlNetEnabled)}
-                disabled={!controlNetCompatible}
-                aria-label="Toggle ControlNet"
-              >
-                <span />
-              </button>
-            </div>
-            {generation.controlNetEnabled && controlNetCompatible && (
-              <div className="control-stack">
-                <div className="two-col">
-                  <label className="field">
-                    <span>Type</span>
-                    <select value={generation.controlNetType} onChange={(event) => generation.setControlNetType(event.currentTarget.value)}>
-                      <option value="canny">Canny</option>
-                      <option value="depth">Depth</option>
-                      <option value="openpose">OpenPose</option>
-                      <option value="lineart">Lineart</option>
-                      <option value="tile">Tile</option>
-                      <option value="ltx_ic">LTX IC-LoRA</option>
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>Balance</span>
-                    <select value={generation.controlNetBalance} onChange={(event) => generation.setControlNetBalance(event.currentTarget.value)}>
-                      <option>Balanced</option>
-                      <option>Control priority</option>
-                      <option>Prompt priority</option>
-                    </select>
-                  </label>
-                </div>
-                <label className="field">
-                  <span>Model</span>
-                  <select
-                    value={generation.controlNetModel}
-                    onChange={(event) => {
-                      const selected = controlNetModels.find((model) => model.value === event.currentTarget.value);
-                      generation.setControlNetModel(event.currentTarget.value, selected?.name || 'Automatic');
-                    }}
-                  >
-                    <option value="Automatic">Automatic</option>
-                    {controlNetModels.map((model) => (
-                      <option key={model.value} value={model.value}>
-                        {model.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="dropzone small-dropzone">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={async (event) => {
-                      const file = event.currentTarget.files?.[0];
-                      if (!file) return;
-                      generation.setControlNetImage(await readFileAsDataUrl(file), file.name);
-                    }}
-                  />
-                  <span>{generation.controlNetImageName || (generation.referenceImage ? 'Using img2img reference if empty' : 'Select control image')}</span>
-                </label>
-                {generation.controlNetImage && <img className="controlnet-thumb" src={generation.controlNetImage} alt="ControlNet source" />}
-                <label className="field">
-                  <span>Strength {generation.controlNetStrength.toFixed(2)}</span>
-                  <input type="range" min={0} max={2} step={0.01} value={generation.controlNetStrength} onChange={(event) => generation.setControlNetStrength(Number(event.currentTarget.value))} />
-                </label>
-                <div className="two-col">
-                  <label className="field">
-                    <span>Start</span>
-                    <input type="number" min={0} max={1} step={0.05} value={generation.controlNetStart} onChange={(event) => generation.setControlNetRange(Number(event.currentTarget.value), generation.controlNetEnd)} />
-                  </label>
-                  <label className="field">
-                    <span>End</span>
-                    <input type="number" min={0} max={1} step={0.05} value={generation.controlNetEnd} onChange={(event) => generation.setControlNetRange(generation.controlNetStart, Number(event.currentTarget.value))} />
-                  </label>
-                </div>
-                <p className="compact-note">
-                  {controlNetModels.length ? `${controlNetModels.length} compatible model(s) detected.` : 'No compatible local model detected for this preset/type.'}
-                </p>
-              </div>
-            )}
-            {!controlNetCompatible && <p className="compact-note">ControlNet is available for SD, SDXL and LTX routes.</p>}
-          </section>
-          </details>
-
           {videoMode && (
             <details className="control-section" open={generation.preset.toLowerCase() === 'ltx'}>
               <summary>Video / Motion</summary>
@@ -624,16 +820,36 @@ export function HomePage() {
                 <span>Motion Strength {generation.videoMotionStrength.toFixed(2)}</span>
                 <input type="range" min={0} max={1.5} step={0.01} value={generation.videoMotionStrength} onChange={(event) => generation.setVideoMotionStrength(Number(event.currentTarget.value))} />
               </label>
-              <div className="two-col">
+              <div className="control-row">
+                <span>Video VAE override</span>
+                <button className={generation.vaeOverrideEnabled ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setVaeOverrideEnabled(!generation.vaeOverrideEnabled)} aria-label="Toggle video VAE override">
+                  <span />
+                </button>
+              </div>
+              {generation.vaeOverrideEnabled && (
                 <label className="field">
                   <span>Video VAE</span>
-                  <input value={generation.videoVae} onChange={(event) => generation.setVideoVae(event.currentTarget.value)} />
+                  <select value={generation.videoVae} onChange={(event) => generation.setVideoVae(event.currentTarget.value)}>
+                    <option value="Automatic">Automatic</option>
+                    {vaeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
                 </label>
+              )}
+              <div className="control-row">
+                <span>Audio VAE route</span>
+                <button className={generation.audioVaeEnabled ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setAudioVaeEnabled(!generation.audioVaeEnabled)} aria-label="Toggle audio VAE route">
+                  <span />
+                </button>
+              </div>
+              {generation.audioVaeEnabled && (
                 <label className="field">
                   <span>Audio VAE</span>
-                  <input value={generation.audioVae} onChange={(event) => generation.setAudioVae(event.currentTarget.value)} />
+                  <select value={generation.audioVae} onChange={(event) => generation.setAudioVae(event.currentTarget.value)}>
+                    <option value="Automatic">Automatic</option>
+                    {audioVaeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
                 </label>
-              </div>
+              )}
               {generation.preset.toLowerCase() === 'ltx' && (
                 <>
                   <div className="control-row">
@@ -642,13 +858,24 @@ export function HomePage() {
                       <span />
                     </button>
                   </div>
-                  <label className="field">
-                    <span>Latent Upscale</span>
-                    <input value={generation.latentUpscale} onChange={(event) => generation.setLatentUpscale(event.currentTarget.value)} />
-                  </label>
+                  <div className="control-row">
+                    <span>Latent upscale route</span>
+                    <button className={generation.latentUpscaleEnabled ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setLatentUpscaleEnabled(!generation.latentUpscaleEnabled)} aria-label="Toggle latent upscale route">
+                      <span />
+                    </button>
+                  </div>
+                  {generation.latentUpscaleEnabled && (
+                    <label className="field">
+                      <span>Latent Upscale</span>
+                      <select value={generation.latentUpscale} onChange={(event) => generation.setLatentUpscale(event.currentTarget.value)}>
+                        <option value="Automatic">Automatic</option>
+                        {latentUpscaleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                  )}
                   <div className="control-row">
                     <span>Latent upscale refine</span>
-                    <button className={generation.latentUpscaleRefine ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setLatentUpscaleRefine(!generation.latentUpscaleRefine)} aria-label="Toggle latent upscale refine">
+                    <button className={generation.latentUpscaleRefine ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setLatentUpscaleRefine(!generation.latentUpscaleRefine)} disabled={!generation.latentUpscaleEnabled} aria-label="Toggle latent upscale refine">
                       <span />
                     </button>
                   </div>
@@ -672,6 +899,97 @@ export function HomePage() {
             </section>
             </details>
           )}
+
+          <details className="control-section">
+            <summary>ControlNet / Reference</summary>
+            <section className="controlnet-panel">
+              <div className="control-row">
+                <span>ControlNet</span>
+                <button
+                  className={generation.controlNetEnabled ? 'toggle active' : 'toggle'}
+                  type="button"
+                  onClick={() => generation.setControlNetEnabled(!generation.controlNetEnabled)}
+                  disabled={!controlNetCompatible}
+                  aria-label="Toggle ControlNet"
+                >
+                  <span />
+                </button>
+              </div>
+              {generation.controlNetEnabled && controlNetCompatible && (
+                <div className="control-stack">
+                  <div className="two-col">
+                    <label className="field">
+                      <span>Type</span>
+                      <select value={generation.controlNetType} onChange={(event) => generation.setControlNetType(event.currentTarget.value)}>
+                        <option value="canny">Canny</option>
+                        <option value="depth">Depth</option>
+                        <option value="openpose">OpenPose</option>
+                        <option value="lineart">Lineart</option>
+                        <option value="tile">Tile</option>
+                        <option value="ltx_ic">LTX IC-LoRA</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>Balance</span>
+                      <select value={generation.controlNetBalance} onChange={(event) => generation.setControlNetBalance(event.currentTarget.value)}>
+                        <option>Balanced</option>
+                        <option>Control priority</option>
+                        <option>Prompt priority</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label className="field">
+                    <span>Model</span>
+                    <select
+                      value={generation.controlNetModel}
+                      onChange={(event) => {
+                        const selected = controlNetModels.find((model) => model.value === event.currentTarget.value);
+                        generation.setControlNetModel(event.currentTarget.value, selected?.name || 'Automatic');
+                      }}
+                    >
+                      <option value="Automatic">Automatic</option>
+                      {controlNetModels.map((model) => (
+                        <option key={model.value} value={model.value}>
+                          {model.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="dropzone small-dropzone">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (event) => {
+                        const file = event.currentTarget.files?.[0];
+                        if (!file) return;
+                        generation.setControlNetImage(await readFileAsDataUrl(file), file.name);
+                      }}
+                    />
+                    <span>{generation.controlNetImageName || (generation.referenceImage ? 'Using img2img reference if empty' : 'Select control image')}</span>
+                  </label>
+                  {generation.controlNetImage && <img className="controlnet-thumb" src={generation.controlNetImage} alt="ControlNet source" />}
+                  <label className="field">
+                    <span>Strength {generation.controlNetStrength.toFixed(2)}</span>
+                    <input type="range" min={0} max={2} step={0.01} value={generation.controlNetStrength} onChange={(event) => generation.setControlNetStrength(Number(event.currentTarget.value))} />
+                  </label>
+                  <div className="two-col">
+                    <label className="field">
+                      <span>Start</span>
+                      <input type="number" min={0} max={1} step={0.05} value={generation.controlNetStart} onChange={(event) => generation.setControlNetRange(Number(event.currentTarget.value), generation.controlNetEnd)} />
+                    </label>
+                    <label className="field">
+                      <span>End</span>
+                      <input type="number" min={0} max={1} step={0.05} value={generation.controlNetEnd} onChange={(event) => generation.setControlNetRange(generation.controlNetStart, Number(event.currentTarget.value))} />
+                    </label>
+                  </div>
+                  <p className="compact-note">
+                    {controlNetModels.length ? `${controlNetModels.length} compatible model(s) detected.` : 'No compatible local model detected for this preset/type.'}
+                  </p>
+                </div>
+              )}
+              {!controlNetCompatible && <p className="compact-note">ControlNet is available for SD, SDXL and LTX routes.</p>}
+            </section>
+          </details>
 
           {generation.preset.toLowerCase() === 'ltx' && (
             <details className="control-section" open>
@@ -775,12 +1093,19 @@ export function HomePage() {
             <button type="button" className="icon-button" title="Save preview"><Save size={14} /></button>
           </div>
           {viewMode === 'linear' && (
-            <div className="studio-preview-content">
-              {previewUrl ? (
-                previewIsVideo ? <video className="extras-media" src={previewUrl} controls playsInline /> : <img className="extras-media" src={previewUrl} alt="Studio output preview" />
-              ) : (
-                <div className="preview-empty"><Images size={38} /><p>No output loaded</p><span>Generated files appear from ./output</span></div>
-              )}
+            <div className="studio-preview-content linear-viewer" onWheel={handleLinearViewerWheel}>
+              <div className="linear-zoom-stage" style={{ transform: `scale(${linearZoom})` }}>
+                {previewUrl ? (
+                  previewIsVideo ? <video className="extras-media" src={previewUrl} controls playsInline /> : <img className="extras-media" src={previewUrl} alt="Studio output preview" />
+                ) : (
+                  <div className="preview-empty"><Images size={38} /><p>No output loaded</p><span>Generated files appear from ./output</span></div>
+                )}
+              </div>
+              <div className="linear-zoom-readout">
+                <button type="button" onClick={() => setLinearZoom((value) => Math.max(0.25, Number((value - 0.1).toFixed(2))))}>-</button>
+                <span>{Math.round(linearZoom * 100)}%</span>
+                <button type="button" onClick={() => setLinearZoom((value) => Math.min(3, Number((value + 0.1).toFixed(2))))}>+</button>
+              </div>
             </div>
           )}
           {viewMode === 'inpaint' && (
@@ -794,19 +1119,185 @@ export function HomePage() {
           )}
           {viewMode === 'workflow' && (
             <div className="studio-node-workspace">
-              <div className="studio-node-group">LTX 2.3 Default</div>
-              {['Load Model', 'Positive Prompt', 'Video / Motion Settings', 'Preview Output', 'Save Video', 'Reference Image', 'Inpaint Mask', 'Video VAE / Audio VAE'].map((label, index) => (
-                <article className={`studio-template-node node-${index % 5}`} key={label} style={{ left: `${8 + (index % 4) * 22}%`, top: `${14 + Math.floor(index / 4) * 34}%` }}>
-                  <strong>{label}</strong><span>{index === 2 ? `${alignedFrames} frames / ${generation.videoFps} fps` : 'template synced'}</span>
-                </article>
-              ))}
+              {workflowAnalysis.isLoading ? (
+                <div className="preview-empty"><LoaderCircle className="spin" size={30} /><p>Loading backend workflow graph</p></div>
+              ) : studioWorkflowGraph.nodes.length ? (
+                <StudioWorkflowGraph
+                  nodes={studioWorkflowGraph.nodes}
+                  links={studioWorkflowGraph.links}
+                  width={studioWorkflowGraph.width}
+                  height={studioWorkflowGraph.height}
+                  workflowName={studioWorkflow?.name || generation.workflowName || 'Default backend route'}
+                  synced={Boolean(workflowAnalysis.data?.visual_graph?.nodes?.length)}
+                />
+              ) : (
+                <div className="preview-empty"><Workflow size={36} /><p>No workflow graph loaded</p><span>Select or import a workflow to sync nodes.</span></div>
+              )}
             </div>
           )}
           {viewMode === 'director' && (
             <div className="director-suite">
-              <div className="director-stats"><span>Duration <strong>{generation.directorDuration.toFixed(2)}s</strong></span><span>Frame Rate <strong>{generation.videoFps} fps</strong></span><span>Custom Width <strong>{generation.width}</strong></span><span>Custom Height <strong>{generation.height}</strong></span><span>Resize <strong>{generation.directorResizeMethod}</strong></span></div>
-              <div className="director-timeline"><div className="director-segment selected">Segment #1<br />image</div><div className="director-segment motion">Segment #2<br />new text-only motion beat</div><div className="director-audio">custom audio waveform</div></div>
-              <div className="director-prompts"><textarea value={generation.directorLocalPrompt} onChange={(event) => generation.setDirectorPrompts(event.currentTarget.value, generation.directorLocalNegative)} placeholder="Prompt for selected segment..." /><textarea value={generation.directorLocalNegative} onChange={(event) => generation.setDirectorPrompts(generation.directorLocalPrompt, event.currentTarget.value)} placeholder="Negative prompt for selected segment..." /></div>
+              <header className="director-engine-bar">
+                <div className="director-port-legend">
+                  <span><i className="port model" />model</span>
+                  <span><i className="port clip" />clip</span>
+                  <span><i className="port audio" />audio_vae</span>
+                  <span><i className="port latent" />optional_latent</span>
+                </div>
+                <strong>LTX Director Engine Map</strong>
+                <div className="director-port-legend right">
+                  <span>model<i className="port model" /></span>
+                  <span>positive<i className="port positive" /></span>
+                  <span>video_latent<i className="port video" /></span>
+                  <span>combined_audio<i className="port audio" /></span>
+                </div>
+              </header>
+              <div className="director-main">
+                <section className="director-workbench">
+                  <div className="director-stats">
+                    <label>
+                      <span>Duration</span>
+                      <input type="number" min={0.5} step={0.25} value={generation.directorDuration} onChange={(event) => generation.setDirectorTiming(Number(event.currentTarget.value), generation.directorGuideStrength)} />
+                    </label>
+                    <label>
+                      <span>Frame Rate</span>
+                      <input type="number" min={1} max={60} value={generation.videoFps} onChange={(event) => generation.setVideoTiming(generation.videoFrames, Number(event.currentTarget.value), generation.videoSeconds)} />
+                    </label>
+                    <label>
+                      <span>Custom Width</span>
+                      <input type="number" min={64} step={8} value={generation.width} onChange={(event) => generation.setSize(Number(event.currentTarget.value), generation.height)} />
+                    </label>
+                    <label>
+                      <span>Custom Height</span>
+                      <input type="number" min={64} step={8} value={generation.height} onChange={(event) => generation.setSize(generation.width, Number(event.currentTarget.value))} />
+                    </label>
+                    <label>
+                      <span>Resize Method</span>
+                      <select value={generation.directorResizeMethod} onChange={(event) => generation.setDirectorResize(event.currentTarget.value, generation.directorDivisibleBy, generation.directorImgCompression)}>
+                        <option value="maintain aspect ratio">Maintain aspect ratio</option>
+                        <option value="crop">Crop</option>
+                        <option value="stretch">Stretch</option>
+                        <option value="pad">Pad</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="director-toolbar">
+                    <label className="director-tool-button">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={async (event) => {
+                          const file = event.currentTarget.files?.[0];
+                          if (!file) return;
+                          generation.setReferenceImage(await readFileAsDataUrl(file), file.name);
+                          generation.setActivity('img2img');
+                          generation.setImg2ImgMode('image');
+                        }}
+                      />
+                      <FilePlus2 size={13} /> Add Image
+                    </label>
+                    <button type="button" onClick={() => generation.setDirectorPrompts(generation.directorLocalPrompt || 'new text-only motion beat', generation.directorLocalNegative)}>Add Text</button>
+                    <button type="button" onClick={() => generation.setDirectorUseCustomAudio(true)}>Add Audio</button>
+                    <button type="button" onClick={() => generation.setReferenceImage(null)}>Delete</button>
+                    <button type="button" className={allReferenceImages.length > 1 ? 'active' : ''}>Multiimage Load <b>{allReferenceImages.length > 1 ? 'On' : 'Off'}</b></button>
+                    <button type="button" className={generation.directorUseCustomAudio ? 'active align-right' : 'align-right'} onClick={() => generation.setDirectorUseCustomAudio(!generation.directorUseCustomAudio)}>Custom Audio: {generation.directorUseCustomAudio ? 'On' : 'Off'}</button>
+                  </div>
+                  <div className="director-ruler">
+                    {[0, 1.5, 3, 4.5, 6, 7.5, 9, 10.5].map((mark) => <span key={mark}>{mark.toFixed(2)}s</span>)}
+                  </div>
+                  <div className="director-timeline">
+                    <div className="director-track video-track">
+                      <span className="director-track-label">Video Keyframes Track</span>
+                      <article className="director-segment selected">
+                        {generation.referenceImage && <img src={generation.referenceImage} alt="Director reference" />}
+                        <button type="button" onClick={() => generation.setReferenceImage(null)}>x</button>
+                        <strong>Segment #1</strong>
+                        <small>0.00s - {Math.min(generation.directorDuration, 3.13).toFixed(2)}s</small>
+                        <em>image</em>
+                      </article>
+                      <article className="director-segment motion">
+                        <strong>Segment #2</strong>
+                        <small>{Math.min(generation.directorDuration, 3.14).toFixed(2)}s - {generation.directorDuration.toFixed(2)}s</small>
+                        <em>{generation.directorLocalPrompt || 'new text-only motion beat'}</em>
+                      </article>
+                      <button type="button" className="director-add-marker" onClick={() => generation.setDirectorPrompts(generation.directorLocalPrompt || 'new text-only motion beat', generation.directorLocalNegative)}>+</button>
+                    </div>
+                    <div className="director-track audio-track">
+                      <span className="director-track-label">Audio Waveform Track</span>
+                      <div className="director-audio">{generation.directorUseCustomAudio ? 'custom-audio.mp3' : 'custom audio waveform'}</div>
+                      <button type="button" className="director-add-marker" onClick={() => generation.setDirectorUseCustomAudio(true)}>+</button>
+                    </div>
+                  </div>
+                  <div className="director-playbar">
+                    <button type="button" className="primary-icon" onClick={() => generation.setDirectorEnabled(true)}><Play size={14} /></button>
+                    <button type="button" className="mini-button">Undo</button>
+                    <span><b>0.00s</b> Start: 0.00 | End: {Math.min(generation.directorDuration, 3.13).toFixed(2)}</span>
+                    <label>
+                      Guide Strength
+                      <input type="range" min={0} max={2} step={0.05} value={generation.directorGuideStrength} onChange={(event) => generation.setDirectorTiming(generation.directorDuration, Number(event.currentTarget.value))} />
+                      <strong>{generation.directorGuideStrength.toFixed(2)}</strong>
+                    </label>
+                  </div>
+                  <div className="director-prompts">
+                    <label>
+                      <span>Prompt for selected segment</span>
+                      <textarea value={generation.directorLocalPrompt} onChange={(event) => generation.setDirectorPrompts(event.currentTarget.value, generation.directorLocalNegative)} placeholder="image" />
+                    </label>
+                    <label>
+                      <span>Negative prompt for selected segment</span>
+                      <textarea value={generation.directorLocalNegative} onChange={(event) => generation.setDirectorPrompts(generation.directorLocalPrompt, event.currentTarget.value)} placeholder="Avoid artifacts, blur, noise, bad anatomy, black frames..." />
+                    </label>
+                  </div>
+                </section>
+                <aside className="director-inspector">
+                  <div className="director-inspector-tabs">
+                    <button className="active" type="button">Live Director Preview</button>
+                    <button type="button">Info</button>
+                  </div>
+                  <section className="director-inspector-card">
+                    <header><strong>Image Segment</strong><span>Segment #1</span></header>
+                    <div className="two-col">
+                      <label className="field"><span>Start</span><input type="number" min={0} step={0.01} value={0} readOnly /></label>
+                      <label className="field"><span>Duration</span><input type="number" min={0.25} step={0.01} value={Math.min(generation.directorDuration, 3.13).toFixed(2)} onChange={(event) => generation.setDirectorTiming(Math.max(Number(event.currentTarget.value), generation.directorDuration), generation.directorGuideStrength)} /></label>
+                    </div>
+                    <div className="two-col">
+                      <label className="field"><span>Guide Strength</span><input type="number" min={0} max={2} step={0.05} value={generation.directorGuideStrength} onChange={(event) => generation.setDirectorTiming(generation.directorDuration, Number(event.currentTarget.value))} /></label>
+                      <label className="field"><span>Insert Frame</span><input type="number" min={1} value={directorFrames} onChange={(event) => generation.setVideoTiming(Number(event.currentTarget.value), generation.videoFps, generation.videoSeconds)} /></label>
+                    </div>
+                    <label className="field"><span>Negative prompt for segment</span><textarea value={generation.directorLocalNegative} onChange={(event) => generation.setDirectorPrompts(generation.directorLocalPrompt, event.currentTarget.value)} placeholder="Segment-specific negatives..." /></label>
+                  </section>
+                  <section className="director-inspector-card">
+                    <header><strong>Crop Mode / Camera Keyframes</strong><span>normalized</span></header>
+                    <label className="field">
+                      <span>Crop Mode</span>
+                      <select value={generation.directorResizeMethod} onChange={(event) => generation.setDirectorResize(event.currentTarget.value, generation.directorDivisibleBy, generation.directorImgCompression)}>
+                        <option value="maintain aspect ratio">Maintain aspect ratio</option>
+                        <option value="crop">Crop visible frame</option>
+                        <option value="pad">Pad frame</option>
+                        <option value="stretch">Stretch frame</option>
+                      </select>
+                    </label>
+                    <div className="director-crop-preview">
+                      {previewUrl ? (
+                        previewIsVideo ? <video src={previewUrl} muted playsInline /> : <img src={previewUrl} alt="Director crop preview" />
+                      ) : generation.referenceImage ? (
+                        <img src={generation.referenceImage} alt="Director reference crop" />
+                      ) : (
+                        <span>No preview loaded</span>
+                      )}
+                    </div>
+                    <p>Drag the red box to frame the visible crop; resize handles sync the camera crop.</p>
+                  </section>
+                  <button type="button" className="primary-button director-render-button" onClick={generate} disabled={processing}>
+                    {processing ? <LoaderCircle className="spin" size={14} /> : <Play size={14} />}
+                    Render Sequenced Video
+                  </button>
+                  <div className="director-export-row">
+                    <button type="button" onClick={() => generation.setDirectorEnabled(true)}>Export Metadata</button>
+                    <button type="button" onClick={() => { generation.setActivity('img2img'); generation.setImg2ImgMode('image'); setViewMode('linear'); }}>Send to img2video</button>
+                  </div>
+                </aside>
+              </div>
             </div>
           )}
 
@@ -859,23 +1350,6 @@ export function HomePage() {
         )}
       </div>
 
-      <footer className="extras-action-bar">
-        <div className="status-line">
-          <span>{activeJob?.message || 'Studio generation ready'}</span>
-          {(localError || activeJob?.status === 'failed') && <strong>{localError || activeJob?.error || activeJob?.message}</strong>}
-          {activeJob?.status === 'completed' && <em>{generatedOutput?.filename || 'Generation completed'}</em>}
-        </div>
-        <div className="action-buttons">
-          <button type="button" className="flat-button" onClick={() => cancelMutation.mutate()} disabled={!processing || !jobId}>
-            <Square size={14} />
-            Cancel
-          </button>
-          <button type="button" className="primary-button" onClick={generate} disabled={processing}>
-            {processing ? <LoaderCircle className="spin" size={14} /> : <Play size={14} />}
-            Generate
-          </button>
-        </div>
-      </footer>
       {loraModalOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Select LoRA concept">
           <div className="modal-panel lora-modal">

@@ -18,7 +18,7 @@ from urllib.parse import quote, unquote
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .asset_resolver import resolve_generation_assets
@@ -2898,10 +2898,14 @@ async def index_html() -> FileResponse:
     )
 
 
-@app.get("/app")
 @app.get("/app/{full_path:path}")
 async def react_app(full_path: str = "") -> FileResponse:
     index = react_dist / "index.html"
     if not index.exists():
         raise HTTPException(status_code=404, detail="React frontend build not found. Run npm run build in frontend/.")
     return FileResponse(index, headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
+
+
+@app.get("/app")
+async def react_app_root() -> RedirectResponse:
+    return RedirectResponse(url="/app/", status_code=307)

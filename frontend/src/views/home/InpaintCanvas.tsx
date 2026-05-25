@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
-import { Eraser, RotateCcw } from 'lucide-react';
+import { Brush, Eraser, Pencil, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 
 interface InpaintCanvasProps {
   image: string;
@@ -9,6 +9,7 @@ interface InpaintCanvasProps {
 }
 
 const MASK_SIZE = 768;
+type PaintTool = 'mask' | 'eraser' | 'sketch';
 
 function pointFromEvent(event: PointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement) {
   const rect = canvas.getBoundingClientRect();
@@ -52,7 +53,10 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
-  const [eraser, setEraser] = useState(false);
+  const [tool, setTool] = useState<PaintTool>('mask');
+  const [sketchColor, setSketchColor] = useState('#ff3b3b');
+  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [redoStack, setRedoStack] = useState<string[]>([]);
   const [canvasSize, setCanvasSize] = useState({ width: MASK_SIZE, height: MASK_SIZE });
 
   useEffect(() => {
@@ -75,8 +79,38 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
     canvas.width = canvasSize.width;
     canvas.height = canvasSize.height;
     canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+    setUndoStack([]);
+    setRedoStack([]);
     onMaskChange(null);
   }, [canvasSize, onMaskChange]);
+
+  function snapshot() {
+    const canvas = canvasRef.current;
+    return canvas ? canvas.toDataURL('image/png') : '';
+  }
+
+  function restore(dataUrl: string) {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (!dataUrl) {
+      onMaskChange(null);
+      return;
+    }
+    const imageElement = new Image();
+    imageElement.onload = () => {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(imageElement, 0, 0, canvas.width, canvas.height);
+      onMaskChange(exportMask(canvas));
+    };
+    imageElement.src = dataUrl;
+  }
+
+  function pushUndo() {
+    setUndoStack((current) => [...current.slice(-24), snapshot()]);
+    setRedoStack([]);
+  }
 
   function drawTo(point: { x: number; y: number }) {
     const canvas = canvasRef.current;
@@ -85,8 +119,8 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
     if (!canvas || !context || !lastPoint) return;
 
     context.save();
-    context.globalCompositeOperation = eraser ? 'destination-out' : 'source-over';
-    context.strokeStyle = 'rgba(255,255,255,0.9)';
+    context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
+    context.strokeStyle = tool === 'sketch' ? sketchColor : 'rgba(255,255,255,0.9)';
     context.lineWidth = brushSize;
     context.lineCap = 'round';
     context.lineJoin = 'round';
@@ -96,6 +130,19 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
     context.stroke();
     context.restore();
     lastPointRef.current = point;
+  }
+
+  function drawDot(point: { x: number; y: number }) {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    context.save();
+    context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
+    context.fillStyle = tool === 'sketch' ? sketchColor : 'rgba(255,255,255,0.9)';
+    context.beginPath();
+    context.arc(point.x, point.y, Math.max(1, brushSize / 2), 0, Math.PI * 2);
+    context.fill();
+    context.restore();
   }
 
   function finishDrawing() {
@@ -108,22 +155,61 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
   function clearMask() {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    pushUndo();
     canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     onMaskChange(null);
+  }
+
+  function undo() {
+    setUndoStack((current) => {
+      if (!current.length) return current;
+      const previous = current[current.length - 1];
+      setRedoStack((redo) => [...redo.slice(-24), snapshot()]);
+      restore(previous);
+      return current.slice(0, -1);
+    });
+  }
+
+  function redo() {
+    setRedoStack((current) => {
+      if (!current.length) return current;
+      const next = current[current.length - 1];
+      setUndoStack((undoHistory) => [...undoHistory.slice(-24), snapshot()]);
+      restore(next);
+      return current.slice(0, -1);
+    });
   }
 
   return (
     <section className="inpaint-editor">
       <div className="inpaint-toolbar">
+        <div className="tool-segment">
+          <button className={tool === 'mask' ? 'active' : ''} type="button" onClick={() => setTool('mask')} title="Mask brush">
+            <Brush size={14} />
+          </button>
+          <button className={tool === 'eraser' ? 'active' : ''} type="button" onClick={() => setTool('eraser')} title="Erase mask">
+            <Eraser size={14} />
+          </button>
+          <button className={tool === 'sketch' ? 'active' : ''} type="button" onClick={() => setTool('sketch')} title="Inpaint sketch">
+            <Pencil size={14} />
+          </button>
+        </div>
         <label className="field">
           <span>Brush {brushSize}px</span>
           <input type="range" min={8} max={160} step={2} value={brushSize} onChange={(event) => onBrushSizeChange(Number(event.currentTarget.value))} />
         </label>
-        <button className={eraser ? 'mini-button active' : 'mini-button'} type="button" onClick={() => setEraser((value) => !value)} title="Erase mask strokes">
-          <Eraser size={14} />
+        <label className="color-chip" title="Sketch color">
+          <input type="color" value={sketchColor} onChange={(event) => setSketchColor(event.currentTarget.value)} />
+          <span style={{ background: sketchColor }} />
+        </label>
+        <button className="mini-button" type="button" onClick={undo} disabled={!undoStack.length} title="Undo">
+          <RotateCcw size={14} />
+        </button>
+        <button className="mini-button" type="button" onClick={redo} disabled={!redoStack.length} title="Redo">
+          <RotateCw size={14} />
         </button>
         <button className="mini-button" type="button" onClick={clearMask} title="Clear inpaint mask">
-          <RotateCcw size={14} />
+          <Trash2 size={14} />
         </button>
       </div>
       <div className="inpaint-stage" style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}>
@@ -133,8 +219,11 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
           aria-label="Inpaint mask canvas"
           onPointerDown={(event) => {
             event.currentTarget.setPointerCapture(event.pointerId);
+            pushUndo();
             drawingRef.current = true;
-            lastPointRef.current = pointFromEvent(event, event.currentTarget);
+            const point = pointFromEvent(event, event.currentTarget);
+            lastPointRef.current = point;
+            drawDot(point);
           }}
           onPointerMove={(event) => {
             if (!drawingRef.current) return;
