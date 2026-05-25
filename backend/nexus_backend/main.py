@@ -1710,6 +1710,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     audio_vae_name=assets.get("audio_vae"),
                     video_vae_name=assets.get("video_vae") or assets.get("vae"),
                     latent_upscale_name=assets.get("latent_upscale"),
+                    video_combine_node=_available_comfy_node(object_info, "VHS_VideoCombine"),
                 )
             elif request.preset.lower() == "wan":
                 high_model_name = assets.get("wan_high_model")

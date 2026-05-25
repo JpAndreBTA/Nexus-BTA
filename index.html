@@ -1662,7 +1662,7 @@
                                 </label>
                                 <label id="ltxLatentUpscaleRefineWrapper" class="hidden flex items-center justify-between gap-3 bg-nexus-panel border border-nexus-border px-2 py-2 rounded-sm text-xs text-white">
                                     <span class="font-bold">Latent upscale refine</span>
-                                    <span class="toggle-switch"><input id="ltxLatentUpscaleRefineToggle" type="checkbox"><span class="toggle-track"></span></span>
+                                    <span class="toggle-switch"><input id="ltxLatentUpscaleRefineToggle" type="checkbox" checked><span class="toggle-track"></span></span>
                                 </label>
                                 <div id="ltxUpscaleControls" class="hidden grid grid-cols-3 gap-2">
                                     <label class="space-y-1">
@@ -4944,7 +4944,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function setElementOptions(id, options) {
             const select = document.getElementById(id);
             if (!select) return;
-            select.innerHTML = options.map(option => `<option>${escapeHtml(option)}</option>`).join('');
+            select.innerHTML = '';
+            (options || []).forEach(option => {
+                const element = document.createElement('option');
+                const value = String(option ?? '');
+                element.value = value;
+                element.textContent = value;
+                select.appendChild(element);
+            });
         }
 
         function modelPath(profile, modelName) {
@@ -5178,6 +5185,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (presetName === 'LTX') {
                 const audioToggle = document.getElementById('activeAudioToggle');
                 if (audioToggle) audioToggle.checked = false;
+                const refineToggle = document.getElementById('ltxLatentUpscaleRefineToggle');
+                if (refineToggle) refineToggle.checked = true;
             }
             setElementOptions('distilledLoraOneSelect', profile.distilledLoras || ['None']);
             setElementOptions('distilledLoraTwoSelect', profile.distilledLoras || ['None']);
@@ -7980,7 +7989,17 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function ltxLoraPrefersAdvancedLoader(loraName) {
-            return /singularity|omnicine/i.test(String(loraName || ''));
+            const name = String(loraName || '').trim();
+            return !!name && !/^(none|off|automatic|auto)$/i.test(name);
+        }
+
+        function comfyFileNameFromValue(value) {
+            const text = String(value || '').trim();
+            if (!text || /^(automatic|auto|none|off)$/i.test(text)) return text;
+            const normalized = text.replace(/\\/g, '/');
+            const modelsIndex = normalized.toLowerCase().lastIndexOf('/models/');
+            const scoped = modelsIndex >= 0 ? normalized.slice(modelsIndex + '/models/'.length) : normalized;
+            return scoped.split('/').filter(Boolean).pop() || text;
         }
 
         function buildLtxDirectorApiWorkflow(payload = null) {
@@ -7990,13 +8009,17 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const rawTextEncoder = document.getElementById('textEncoderSelect')?.value || '';
             const rawVideoVae = document.getElementById('videoVaeSelect')?.value || '';
             const rawAudioVae = document.getElementById('audioVaeSelect')?.value || '';
-            const textEncoder = /\.(safetensors|ckpt|pt|pth|bin|gguf)$/i.test(rawTextEncoder) && !/projection|text_projection|proj/i.test(rawTextEncoder) ? rawTextEncoder : 'gemma-3-12b-it-heretic-v2_nvfp4.safetensors';
-            const videoVae = /\.(safetensors|ckpt|pt|pth|bin)$/i.test(rawVideoVae) && !/taeltx|preview/i.test(rawVideoVae) ? rawVideoVae : 'LTX23_video_vae_bf16.safetensors';
-            const audioVae = /\.(safetensors|ckpt|pt|pth|bin)$/i.test(rawAudioVae) ? rawAudioVae : 'LTX23_audio_vae_bf16.safetensors';
+            const textEncoderChoice = comfyFileNameFromValue(rawTextEncoder);
+            const videoVaeChoice = comfyFileNameFromValue(rawVideoVae);
+            const audioVaeChoice = comfyFileNameFromValue(rawAudioVae);
+            const textEncoder = /\.(safetensors|ckpt|pt|pth|bin|gguf)$/i.test(textEncoderChoice) && !/projection|text_projection|proj/i.test(textEncoderChoice) ? textEncoderChoice : 'gemma-3-12b-it-heretic-v2_nvfp4.safetensors';
+            const videoVae = /\.(safetensors|ckpt|pt|pth|bin)$/i.test(videoVaeChoice) && !/taeltx|preview/i.test(videoVaeChoice) ? videoVaeChoice : 'LTX23_video_vae_bf16.safetensors';
+            const audioVae = /\.(safetensors|ckpt|pt|pth|bin)$/i.test(audioVaeChoice) ? audioVaeChoice : 'LTX23_audio_vae_bf16.safetensors';
             const rawLatentUpscale = document.getElementById('latentUpscaleSelect')?.value || '';
-            const latentUpscale = /^(none)$/i.test(rawLatentUpscale)
+            const latentUpscaleChoice = comfyFileNameFromValue(rawLatentUpscale);
+            const latentUpscale = /^(none)$/i.test(latentUpscaleChoice)
                 ? ''
-                : (/^(automatic|auto)?$/i.test(rawLatentUpscale) ? 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors' : rawLatentUpscale);
+                : (/^(automatic|auto)?$/i.test(latentUpscaleChoice) ? 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors' : latentUpscaleChoice);
             const refineLatentUpscale = !!(payload?.video?.latent_upscale_refine ?? document.getElementById('ltxLatentUpscaleRefineToggle')?.checked);
             const decodeTilesX = Math.max(1, Math.min(8, parseInt(document.getElementById('ltxDecodeTilesXInput')?.value || payload?.video?.decode_tiles_x || '2', 10) || 2));
             const decodeTilesY = Math.max(1, Math.min(8, parseInt(document.getElementById('ltxDecodeTilesYInput')?.value || payload?.video?.decode_tiles_y || '2', 10) || 2));
@@ -8016,28 +8039,20 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 const nodeId = String(40 + index);
                 const strength = ltxEffectiveLoraStrength(lora.name, lora.strength, checkpointName);
                 const routedStrength = Math.max(0, Math.min(1, Math.abs(strength)));
-                if (ltxLoraPrefersAdvancedLoader(lora.name)) {
-                    loraNodes[nodeId] = {
-                        class_type: 'LTX2LoraLoaderAdvanced',
-                        inputs: {
-                            lora_name: lora.name,
-                            model: directorModelRef,
-                            strength_model: strength,
-                            video: routedStrength,
-                            video_to_audio: useCustomAudio ? routedStrength : 0,
-                            audio: useCustomAudio ? routedStrength : 0,
-                            audio_to_video: useCustomAudio ? routedStrength : 0,
-                            other: routedStrength
-                        },
-                        _meta: { title: `LTX Omni/Motion LoRA - ${lora.name.split(/[\\/]/).pop() || 'LoRA'}` }
-                    };
-                } else {
-                    loraNodes[nodeId] = {
-                        class_type: 'LoraLoaderModelOnly',
-                        inputs: { model: directorModelRef, lora_name: lora.name, strength_model: strength },
-                        _meta: { title: `LTX LoRA - ${lora.name.split(/[\\/]/).pop() || 'LoRA'}` }
-                    };
-                }
+                loraNodes[nodeId] = {
+                    class_type: 'LTX2LoraLoaderAdvanced',
+                    inputs: {
+                        lora_name: lora.name,
+                        model: directorModelRef,
+                        strength_model: strength,
+                        video: routedStrength,
+                        video_to_audio: useCustomAudio ? routedStrength : 0,
+                        audio: useCustomAudio ? routedStrength : 0,
+                        audio_to_video: useCustomAudio ? routedStrength : 0,
+                        other: routedStrength
+                    },
+                    _meta: { title: `LTX LoRA - ${lora.name.split(/[\\/]/).pop() || 'LoRA'}` }
+                };
                 directorModelRef = [nodeId, 0];
             });
             const audioSegments = director.timeline_data?.audioSegments || [];
@@ -8343,9 +8358,22 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     audioMixRef = generatedLayerRef;
                 }
             }
-            const createVideoInputs = useCustomAudio && audioSegments.length
-                ? { images: createVideoImageRef, fps: director.frame_rate, audio: audioMixRef }
-                : (shouldLayerGeneratedAudio ? { images: createVideoImageRef, fps: director.frame_rate, audio: audioMixRef } : { images: createVideoImageRef, fps: director.frame_rate });
+            const saveVideoInputs = {
+                images: createVideoImageRef,
+                frame_rate: Number(director.frame_rate || payload?.video?.fps || 24),
+                loop_count: 0,
+                filename_prefix: 'NEXUS_BTA_LTX23_DIRECTOR',
+                format: 'video/h264-mp4',
+                pix_fmt: 'yuv420p',
+                crf: 16,
+                save_metadata: true,
+                trim_to_audio: false,
+                pingpong: false,
+                save_output: true
+            };
+            if ((useCustomAudio && audioSegments.length) || shouldLayerGeneratedAudio) {
+                saveVideoInputs.audio = audioMixRef;
+            }
             const sigmaNode = steps === 8
                 ? { class_type: 'ManualSigmas', inputs: { sigmas: LTX_DISTILLED_8_STEP_SIGMAS }, _meta: { title: 'Official LTX 2.3 8-Step Sigmas' } }
                 : { class_type: 'LTXVScheduler', inputs: { steps, max_shift: 2.05, base_shift: 0.95, stretch: true, terminal: 0.1, latent: schedulerLatentRef }, _meta: { title: 'LTX Scheduler' } };
@@ -8397,8 +8425,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 '13': { class_type: 'SamplerCustomAdvanced', inputs: { noise: ['9', 0], guider: ['12', 0], sampler: ['10', 0], sigmas: ['11', 0], latent_image: samplerLatentRef }, _meta: { title: 'LTX Sampler' } },
                 '15': { class_type: 'LTXVTiledVAEDecode', inputs: { vae: videoVaeRef, latents: decodeLatentRef, horizontal_tiles: decodeTilesX, vertical_tiles: decodeTilesY, overlap: decodeOverlap, last_frame_fix: false, working_device: 'auto', working_dtype: 'auto' }, _meta: { title: 'Decode Frames' } },
                 '33': { class_type: 'VHS_SelectImages', inputs: { image: decodedFramesRef, indexes: `0:${trimFrameCount}`, err_if_missing: false, err_if_empty: true }, _meta: { title: 'Trim Director Frames To Timeline' } },
-                '21': { class_type: 'CreateVideo', inputs: createVideoInputs, _meta: { title: 'Create Video' } },
-                '22': { class_type: 'SaveVideo', inputs: { video: ['21', 0], filename_prefix: 'NEXUS_BTA_LTX23_DIRECTOR', format: 'mp4', codec: 'h264' }, _meta: { title: 'Save Sequenced Video' } }
+                '22': { class_type: 'VHS_VideoCombine', inputs: saveVideoInputs, _meta: { title: 'Save High Quality Video' } }
             };
             return { ...workflow, ...audioWorkflowNodes, ...directorGeneratedAudioNodes, ...latentUpscaleNodes, ...finalScaleNodes, ...loraNodes };
         }
@@ -8427,31 +8454,25 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const loraNodes = loras.map((lora, index) => {
                 const strength = Number(lora.strength || 1);
                 const routed = Math.max(0, Math.min(1, Math.abs(strength))).toFixed(2);
-                const advanced = ltxLoraPrefersAdvancedLoader(lora.name);
                 return {
                     id: `ltx_lora_${index + 1}`,
-                    class_type: advanced ? 'LTX2LoraLoaderAdvanced' : 'LoraLoaderModelOnly',
-                    title: advanced ? `LTX2 Omni LoRA ${index + 1}` : `LTX LoRA ${index + 1}`,
+                    class_type: 'LTX2LoraLoaderAdvanced',
+                    title: `LTX LoRA ${index + 1}`,
                     x: 360 + index * 230,
                     y: 60,
                     width: 215,
                     height: 112,
                     inputs: ['model'],
                     outputs: ['MODEL'],
-                    widgets: advanced
-                        ? [
-                            { name: 'lora_name', value: lora.name },
-                            { name: 'strength_model', value: strength.toFixed(2) },
-                            { name: 'video', value: routed },
-                            { name: 'video_to_audio', value: director.use_custom_audio ? routed : '0.00' },
-                            { name: 'audio', value: director.use_custom_audio ? routed : '0.00' },
-                            { name: 'audio_to_video', value: director.use_custom_audio ? routed : '0.00' },
-                            { name: 'other', value: routed }
-                        ]
-                        : [
-                            { name: 'lora_name', value: lora.name },
-                            { name: 'strength_model', value: strength.toFixed(2) }
-                        ],
+                    widgets: [
+                        { name: 'lora_name', value: lora.name },
+                        { name: 'strength_model', value: strength.toFixed(2) },
+                        { name: 'video', value: routed },
+                        { name: 'video_to_audio', value: director.use_custom_audio ? routed : '0.00' },
+                        { name: 'audio', value: director.use_custom_audio ? routed : '0.00' },
+                        { name: 'audio_to_video', value: director.use_custom_audio ? routed : '0.00' },
+                        { name: 'other', value: routed }
+                    ],
                     color: '#4c1d95'
                 };
             });
@@ -8520,8 +8541,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     ] : []),
                     { id: 'ltx_sampler', class_type: 'SamplerCustomAdvanced', title: useCustomAudio ? 'LTX AV Sampler' : 'LTX Video Sampler', x: 1210, y: 230, width: 285, height: 170, inputs: ['noise', 'guider', 'sampler', 'sigmas', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'steps', value: ltxSteps }, { name: 'cfg', value: document.getElementById('cfgSlider')?.value || 1 }], color: '#ff3b3b' },
                     { id: 'ltx_decode', class_type: 'LTXVTiledVAEDecode', title: 'Decode Frames', x: 1580, y: 190, width: 250, height: 120, inputs: ['vae', 'latents'], outputs: ['IMAGE'], widgets: [{ name: 'horizontal_tiles', value: 2 }, { name: 'vertical_tiles', value: 2 }, { name: 'overlap', value: 6 }], color: '#62305a' },
-                    { id: 'ltx_video', class_type: 'CreateVideo', title: useCustomAudio ? 'Create Video + Custom Audio' : 'Create Video', x: 1880, y: 190, width: 250, height: 118, inputs: useCustomAudio ? ['images', 'audio', 'fps'] : ['images', 'fps'], outputs: ['VIDEO'], widgets: [{ name: 'fps', value: director.frame_rate }], color: '#164e63' },
-                    { id: 'ltx_save', class_type: 'SaveVideo', title: 'Save Sequenced Video', x: 2180, y: 190, width: 230, height: 110, inputs: ['video'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA_LTX23_DIRECTOR' }], color: '#3f3f46' }
+                    { id: 'ltx_save', class_type: 'VHS_VideoCombine', title: 'Save High Quality Video', x: 1880, y: 190, width: 270, height: 142, inputs: useCustomAudio ? ['images', 'audio'] : ['images'], outputs: ['VHS_FILENAMES'], widgets: [{ name: 'frame_rate', value: director.frame_rate }, { name: 'filename_prefix', value: 'NEXUS_BTA_LTX23_DIRECTOR' }, { name: 'format', value: 'video/h264-mp4' }, { name: 'crf', value: 16 }], color: '#3f3f46' }
                 ],
                 links: [
                     ...loraLinks,
@@ -8543,14 +8563,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                         { from_node: 'ltx_director', from_slot: 3, to_node: 'ltx_audio_merge', to_slot: 1, type: 'LATENT' },
                         { from_node: 'ltx_audio_merge', from_slot: 0, to_node: 'ltx_sampler', to_slot: 4, type: 'LATENT' },
                         { from_node: 'ltx_director', from_slot: 0, to_node: 'ltx_audio_norm', to_slot: 0, type: 'MODEL' },
-                        { from_node: 'ltx_audio_mix', from_slot: 0, to_node: 'ltx_video', to_slot: 1, type: 'AUDIO' }
+                        { from_node: 'ltx_audio_mix', from_slot: 0, to_node: 'ltx_save', to_slot: 1, type: 'AUDIO' }
                     ] : [
                         { from_node: 'ltx_guide', from_slot: 2, to_node: 'ltx_sampler', to_slot: 4, type: 'LATENT' }
                     ]),
                     { from_node: 'ltx_video_vae', from_slot: 0, to_node: 'ltx_decode', to_slot: 0, type: 'VAE' },
                     { from_node: 'ltx_sampler', from_slot: 0, to_node: 'ltx_decode', to_slot: 1, type: 'LATENT' },
-                    { from_node: 'ltx_decode', from_slot: 0, to_node: 'ltx_video', to_slot: 0, type: 'IMAGE' },
-                    { from_node: 'ltx_video', from_slot: 0, to_node: 'ltx_save', to_slot: 0, type: 'VIDEO' }
+                    { from_node: 'ltx_decode', from_slot: 0, to_node: 'ltx_save', to_slot: 0, type: 'IMAGE' }
                 ],
                 groups: [{ id: 'ltx-director-suite', title: 'LTX 2.3 Director Suite', x: 30, y: 70, width: 2440, height: 790, color: '#ff3b3b' }],
                 width: 2520,
@@ -9663,8 +9682,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 { category: 'model', classType: 'CLIPLoader', title: 'Load Text Encoder', inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || 'Automatic' }, { name: 'type', value: activePreset === 'Qwen' ? 'qwen_image' : 'stable_diffusion' }] },
                 { category: 'model', classType: 'VAELoader', title: 'Load VAE', inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || 'Automatic' }] },
                 { category: 'model', classType: 'LoraLoader', title: 'LoRA Loader', inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: [{ name: 'lora_name', value: 'select_lora.safetensors' }, { name: 'strength_model', value: '0.65' }, { name: 'strength_clip', value: '0.65' }] },
-                { category: 'model', classType: 'LoraLoaderModelOnly', title: 'LTX Concept / Distilled LoRA', inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: 'ltx/distilled_or_concept.safetensors' }, { name: 'strength_model', value: '0.80' }] },
-                { category: 'model', classType: 'LTX2LoraLoaderAdvanced', title: 'LTX OmniCine / Singularity LoRA', inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: 'ltx/Singularity LTX-2.3  OmniCine Preview v0.1.safetensors' }, { name: 'strength_model', value: '0.75' }, { name: 'video', value: '0.75' }, { name: 'video_to_audio', value: '0.00' }, { name: 'audio', value: '0.00' }, { name: 'audio_to_video', value: '0.00' }, { name: 'other', value: '0.75' }] },
+                { category: 'model', classType: 'LTX2LoraLoaderAdvanced', title: 'LTX Concept / Omni LoRA', inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: 'ltx/concept_or_omni.safetensors' }, { name: 'strength_model', value: '0.80' }, { name: 'video', value: '0.80' }, { name: 'video_to_audio', value: '0.00' }, { name: 'audio', value: '0.00' }, { name: 'audio_to_video', value: '0.00' }, { name: 'other', value: '0.80' }] },
                 { category: 'conditioning', classType: 'CLIPTextEncode', title: 'CLIP Text Encode', inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || '' }] },
                 { category: 'conditioning', classType: 'TextEncodeQwenImageEdit', title: 'Qwen Image Edit Text', inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || '' }] },
                 { category: 'conditioning', classType: 'ConditioningConcat', title: 'Conditioning Concat', inputs: ['conditioning_to', 'conditioning_from'], outputs: ['CONDITIONING'], widgets: [] },
@@ -12943,7 +12961,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const ltxModelOnlyLora = preset === 'LTX';
             if (hasLora) nodes.push(qwenModelOnlyLora
                 ? { id: 'lora', class_type: 'LoraLoaderModelOnly', title: 'QWEN LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: activeLoras[0]?.relative_name || activeLoras[0]?.name || 'select_lora.safetensors' }, { name: 'strength_model', value: Number(activeLoras[0]?.strength || 0.65).toFixed(2) }], color: '#4c1d95' }
-                : { id: 'lora', class_type: modelOnlyLora ? 'LoraLoaderModelOnly' : 'LoraLoader', title: ltxModelOnlyLora ? 'LTX Concept LoRA' : 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: modelOnlyLora ? ['model'] : ['model', 'clip'], outputs: modelOnlyLora ? ['MODEL'] : ['MODEL', 'CLIP'], widgets: [{ name: 'lora_name', value: activeLoras[0]?.relative_name || activeLoras[0]?.name || 'select_lora.safetensors' }, { name: 'strength_model', value: Number(activeLoras[0]?.strength || 0.65).toFixed(2) }, ...(!modelOnlyLora ? [{ name: 'strength_clip', value: Number(activeLoras[0]?.strength_clip ?? activeLoras[0]?.strength ?? 0.65).toFixed(2) }] : [])], color: '#4c1d95' });
+                : ltxModelOnlyLora
+                    ? { id: 'lora', class_type: 'LTX2LoraLoaderAdvanced', title: 'LTX Concept / Omni LoRA', x: 470, y: 90, width: 260, height: 142, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: activeLoras[0]?.relative_name || activeLoras[0]?.name || 'select_lora.safetensors' }, { name: 'strength_model', value: Number(activeLoras[0]?.strength || 0.8).toFixed(2) }, { name: 'video', value: Number(activeLoras[0]?.strength || 0.8).toFixed(2) }, { name: 'video_to_audio', value: document.getElementById('activeAudioToggle')?.checked ? Number(activeLoras[0]?.strength || 0.8).toFixed(2) : '0.00' }, { name: 'audio', value: document.getElementById('activeAudioToggle')?.checked ? Number(activeLoras[0]?.strength || 0.8).toFixed(2) : '0.00' }, { name: 'audio_to_video', value: document.getElementById('activeAudioToggle')?.checked ? Number(activeLoras[0]?.strength || 0.8).toFixed(2) : '0.00' }, { name: 'other', value: Number(activeLoras[0]?.strength || 0.8).toFixed(2) }], color: '#4c1d95' }
+                    : { id: 'lora', class_type: modelOnlyLora ? 'LoraLoaderModelOnly' : 'LoraLoader', title: 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: modelOnlyLora ? ['model'] : ['model', 'clip'], outputs: modelOnlyLora ? ['MODEL'] : ['MODEL', 'CLIP'], widgets: [{ name: 'lora_name', value: activeLoras[0]?.relative_name || activeLoras[0]?.name || 'select_lora.safetensors' }, { name: 'strength_model', value: Number(activeLoras[0]?.strength || 0.65).toFixed(2) }, ...(!modelOnlyLora ? [{ name: 'strength_clip', value: Number(activeLoras[0]?.strength_clip ?? activeLoras[0]?.strength ?? 0.65).toFixed(2) }] : [])], color: '#4c1d95' });
             if (isVideo) {
                 nodes.push(
                     { id: 'video_settings', class_type: 'PrimitiveNode', title: 'Video / Motion Settings', x: 760, y: 90, width: 260, height: 150, inputs: [], outputs: ['INT', 'FLOAT', 'STRING'], widgets: [{ name: 'frames', value: document.getElementById('framesInput')?.value || profile.videoSettings?.frames || 49 }, { name: 'seconds', value: document.getElementById('secondsInput')?.value || profile.videoSettings?.seconds || 4 }, { name: 'fps', value: document.getElementById('fpsInput')?.value || profile.videoSettings?.fps || 8 }, { name: 'motion_adapter', value: document.getElementById('motionSelect')?.value || profile.motionAdapters?.[0] || 'Auto by model' }, { name: 'omnicine_lora', value: activeOmnicineSelection() || 'Off' }, { name: 'omnicine_enabled', value: activeOmnicineSelection() ? 'true' : 'false' }, { name: 'active_audio', value: document.getElementById('activeAudioToggle')?.checked ? 'true' : 'false' }, { name: 'latent_upscale', value: document.getElementById('latentUpscaleSelect')?.value || 'Automatic' }, { name: 'latent_upscale_refine', value: document.getElementById('ltxLatentUpscaleRefineToggle')?.checked ? 'true' : 'false' }], color: '#2f3c4f' },

@@ -2387,8 +2387,7 @@ def _ltx_base_dimension_for_upscale(final_dimension: int, latent_upscale_name: s
 
 
 def _ltx_lora_prefers_advanced_loader(lora_name: str) -> bool:
-    lower = lora_name.lower()
-    return "singularity" in lower or "omnicine" in lower
+    return bool(_normalize_lora_name(lora_name))
 
 
 def _is_omnicine_lora(lora_name: Any) -> bool:
@@ -2404,6 +2403,7 @@ def build_basic_ltx_img2video_workflow(
     audio_vae_name: str | None = None,
     video_vae_name: str | None = None,
     latent_upscale_name: str | None = None,
+    video_combine_node: str | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     video_options = request.video or {}
@@ -2428,7 +2428,7 @@ def build_basic_ltx_img2video_workflow(
     steps = max(min_steps, int(request.steps or min_steps))
     img_compression = max(0, min(100, int(_number_or_none(video_options.get("img_compression")) or 18)))
     use_latent_upscale = bool(latent_upscale_name)
-    refine_latent_upscale_value = video_options.get("latent_upscale_refine", False)
+    refine_latent_upscale_value = video_options.get("latent_upscale_refine", True)
     if isinstance(refine_latent_upscale_value, str):
         refine_latent_upscale = refine_latent_upscale_value.lower() not in {"false", "0", "off", "none", "no"}
     else:
@@ -2460,7 +2460,7 @@ def build_basic_ltx_img2video_workflow(
                     "audio_to_video": max(0.0, min(1.0, safe_strength)) if active_audio else 0.0,
                     "other": max(0.0, min(1.0, safe_strength)),
                 },
-                "_meta": {"title": f"LTX Omni/Motion LoRA - {Path(lora_name).name}"},
+                "_meta": {"title": f"LTX LoRA - {Path(lora_name).name}"},
             }
         else:
             ltx_lora_nodes[node_id] = {
@@ -2672,6 +2672,49 @@ def build_basic_ltx_img2video_workflow(
             "_meta": {"title": "LTX Scheduler"},
         }
 
+    video_output_nodes: dict[str, Any]
+    if video_combine_node:
+        video_output_inputs: dict[str, Any] = {
+            "images": create_video_image_ref,
+            "frame_rate": float(fps),
+            "loop_count": 0,
+            "filename_prefix": f"NEXUS_BTA_LTX23_IMG2VID_{final_width}x{final_height}",
+            "format": "video/h264-mp4",
+            "pix_fmt": "yuv420p",
+            "crf": int(_number_or_none(video_options.get("video_crf")) or 16),
+            "save_metadata": True,
+            "trim_to_audio": False,
+            "pingpong": False,
+            "save_output": True,
+        }
+        if "audio" in create_video_inputs:
+            video_output_inputs["audio"] = create_video_inputs["audio"]
+        video_output_nodes = {
+            "15": {
+                "class_type": video_combine_node,
+                "inputs": video_output_inputs,
+                "_meta": {"title": "Save High Quality Video"},
+            }
+        }
+    else:
+        video_output_nodes = {
+            "14": {
+                "class_type": "CreateVideo",
+                "inputs": create_video_inputs,
+                "_meta": {"title": "Create Video"},
+            },
+            "15": {
+                "class_type": "SaveVideo",
+                "inputs": {
+                    "video": ["14", 0],
+                    "filename_prefix": f"NEXUS_BTA_LTX23_IMG2VID_{final_width}x{final_height}",
+                    "format": "mp4",
+                    "codec": "h264",
+                },
+                "_meta": {"title": "Save Video"},
+            },
+        }
+
     workflow = {
         "1": {
             "class_type": "CheckpointLoaderSimple",
@@ -2775,22 +2818,8 @@ def build_basic_ltx_img2video_workflow(
             },
             "_meta": {"title": "Decode Frames"},
         },
-        "14": {
-            "class_type": "CreateVideo",
-            "inputs": create_video_inputs,
-            "_meta": {"title": "Create Video"},
-        },
-        "15": {
-            "class_type": "SaveVideo",
-                "inputs": {
-                    "video": ["14", 0],
-                    "filename_prefix": f"NEXUS_BTA_LTX23_IMG2VID_{final_width}x{final_height}",
-                    "format": "mp4",
-                    "codec": "h264",
-                },
-            "_meta": {"title": "Save Video"},
-        },
     }
+    workflow.update(video_output_nodes)
     workflow.update(video_vae_nodes)
     workflow.update(preprocess_nodes)
     workflow.update(audio_nodes)
@@ -2897,8 +2926,11 @@ def patch_workflow(
                     inputs["unet_name"] = assets["primary_model"]
             else:
                 inputs["unet_name"] = assets["primary_model"]
-        if "model_name" in inputs and assets.get("primary_model"):
-            inputs["model_name"] = assets["primary_model"]
+        if "model_name" in inputs:
+            if "upscale" in haystack and assets.get("latent_upscale"):
+                inputs["model_name"] = assets["latent_upscale"]
+            elif assets.get("primary_model"):
+                inputs["model_name"] = assets["primary_model"]
 
     for node in api.values():
         if not isinstance(node, dict):
@@ -3567,6 +3599,8 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
     def pop_selection_for_node(remaining: list[tuple[str, float, float]], node: dict[str, Any]) -> tuple[str, float, float] | None:
         if not is_ltx:
             return remaining.pop(0) if remaining else None
+        if remaining:
+            return remaining.pop(0)
         class_lower = str(node.get("class_type", "")).lower()
         wants_advanced = class_lower == "ltx2loraloaderadvanced"
         for index, selection in enumerate(remaining):
@@ -3614,10 +3648,10 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
                 patch_ltx2_lora_inputs(inputs, 0.0)
             continue
         lora_name, strength_model, strength_clip = selection
-        if is_ltx and str(node.get("class_type", "")).lower() == "ltx2loraloaderadvanced" and not _ltx_lora_prefers_advanced_loader(lora_name):
+        if is_ltx and str(node.get("class_type", "")).lower() != "ltx2loraloaderadvanced":
             model_value = inputs.get("model")
-            node["class_type"] = "LoraLoaderModelOnly"
-            node.setdefault("_meta", {})["title"] = f"LoRA - {Path(lora_name).name}"
+            node["class_type"] = "LTX2LoraLoaderAdvanced"
+            node.setdefault("_meta", {})["title"] = f"LTX LoRA - {Path(lora_name).name}"
             inputs.clear()
             if model_value is not None:
                 inputs["model"] = model_value
@@ -4311,6 +4345,8 @@ def _replacement_for_model_input(
 ) -> tuple[str | None, int]:
     haystack = " ".join([key, value, class_type, title]).lower()
     checkpoint_keys = {"ckpt_name", "unet_name", "model_name", "checkpoint_name"}
+    if "upscale" in haystack and assets.get("latent_upscale"):
+        return assets["latent_upscale"], lora_slot
     if key in checkpoint_keys and "projection" not in haystack and "proj" not in haystack:
         if assets.get("primary_model"):
             return assets["primary_model"], lora_slot
@@ -4320,8 +4356,6 @@ def _replacement_for_model_input(
         return assets["wan_low_model"], lora_slot
     if ("clip_l" in haystack or key == "clip_name1") and assets.get("flux_clip_l"):
         return assets["flux_clip_l"], lora_slot
-    if "upscale" in haystack and assets.get("latent_upscale"):
-        return assets["latent_upscale"], lora_slot
     if "audio" in haystack and "vae" in haystack:
         if assets.get("audio_vae"):
             return assets["audio_vae"], lora_slot
