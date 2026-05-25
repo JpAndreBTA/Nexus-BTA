@@ -566,6 +566,54 @@ button {
   padding-top: 12px;
 }
 
+.director-panel {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.multi-reference-dropzone {
+  min-height: 58px;
+  gap: 8px;
+}
+
+.reference-chip-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.reference-chip-list button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 14px;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: #0d0d10;
+  color: var(--muted);
+  border-radius: 4px;
+  padding: 5px;
+}
+
+.reference-chip-list img {
+  width: 38px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 3px;
+  background: black;
+}
+
+.reference-chip-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .three-col {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+interface ReferenceImage {
+  dataUrl: string;
+  name: string;
+}
+
 interface GenerationState {
   activity: 'txt2img' | 'img2img';
   img2imgMode: 'image' | 'inpaint';
@@ -25,6 +30,7 @@ interface GenerationState {
   brushSize: number;
   referenceImage: string | null;
   referenceImageName: string;
+  extraReferenceImages: ReferenceImage[];
   inpaintMaskImage: string | null;
   controlNetEnabled: boolean;
   controlNetType: string;
@@ -48,6 +54,15 @@ interface GenerationState {
   decodeTilesX: number;
   decodeTilesY: number;
   decodeOverlap: number;
+  directorEnabled: boolean;
+  directorDuration: number;
+  directorGuideStrength: number;
+  directorLocalPrompt: string;
+  directorLocalNegative: string;
+  directorResizeMethod: string;
+  directorDivisibleBy: number;
+  directorImgCompression: number;
+  directorUseCustomAudio: boolean;
   setActivity: (activity: 'txt2img' | 'img2img') => void;
   setImg2ImgMode: (mode: 'image' | 'inpaint') => void;
   setPreset: (preset: string) => void;
@@ -67,6 +82,9 @@ interface GenerationState {
   setMaskContent: (maskContent: string) => void;
   setBrushSize: (brushSize: number) => void;
   setReferenceImage: (dataUrl: string | null, name?: string) => void;
+  addExtraReferenceImages: (images: ReferenceImage[]) => void;
+  removeExtraReferenceImage: (index: number) => void;
+  clearExtraReferenceImages: () => void;
   setInpaintMaskImage: (dataUrl: string | null) => void;
   setControlNetEnabled: (enabled: boolean) => void;
   setControlNetType: (type: string) => void;
@@ -83,6 +101,11 @@ interface GenerationState {
   setLatentUpscale: (latentUpscale: string) => void;
   setLatentUpscaleRefine: (enabled: boolean) => void;
   setDecodeTiles: (tilesX: number, tilesY: number, overlap: number) => void;
+  setDirectorEnabled: (enabled: boolean) => void;
+  setDirectorTiming: (duration: number, guideStrength: number) => void;
+  setDirectorPrompts: (prompt: string, negative: string) => void;
+  setDirectorResize: (method: string, divisibleBy: number, imgCompression: number) => void;
+  setDirectorUseCustomAudio: (enabled: boolean) => void;
 }
 
 export const useGenerationStore = create<GenerationState>()(
@@ -111,6 +134,7 @@ export const useGenerationStore = create<GenerationState>()(
   brushSize: 42,
   referenceImage: null,
   referenceImageName: '',
+  extraReferenceImages: [],
   inpaintMaskImage: null,
   controlNetEnabled: false,
   controlNetType: 'canny',
@@ -134,6 +158,15 @@ export const useGenerationStore = create<GenerationState>()(
   decodeTilesX: 2,
   decodeTilesY: 2,
   decodeOverlap: 6,
+  directorEnabled: false,
+  directorDuration: 12,
+  directorGuideStrength: 1,
+  directorLocalPrompt: '',
+  directorLocalNegative: '',
+  directorResizeMethod: 'maintain aspect ratio',
+  directorDivisibleBy: 32,
+  directorImgCompression: 18,
+  directorUseCustomAudio: false,
   setActivity: (activity) => set({ activity }),
   setImg2ImgMode: (img2imgMode) => set({ img2imgMode }),
   setPreset: (preset) =>
@@ -193,6 +226,9 @@ export const useGenerationStore = create<GenerationState>()(
   setMaskContent: (maskContent) => set({ maskContent }),
   setBrushSize: (brushSize) => set({ brushSize }),
   setReferenceImage: (referenceImage, referenceImageName = '') => set({ referenceImage, referenceImageName, inpaintMaskImage: null }),
+  addExtraReferenceImages: (images) => set((state) => ({ extraReferenceImages: [...state.extraReferenceImages, ...images].slice(0, 6) })),
+  removeExtraReferenceImage: (index) => set((state) => ({ extraReferenceImages: state.extraReferenceImages.filter((_, itemIndex) => itemIndex !== index) })),
+  clearExtraReferenceImages: () => set({ extraReferenceImages: [] }),
   setInpaintMaskImage: (inpaintMaskImage) => set({ inpaintMaskImage }),
   setControlNetEnabled: (controlNetEnabled) => set({ controlNetEnabled }),
   setControlNetType: (controlNetType) => set({ controlNetType }),
@@ -209,6 +245,11 @@ export const useGenerationStore = create<GenerationState>()(
   setLatentUpscale: (latentUpscale) => set({ latentUpscale }),
   setLatentUpscaleRefine: (latentUpscaleRefine) => set({ latentUpscaleRefine }),
   setDecodeTiles: (decodeTilesX, decodeTilesY, decodeOverlap) => set({ decodeTilesX, decodeTilesY, decodeOverlap }),
+  setDirectorEnabled: (directorEnabled) => set({ directorEnabled }),
+  setDirectorTiming: (directorDuration, directorGuideStrength) => set({ directorDuration, directorGuideStrength }),
+  setDirectorPrompts: (directorLocalPrompt, directorLocalNegative) => set({ directorLocalPrompt, directorLocalNegative }),
+  setDirectorResize: (directorResizeMethod, directorDivisibleBy, directorImgCompression) => set({ directorResizeMethod, directorDivisibleBy, directorImgCompression }),
+  setDirectorUseCustomAudio: (directorUseCustomAudio) => set({ directorUseCustomAudio }),
     }),
     {
       name: 'nexus-generation-state',
@@ -254,6 +295,15 @@ export const useGenerationStore = create<GenerationState>()(
         decodeTilesX: state.decodeTilesX,
         decodeTilesY: state.decodeTilesY,
         decodeOverlap: state.decodeOverlap,
+        directorEnabled: state.directorEnabled,
+        directorDuration: state.directorDuration,
+        directorGuideStrength: state.directorGuideStrength,
+        directorLocalPrompt: state.directorLocalPrompt,
+        directorLocalNegative: state.directorLocalNegative,
+        directorResizeMethod: state.directorResizeMethod,
+        directorDivisibleBy: state.directorDivisibleBy,
+        directorImgCompression: state.directorImgCompression,
+        directorUseCustomAudio: state.directorUseCustomAudio,
       }),
     },
   ),

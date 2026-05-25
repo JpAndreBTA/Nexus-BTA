@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Clapperboard, Image as ImageIcon, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Play, Send, Server, Sparkles, Square, WandSparkles } from 'lucide-react';
+import { Clapperboard, Image as ImageIcon, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Play, Send, Server, Sparkles, Square, WandSparkles, X } from 'lucide-react';
 
 import { nexusApi } from '../../api/nexusClient';
 import type { CatalogAsset, GenerateRequest, GenerationJob } from '../../api/types';
@@ -79,6 +79,11 @@ function presetIcon(preset: string) {
   return <ImageIcon size={14} />;
 }
 
+async function readFilesAsReferenceImages(files: FileList | File[]) {
+  const imageFiles = Array.from(files).filter((file) => file.type.startsWith('image/'));
+  return Promise.all(imageFiles.map(async (file) => ({ dataUrl: await readFileAsDataUrl(file), name: file.name })));
+}
+
 function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data'], preset: string, type: string) {
   const lowerPreset = preset.toLowerCase();
   if (lowerPreset === 'ltx') {
@@ -137,7 +142,13 @@ export function HomePage() {
   const newestGalleryItem = gallery.data?.[0];
   const controlNetCompatible = controlNetCompatiblePreset(generation.preset);
   const videoMode = videoPreset(generation.preset);
+  const directorMode = generation.preset.toLowerCase() === 'ltx' && generation.directorEnabled;
   const alignedFrames = alignVideoFrames(generation.preset, generation.videoFrames);
+  const allReferenceImages = useMemo(
+    () => Array.from(new Set(generation.referenceImage ? [generation.referenceImage, ...generation.extraReferenceImages.map((image) => image.dataUrl)] : [])).slice(0, 3),
+    [generation.extraReferenceImages, generation.referenceImage],
+  );
+  const directorFrames = alignVideoFrames('ltx', Math.round(generation.directorDuration * generation.videoFps));
   const controlNetModels = useMemo(() => controlNetModelOptions(catalog.data, generation.preset, generation.controlNetType), [catalog.data, generation.preset, generation.controlNetType]);
   const visibleLoras = useMemo(() => {
     const q = loraSearch.trim().toLowerCase();
@@ -166,9 +177,10 @@ export function HomePage() {
 
   const payload = useMemo<GenerateRequest>(
     () => ({
-      activity: generation.activity,
-      workspace: 'viewer',
+      activity: directorMode ? 'txt2img' : generation.activity,
+      workspace: directorMode ? 'director' : 'viewer',
       preset: generation.preset,
+      template: directorMode ? 'LTX_DIRECTOR_SUITE' : undefined,
       workflow_id: generation.workflowId || null,
       model_path: generation.modelPath,
       model_name: generation.modelName,
@@ -195,7 +207,7 @@ export function HomePage() {
         mask_blur: generation.maskBlur,
         mask_content: generation.maskContent,
         reference_image: generation.referenceImage,
-        reference_images: generation.referenceImage ? [generation.referenceImage] : [],
+        reference_images: allReferenceImages,
         mask_image: generation.img2imgMode === 'inpaint' ? generation.inpaintMaskImage : null,
       },
       controlnet: {
@@ -227,12 +239,43 @@ export function HomePage() {
             decode_tiles_x: generation.decodeTilesX,
             decode_tiles_y: generation.decodeTilesY,
             decode_overlap: generation.decodeOverlap,
+            director_timeline: directorMode,
           }
         : {},
-      director: {},
+      director: directorMode
+        ? {
+            duration_frames: Math.max(1, directorFrames - 1),
+            duration_seconds: generation.directorDuration,
+            frame_rate: generation.videoFps,
+            local_prompts: generation.directorLocalPrompt || generation.prompt,
+            local_negative_prompts: generation.directorLocalNegative || generation.negativePrompt,
+            segment_lengths: String(generation.directorDuration),
+            epsilon: 0.001,
+            guide_strength: generation.directorGuideStrength,
+            use_custom_audio: generation.directorUseCustomAudio,
+            display_mode: 'seconds',
+            custom_width: generation.width,
+            custom_height: generation.height,
+            resize_method: generation.directorResizeMethod,
+            divisible_by: generation.directorDivisibleBy,
+            img_compression: generation.directorImgCompression,
+            timeline_data: {
+              duration: generation.directorDuration,
+              fps: generation.videoFps,
+              references: allReferenceImages.map((_src, index) => ({ id: `ref-${index + 1}`, start: index === 0 ? 0 : generation.directorDuration, end: generation.directorDuration })),
+              audioSegments: [],
+            },
+            timeline_data_json: JSON.stringify({
+              duration: generation.directorDuration,
+              fps: generation.videoFps,
+              references: allReferenceImages.map((_src, index) => ({ id: `ref-${index + 1}`, start: index === 0 ? 0 : generation.directorDuration, end: generation.directorDuration })),
+              audioSegments: [],
+            }),
+          }
+        : {},
       runtime: {},
     }),
-    [alignedFrames, controlNetCompatible, generation, loraStore.activeLoras, videoMode],
+    [alignedFrames, allReferenceImages, controlNetCompatible, directorFrames, directorMode, generation, loraStore.activeLoras, videoMode],
   );
 
   const startMutation = useMutation({
@@ -423,6 +466,31 @@ export function HomePage() {
                 />
                 <span>{generation.referenceImageName || 'Select reference image'}</span>
               </label>
+              <label className="dropzone small-dropzone multi-reference-dropzone">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={async (event) => {
+                    if (!event.currentTarget.files?.length) return;
+                    generation.addExtraReferenceImages(await readFilesAsReferenceImages(event.currentTarget.files));
+                    event.currentTarget.value = '';
+                  }}
+                />
+                <Images size={16} />
+                <span>{generation.extraReferenceImages.length ? `${generation.extraReferenceImages.length} extra reference(s)` : 'Add multi-image references'}</span>
+              </label>
+              {generation.extraReferenceImages.length > 0 && (
+                <div className="reference-chip-list">
+                  {generation.extraReferenceImages.map((image, index) => (
+                    <button type="button" key={`${image.name}-${index}`} onClick={() => generation.removeExtraReferenceImage(index)} title="Remove reference">
+                      <img src={image.dataUrl} alt={image.name} />
+                      <span>{index === 0 && generation.preset === 'Wan' ? 'End frame' : image.name}</span>
+                      <X size={12} />
+                    </button>
+                  ))}
+                </div>
+              )}
               {generation.referenceImage && generation.img2imgMode === 'image' && <img src={generation.referenceImage} alt="img2img reference" />}
               {generation.referenceImage && generation.img2imgMode === 'inpaint' && (
                 <InpaintCanvas image={generation.referenceImage} brushSize={generation.brushSize} onBrushSizeChange={generation.setBrushSize} onMaskChange={generation.setInpaintMaskImage} />
@@ -614,6 +682,65 @@ export function HomePage() {
                 </>
               )}
               <p className="compact-note">{generation.preset === 'Wan' ? 'Wan I2V uses the img2img reference as the start frame.' : 'LTX img2video uses the img2img reference for the linear route.'}</p>
+            </section>
+          )}
+
+          {generation.preset.toLowerCase() === 'ltx' && (
+            <section className="director-panel">
+              <div className="control-row">
+                <span>LTX Director</span>
+                <button className={generation.directorEnabled ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setDirectorEnabled(!generation.directorEnabled)} aria-label="Toggle LTX Director">
+                  <span />
+                </button>
+              </div>
+              {generation.directorEnabled && (
+                <div className="control-stack">
+                  <div className="two-col">
+                    <label className="field">
+                      <span>Duration</span>
+                      <input type="number" min={0.5} step={0.25} value={generation.directorDuration} onChange={(event) => generation.setDirectorTiming(Number(event.currentTarget.value), generation.directorGuideStrength)} />
+                    </label>
+                    <label className="field">
+                      <span>Guide {generation.directorGuideStrength.toFixed(2)}</span>
+                      <input type="range" min={0} max={2} step={0.05} value={generation.directorGuideStrength} onChange={(event) => generation.setDirectorTiming(generation.directorDuration, Number(event.currentTarget.value))} />
+                    </label>
+                  </div>
+                  <label className="field">
+                    <span>Local Prompt</span>
+                    <textarea value={generation.directorLocalPrompt} onChange={(event) => generation.setDirectorPrompts(event.currentTarget.value, generation.directorLocalNegative)} placeholder="Segment prompt override..." />
+                  </label>
+                  <label className="field">
+                    <span>Local Negative</span>
+                    <textarea value={generation.directorLocalNegative} onChange={(event) => generation.setDirectorPrompts(generation.directorLocalPrompt, event.currentTarget.value)} placeholder="Segment negative override..." />
+                  </label>
+                  <div className="three-col">
+                    <label className="field">
+                      <span>Resize</span>
+                      <select value={generation.directorResizeMethod} onChange={(event) => generation.setDirectorResize(event.currentTarget.value, generation.directorDivisibleBy, generation.directorImgCompression)}>
+                        <option value="maintain aspect ratio">Maintain aspect</option>
+                        <option value="crop">Crop</option>
+                        <option value="stretch">Stretch</option>
+                        <option value="pad">Pad</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>Divisible</span>
+                      <input type="number" min={1} max={256} value={generation.directorDivisibleBy} onChange={(event) => generation.setDirectorResize(generation.directorResizeMethod, Number(event.currentTarget.value), generation.directorImgCompression)} />
+                    </label>
+                    <label className="field">
+                      <span>Img CRF</span>
+                      <input type="number" min={0} max={100} value={generation.directorImgCompression} onChange={(event) => generation.setDirectorResize(generation.directorResizeMethod, generation.directorDivisibleBy, Number(event.currentTarget.value))} />
+                    </label>
+                  </div>
+                  <div className="control-row">
+                    <span>Custom audio</span>
+                    <button className={generation.directorUseCustomAudio ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setDirectorUseCustomAudio(!generation.directorUseCustomAudio)} aria-label="Toggle Director custom audio">
+                      <span />
+                    </button>
+                  </div>
+                  <p className="compact-note">Director sends timeline metadata to LTX workflows with LTXDirector nodes. Multi-image references are included in order.</p>
+                </div>
+              )}
             </section>
           )}
 
