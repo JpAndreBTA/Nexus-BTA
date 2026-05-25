@@ -5,8 +5,10 @@ import { LoaderCircle, Play, Server, Square } from 'lucide-react';
 import { nexusApi } from '../../api/nexusClient';
 import type { GenerateRequest, GenerationJob } from '../../api/types';
 import { useGalleryQuery, useHealthQuery, useModelCatalogQuery } from '../../api/queries';
+import { useLorasQuery } from '../../api/queries';
 import { queryClient } from '../../shared/queryClient';
 import { useGenerationStore } from '../../stores/generationStore';
+import { useLoraStore } from '../../stores/loraStore';
 
 function terminalStatus(job: GenerationJob | undefined) {
   return job?.status === 'completed' || job?.status === 'failed' || job?.status === 'cancelled';
@@ -25,19 +27,53 @@ function modelOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data']) 
   }));
 }
 
+function modelMatchesPreset(model: { label: string; name: string }, preset: string) {
+  const haystack = `${model.label} ${model.name}`.toLowerCase();
+  const key = preset.toLowerCase();
+  const rules: Record<string, string[]> = {
+    sd: ['sd15', 'sd1', '1.5', 'dreamshaper'],
+    xl: ['sdxl', 'xl', 'illustrious'],
+    sdxl: ['sdxl', 'xl', 'illustrious'],
+    flux: ['flux'],
+    qwen: ['qwen'],
+    zimageturbo: ['z_image', 'zimage', 'z-image'],
+    lumina: ['lumina'],
+    wan: ['wan'],
+    ltx: ['ltx'],
+    anima: ['anima'],
+  };
+  return (rules[key] || [key]).some((token) => haystack.includes(token));
+}
+
 export function HomePage() {
   const health = useHealthQuery();
   const catalog = useModelCatalogQuery();
   const gallery = useGalleryQuery();
+  const loras = useLorasQuery();
   const generation = useGenerationStore();
+  const loraStore = useLoraStore();
   const [jobId, setJobId] = useState('');
   const [localError, setLocalError] = useState('');
+  const [loraSearch, setLoraSearch] = useState('');
 
-  const models = useMemo(() => modelOptions(catalog.data), [catalog.data]);
+  const allModels = useMemo(() => modelOptions(catalog.data), [catalog.data]);
+  const models = useMemo(() => {
+    const filtered = allModels.filter((model) => modelMatchesPreset(model, generation.preset));
+    return filtered.length ? filtered : allModels;
+  }, [allModels, generation.preset]);
   const newestGalleryItem = gallery.data?.[0];
+  const visibleLoras = useMemo(() => {
+    const q = loraSearch.trim().toLowerCase();
+    return (loras.data ?? [])
+      .filter((lora) => {
+        const haystack = `${lora.name} ${lora.relative_path} ${lora.folder} ${lora.tags?.join(' ')}`.toLowerCase();
+        return !q || haystack.includes(q);
+      })
+      .slice(0, 24);
+  }, [loras.data, loraSearch]);
 
   useEffect(() => {
-    if (!generation.modelPath && models[0]) {
+    if ((!generation.modelPath || !models.some((model) => model.value === generation.modelPath)) && models[0]) {
       generation.setModel(models[0].value, models[0].name);
     }
   }, [generation, models]);
@@ -63,11 +99,11 @@ export function HomePage() {
       denoise: 1,
       vae: 'Automatic',
       text_encoder: 'Automatic',
-      loras: [],
+      loras: loraStore.activeLoras,
       distilled_loras: [],
       video: {},
     }),
-    [generation],
+    [generation, loraStore.activeLoras],
   );
 
   const startMutation = useMutation({
@@ -220,6 +256,57 @@ export function HomePage() {
             <span>Seed</span>
             <input type="number" value={generation.seed} onChange={(event) => generation.setSeed(Number(event.currentTarget.value))} />
           </label>
+
+          <section className="lora-panel">
+            <div className="control-row">
+              <span>LoRAs</span>
+              <button className="mini-button" type="button" onClick={() => loraStore.clearLoras()} disabled={!loraStore.activeLoras.length}>
+                Clear
+              </button>
+            </div>
+            {loraStore.activeLoras.length > 0 && (
+              <div className="active-lora-list">
+                {loraStore.activeLoras.map((lora) => (
+                  <div className="active-lora" key={lora.relative_name}>
+                    <span title={lora.relative_name}>{lora.name}</span>
+                    <input type="number" min={-2} max={2} step={0.05} value={lora.strength} onChange={(event) => loraStore.updateStrength(lora.relative_name, Number(event.currentTarget.value))} />
+                    <button type="button" onClick={() => loraStore.removeLora(lora.relative_name)}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <label className="field">
+              <span>Search LoRAs</span>
+              <input value={loraSearch} onChange={(event) => setLoraSearch(event.currentTarget.value)} placeholder="Filter local LoRAs..." />
+            </label>
+            <div className="lora-results">
+              {visibleLoras.map((lora) => {
+                const relativeName = (lora.relative_path || lora.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\');
+                const active = loraStore.activeLoras.some((item) => item.relative_name === relativeName);
+                return (
+                  <button
+                    key={lora.relative_path || lora.path}
+                    className={active ? 'active' : ''}
+                    type="button"
+                    onClick={() =>
+                      loraStore.addLora({
+                        name: lora.name,
+                        relative_name: relativeName,
+                        relative_path: lora.relative_path,
+                        strength: 0.8,
+                        strength_model: 0.8,
+                        strength_clip: 0.8,
+                      })
+                    }
+                  >
+                    {lora.name}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
         </aside>
 
         <main className="surface preview-panel studio-preview">

@@ -28,3 +28,11 @@ export function useGalleryQuery() {
     staleTime: 10_000,
   });
 }
+
+export function useLorasQuery() {
+  return useQuery({
+    queryKey: ['loras'],
+    queryFn: nexusApi.loras,
+    staleTime: 60_000,
+  });
+}

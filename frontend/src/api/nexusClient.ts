@@ -1,4 +1,4 @@
-import type { ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, ModelCatalog } from './types';
+import type { ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, LoraAsset, ModelCatalog } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -26,6 +26,7 @@ export const nexusApi = {
   health: () => nexusFetch<HealthResponse>('/health'),
   refreshModelTree: () => nexusFetch<{ ok?: boolean }>('/model-tree', { method: 'POST' }),
   models: () => nexusFetch<ModelCatalog>('/models'),
+  loras: () => nexusFetch<LoraAsset[]>('/loras'),
   startExtras: async (mode: string, plan: ExtrasPlan, files: File[]) => {
     const form = new FormData();
     form.append('mode', mode);

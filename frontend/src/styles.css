@@ -370,6 +370,95 @@ button {
   outline: none;
 }
 
+.mini-button {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: white;
+  border-radius: 4px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mini-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lora-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.active-lora-list,
+.lora-results {
+  display: grid;
+  gap: 6px;
+}
+
+.active-lora {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px auto;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: #0d0d10;
+  padding: 6px;
+  border-radius: 4px;
+}
+
+.active-lora span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.active-lora input {
+  min-width: 0;
+  height: 30px;
+  border: 1px solid var(--border);
+  background: black;
+  color: white;
+  border-radius: 4px;
+  padding: 0 6px;
+}
+
+.active-lora button,
+.lora-results button {
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  border-radius: 4px;
+  padding: 7px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.active-lora button {
+  text-align: center;
+}
+
+.lora-results {
+  max-height: 210px;
+  overflow: auto;
+}
+
+.lora-results button.active {
+  border-color: var(--accent);
+  color: white;
+}
+
 .field input,
 .field select {
   height: 36px;

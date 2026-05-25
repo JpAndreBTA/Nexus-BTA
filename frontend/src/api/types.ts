@@ -24,6 +24,8 @@ export interface CatalogAsset {
   preview?: string;
 }
 
+export type LoraAsset = CatalogAsset;
+
 export interface ModelCatalog {
   root: string;
   categories: Record<string, CatalogAsset[]>;
@@ -140,7 +142,7 @@ export interface GenerateRequest {
   denoise: number;
   vae: string;
   text_encoder: string;
-  loras: Array<Record<string, unknown>>;
+  loras: object[];
   distilled_loras: Array<Record<string, unknown>>;
   video: Record<string, unknown>;
 }

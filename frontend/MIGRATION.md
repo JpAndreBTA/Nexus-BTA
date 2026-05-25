@@ -110,3 +110,23 @@ Screenshots:
 
 - `test-results/backend-app-studio-desktop.png`
 - `test-results/backend-app-studio-mobile.png`
+
+## Checkpoint: Studio Model Filtering and LoRA Base
+
+Implemented:
+
+- Studio model select filters models by preset with fallback to all models.
+- `/api/loras` client/query/types.
+- Zustand LoRA store with active LoRAs, strength update and removal.
+- Studio LoRA search, add/remove and active strength controls.
+- Generation payload now sends active LoRAs using backend-compatible fields.
+
+Validation:
+
+- `NEXUS_FRONTEND_BASE=/app/ npm run check` passed.
+- `/app` loaded 24 LoRA candidates in the initial list.
+- Adding one LoRA creates one active LoRA row.
+
+Screenshot:
+
+- `test-results/backend-app-studio-lora.png`
