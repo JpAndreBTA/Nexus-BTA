@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import { FileInput, GitBranch, LoaderCircle, LocateFixed, Upload, Workflow, ZoomIn, ZoomOut } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from 'react';
+import { Copy, EyeOff, FileInput, GitBranch, LoaderCircle, LocateFixed, MousePointer2, Upload, Workflow, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 
 import { nexusApi } from '../../api/nexusClient';
@@ -38,6 +38,8 @@ export function WorkflowPage() {
   const [editableNodes, setEditableNodes] = useState<WorkflowGraphNode[]>([]);
   const [localError, setLocalError] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
   const [zoom, setZoom] = useState(0.82);
   const dragRef = useRef<{ nodeId: string; startX: number; startY: number; originX: number; originY: number } | null>(null);
 
@@ -63,6 +65,8 @@ export function WorkflowPage() {
   useEffect(() => {
     setEditableNodes(graphNodes.map((node) => ({ ...node, widgets: node.widgets?.map((widget) => ({ ...widget })) ?? [] })));
     setSelectedNodeId(graphNodes[0]?.id || '');
+    setSelectedNodeIds(graphNodes[0]?.id ? [graphNodes[0].id] : []);
+    setContextMenu(null);
     setLocalError('');
   }, [graphNodes]);
 
@@ -170,6 +174,8 @@ export function WorkflowPage() {
       originY: Number(node.y || 0),
     };
     setSelectedNodeId(node.id);
+    setSelectedNodeIds((current) => (event.ctrlKey || event.metaKey || event.shiftKey ? Array.from(new Set([...current, node.id])) : [node.id]));
+    setContextMenu(null);
   }
 
   function moveNode(event: PointerEvent<HTMLElement>) {
@@ -182,6 +188,29 @@ export function WorkflowPage() {
 
   function stopNodeDrag() {
     dragRef.current = null;
+  }
+
+  function selectNode(event: MouseEvent<HTMLElement>, node: WorkflowGraphNode) {
+    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+      setSelectedNodeIds((current) => (current.includes(node.id) ? current.filter((id) => id !== node.id) : [...current, node.id]));
+    } else {
+      setSelectedNodeIds([node.id]);
+    }
+    setSelectedNodeId(node.id);
+    setContextMenu(null);
+  }
+
+  function openNodeMenu(event: MouseEvent<HTMLElement>, node: WorkflowGraphNode) {
+    event.preventDefault();
+    setSelectedNodeId(node.id);
+    setSelectedNodeIds((current) => (current.includes(node.id) ? current : [node.id]));
+    setContextMenu({ x: Number(node.x || 0) + 18, y: Number(node.y || 0) + 34, nodeId: node.id });
+  }
+
+  function handleCanvasWheel(event: WheelEvent<HTMLElement>) {
+    if ((event.target as HTMLElement).closest('input, textarea, select')) return;
+    event.preventDefault();
+    setZoom((value) => Math.max(0.35, Math.min(1.8, Number((value + (event.deltaY > 0 ? -0.06 : 0.06)).toFixed(2)))));
   }
 
   return (
@@ -291,7 +320,7 @@ export function WorkflowPage() {
           )}
         </aside>
 
-        <main className="surface workflow-canvas">
+        <main className="surface workflow-canvas" onWheel={handleCanvasWheel} onClick={() => setContextMenu(null)}>
           <div className="workflow-toolbar">
             <button className="mini-button" type="button" onClick={() => setZoom((value) => Math.max(0.45, Number((value - 0.1).toFixed(2))))} title="Zoom out">
               <ZoomOut size={14} />
@@ -303,6 +332,7 @@ export function WorkflowPage() {
             <button className="mini-button" type="button" onClick={() => setZoom(0.82)} title="Reset zoom">
               <LocateFixed size={14} />
             </button>
+            <span className="workflow-select-count"><MousePointer2 size={12} /> {selectedNodeIds.length}</span>
           </div>
           {analysis.isFetching && (
             <div className="workflow-loading">
@@ -327,9 +357,10 @@ export function WorkflowPage() {
               const selected = selectedNodeId === node.id;
               return (
                 <article
-                  className={['workflow-node-card', `node-${nodeKind(node)}`, isMissing ? 'missing' : '', selected ? 'selected' : ''].filter(Boolean).join(' ')}
+                  className={['workflow-node-card', `node-${nodeKind(node)}`, isMissing ? 'missing' : '', selected ? 'selected' : '', selectedNodeIds.includes(node.id) ? 'multi-selected' : ''].filter(Boolean).join(' ')}
                   key={node.id}
-                  onClick={() => setSelectedNodeId(node.id)}
+                  onClick={(event) => selectNode(event, node)}
+                  onContextMenu={(event) => openNodeMenu(event, node)}
                   style={{
                     left: Number(node.x || 0),
                     top: Number(node.y || 0),
@@ -351,6 +382,13 @@ export function WorkflowPage() {
                 </article>
               );
             })}
+            {contextMenu && (
+              <div className="workflow-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+                <button type="button"><Copy size={13} /> Duplicate Selection</button>
+                <button type="button"><EyeOff size={13} /> Bypass Node</button>
+                <button type="button" onClick={() => setSelectedNodeIds([])}>Clear Selection</button>
+              </div>
+            )}
           </div>
         </main>
       </div>

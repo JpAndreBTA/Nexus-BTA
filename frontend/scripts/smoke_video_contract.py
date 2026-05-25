@@ -43,16 +43,12 @@ def main() -> None:
         page.route("**/api/generate/video-contract-smoke", lambda route: route.fulfill(status=200, content_type="application/json", body=job_body()))
 
         page.goto(BASE, wait_until="networkidle", timeout=60000)
-        preset = page.locator("label.field:has-text('Preset') select")
-        model = page.locator("label.field:has-text('Model') select")
-
-        preset.select_option(label="LTX")
-        model.wait_for(timeout=30000)
+        page.get_by_role("button", name="LTX 2.3").click()
         page.get_by_placeholder("Describe the image...").fill("ltx video contract")
         page.get_by_role("button", name="Generate").click()
         page.wait_for_timeout(500)
 
-        preset.select_option(label="Wan")
+        page.get_by_role("button", name="WAN 2.2").click()
         page.get_by_role("button", name="img2img").click()
         page.locator(".img2img-source input[type='file']").first.set_input_files(str(SAMPLE))
         page.get_by_placeholder("Describe the image...").fill("wan video contract")

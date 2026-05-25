@@ -32,6 +32,29 @@ export interface ModelCatalog {
   total_files: number;
 }
 
+export interface CivitaiModelItem {
+  id?: number | string;
+  name: string;
+  type: string;
+  creator?: string;
+  preview?: string;
+  tags?: string[];
+  stats?: Record<string, unknown>;
+  versions?: Array<{
+    id?: number | string;
+    name?: string;
+    base_model?: string;
+    url?: string;
+    preview?: string;
+    file_name?: string;
+  }>;
+}
+
+export interface CivitaiSearchResponse {
+  items: CivitaiModelItem[];
+  metadata?: Record<string, unknown>;
+}
+
 export interface OutputItem {
   kind: MediaKind;
   filename: string;

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { RefreshCw, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
 
 import type { GalleryItem } from '../../api/types';
 import { useGalleryQuery } from '../../api/queries';
@@ -25,16 +25,28 @@ function extrasHref(item: GalleryItem) {
 export function GalleryPage() {
   const gallery = useGalleryQuery();
   const [query, setQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState('newest');
+  const [pageIndex, setPageIndex] = useState(0);
   const [selected, setSelected] = useState<GalleryItem | null>(null);
 
   const items = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     const source = gallery.data ?? [];
-    if (!normalized) return source;
-    return source.filter((item) => `${item.filename} ${item.folder} ${item.model} ${item.preset} ${item.activity}`.toLowerCase().includes(normalized));
-  }, [gallery.data, query]);
+    const filtered = normalized ? source.filter((item) => `${item.filename} ${item.folder} ${item.model} ${item.preset} ${item.activity}`.toLowerCase().includes(normalized)) : source;
+    return [...filtered].sort((a, b) => {
+      if (sortOrder === 'oldest') return a.modified - b.modified;
+      if (sortOrder === 'name') return a.filename.localeCompare(b.filename);
+      if (sortOrder === 'type') return String(a.media_type).localeCompare(String(b.media_type));
+      return b.modified - a.modified;
+    });
+  }, [gallery.data, query, sortOrder]);
 
-  const active = selected ?? items[0] ?? null;
+  const pageSize = 36;
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const currentPage = Math.min(pageIndex, totalPages - 1);
+  const pagedItems = items.slice(currentPage * pageSize, currentPage * pageSize + pageSize);
+
+  const active = selected ?? pagedItems[0] ?? items[0] ?? null;
 
   return (
     <section className="page gallery-layout">
@@ -49,12 +61,24 @@ export function GalleryPage() {
       <div className="gallery-toolbar">
         <Search size={16} />
         <input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search outputs, folders, models..." />
-        <span>{items.length} items</span>
+        <select value={sortOrder} onChange={(event) => setSortOrder(event.currentTarget.value)}>
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="name">Name</option>
+          <option value="type">Type</option>
+        </select>
+        <button className="mini-button" type="button" onClick={() => setPageIndex((value) => Math.max(0, value - 1))} disabled={currentPage === 0}>
+          <ChevronLeft size={14} />
+        </button>
+        <span>{currentPage + 1} / {totalPages}</span>
+        <button className="mini-button" type="button" onClick={() => setPageIndex((value) => Math.min(totalPages - 1, value + 1))} disabled={currentPage >= totalPages - 1}>
+          <ChevronRight size={14} />
+        </button>
       </div>
 
       <div className="gallery-shell">
         <div className="gallery-grid">
-          {items.map((item) => (
+          {pagedItems.map((item) => (
             <button key={`${item.relative_path}:${item.modified}`} className={active?.relative_path === item.relative_path ? 'gallery-card active' : 'gallery-card'} type="button" onClick={() => setSelected(item)}>
               {isVideo(item) ? <video src={mediaUrl(item.thumb || item.image)} muted playsInline /> : <img src={mediaUrl(item.thumb || item.image)} alt={item.filename} loading="lazy" />}
               <span title={item.filename}>{item.filename}</span>

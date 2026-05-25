@@ -207,6 +207,27 @@ export function ExtrasPage() {
             <span>{modelCounts.backgroundRemoval} remove bg</span>
           </div>
 
+          <div className="extras-preset-strip">
+            {extras.mode === 'image' && (
+              <>
+                <button type="button" onClick={() => { extras.setImageScale('2x'); extras.setExportFormat('png'); }}>Fast 2x PNG</button>
+                <button type="button" onClick={() => { extras.setImageScale('4x'); extras.setPreserveAlpha(true); }}>Alpha 4x</button>
+              </>
+            )}
+            {extras.mode === 'video' && (
+              <>
+                <button type="button" onClick={() => { extras.setVideoInterpolateEnabled(true); extras.setTargetFps(60); extras.setEncoder('mp4_h264'); }}>60 FPS MP4</button>
+                <button type="button" onClick={() => { extras.setVideoUpscaleEnabled(true); extras.setVideoScale('2x'); }}>2x Video</button>
+              </>
+            )}
+            {extras.mode === 'remove_bg' && (
+              <>
+                <button type="button" onClick={() => { extras.setRemoveBgPreset('image'); extras.setRemoveBgOutput('rgba'); extras.setPreserveAlpha(true); }}>RGBA Cutout</button>
+                <button type="button" onClick={() => { extras.setRemoveBgPreset('video'); extras.setRemoveBgOutput('both'); }}>Video Matte</button>
+              </>
+            )}
+          </div>
+
           {extras.mode === 'image' && (
             <div className="control-stack">
               <label className="field">

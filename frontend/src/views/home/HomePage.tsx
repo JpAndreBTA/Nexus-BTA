@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Clapperboard, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Play, Send, Square, X } from 'lucide-react';
+import { Clapperboard, FilePlus2, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Play, Send, Square, Workflow, X } from 'lucide-react';
 
 import { nexusApi } from '../../api/nexusClient';
 import type { CatalogAsset, GenerateRequest, GenerationJob } from '../../api/types';
@@ -123,6 +123,8 @@ export function HomePage() {
   const [jobId, setJobId] = useState('');
   const [localError, setLocalError] = useState('');
   const [loraSearch, setLoraSearch] = useState('');
+  const [loraModalOpen, setLoraModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'linear' | 'inpaint' | 'workflow'>('linear');
 
   const allModels = useMemo(() => modelOptions(catalog.data), [catalog.data]);
   const models = useMemo(() => {
@@ -371,42 +373,8 @@ export function HomePage() {
             </button>
           </div>
 
-          <label className="field">
-            <span>Preset</span>
-            <select value={generation.preset} onChange={(event) => generation.setPreset(event.currentTarget.value)}>
-              <option>Anima</option>
-              <option>SD</option>
-              <option>XL</option>
-              <option>SDXL</option>
-              <option>Flux</option>
-              <option>Qwen</option>
-              <option>ZImageTurbo</option>
-              <option>Lumina</option>
-              <option>Wan</option>
-              <option>LTX</option>
-            </select>
-          </label>
-
-          <label className="field">
-            <span>Model</span>
-            <select
-              value={generation.modelPath}
-              onChange={(event) => {
-                const selected = models.find((model) => model.value === event.currentTarget.value);
-                generation.setModel(event.currentTarget.value, selected?.name || '');
-              }}
-            >
-              <option value="">Automatic</option>
-              {models.map((model) => (
-                <option key={model.value} value={model.value}>
-                  {model.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
           <div className="compact-note">
-            Workflow: {generation.workflowName || 'Default backend route'}
+            {generation.modelName || generation.modelPath ? `Checkpoint: ${generation.modelName || generation.modelPath}` : 'Checkpoint: Automatic'} / Workflow: {generation.workflowName || 'Default backend route'}
           </div>
 
           <label className="field">
@@ -772,9 +740,15 @@ export function HomePage() {
           <section className="lora-panel">
             <div className="control-row">
               <span>LoRAs</span>
-              <button className="mini-button" type="button" onClick={() => loraStore.clearLoras()} disabled={!loraStore.activeLoras.length}>
-                Clear
-              </button>
+              <div className="inline-actions">
+                <button className="mini-button" type="button" onClick={() => setLoraModalOpen(true)}>
+                  <FilePlus2 size={13} />
+                  Add
+                </button>
+                <button className="mini-button" type="button" onClick={() => loraStore.clearLoras()} disabled={!loraStore.activeLoras.length}>
+                  Clear
+                </button>
+              </div>
             </div>
             {loraStore.activeLoras.length > 0 && (
               <div className="active-lora-list">
@@ -789,39 +763,28 @@ export function HomePage() {
                 ))}
               </div>
             )}
-            <label className="field">
-              <span>Search LoRAs</span>
-              <input value={loraSearch} onChange={(event) => setLoraSearch(event.currentTarget.value)} placeholder="Filter local LoRAs..." />
-            </label>
-            <div className="lora-results">
-              {visibleLoras.map((lora) => {
-                const relativeName = (lora.relative_path || lora.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\');
-                const active = loraStore.activeLoras.some((item) => item.relative_name === relativeName);
-                return (
-                  <button
-                    key={lora.relative_path || lora.path}
-                    className={active ? 'active' : ''}
-                    type="button"
-                    onClick={() =>
-                      loraStore.addLora({
-                        name: lora.name,
-                        relative_name: relativeName,
-                        relative_path: lora.relative_path,
-                        strength: 0.8,
-                        strength_model: 0.8,
-                        strength_clip: 0.8,
-                      })
-                    }
-                  >
-                    {lora.name}
-                  </button>
-                );
-              })}
-            </div>
           </section>
         </aside>
 
         <main className="surface preview-panel studio-preview">
+          <div className="studio-view-strip">
+            <button className={viewMode === 'linear' ? 'active' : ''} type="button" onClick={() => setViewMode('linear')}>Linear Viewer</button>
+            <button
+              className={viewMode === 'inpaint' ? 'active' : ''}
+              type="button"
+              onClick={() => {
+                setViewMode('inpaint');
+                generation.setActivity('img2img');
+                generation.setImg2ImgMode('inpaint');
+              }}
+            >
+              Inpaint Canvas
+            </button>
+            <button className={viewMode === 'workflow' ? 'active' : ''} type="button" onClick={() => setViewMode('workflow')}>
+              <Workflow size={13} />
+              Node Workflow
+            </button>
+          </div>
           <div className="preview-title">Live Output Preview</div>
           {previewUrl ? (
             previewIsVideo ? (
@@ -902,6 +865,52 @@ export function HomePage() {
           </button>
         </div>
       </footer>
+      {loraModalOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Select LoRA concept">
+          <div className="modal-panel lora-modal">
+            <header className="modal-header">
+              <strong>Select Concept (LoRA)</strong>
+              <button className="icon-button" type="button" onClick={() => setLoraModalOpen(false)} title="Close LoRA selector">
+                <X size={15} />
+              </button>
+            </header>
+            <div className="modal-search-row">
+              <input value={loraSearch} onChange={(event) => setLoraSearch(event.currentTarget.value)} placeholder="Filter by name or tag..." />
+              {['All', 'Anima', 'Flux', 'LTX', 'Qwen', 'SDXL'].map((tag) => <button className="mini-button" type="button" key={tag}>{tag}</button>)}
+            </div>
+            <div className="lora-card-grid">
+              {visibleLoras.map((lora) => {
+                const relativeName = (lora.relative_path || lora.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\');
+                const active = loraStore.activeLoras.some((item) => item.relative_name === relativeName);
+                return (
+                  <button
+                    key={lora.relative_path || lora.path}
+                    className={active ? 'lora-card active' : 'lora-card'}
+                    type="button"
+                    onClick={() =>
+                      loraStore.addLora({
+                        name: lora.name,
+                        relative_name: relativeName,
+                        relative_path: lora.relative_path,
+                        strength: 0.8,
+                        strength_model: 0.8,
+                        strength_clip: 0.8,
+                      })
+                    }
+                  >
+                    <span>{lora.tags?.[0] || generation.preset}</span>
+                    <strong>{lora.name}</strong>
+                  </button>
+                );
+              })}
+            </div>
+            <footer className="modal-footer">
+              <span>{loraStore.activeLoras.length} selected concept(s)</span>
+              <button className="primary-button" type="button" onClick={() => setLoraModalOpen(false)}>Confirm Selection</button>
+            </footer>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

@@ -45,7 +45,7 @@ def main() -> None:
         page.route("**/api/generate/director-contract-smoke", lambda route: route.fulfill(status=200, content_type="application/json", body=job_body()))
 
         page.goto(BASE, wait_until="networkidle", timeout=60000)
-        page.locator("label.field:has-text('Preset') select").select_option(label="LTX")
+        page.get_by_role("button", name="LTX 2.3").click()
         page.get_by_role("button", name="img2img").click()
         page.get_by_placeholder("Describe the image...").fill("ltx director contract")
         page.locator(".img2img-source input[type='file']").first.set_input_files(str(SAMPLE))

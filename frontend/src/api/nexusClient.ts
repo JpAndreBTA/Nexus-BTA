@@ -1,4 +1,4 @@
-import type { ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, LoraAsset, ModelCatalog, WorkflowAnalysis, WorkflowSummary } from './types';
+import type { CivitaiSearchResponse, ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, LoraAsset, ModelCatalog, WorkflowAnalysis, WorkflowSummary } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -27,6 +27,18 @@ export const nexusApi = {
   refreshModelTree: () => nexusFetch<{ ok?: boolean }>('/model-tree', { method: 'POST' }),
   models: () => nexusFetch<ModelCatalog>('/models'),
   loras: () => nexusFetch<LoraAsset[]>('/loras'),
+  civitaiSearch: (payload: Record<string, unknown>) =>
+    nexusFetch<CivitaiSearchResponse>('/civitai/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  civitaiResolve: (payload: Record<string, unknown>) =>
+    nexusFetch<Record<string, unknown>>('/civitai/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
   startExtras: async (mode: string, plan: ExtrasPlan, files: File[]) => {
     const form = new FormData();
     form.append('mode', mode);

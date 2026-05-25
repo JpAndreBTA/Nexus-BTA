@@ -67,7 +67,7 @@ def main() -> None:
         page.get_by_role("button", name="img2img").click()
         page.get_by_placeholder("Describe the image...").fill("contract smoke inpaint")
         page.locator(".img2img-source input[type='file']").first.set_input_files(str(SAMPLE))
-        page.get_by_role("button", name="Inpaint").click()
+        page.get_by_role("button", name="Inpaint", exact=True).click()
 
         canvas = page.locator("canvas[aria-label='Inpaint mask canvas']")
         canvas.wait_for(timeout=30000)

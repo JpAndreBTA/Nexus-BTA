@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Link, Outlet, createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
-import { Activity, Download, GalleryHorizontalEnd, GitBranch, ImageUp, Images, MonitorCog, PanelLeftClose, PanelLeftOpen, RefreshCw, Settings } from 'lucide-react';
+import { Activity, Download, GalleryHorizontalEnd, GitBranch, ImageUp, Images, MonitorCog, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Settings, X } from 'lucide-react';
 
 import { ExtrasPage } from '../views/extras/ExtrasPage';
 import { GalleryPage } from '../views/gallery/GalleryPage';
@@ -8,8 +9,10 @@ import { ModelsPage } from '../views/modelCatalog/ModelsPage';
 import { SettingsPage } from '../views/settings/SettingsPage';
 import { WorkflowPage } from '../views/workflow/WorkflowPage';
 import { useModelCatalogQuery } from '../api/queries';
+import { nexusApi } from '../api/nexusClient';
 import { useUiStore } from '../stores/uiStore';
 import { useGenerationStore } from '../stores/generationStore';
+import type { CivitaiModelItem } from '../api/types';
 
 const shellPresets = ['SD', 'SDXL', 'Flux', 'Qwen', 'ZImageTurbo', 'Lumina', 'Wan', 'LTX', 'Anima'];
 
@@ -49,47 +52,131 @@ function checkpointOptions(catalog: ReturnType<typeof useModelCatalogQuery>['dat
 function AppTopbar() {
   const catalog = useModelCatalogQuery();
   const generation = useGenerationStore();
+  const [civitaiOpen, setCivitaiOpen] = useState(false);
+  const [civitaiQuery, setCivitaiQuery] = useState('');
+  const [civitaiResults, setCivitaiResults] = useState<CivitaiModelItem[]>([]);
+  const [civitaiStatus, setCivitaiStatus] = useState('');
   const checkpoints = checkpointOptions(catalog.data, generation.preset);
 
+  async function runCivitaiLookup() {
+    const query = civitaiQuery.trim();
+    setCivitaiStatus('Searching Civitai...');
+    try {
+      if (/^https?:\/\//i.test(query)) {
+        const resolved = await nexusApi.civitaiResolve({ url: query, preset: generation.preset, target_kind: 'auto' });
+        setCivitaiResults([
+          {
+            id: String(resolved.model_id || resolved.version_id || query),
+            name: String(resolved.model_name || 'Resolved Civitai asset'),
+            type: String(resolved.model_type || resolved.target_kind || 'Model'),
+            creator: String(resolved.creator || ''),
+            preview: String(resolved.preview || ''),
+            versions: [{ name: String(resolved.version_name || ''), base_model: String(resolved.base_model || ''), url: String(resolved.url || query), file_name: String(resolved.file_name || '') }],
+          },
+        ]);
+        setCivitaiStatus('URL resolved. Download wiring is available in the backend.');
+        return;
+      }
+      const result = await nexusApi.civitaiSearch({
+        query,
+        types: '',
+        base_model: generation.preset === 'SD' ? 'SD 1.5' : generation.preset,
+        sort: 'Most Downloaded',
+        period: 'AllTime',
+        nsfw: true,
+        limit: 20,
+      });
+      setCivitaiResults(result.items || []);
+      setCivitaiStatus(`${result.items?.length ?? 0} result(s)`);
+    } catch (error) {
+      setCivitaiStatus(error instanceof Error ? error.message : 'Civitai lookup failed.');
+    }
+  }
+
   return (
-    <header className="app-topbar">
-      <div className="model-strip" aria-label="Base model selector">
-        <span>Base Models:</span>
-        <div className="model-chip-row">
-          {shellPresets.map((preset) => (
-            <button className={generation.preset === preset ? 'active' : ''} type="button" key={preset} onClick={() => generation.setPreset(preset)}>
-              {shellPresetLabel(preset)}
-            </button>
-          ))}
+    <>
+      <header className="app-topbar">
+        <div className="model-strip" aria-label="Base model selector">
+          <span>Base Models:</span>
+          <div className="model-chip-row">
+            {shellPresets.map((preset) => (
+              <button className={generation.preset === preset ? 'active' : ''} type="button" key={preset} onClick={() => generation.setPreset(preset)}>
+                {shellPresetLabel(preset)}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      <div className="checkpoint-selector">
-        <span>Checkpoint:</span>
-        <select
-          value={generation.modelPath}
-          onChange={(event) => {
-            const selected = checkpoints.find((checkpoint) => checkpoint.value === event.currentTarget.value);
-            generation.setModel(event.currentTarget.value, selected?.name || '');
-          }}
-        >
-          <option value="">Automatic</option>
-          {checkpoints.map((checkpoint) => (
-            <option key={checkpoint.value} value={checkpoint.value}>
-              {checkpoint.label}
-            </option>
-          ))}
-        </select>
-        <button className="icon-button" type="button" onClick={() => catalog.refetch()} title="Refresh model catalog">
-          <RefreshCw size={13} />
-        </button>
-      </div>
-      <div className="topbar-actions">
-        <Link className="flat-button compact-action" to="/models">
-          <Download size={13} />
-          Civitai
-        </Link>
-      </div>
-    </header>
+        <div className="checkpoint-selector">
+          <span>Checkpoint:</span>
+          <select
+            value={generation.modelPath}
+            onChange={(event) => {
+              const selected = checkpoints.find((checkpoint) => checkpoint.value === event.currentTarget.value);
+              generation.setModel(event.currentTarget.value, selected?.name || '');
+            }}
+          >
+            <option value="">Automatic</option>
+            {checkpoints.map((checkpoint) => (
+              <option key={checkpoint.value} value={checkpoint.value}>
+                {checkpoint.label}
+              </option>
+            ))}
+          </select>
+          <button className="icon-button" type="button" onClick={() => catalog.refetch()} title="Refresh model catalog">
+            <RefreshCw size={13} />
+          </button>
+        </div>
+        <div className="topbar-actions">
+          <button className="flat-button compact-action" type="button" onClick={() => setCivitaiOpen(true)}>
+            <Download size={13} />
+            Civitai
+          </button>
+        </div>
+      </header>
+      {civitaiOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Nexus Civitai downloader">
+          <div className="modal-panel civitai-modal">
+            <header className="modal-header">
+              <strong>Nexus Civitai Downloader</strong>
+              <button className="icon-button" type="button" onClick={() => setCivitaiOpen(false)} title="Close Civitai downloader">
+                <X size={15} />
+              </button>
+            </header>
+            <div className="modal-search-row">
+              <Search size={15} />
+              <input value={civitaiQuery} onChange={(event) => setCivitaiQuery(event.currentTarget.value)} placeholder="Search terms or paste a Civitai URL..." />
+              <button className="primary-button" type="button" onClick={runCivitaiLookup}>Resolve URL</button>
+            </div>
+            <div className="modal-filter-row">
+              {['All Types', 'Checkpoints', 'LoRAs', 'Embeddings'].map((label) => (
+                <button className="mini-button" type="button" key={label}>{label}</button>
+              ))}
+              <span>Base: {shellPresetLabel(generation.preset)}</span>
+              <span>Order: Most Downloaded</span>
+            </div>
+            <div className="civitai-card-grid">
+              {(civitaiResults.length ? civitaiResults : [
+                { name: 'Realistic Vision V6.0 B1', type: 'Checkpoint', versions: [{ base_model: 'SD 1.5' }] },
+                { name: 'DreamShaper', type: 'Checkpoint', versions: [{ base_model: 'SD 1.5' }] },
+                { name: 'Juggernaut XL', type: 'Checkpoint', versions: [{ base_model: 'SDXL' }] },
+                { name: 'LTX-2.3 Motion Master', type: 'LoRA', versions: [{ base_model: 'LTX 2.3' }] },
+                { name: 'Cyberpunk Aesthetic', type: 'LoRA', versions: [{ base_model: 'Anima' }] },
+              ]).map((item) => (
+                <article className="civitai-card" key={`${item.id || item.name}`}>
+                  {item.preview ? <img src={item.preview} alt={item.name} /> : <div><span>{item.versions?.[0]?.base_model || item.type}</span></div>}
+                  <strong>{item.name}</strong>
+                  <small>{item.creator ? `by ${item.creator}` : item.type} {item.versions?.[0]?.file_name ? `/ ${item.versions[0].file_name}` : ''}</small>
+                </article>
+              ))}
+            </div>
+            <footer className="modal-footer">
+              <span>{civitaiStatus || 'Search uses the local backend Civitai bridge.'}</span>
+              <Link className="flat-button" to="/models" onClick={() => setCivitaiOpen(false)}>Open Local Models</Link>
+            </footer>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -124,14 +211,16 @@ function RootLayout() {
             <GitBranch size={18} />
             <span>Workflow</span>
           </Link>
-          <Link to="/settings" activeProps={{ className: 'nav-item active' }} inactiveProps={{ className: 'nav-item' }}>
-            <Settings size={18} />
-            <span>Settings</span>
-          </Link>
           <a className="nav-item" href="/ui">
             <GalleryHorizontalEnd size={18} />
             <span>Legacy</span>
           </a>
+        </nav>
+        <nav className="activity-nav rail-bottom">
+          <Link to="/settings" activeProps={{ className: 'nav-item active' }} inactiveProps={{ className: 'nav-item' }}>
+            <Settings size={18} />
+            <span>Settings</span>
+          </Link>
         </nav>
       </aside>
       <main className="app-main">
