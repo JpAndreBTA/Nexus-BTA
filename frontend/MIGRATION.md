@@ -162,3 +162,15 @@ Validation:
 - Python compile passed for backend and smoke script.
 - `NEXUS_FRONTEND_BASE=/app/ npm run check` passed.
 - `python frontend/scripts/smoke_app.py` passed all 10 route/viewport checks.
+
+## Checkpoint: Models Catalog Upgrade
+
+Implemented:
+
+- `/models` now has category filtering, search, detailed model panel, size formatting and tags.
+- Layout is responsive with category/detail panels collapsing on tablet/mobile.
+
+Validation:
+
+- `NEXUS_FRONTEND_BASE=/app/ npm run check` passed.
+- `frontend/scripts/smoke_app.py` passed all desktop/mobile route checks.
