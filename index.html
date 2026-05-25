@@ -1660,6 +1660,10 @@
                                         <option>Automatic</option>
                                     </select>
                                 </label>
+                                <label id="ltxLatentUpscaleRefineWrapper" class="hidden flex items-center justify-between gap-3 bg-nexus-panel border border-nexus-border px-2 py-2 rounded-sm text-xs text-white">
+                                    <span class="font-bold">Latent upscale refine</span>
+                                    <span class="toggle-switch"><input id="ltxLatentUpscaleRefineToggle" type="checkbox"><span class="toggle-track"></span></span>
+                                </label>
                                 <div id="ltxUpscaleControls" class="hidden grid grid-cols-3 gap-2">
                                     <label class="space-y-1">
                                         <span class="mini-label">Tiles X</span>
@@ -5285,6 +5289,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const framesWrapper = document.getElementById('framesFieldWrapper');
             const ltxVaePanel = document.getElementById('ltxVaePanel');
             const latentUpscaleWrapper = document.getElementById('latentUpscaleWrapper');
+            const ltxLatentUpscaleRefineWrapper = document.getElementById('ltxLatentUpscaleRefineWrapper');
             const activeAudioWrapper = document.getElementById('activeAudioWrapper');
             const omnicineWrapper = document.getElementById('omnicineWrapper');
             const ltxUpscaleControls = document.getElementById('ltxUpscaleControls');
@@ -5294,6 +5299,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (framesWrapper) framesWrapper.classList.toggle('hidden', ltxOnly);
             if (ltxVaePanel) ltxVaePanel.classList.toggle('hidden', !ltxOnly);
             if (latentUpscaleWrapper) latentUpscaleWrapper.classList.toggle('hidden', !ltxOnly);
+            if (ltxLatentUpscaleRefineWrapper) ltxLatentUpscaleRefineWrapper.classList.toggle('hidden', !ltxOnly);
             if (activeAudioWrapper) activeAudioWrapper.classList.toggle('hidden', !ltxOnly);
             if (omnicineWrapper) omnicineWrapper.classList.toggle('hidden', !ltxOnly);
             if (ltxUpscaleControls) ltxUpscaleControls.classList.toggle('hidden', !ltxOnly);
@@ -5567,10 +5573,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 .filter(item => item.name && !/^(none|automatic|auto)$/i.test(item.name));
             const conceptLoraNodeIds = new Set(
                 activeWorkflowGraph.nodes
-                    .filter(node => {
-                        const text = `${node.title || ''} ${node.class_type || ''}`.toLowerCase();
-                        return /lora/.test(text) && !/detailer|omni|singularity|control|edit.*lightning/.test(text);
-                    })
+                    .filter(node => workflowLoraNodeRole(node) === 'concept')
                     .map(node => String(node.id))
             );
             const patchConceptLoraWidgets = (node, selection) => {
@@ -5633,6 +5636,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 motion_adapter: document.getElementById('motionSelect')?.value,
                 omnicine_enabled: activeOmnicineSelection() ? 'true' : 'false',
                 omnicine_lora: activeOmnicineSelection(),
+                latent_upscale_refine: document.getElementById('ltxLatentUpscaleRefineToggle')?.checked ? 'true' : 'false',
                 vae: document.getElementById('vaeSelect')?.value,
                 vae_name: document.getElementById('vaeSelect')?.value,
                 video_vae: document.getElementById('videoVaeSelect')?.value,
@@ -7993,6 +7997,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const latentUpscale = /^(none)$/i.test(rawLatentUpscale)
                 ? ''
                 : (/^(automatic|auto)?$/i.test(rawLatentUpscale) ? 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors' : rawLatentUpscale);
+            const refineLatentUpscale = !!(payload?.video?.latent_upscale_refine ?? document.getElementById('ltxLatentUpscaleRefineToggle')?.checked);
             const decodeTilesX = Math.max(1, Math.min(8, parseInt(document.getElementById('ltxDecodeTilesXInput')?.value || payload?.video?.decode_tiles_x || '2', 10) || 2));
             const decodeTilesY = Math.max(1, Math.min(8, parseInt(document.getElementById('ltxDecodeTilesYInput')?.value || payload?.video?.decode_tiles_y || '2', 10) || 2));
             const decodeOverlap = Math.max(0, Math.min(256, parseInt(document.getElementById('ltxDecodeOverlapInput')?.value || payload?.video?.decode_overlap || '6', 10) || 6));
@@ -8189,42 +8194,45 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     inputs: { samples: decodeLatentRef, upscale_model: ['24', 0], vae: videoVaeRef },
                     _meta: { title: 'LTX Latent Upscale' }
                 };
-                latentUpscaleNodes['26'] = {
-                    class_type: 'RandomNoise',
-                    inputs: { noise_seed: Number(payload?.seed ?? document.getElementById('seedInput')?.value ?? -1) + 1 },
-                    _meta: { title: 'Upscale Refiner Seed' }
-                };
-                latentUpscaleNodes['27'] = {
-                    class_type: 'ManualSigmas',
-                    inputs: { sigmas: LTX_UPSCALE_REFINER_SIGMAS },
-                    _meta: { title: 'Official LTX 2.3 Upscale Refiner Sigmas' }
-                };
-                latentUpscaleNodes['28'] = {
-                    class_type: 'CFGGuider',
-                    inputs: { model: samplerModelRef, positive: samplerPositiveRef, negative: samplerNegativeRef, cfg },
-                    _meta: { title: 'Upscale Refiner CFG Guider' }
-                };
-                latentUpscaleNodes['30'] = {
-                    class_type: 'LTXVConcatAVLatent',
-                    inputs: { video_latent: ['25', 0], audio_latent: ['14', 1] },
-                    _meta: { title: 'Recombine AV Latent For Upscale Refiner' }
-                };
-                latentUpscaleNodes['31'] = {
-                    class_type: 'KSamplerSelect',
-                    inputs: { sampler_name: 'euler_cfg_pp' },
-                    _meta: { title: 'Official LTX Upscale Refiner Sampler Select' }
-                };
-                latentUpscaleNodes['29'] = {
-                    class_type: 'SamplerCustomAdvanced',
-                    inputs: { noise: ['26', 0], guider: ['28', 0], sampler: ['31', 0], sigmas: ['27', 0], latent_image: ['30', 0] },
-                    _meta: { title: 'LTX Upscale Refiner Sampler' }
-                };
-                latentUpscaleNodes['32'] = {
-                    class_type: 'LTXVSeparateAVLatent',
-                    inputs: { av_latent: ['29', 0] },
-                    _meta: { title: 'Separate Refined AV Latents' }
-                };
-                decodeLatentRef = ['32', 0];
+                decodeLatentRef = ['25', 0];
+                if (refineLatentUpscale) {
+                    latentUpscaleNodes['26'] = {
+                        class_type: 'RandomNoise',
+                        inputs: { noise_seed: Number(payload?.seed ?? document.getElementById('seedInput')?.value ?? -1) + 1 },
+                        _meta: { title: 'Upscale Refiner Seed' }
+                    };
+                    latentUpscaleNodes['27'] = {
+                        class_type: 'ManualSigmas',
+                        inputs: { sigmas: LTX_UPSCALE_REFINER_SIGMAS },
+                        _meta: { title: 'Official LTX 2.3 Upscale Refiner Sigmas' }
+                    };
+                    latentUpscaleNodes['28'] = {
+                        class_type: 'CFGGuider',
+                        inputs: { model: samplerModelRef, positive: samplerPositiveRef, negative: samplerNegativeRef, cfg },
+                        _meta: { title: 'Upscale Refiner CFG Guider' }
+                    };
+                    latentUpscaleNodes['30'] = {
+                        class_type: 'LTXVConcatAVLatent',
+                        inputs: { video_latent: ['25', 0], audio_latent: ['14', 1] },
+                        _meta: { title: 'Recombine AV Latent For Upscale Refiner' }
+                    };
+                    latentUpscaleNodes['31'] = {
+                        class_type: 'KSamplerSelect',
+                        inputs: { sampler_name: 'euler_cfg_pp' },
+                        _meta: { title: 'Official LTX Upscale Refiner Sampler Select' }
+                    };
+                    latentUpscaleNodes['29'] = {
+                        class_type: 'SamplerCustomAdvanced',
+                        inputs: { noise: ['26', 0], guider: ['28', 0], sampler: ['31', 0], sigmas: ['27', 0], latent_image: ['30', 0] },
+                        _meta: { title: 'LTX Upscale Refiner Sampler' }
+                    };
+                    latentUpscaleNodes['32'] = {
+                        class_type: 'LTXVSeparateAVLatent',
+                        inputs: { av_latent: ['29', 0] },
+                        _meta: { title: 'Separate Refined AV Latents' }
+                    };
+                    decodeLatentRef = ['32', 0];
+                }
             }
             const finalScaleNodes = {};
             const latentFactor = ltxLatentUpscaleFactor(latentUpscale);
@@ -11961,7 +11969,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             'distilledLoraOneSelect', 'distilledLoraOneStrength', 'distilledLoraTwoSelect', 'distilledLoraTwoStrength',
             'widthInput', 'heightInput', 'samplingMethodSelect', 'schedulerSelect', 'stepsSlider', 'cfgSlider', 'seedInput',
             'resizeModeSelect', 'denoiseSlider', 'batchCountInput', 'framesInput', 'fpsInput', 'secondsInput', 'motionSelect',
-            'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'refinerSelect',
+            'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'refinerSelect',
             'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
             'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect',
             'controlNetEnabledToggle', 'controlNetTypeSelect', 'controlNetModelSelect', 'controlNetBalanceSelect',
@@ -12498,12 +12506,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const sideSampler = document.getElementById('samplingMethodSelect')?.value || profile.sampler || 'Euler';
             const sideScheduler = document.getElementById('schedulerSelect')?.value || profile.scheduler || 'Simple';
             const externalQwenRoute = ['Qwen', 'Anima'].includes(preset);
+            const modelOnlyLora = externalQwenRoute || isVideo;
             const qwenModelOnlyLora = externalQwenRoute;
             const qwenModelIsGguf = /\.gguf$/i.test(String(selectedModelName));
             const modelSource = hasLora ? 'lora' : 'model';
-            const clipSource = externalQwenRoute ? 'clip' : (hasLora ? 'lora' : 'model');
+            const clipSource = externalQwenRoute ? 'clip' : 'model';
             const vaeSource = externalQwenRoute ? 'vae' : 'model';
-            const clipOutputSlot = externalQwenRoute ? 0 : (hasLora ? 1 : 1);
+            const clipOutputSlot = externalQwenRoute ? 0 : 1;
             const vaeOutputSlot = externalQwenRoute ? 0 : 2;
             if (preset === 'ZImageTurbo') {
                 const zModelSource = hasLora ? 'lora' : 'model';
@@ -12815,7 +12824,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const links = [];
             if (hasLora) {
                 links.push({ from_node: 'model', from_slot: 0, to_node: 'lora', to_slot: 0, type: 'MODEL' });
-                if (!qwenModelOnlyLora) {
+                if (!modelOnlyLora) {
                     links.push({ from_node: 'model', from_slot: 1, to_node: 'lora', to_slot: 1, type: 'CLIP' });
                 }
             }
@@ -12934,10 +12943,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const ltxModelOnlyLora = preset === 'LTX';
             if (hasLora) nodes.push(qwenModelOnlyLora
                 ? { id: 'lora', class_type: 'LoraLoaderModelOnly', title: 'QWEN LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: activeLoras[0]?.relative_name || activeLoras[0]?.name || 'select_lora.safetensors' }, { name: 'strength_model', value: Number(activeLoras[0]?.strength || 0.65).toFixed(2) }], color: '#4c1d95' }
-                : { id: 'lora', class_type: isVideo ? 'LoraLoaderModelOnly' : 'LoraLoader', title: ltxModelOnlyLora ? 'LTX LoRA Stack' : 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: isVideo ? ['model'] : ['model', 'clip'], outputs: isVideo ? ['MODEL'] : ['MODEL', 'CLIP'], widgets: activeLoras.slice(0, 4).map((item, index) => index === 0 ? { name: 'lora_name', value: item.relative_name || item.name } : { name: item.relative_name || item.name, value: Number(item.strength || 0.65).toFixed(2) }), color: '#4c1d95' });
+                : { id: 'lora', class_type: modelOnlyLora ? 'LoraLoaderModelOnly' : 'LoraLoader', title: ltxModelOnlyLora ? 'LTX Concept LoRA' : 'LoRA Stack', x: 470, y: 90, width: 260, height: 120, inputs: modelOnlyLora ? ['model'] : ['model', 'clip'], outputs: modelOnlyLora ? ['MODEL'] : ['MODEL', 'CLIP'], widgets: [{ name: 'lora_name', value: activeLoras[0]?.relative_name || activeLoras[0]?.name || 'select_lora.safetensors' }, { name: 'strength_model', value: Number(activeLoras[0]?.strength || 0.65).toFixed(2) }, ...(!modelOnlyLora ? [{ name: 'strength_clip', value: Number(activeLoras[0]?.strength_clip ?? activeLoras[0]?.strength ?? 0.65).toFixed(2) }] : [])], color: '#4c1d95' });
             if (isVideo) {
                 nodes.push(
-                    { id: 'video_settings', class_type: 'PrimitiveNode', title: 'Video / Motion Settings', x: 760, y: 90, width: 260, height: 150, inputs: [], outputs: ['INT', 'FLOAT', 'STRING'], widgets: [{ name: 'frames', value: document.getElementById('framesInput')?.value || profile.videoSettings?.frames || 49 }, { name: 'seconds', value: document.getElementById('secondsInput')?.value || profile.videoSettings?.seconds || 4 }, { name: 'fps', value: document.getElementById('fpsInput')?.value || profile.videoSettings?.fps || 8 }, { name: 'motion_adapter', value: document.getElementById('motionSelect')?.value || profile.motionAdapters?.[0] || 'Auto by model' }, { name: 'omnicine_lora', value: activeOmnicineSelection() || 'Off' }, { name: 'omnicine_enabled', value: activeOmnicineSelection() ? 'true' : 'false' }, { name: 'active_audio', value: document.getElementById('activeAudioToggle')?.checked ? 'true' : 'false' }, { name: 'latent_upscale', value: document.getElementById('latentUpscaleSelect')?.value || 'Automatic' }], color: '#2f3c4f' },
+                    { id: 'video_settings', class_type: 'PrimitiveNode', title: 'Video / Motion Settings', x: 760, y: 90, width: 260, height: 150, inputs: [], outputs: ['INT', 'FLOAT', 'STRING'], widgets: [{ name: 'frames', value: document.getElementById('framesInput')?.value || profile.videoSettings?.frames || 49 }, { name: 'seconds', value: document.getElementById('secondsInput')?.value || profile.videoSettings?.seconds || 4 }, { name: 'fps', value: document.getElementById('fpsInput')?.value || profile.videoSettings?.fps || 8 }, { name: 'motion_adapter', value: document.getElementById('motionSelect')?.value || profile.motionAdapters?.[0] || 'Auto by model' }, { name: 'omnicine_lora', value: activeOmnicineSelection() || 'Off' }, { name: 'omnicine_enabled', value: activeOmnicineSelection() ? 'true' : 'false' }, { name: 'active_audio', value: document.getElementById('activeAudioToggle')?.checked ? 'true' : 'false' }, { name: 'latent_upscale', value: document.getElementById('latentUpscaleSelect')?.value || 'Automatic' }, { name: 'latent_upscale_refine', value: document.getElementById('ltxLatentUpscaleRefineToggle')?.checked ? 'true' : 'false' }], color: '#2f3c4f' },
                     { id: 'video_vae', class_type: 'VAELoader', title: 'Video VAE / Audio VAE', x: 1160, y: 520, width: 240, height: 120, inputs: [], outputs: ['VAE'], widgets: [{ name: 'video_vae', value: document.getElementById('videoVaeSelect')?.value || 'Automatic' }, { name: 'audio_vae', value: document.getElementById('audioVaeSelect')?.value || 'Automatic' }], color: '#62305a' }
                 );
             }
@@ -13217,6 +13226,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     omnicine_enabled: activePreset === 'LTX' && !!activeOmnicineSelection(),
                     omnicine_lora: activeOmnicineSelection() || 'Off',
                     latent_upscale: document.getElementById('latentUpscaleSelect')?.value || 'Automatic',
+                    latent_upscale_refine: !!document.getElementById('ltxLatentUpscaleRefineToggle')?.checked,
                     detailer_enabled: activePreset === 'LTX' ? !!document.getElementById('ltxDetailerToggle')?.checked : false,
                     detailer_lora: document.getElementById('ltxDetailerLoraSelect')?.value || 'Automatic',
                     detailer_strength: parseFloat(document.getElementById('ltxDetailerStrengthSlider')?.value || '1'),
@@ -13268,6 +13278,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     active_audio: director.use_custom_audio,
                     omnicine_enabled: !!activeOmnicineSelection(),
                     omnicine_lora: activeOmnicineSelection() || 'Off',
+                    latent_upscale_refine: !!document.getElementById('ltxLatentUpscaleRefineToggle')?.checked,
                     director_timeline: true
                 };
                 payload.director = director;
@@ -13276,6 +13287,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 payload.workflow_override = null;
                 payload.workflow_id = null;
             } else if (activePreset === 'Wan' && currentActivity === 'img2img') {
+                payload.workflow_override = null;
+                payload.workflow_id = null;
+            } else if (activePreset === 'LTX' && activeWorkspace === 'workflow' && !activeWorkflowId) {
                 payload.workflow_override = null;
                 payload.workflow_id = null;
             } else if ((activeWorkflowId || activeWorkspace === 'workflow') && activeWorkflowGraph?.nodes?.length) {
@@ -13998,7 +14012,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         restorePresetRuntimeState(activePreset);
         updateRangeLabel('steps');
         updateRangeLabel('cfg');
-        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
+        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
             const element = document.getElementById(id);
             if (element) element.addEventListener('input', updateWorkflowPreview);
             if (element) element.addEventListener('change', () => {

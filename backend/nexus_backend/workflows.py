@@ -2428,6 +2428,11 @@ def build_basic_ltx_img2video_workflow(
     steps = max(min_steps, int(request.steps or min_steps))
     img_compression = max(0, min(100, int(_number_or_none(video_options.get("img_compression")) or 18)))
     use_latent_upscale = bool(latent_upscale_name)
+    refine_latent_upscale_value = video_options.get("latent_upscale_refine", False)
+    if isinstance(refine_latent_upscale_value, str):
+        refine_latent_upscale = refine_latent_upscale_value.lower() not in {"false", "0", "off", "none", "no"}
+    else:
+        refine_latent_upscale = bool(refine_latent_upscale_value)
     width = final_width
     height = final_height
     if use_latent_upscale:
@@ -2556,59 +2561,62 @@ def build_basic_ltx_img2video_workflow(
                 "_meta": {"title": "Reapply Reference After Latent Upscale"},
             }
             refiner_latent_ref = ["25", 0]
-        if first_audio_latent_ref:
-            latent_upscale_nodes["30"] = {
-                "class_type": "LTXVConcatAVLatent",
-                "inputs": {"video_latent": refiner_latent_ref, "audio_latent": first_audio_latent_ref},
-                "_meta": {"title": "Recombine AV Latent For Upscale Refiner"},
+        if refine_latent_upscale:
+            if first_audio_latent_ref:
+                latent_upscale_nodes["30"] = {
+                    "class_type": "LTXVConcatAVLatent",
+                    "inputs": {"video_latent": refiner_latent_ref, "audio_latent": first_audio_latent_ref},
+                    "_meta": {"title": "Recombine AV Latent For Upscale Refiner"},
+                }
+                refiner_latent_ref = ["30", 0]
+            latent_upscale_nodes["26"] = {
+                "class_type": "RandomNoise",
+                "inputs": {"noise_seed": seed + 1 if seed < 2**32 - 1 else seed},
+                "_meta": {"title": "Upscale Refiner Seed"},
             }
-            refiner_latent_ref = ["30", 0]
-        latent_upscale_nodes["26"] = {
-            "class_type": "RandomNoise",
-            "inputs": {"noise_seed": seed + 1 if seed < 2**32 - 1 else seed},
-            "_meta": {"title": "Upscale Refiner Seed"},
-        }
-        latent_upscale_nodes["27"] = {
-            "class_type": "ManualSigmas",
-            "inputs": {"sigmas": LTX_UPSCALE_REFINER_SIGMAS},
-            "_meta": {"title": "Official LTX 2.3 Upscale Refiner Sigmas"},
-        }
-        latent_upscale_nodes["28"] = {
-            "class_type": "CFGGuider",
-            "inputs": {
-                "model": ltx_model_ref,
-                "positive": ["6", 0] if text_to_video else ["7", 0],
-                "negative": ["6", 1] if text_to_video else ["7", 1],
-                "cfg": request.cfg,
-            },
-            "_meta": {"title": "Upscale Refiner CFG Guider"},
-        }
-        latent_upscale_nodes["31"] = {
-            "class_type": "KSamplerSelect",
-            "inputs": {"sampler_name": "euler_cfg_pp"},
-            "_meta": {"title": "Official LTX Upscale Refiner Sampler Select"},
-        }
-        latent_upscale_nodes["29"] = {
-            "class_type": "SamplerCustomAdvanced",
-            "inputs": {
-                "noise": ["26", 0],
-                "guider": ["28", 0],
-                "sampler": ["31", 0],
-                "sigmas": ["27", 0],
-                "latent_image": refiner_latent_ref,
-            },
-            "_meta": {"title": "LTX Upscale Refiner Sampler"},
-        }
-        if first_audio_latent_ref:
-            latent_upscale_nodes["32"] = {
-                "class_type": "LTXVSeparateAVLatent",
-                "inputs": {"av_latent": ["29", 0]},
-                "_meta": {"title": "Separate Refined AV Latents"},
+            latent_upscale_nodes["27"] = {
+                "class_type": "ManualSigmas",
+                "inputs": {"sigmas": LTX_UPSCALE_REFINER_SIGMAS},
+                "_meta": {"title": "Official LTX 2.3 Upscale Refiner Sigmas"},
             }
-            decode_latent_ref = ["32", 0]
-            first_audio_latent_ref = ["32", 1]
+            latent_upscale_nodes["28"] = {
+                "class_type": "CFGGuider",
+                "inputs": {
+                    "model": ltx_model_ref,
+                    "positive": ["6", 0] if text_to_video else ["7", 0],
+                    "negative": ["6", 1] if text_to_video else ["7", 1],
+                    "cfg": request.cfg,
+                },
+                "_meta": {"title": "Upscale Refiner CFG Guider"},
+            }
+            latent_upscale_nodes["31"] = {
+                "class_type": "KSamplerSelect",
+                "inputs": {"sampler_name": "euler_cfg_pp"},
+                "_meta": {"title": "Official LTX Upscale Refiner Sampler Select"},
+            }
+            latent_upscale_nodes["29"] = {
+                "class_type": "SamplerCustomAdvanced",
+                "inputs": {
+                    "noise": ["26", 0],
+                    "guider": ["28", 0],
+                    "sampler": ["31", 0],
+                    "sigmas": ["27", 0],
+                    "latent_image": refiner_latent_ref,
+                },
+                "_meta": {"title": "LTX Upscale Refiner Sampler"},
+            }
+            if first_audio_latent_ref:
+                latent_upscale_nodes["32"] = {
+                    "class_type": "LTXVSeparateAVLatent",
+                    "inputs": {"av_latent": ["29", 0]},
+                    "_meta": {"title": "Separate Refined AV Latents"},
+                }
+                decode_latent_ref = ["32", 0]
+                first_audio_latent_ref = ["32", 1]
+            else:
+                decode_latent_ref = ["29", 0]
         else:
-            decode_latent_ref = ["29", 0]
+            decode_latent_ref = refiner_latent_ref
 
     if active_audio and first_audio_latent_ref:
         audio_nodes["20"] = {
@@ -2774,12 +2782,12 @@ def build_basic_ltx_img2video_workflow(
         },
         "15": {
             "class_type": "SaveVideo",
-            "inputs": {
-                "video": ["14", 0],
-                "filename_prefix": "NEXUS_BTA_LTX23_IMG2VID_512",
-                "format": "mp4",
-                "codec": "h264",
-            },
+                "inputs": {
+                    "video": ["14", 0],
+                    "filename_prefix": f"NEXUS_BTA_LTX23_IMG2VID_{final_width}x{final_height}",
+                    "format": "mp4",
+                    "codec": "h264",
+                },
             "_meta": {"title": "Save Video"},
         },
     }
