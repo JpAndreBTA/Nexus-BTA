@@ -2723,7 +2723,7 @@ def build_basic_ltx_img2video_workflow(
         },
         "2": {
             "class_type": "LTXAVTextEncoderLoader",
-            "inputs": {"text_encoder": text_encoder_name, "ckpt_name": text_projection_name or checkpoint_name, "device": "cpu"},
+            "inputs": {"text_encoder": text_encoder_name, "ckpt_name": text_projection_name or checkpoint_name, "device": str(video_options.get("text_encoder_device") or "default")},
             "_meta": {"title": "LTX Text Encoder"},
         },
         "3": {
@@ -2907,6 +2907,8 @@ def patch_workflow(
                 inputs["vae_name"] = assets["video_vae"]
         if "text_encoder" in inputs and assets.get("text_encoder"):
             inputs["text_encoder"] = assets["text_encoder"]
+        if preset == "ltx" and class_lower == "ltxavtextencoderloader" and "device" in inputs:
+            inputs["device"] = str(video_options.get("text_encoder_device") or "default")
         if "clip_name1" in inputs and assets.get("flux_clip_l"):
             inputs["clip_name1"] = assets["flux_clip_l"]
         if "clip_name2" in inputs and assets.get("text_encoder"):

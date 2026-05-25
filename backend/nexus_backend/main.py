@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import importlib.util
 import json
 import os
 import re
@@ -21,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from .asset_resolver import resolve_generation_assets
 from .civitai import download_civitai_asset, resolve_civitai_asset, search_civitai_models
 from .comfy_client import ComfyClient, extract_outputs
-from .config import load_settings
+from .config import load_settings, save_settings
 from .dependencies import custom_node_requirements, install_custom_node_dependencies
 from .importer import import_resource
 from .scanner import ensure_model_tree, scan_custom_nodes, scan_models
@@ -1013,15 +1014,23 @@ comfy = ComfyClient(settings)
 
 def _canonical_vram_policy(value: str | None) -> str:
     text = str(value or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
-    if text in {"low", "lowvram"}:
-        return "low"
-    if text in {"med", "medium", "medvram", "normal", "balanced", "balance"}:
-        return "balanced"
-    if text in {"high", "highvram"}:
-        return "high"
-    if text.startswith("cpu"):
-        return "cpu"
-    return "balanced"
+    if text in {"gpu", "gpuonly", "onlygpu", "cudaonly"}:
+        return "gpu_only"
+    if text in {"shared", "vramshared", "sharedvram", "dynamic", "default", "auto", "low", "lowvram", "med", "medium", "medvram", "normal", "balanced", "balance", "high", "highvram"}:
+        return "shared"
+    return "shared"
+
+
+def _canonical_gpu_memory_gb(value: float | int | str | None) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return round(max(1.0, min(parsed, 192.0)), 2)
 
 
 def _canonical_attention_backend(value: str | None) -> str:
@@ -1044,21 +1053,26 @@ def _apply_runtime_options(options: RuntimeOptions | None) -> bool:
     if not options:
         return False
     next_vram = _canonical_vram_policy(options.vram_policy)
+    next_gpu_memory_gb = _canonical_gpu_memory_gb(options.gpu_memory_gb)
     next_attention = _canonical_attention_backend(options.attention_backend)
     next_precision = _canonical_precision(options.precision)
     next_disable_xformers = bool(options.disable_xformers)
     changed = (
         _canonical_vram_policy(settings.runtime.vram_policy) != next_vram
+        or _canonical_gpu_memory_gb(settings.runtime.gpu_memory_gb) != next_gpu_memory_gb
         or _canonical_attention_backend(settings.runtime.attention_backend) != next_attention
         or _canonical_precision(settings.runtime.precision) != next_precision
         or bool(settings.runtime.disable_xformers) != next_disable_xformers
     )
     settings.runtime.vram_policy = next_vram
+    settings.runtime.gpu_memory_gb = next_gpu_memory_gb
     settings.runtime.attention_backend = next_attention
     settings.runtime.precision = next_precision
     settings.runtime.disable_xformers = next_disable_xformers
     settings.runtime.enable_sage_attention = next_attention == "sage"
     settings.runtime.enable_flash_attention = next_attention == "flash"
+    if changed:
+        save_settings(settings)
     return changed
 
 
@@ -1208,6 +1222,77 @@ async def _runtime_memory_snapshot() -> dict[str, Any]:
         "idle_stop_seconds": getattr(settings.runtime, "idle_stop_seconds", 300),
         "active_generation_jobs": len(_active_generation_jobs()),
     }
+
+
+def _runtime_attention_capabilities() -> dict[str, Any]:
+    def module_status(module_name: str) -> dict[str, Any]:
+        available = importlib.util.find_spec(module_name) is not None
+        result: dict[str, Any] = {"available": available, "version": "", "error": ""}
+        if not available:
+            return result
+        try:
+            module = __import__(module_name)
+            result["version"] = str(getattr(module, "__version__", "") or "")
+        except Exception as exc:
+            result["available"] = False
+            result["error"] = f"{type(exc).__name__}: {str(exc)[:180]}"
+        return result
+
+    torch_info: dict[str, Any] = {
+        "available": False,
+        "version": "",
+        "cuda_available": False,
+        "cuda_device_count": 0,
+        "cuda_name": "",
+        "cuda_total_vram_bytes": 0,
+    }
+    try:
+        import torch
+
+        torch_info["available"] = True
+        torch_info["version"] = str(getattr(torch, "__version__", "") or "")
+        cuda_available = bool(torch.cuda.is_available())
+        torch_info["cuda_available"] = cuda_available
+        if cuda_available:
+            torch_info["cuda_device_count"] = int(torch.cuda.device_count())
+            torch_info["cuda_name"] = str(torch.cuda.get_device_name(0))
+            torch_info["cuda_total_vram_bytes"] = int(torch.cuda.get_device_properties(0).total_memory)
+    except Exception as exc:
+        torch_info["error"] = f"{type(exc).__name__}: {str(exc)[:180]}"
+
+    modules = {
+        "xformers": module_status("xformers"),
+        "sageattention": module_status("sageattention"),
+        "flash_attn": module_status("flash_attn"),
+    }
+    vram_gb = float(torch_info.get("cuda_total_vram_bytes") or 0) / (1024**3)
+    recommended_attention = "auto"
+    if modules["xformers"]["available"]:
+        recommended_attention = "auto"
+    elif modules["sageattention"]["available"]:
+        recommended_attention = "sage"
+    elif modules["flash_attn"]["available"]:
+        recommended_attention = "flash"
+    elif not modules["xformers"]["available"]:
+        recommended_attention = "pytorch"
+
+    recommended_vram = "shared"
+    recommended_gpu_memory_gb = None
+    if torch_info.get("cuda_available") and vram_gb > 0:
+        recommended_gpu_memory_gb = round(max(1.0, min(vram_gb - 1.5, vram_gb * 0.85)), 1)
+
+    return {
+        "torch": torch_info,
+        "attention_modules": modules,
+        "recommended": {
+            "attention_backend": recommended_attention,
+            "disable_xformers": not modules["xformers"]["available"],
+            "vram_policy": recommended_vram,
+            "gpu_memory_gb": recommended_gpu_memory_gb,
+            "precision": "auto",
+        },
+    }
+
 
 app = FastAPI(title="Nexus BTA Backend", version="0.1.1")
 app.add_middleware(
@@ -1463,6 +1548,16 @@ async def restart_comfy(force: bool = Query(False)) -> dict[str, Any]:
 @app.get("/api/runtime/memory")
 async def runtime_memory() -> dict[str, Any]:
     return await _runtime_memory_snapshot()
+
+
+@app.get("/api/runtime/capabilities")
+async def runtime_capabilities() -> dict[str, Any]:
+    snapshot = await _runtime_memory_snapshot()
+    capabilities = _runtime_attention_capabilities()
+    capabilities["comfy_running"] = snapshot.get("comfy_running", False)
+    capabilities["comfy_system_stats"] = snapshot.get("comfy_system_stats", {})
+    capabilities["active_runtime"] = settings.runtime.model_dump(mode="json")
+    return capabilities
 
 
 @app.post("/api/civitai/resolve")

@@ -99,7 +99,8 @@ class ControlNetSettings(BaseModel):
 
 
 class RuntimeOptions(BaseModel):
-    vram_policy: str = "balanced"
+    vram_policy: str = "shared"
+    gpu_memory_gb: float | None = None
     attention_backend: str = "auto"
     disable_xformers: bool = False
     precision: str = "auto"

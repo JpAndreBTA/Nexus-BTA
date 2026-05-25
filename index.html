@@ -2811,20 +2811,26 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                         <label class="space-y-1 block">
                             <span class="mini-label">VRAM Policy</span>
                             <select id="vramPolicySelect" onchange="syncRuntimeBadges()" class="flat-input">
-                                <option>Balanced</option>
-                                <option>Low VRAM</option>
-                                <option>Med VRAM</option>
-                                <option>High VRAM</option>
-                                <option>CPU fallback</option>
+                                <option>VRAM Shared</option>
+                                <option>GPU Only</option>
                             </select>
+                            <span class="text-[10px] text-nexus-muted font-mono">Shared uses CPU/RAM + GPU/VRAM. GPU Only keeps runtime on GPU when it fits.</span>
+                        </label>
+                        <label class="space-y-1 block">
+                            <span class="mini-label">GPU memory to use</span>
+                            <div class="grid grid-cols-[1fr_74px] gap-2 items-center">
+                                <input id="gpuMemorySlider" type="range" min="1" max="24" step="0.5" value="10" oninput="syncGpuMemoryLimit(this.value)" onchange="syncRuntimeBadges()" class="w-full accent-nexus-red">
+                                <input id="gpuMemoryInput" type="number" min="1" max="24" step="0.5" value="10" oninput="syncGpuMemoryLimit(this.value, true)" onchange="syncRuntimeBadges()" class="flat-input text-right">
+                            </div>
+                            <span id="gpuMemoryHint" class="text-[10px] text-nexus-muted font-mono">Auto from backend</span>
                         </label>
                     </section>
                     <section class="data-card p-3 space-y-3">
                         <span class="mini-label">Attention Backend</span>
-                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">SageAttention<span class="toggle-switch"><input class="attention-toggle" value="SageAttention" type="checkbox"><span class="toggle-track"></span></span></label>
-                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">FlashAttention<span class="toggle-switch"><input class="attention-toggle" value="FlashAttention" type="checkbox"><span class="toggle-track"></span></span></label>
+                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">SageAttention<span class="toggle-switch"><input id="sageAttentionToggle" class="attention-toggle" value="SageAttention" type="checkbox"><span class="toggle-track"></span></span></label>
+                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">FlashAttention<span class="toggle-switch"><input id="flashAttentionToggle" class="attention-toggle" value="FlashAttention" type="checkbox"><span class="toggle-track"></span></span></label>
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">xFormers<span class="toggle-switch"><input id="xformersToggle" class="attention-toggle" value="xFormers" type="checkbox"><span class="toggle-track"></span></span></label>
-                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">PyTorch SDPA<span class="toggle-switch"><input class="attention-toggle" value="PyTorch SDPA" type="checkbox" checked><span class="toggle-track"></span></span></label>
+                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">PyTorch SDPA<span class="toggle-switch"><input id="pytorchAttentionToggle" class="attention-toggle" value="PyTorch SDPA" type="checkbox" checked><span class="toggle-track"></span></span></label>
                         <p class="text-[10px] text-nexus-muted leading-4">Priority follows Sage, Flash, xFormers, PyTorch SDPA, Basic. Each backend can be disabled here before reload.</p>
                     </section>
                     <section class="data-card p-3 space-y-3">
@@ -3020,6 +3026,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let workflowContextPoint = { x: 80, y: 80 };
         const NEXUS_API = 'http://127.0.0.1:7861/api';
         let backendOnline = false;
+        let runtimeCapabilities = null;
         let backendCatalog = null;
         let backendWorkflows = [];
         let backendCustomNodes = [];
@@ -8387,7 +8394,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             };
             const workflow = {
                 '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: checkpointName }, _meta: { title: 'Load LTX 2.3 Checkpoint' } },
-                '2': { class_type: 'LTXAVTextEncoderLoader', inputs: { text_encoder: textEncoder, ckpt_name: LTX_TEXT_PROJECTION_NAME, device: 'cpu' }, _meta: { title: 'LTX Text Encoder Projection' } },
+                '2': { class_type: 'LTXAVTextEncoderLoader', inputs: { text_encoder: textEncoder, ckpt_name: LTX_TEXT_PROJECTION_NAME, device: 'default' }, _meta: { title: 'LTX Text Encoder Projection' } },
                 '3': { class_type: 'VAELoader', inputs: { vae_name: audioVae === 'Automatic' ? 'LTX23_audio_vae_bf16.safetensors' : audioVae }, _meta: { title: 'Load LTX Audio VAE' } },
                 '23': { class_type: 'VAELoader', inputs: { vae_name: videoVae === 'Automatic' ? 'LTX23_video_vae_bf16.safetensors' : videoVae }, _meta: { title: 'Load LTX Video VAE' } },
                 '4': {
@@ -8486,7 +8493,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             return {
                 nodes: [
                     { id: 'ltx_model', class_type: 'CheckpointLoaderSimple', title: 'Load LTX 2.3 Checkpoint', x: 60, y: 150, width: 250, height: 110, inputs: [], outputs: ['MODEL', 'CLIP', 'VAE'], widgets: [{ name: 'ckpt_name', value: comfyCheckpointNameFromSelection(document.getElementById('modelSelect')?.selectedOptions?.[0]) }], color: '#1f3b63' },
-                    { id: 'ltx_clip', class_type: 'LTXAVTextEncoderLoader', title: 'LTX Text Encoder + Projection', x: 60, y: 320, width: 260, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'text_encoder', value: document.getElementById('textEncoderSelect')?.value || 'gemma-3-12b-it-heretic-v2_nvfp4.safetensors' }, { name: 'ckpt_name', value: LTX_TEXT_PROJECTION_NAME }, { name: 'device', value: 'cpu' }], color: '#1f5f3a' },
+                    { id: 'ltx_clip', class_type: 'LTXAVTextEncoderLoader', title: 'LTX Text Encoder + Projection', x: 60, y: 320, width: 260, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'text_encoder', value: document.getElementById('textEncoderSelect')?.value || 'gemma-3-12b-it-heretic-v2_nvfp4.safetensors' }, { name: 'ckpt_name', value: LTX_TEXT_PROJECTION_NAME }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
                     { id: 'ltx_audio_vae', class_type: 'VAELoader', title: 'Audio VAE', x: 60, y: 490, width: 240, height: 104, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('audioVaeSelect')?.value || 'LTX23_audio_vae_bf16.safetensors' }], color: '#62305a' },
                     { id: 'ltx_video_vae', class_type: 'VAELoader', title: 'Video VAE', x: 60, y: 610, width: 240, height: 104, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('videoVaeSelect')?.value || 'LTX23_video_vae_bf16.safetensors' }], color: '#62305a' },
                     ...loraNodes,
@@ -12160,7 +12167,106 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             showToast("Default Template", "Nexus BTA default template restored.");
         }
 
-        function detectDevice() {
+        function setAttentionBackendSelection(backend = 'auto', options = {}) {
+            const normalized = String(backend || 'auto').toLowerCase();
+            const xformersAvailable = !!options.xformersAvailable;
+            document.querySelectorAll('.attention-toggle').forEach(input => {
+                const value = input.value;
+                input.checked =
+                    (normalized === 'sage' && value === 'SageAttention') ||
+                    (normalized === 'flash' && value === 'FlashAttention') ||
+                    (normalized === 'pytorch' && value === 'PyTorch SDPA') ||
+                    (normalized === 'auto' && value === 'xFormers' && xformersAvailable);
+            });
+            if (normalized === 'auto' && !xformersAvailable) {
+                const sdpa = [...document.querySelectorAll('.attention-toggle')].find(input => input.value === 'PyTorch SDPA');
+                if (sdpa) sdpa.checked = true;
+            }
+        }
+
+        function attentionBackendLabelFromCapabilities(capabilities = runtimeCapabilities) {
+            const modules = capabilities?.attention_modules || {};
+            const recommended = capabilities?.recommended?.attention_backend || 'auto';
+            if (recommended === 'auto' && modules.xformers?.available) return 'xFormers';
+            if (recommended === 'sage') return 'SageAttention';
+            if (recommended === 'flash') return 'FlashAttention';
+            if (recommended === 'pytorch') return 'PyTorch SDPA';
+            return 'Auto';
+        }
+
+        function syncGpuMemoryLimit(value, fromInput = false) {
+            const parsed = Number.parseFloat(value);
+            const slider = document.getElementById('gpuMemorySlider');
+            const input = document.getElementById('gpuMemoryInput');
+            if (!Number.isFinite(parsed)) return null;
+            const min = Number.parseFloat(input?.min || slider?.min || '1') || 1;
+            const max = Number.parseFloat(input?.max || slider?.max || String(parsed)) || parsed;
+            const next = Math.min(Math.max(parsed, min), max);
+            const display = String(Math.round(next * 10) / 10);
+            if (slider && (!fromInput || document.activeElement !== slider)) slider.value = display;
+            if (input && (fromInput || document.activeElement !== input)) input.value = display;
+            return next;
+        }
+
+        function applyGpuMemoryRecommendation(capabilities = runtimeCapabilities) {
+            const totalBytes = Number(capabilities?.torch?.cuda_total_vram_bytes || 0);
+            const totalGb = totalBytes > 0 ? totalBytes / (1024 ** 3) : 0;
+            const recommended = Number(capabilities?.recommended?.gpu_memory_gb || 0);
+            const active = Number(capabilities?.active_runtime?.gpu_memory_gb || 0);
+            const selected = active > 0 ? active : recommended;
+            const slider = document.getElementById('gpuMemorySlider');
+            const input = document.getElementById('gpuMemoryInput');
+            const hint = document.getElementById('gpuMemoryHint');
+            if (!slider || !input) return;
+            const max = totalGb > 0 ? Math.max(1, Math.floor(totalGb * 2) / 2) : 24;
+            slider.max = String(max);
+            input.max = String(max);
+            const value = selected > 0 ? selected : Math.min(10, max);
+            syncGpuMemoryLimit(value);
+            if (hint) {
+                hint.textContent = totalGb > 0
+                    ? `Detected ${totalGb.toFixed(1)} GB VRAM; reserving the rest for the OS.`
+                    : 'No CUDA VRAM total reported.';
+            }
+        }
+
+        async function detectDevice() {
+            try {
+                const response = await fetch(`${NEXUS_API}/runtime/capabilities`, { headers: { 'Content-Type': 'application/json' } });
+                if (response.ok) {
+                    runtimeCapabilities = await response.json();
+                    const torchInfo = runtimeCapabilities?.torch || {};
+                    const modules = runtimeCapabilities?.attention_modules || {};
+                    const recommended = runtimeCapabilities?.recommended || {};
+                    const renderer = torchInfo.cuda_name || (torchInfo.cuda_available ? 'CUDA GPU' : 'CPU runtime');
+                    const lower = String(renderer).toLowerCase();
+                    const vendor = lower.includes('nvidia') ? 'NVIDIA' : lower.includes('amd') || lower.includes('radeon') ? 'AMD' : lower.includes('intel') ? 'Intel' : (torchInfo.cuda_available ? 'CUDA' : 'CPU');
+                    document.getElementById('settingsDeviceName').innerText = [
+                        renderer,
+                        torchInfo.version ? `Torch ${torchInfo.version}` : '',
+                        modules.xformers?.available ? 'xFormers OK' : 'xFormers unavailable',
+                        modules.sageattention?.available ? 'Sage OK' : '',
+                        modules.flash_attn?.available ? 'Flash OK' : ''
+                    ].filter(Boolean).join(' | ');
+                    document.getElementById('deviceBadge').innerText = vendor;
+                    setAttentionBackendSelection(recommended.attention_backend || 'auto', { xformersAvailable: !!modules.xformers?.available });
+                    const vramSelect = document.getElementById('vramPolicySelect');
+                    if (vramSelect && recommended.vram_policy) {
+                        const label = {
+                            shared: 'VRAM Shared',
+                            gpu_only: 'GPU Only'
+                        }[recommended.vram_policy] || recommended.vram_policy;
+                        setSelectValue('vramPolicySelect', label);
+                    }
+                    applyGpuMemoryRecommendation(runtimeCapabilities);
+                    syncRuntimeBadges();
+                    showToast("Device Detected", `${vendor} runtime: ${attentionBackendLabelFromCapabilities(runtimeCapabilities)} / ${document.getElementById('vramPolicySelect')?.value || 'VRAM Shared'}.`);
+                    return runtimeCapabilities;
+                }
+            } catch (error) {
+                console.info('Backend runtime capability detection unavailable, falling back to browser GPU.', error);
+            }
+
             let renderer = 'Unknown GPU';
             try {
                 const canvas = document.createElement('canvas');
@@ -12183,18 +12289,21 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (xformers) {
                 xformers.checked = vendor === 'NVIDIA' && !lower.includes('rtx 50');
             }
+            syncGpuMemoryLimit(document.getElementById('gpuMemoryInput')?.value || 10);
             syncRuntimeBadges();
             showToast("Device Detected", `${vendor} runtime profile selected.`);
+            return null;
         }
 
         function syncRuntimeBadges() {
             const attentionOrder = ['SageAttention', 'FlashAttention', 'xFormers', 'PyTorch SDPA'];
             const enabled = [...document.querySelectorAll('.attention-toggle:checked')].map(input => input.value);
             const attention = attentionOrder.find(item => enabled.includes(item)) || 'Basic';
-            const vramPolicy = document.getElementById('vramPolicySelect')?.value || 'Balanced';
+            const vramPolicy = document.getElementById('vramPolicySelect')?.value || 'VRAM Shared';
+            const gpuMemory = syncGpuMemoryLimit(document.getElementById('gpuMemoryInput')?.value || 10);
 
             document.getElementById('attentionBadge').innerText = attention;
-            document.getElementById('vramBadge').innerText = vramPolicy;
+            document.getElementById('vramBadge').innerText = gpuMemory ? `${vramPolicy} / ${gpuMemory} GB` : vramPolicy;
             refreshRuntimeMemory({ quiet: true });
         }
 
@@ -13259,7 +13368,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     ltx_ic_tile_overlap: 64
                 },
                 runtime: {
-                    vram_policy: document.getElementById('vramPolicySelect')?.value || 'balanced',
+                    vram_policy: document.getElementById('vramPolicySelect')?.value || 'VRAM Shared',
+                    gpu_memory_gb: syncGpuMemoryLimit(document.getElementById('gpuMemoryInput')?.value || null),
                     attention_backend: selectedAttentionBackend(),
                     disable_xformers: !document.getElementById('xformersToggle')?.checked,
                     precision: document.getElementById('precisionSelect')?.value || 'Auto'
@@ -14320,7 +14430,18 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             removeLora(button.dataset.activeLoraRemove || '');
         });
         document.querySelectorAll('.attention-toggle').forEach(input => {
-            input.addEventListener('change', syncRuntimeBadges);
+            input.addEventListener('change', event => {
+                if (event.currentTarget.checked) {
+                    document.querySelectorAll('.attention-toggle').forEach(other => {
+                        if (other !== event.currentTarget) other.checked = false;
+                    });
+                }
+                if (![...document.querySelectorAll('.attention-toggle')].some(item => item.checked)) {
+                    const sdpa = [...document.querySelectorAll('.attention-toggle')].find(item => item.value === 'PyTorch SDPA');
+                    if (sdpa) sdpa.checked = true;
+                }
+                syncRuntimeBadges();
+            });
         });
         [
             'extrasImageUpscaler',

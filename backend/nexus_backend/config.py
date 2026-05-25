@@ -19,7 +19,8 @@ class RuntimeSettings(BaseModel):
     comfy_port: int = 8189
     auto_start_comfy: bool = True
     attention_backend: str = "auto"
-    vram_policy: str = "balanced"
+    vram_policy: str = "shared"
+    gpu_memory_gb: float | None = None
     precision: str = "auto"
     disable_xformers: bool = False
     enable_sage_attention: bool = False
@@ -114,14 +115,24 @@ def _coerce_paths(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_settings() -> NexusSettings:
+    migrated = False
     if SETTINGS_PATH.exists():
         raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
         settings = NexusSettings(**_coerce_paths(raw))
     else:
         settings = NexusSettings()
 
+    runtime_policy = str(settings.runtime.vram_policy or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+    if runtime_policy in {"gpu", "gpuonly", "onlygpu", "cudaonly"}:
+        if settings.runtime.vram_policy != "gpu_only":
+            settings.runtime.vram_policy = "gpu_only"
+            migrated = True
+    elif settings.runtime.vram_policy != "shared":
+        settings.runtime.vram_policy = "shared"
+        migrated = True
+
     settings.ensure_directories()
-    if not SETTINGS_PATH.exists():
+    if migrated or not SETTINGS_PATH.exists():
         save_settings(settings)
     return settings
 

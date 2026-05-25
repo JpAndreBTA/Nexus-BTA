@@ -225,6 +225,7 @@ class ComfyClient:
         runtime = self.settings.runtime
         payload = {
             "vram_policy": runtime.vram_policy.lower(),
+            "gpu_memory_gb": runtime.gpu_memory_gb,
             "precision": runtime.precision.lower(),
             "disable_xformers": bool(runtime.disable_xformers),
             "attention_backend": runtime.attention_backend.lower(),
@@ -241,7 +242,11 @@ class ComfyClient:
         runtime = self.settings.runtime
         flags: list[str] = []
         vram = runtime.vram_policy.lower().replace(" ", "").replace("_", "").replace("-", "")
-        if vram in {"low", "lowvram"}:
+        if vram in {"gpu", "gpuonly", "onlygpu", "cudaonly"}:
+            flags.append("--gpu-only")
+        elif vram in {"shared", "vramshared", "sharedvram", "dynamic", "default", "auto", "low", "lowvram", "med", "medium", "medvram", "normal", "balanced", "balance", "high", "highvram"}:
+            flags.append("--enable-dynamic-vram")
+        elif vram in {"low", "lowvram"}:
             flags.append("--lowvram")
         elif vram in {"med", "medium", "medvram", "normal", "balanced"}:
             flags.append("--normalvram")
@@ -249,6 +254,10 @@ class ComfyClient:
             flags.append("--highvram")
         elif vram.startswith("cpu"):
             flags.append("--cpu")
+
+        reserve_vram = self._reserve_vram_gb()
+        if reserve_vram is not None:
+            flags.extend(["--reserve-vram", f"{reserve_vram:.2f}"])
 
         precision = runtime.precision.lower().replace("_", "-")
         if precision in {"fp16", "fp32"}:
@@ -268,6 +277,33 @@ class ComfyClient:
         elif attention in {"pytorch", "pytorchsdpa", "sdpa"}:
             flags.append("--use-pytorch-cross-attention")
         return flags
+
+    def _reserve_vram_gb(self) -> float | None:
+        try:
+            requested = float(self.settings.runtime.gpu_memory_gb or 0)
+        except (TypeError, ValueError):
+            return None
+        if requested <= 0:
+            return None
+        total = self._cuda_total_vram_gb()
+        if total is None or total <= 0:
+            return None
+        reserve = max(0.25, total - requested)
+        if reserve >= total:
+            reserve = max(0.25, total - 1.0)
+        return round(reserve, 2)
+
+    @staticmethod
+    def _cuda_total_vram_gb() -> float | None:
+        try:
+            import torch  # type: ignore
+
+            if not torch.cuda.is_available():
+                return None
+            props = torch.cuda.get_device_properties(0)
+            return float(props.total_memory) / (1024 ** 3)
+        except Exception:
+            return None
 
     async def object_info(self) -> dict[str, Any]:
         await self.ensure_running()
