@@ -359,6 +359,19 @@ button {
   padding-top: 12px;
 }
 
+.video-panel {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.three-col {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .controlnet-thumb {
   max-width: 100%;
   max-height: 140px;
@@ -419,6 +432,16 @@ button {
   white-space: nowrap;
   color: var(--muted);
   font-size: 11px;
+}
+
+.workflow-file-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.workflow-file-actions input {
+  display: none;
 }
 
 .workflow-health {
@@ -516,6 +539,30 @@ button {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr);
   gap: 8px;
+  align-items: center;
+}
+
+.workflow-widget input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #09090b;
+  color: white;
+  border-radius: 4px;
+  padding: 5px 6px;
+  font-size: 10px;
+}
+
+.workflow-sync-badge {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid rgba(255, 59, 59, 0.52);
+  color: #ffb4b4;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 10px;
+  font-style: normal;
 }
 
 .workflow-widget em {
@@ -1337,6 +1384,10 @@ button {
 
   .action-buttons {
     width: 100%;
+  }
+
+  .three-col {
+    grid-template-columns: 1fr;
   }
 
   .flat-button,

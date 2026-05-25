@@ -59,6 +59,16 @@ function controlNetCompatiblePreset(preset: string) {
   return ['sd', 'sd15', 'xl', 'sdxl', 'ltx'].includes(preset.toLowerCase());
 }
 
+function videoPreset(preset: string) {
+  return ['wan', 'ltx'].includes(preset.toLowerCase());
+}
+
+function alignVideoFrames(preset: string, frames: number) {
+  const step = preset.toLowerCase() === 'ltx' ? 8 : 4;
+  const safe = Math.max(1, Math.round(frames || 1));
+  return safe % step === 1 ? safe : Math.max(1, Math.round((safe - 1) / step) * step + 1);
+}
+
 function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data'], preset: string, type: string) {
   const lowerPreset = preset.toLowerCase();
   if (lowerPreset === 'ltx') {
@@ -115,6 +125,8 @@ export function HomePage() {
   }, [allModels, generation.preset]);
   const newestGalleryItem = gallery.data?.[0];
   const controlNetCompatible = controlNetCompatiblePreset(generation.preset);
+  const videoMode = videoPreset(generation.preset);
+  const alignedFrames = alignVideoFrames(generation.preset, generation.videoFrames);
   const controlNetModels = useMemo(() => controlNetModelOptions(catalog.data, generation.preset, generation.controlNetType), [catalog.data, generation.preset, generation.controlNetType]);
   const visibleLoras = useMemo(() => {
     const q = loraSearch.trim().toLowerCase();
@@ -188,11 +200,28 @@ export function HomePage() {
         high_threshold: 0.8,
         balance: generation.controlNetBalance,
       },
-      video: {},
+      video: videoMode
+        ? {
+            frames: alignedFrames,
+            fps: generation.videoFps,
+            seconds: generation.videoSeconds,
+            duration: generation.videoSeconds,
+            motion_adapter: generation.preset.toLowerCase() === 'wan' ? 'WAN T2V / I2V' : 'LTX latent video',
+            motion_strength: generation.videoMotionStrength,
+            active_audio: generation.videoActiveAudio,
+            video_vae: generation.videoVae,
+            audio_vae: generation.audioVae,
+            latent_upscale: generation.latentUpscale,
+            latent_upscale_refine: generation.latentUpscaleRefine,
+            decode_tiles_x: generation.decodeTilesX,
+            decode_tiles_y: generation.decodeTilesY,
+            decode_overlap: generation.decodeOverlap,
+          }
+        : {},
       director: {},
       runtime: {},
     }),
-    [controlNetCompatible, generation, loraStore.activeLoras],
+    [alignedFrames, controlNetCompatible, generation, loraStore.activeLoras, videoMode],
   );
 
   const startMutation = useMutation({
@@ -240,6 +269,10 @@ export function HomePage() {
     }
     if (generation.activity === 'img2img' && generation.img2imgMode === 'inpaint' && !generation.inpaintMaskImage) {
       setLocalError('Paint an inpaint mask before generating.');
+      return;
+    }
+    if (videoMode && generation.activity === 'img2img' && !generation.referenceImage) {
+      setLocalError(`${generation.preset} img2video requires a reference image.`);
       return;
     }
     if (controlNetCompatible && generation.controlNetEnabled && !payload.controlnet?.image) {
@@ -471,6 +504,78 @@ export function HomePage() {
             {!controlNetCompatible && <p className="compact-note">ControlNet is available for SD, SDXL and LTX routes.</p>}
           </section>
 
+          {videoMode && (
+            <section className="video-panel">
+              <div className="control-row">
+                <span>{generation.preset} Video</span>
+                <em>{alignedFrames} frames</em>
+              </div>
+              <div className="three-col">
+                <label className="field">
+                  <span>Frames</span>
+                  <input type="number" min={1} value={generation.videoFrames} onChange={(event) => generation.setVideoTiming(Number(event.currentTarget.value), generation.videoFps, generation.videoSeconds)} />
+                </label>
+                <label className="field">
+                  <span>FPS</span>
+                  <input type="number" min={1} max={60} value={generation.videoFps} onChange={(event) => generation.setVideoTiming(generation.videoFrames, Number(event.currentTarget.value), generation.videoSeconds)} />
+                </label>
+                <label className="field">
+                  <span>Seconds</span>
+                  <input type="number" min={0.1} step={0.1} value={generation.videoSeconds} onChange={(event) => generation.setVideoTiming(generation.videoFrames, generation.videoFps, Number(event.currentTarget.value))} />
+                </label>
+              </div>
+              <label className="field">
+                <span>Motion Strength {generation.videoMotionStrength.toFixed(2)}</span>
+                <input type="range" min={0} max={1.5} step={0.01} value={generation.videoMotionStrength} onChange={(event) => generation.setVideoMotionStrength(Number(event.currentTarget.value))} />
+              </label>
+              <div className="two-col">
+                <label className="field">
+                  <span>Video VAE</span>
+                  <input value={generation.videoVae} onChange={(event) => generation.setVideoVae(event.currentTarget.value)} />
+                </label>
+                <label className="field">
+                  <span>Audio VAE</span>
+                  <input value={generation.audioVae} onChange={(event) => generation.setAudioVae(event.currentTarget.value)} />
+                </label>
+              </div>
+              {generation.preset.toLowerCase() === 'ltx' && (
+                <>
+                  <div className="control-row">
+                    <span>Active audio</span>
+                    <button className={generation.videoActiveAudio ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setVideoActiveAudio(!generation.videoActiveAudio)} aria-label="Toggle active audio">
+                      <span />
+                    </button>
+                  </div>
+                  <label className="field">
+                    <span>Latent Upscale</span>
+                    <input value={generation.latentUpscale} onChange={(event) => generation.setLatentUpscale(event.currentTarget.value)} />
+                  </label>
+                  <div className="control-row">
+                    <span>Latent upscale refine</span>
+                    <button className={generation.latentUpscaleRefine ? 'toggle active' : 'toggle'} type="button" onClick={() => generation.setLatentUpscaleRefine(!generation.latentUpscaleRefine)} aria-label="Toggle latent upscale refine">
+                      <span />
+                    </button>
+                  </div>
+                  <div className="three-col">
+                    <label className="field">
+                      <span>Tiles X</span>
+                      <input type="number" min={1} max={8} value={generation.decodeTilesX} onChange={(event) => generation.setDecodeTiles(Number(event.currentTarget.value), generation.decodeTilesY, generation.decodeOverlap)} />
+                    </label>
+                    <label className="field">
+                      <span>Tiles Y</span>
+                      <input type="number" min={1} max={8} value={generation.decodeTilesY} onChange={(event) => generation.setDecodeTiles(generation.decodeTilesX, Number(event.currentTarget.value), generation.decodeOverlap)} />
+                    </label>
+                    <label className="field">
+                      <span>Overlap</span>
+                      <input type="number" min={0} max={256} value={generation.decodeOverlap} onChange={(event) => generation.setDecodeTiles(generation.decodeTilesX, generation.decodeTilesY, Number(event.currentTarget.value))} />
+                    </label>
+                  </div>
+                </>
+              )}
+              <p className="compact-note">{generation.preset === 'Wan' ? 'Wan I2V uses the img2img reference as the start frame.' : 'LTX img2video uses the img2img reference for the linear route.'}</p>
+            </section>
+          )}
+
           <div className="two-col">
             <label className="field">
               <span>Width</span>
@@ -498,6 +603,7 @@ export function HomePage() {
               <span>Sampler</span>
               <select value={generation.sampler} onChange={(event) => generation.setSampler(event.currentTarget.value)}>
                 <option value="euler_ancestral">Euler Ancestral</option>
+                <option value="euler_ancestral_cfg_pp">Euler Ancestral CFG++</option>
                 <option value="euler">Euler</option>
                 <option value="dpmpp_2m">DPM++ 2M</option>
                 <option value="dpmpp_sde">DPM++ SDE</option>
@@ -508,6 +614,7 @@ export function HomePage() {
               <select value={generation.scheduler} onChange={(event) => generation.setScheduler(event.currentTarget.value)}>
                 <option value="karras">Karras</option>
                 <option value="normal">Normal</option>
+                <option value="quadratic">Quadratic</option>
                 <option value="simple">Simple</option>
                 <option value="sgm_uniform">SGM Uniform</option>
               </select>

@@ -1,18 +1,32 @@
 import { useEffect, useMemo, useState } from 'react';
-import { GitBranch, LoaderCircle, Workflow } from 'lucide-react';
+import { FileInput, GitBranch, LoaderCircle, Upload, Workflow } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 
+import { nexusApi } from '../../api/nexusClient';
 import { useWorkflowAnalysisQuery, useWorkflowsQuery } from '../../api/queries';
-import type { WorkflowGraphNode } from '../../api/types';
+import type { WorkflowAnalysis, WorkflowGraphNode } from '../../api/types';
+import { queryClient } from '../../shared/queryClient';
 import { useGenerationStore } from '../../stores/generationStore';
 
 function nodeLabel(node: WorkflowGraphNode) {
   return node.title || node.class_type || node.id;
 }
 
+function widgetValue(node: WorkflowGraphNode, widgetName: string) {
+  return node.widgets?.find((widget) => widget.name === widgetName)?.value;
+}
+
+function numberValue(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export function WorkflowPage() {
   const workflows = useWorkflowsQuery();
   const generation = useGenerationStore();
   const [selectedId, setSelectedId] = useState('');
+  const [editableNodes, setEditableNodes] = useState<WorkflowGraphNode[]>([]);
+  const [localError, setLocalError] = useState('');
 
   useEffect(() => {
     if (!selectedId && workflows.data?.[0]) {
@@ -23,13 +37,113 @@ export function WorkflowPage() {
 
   const analysis = useWorkflowAnalysisQuery(selectedId);
   const graph = analysis.data?.visual_graph;
-  const nodes = useMemo(() => graph?.nodes ?? [], [graph?.nodes]);
+  const graphNodes = useMemo(() => graph?.nodes ?? [], [graph?.nodes]);
+  const nodes = editableNodes.length ? editableNodes : graphNodes;
   const links = graph?.links ?? [];
   const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const missing = new Set(analysis.data?.missing_nodes ?? []);
   const selectedWorkflow = workflows.data?.find((workflow) => workflow.id === selectedId) || analysis.data?.workflow;
   const graphWidth = Math.max(900, Number(graph?.width || 1200));
   const graphHeight = Math.max(520, Number(graph?.height || 680));
+
+  useEffect(() => {
+    setEditableNodes(graphNodes.map((node) => ({ ...node, widgets: node.widgets?.map((widget) => ({ ...widget })) ?? [] })));
+    setLocalError('');
+  }, [graphNodes]);
+
+  const loadMutation = useMutation({
+    mutationFn: (file: File) => nexusApi.loadWorkflow(file),
+    onSuccess: (loaded) => {
+      queryClient.setQueryData(['workflow-analysis', loaded.workflow.id], loaded);
+      setSelectedId(loaded.workflow.id);
+      setLocalError('');
+    },
+    onError: (error) => setLocalError(error instanceof Error ? error.message : 'Workflow load failed.'),
+  });
+
+  const importMutation = useMutation({
+    mutationFn: (file: File) => nexusApi.importWorkflow(file),
+    onSuccess: (loaded) => {
+      queryClient.setQueryData(['workflow-analysis', loaded.workflow.id], loaded);
+      queryClient.invalidateQueries({ queryKey: ['workflows'] });
+      setSelectedId(loaded.workflow.id);
+      setLocalError('');
+    },
+    onError: (error) => setLocalError(error instanceof Error ? error.message : 'Workflow import failed.'),
+  });
+
+  function syncWidgetToStudio(node: WorkflowGraphNode, name: string, value: unknown) {
+    const lowerName = name.toLowerCase();
+    const role = `${node.title || ''} ${node.class_type || ''}`.toLowerCase();
+    const stringValue = String(value ?? '');
+
+    if (lowerName === 'text') {
+      if (role.includes('negative')) {
+        generation.setNegativePrompt(stringValue);
+      } else if (role.includes('positive') || role.includes('prompt') || node.class_type.toLowerCase().includes('text')) {
+        generation.setPrompt(stringValue);
+      }
+      return;
+    }
+    if (lowerName === 'width') {
+      generation.setSize(numberValue(value, generation.width), generation.height);
+      return;
+    }
+    if (lowerName === 'height') {
+      generation.setSize(generation.width, numberValue(value, generation.height));
+      return;
+    }
+    if (lowerName === 'seed') {
+      generation.setSeed(numberValue(value, generation.seed));
+      return;
+    }
+    if (lowerName === 'steps') {
+      generation.setSteps(numberValue(value, generation.steps));
+      return;
+    }
+    if (lowerName === 'cfg') {
+      generation.setCfg(numberValue(value, generation.cfg));
+      return;
+    }
+    if (lowerName === 'sampler_name') {
+      generation.setSampler(stringValue);
+      return;
+    }
+    if (lowerName === 'scheduler') {
+      generation.setScheduler(stringValue);
+      return;
+    }
+    if (lowerName === 'denoise') {
+      generation.setDenoise(numberValue(value, generation.denoise));
+      return;
+    }
+    if (lowerName === 'ckpt_name' || lowerName === 'unet_name') {
+      generation.setModel(stringValue, stringValue.split(/[\\/]/).pop() || stringValue);
+    }
+  }
+
+  function updateWidget(node: WorkflowGraphNode, name: string, value: string) {
+    setEditableNodes((current) =>
+      current.map((item) =>
+        item.id === node.id
+          ? {
+              ...item,
+              widgets: (item.widgets ?? []).map((widget) => (widget.name === name ? { ...widget, value } : widget)),
+            }
+          : item,
+      ),
+    );
+    syncWidgetToStudio(node, name, value);
+  }
+
+  function activateWorkflow(workflow: WorkflowAnalysis['workflow']) {
+    generation.setWorkflow(workflow.id, workflow.name);
+    editableNodes.forEach((node) => {
+      (node.widgets ?? []).forEach((widget) => {
+        if (widget.name) syncWidgetToStudio(node, widget.name, widget.value);
+      });
+    });
+  }
 
   return (
     <section className="page workflow-layout">
@@ -65,13 +179,47 @@ export function WorkflowPage() {
               <button
                 className="primary-button"
                 type="button"
-                onClick={() => generation.setWorkflow(selectedWorkflow.id, selectedWorkflow.name)}
+                onClick={() => activateWorkflow(selectedWorkflow)}
               >
                 <Workflow size={14} />
-                Activate
+                Activate & Sync
               </button>
             </div>
           )}
+
+          <div className="workflow-file-actions">
+            <label className="flat-button">
+              <FileInput size={14} />
+              Load JSON
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) loadMutation.mutate(file);
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+            <label className="flat-button">
+              <Upload size={14} />
+              Import
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) importMutation.mutate(file);
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+
+          {(localError || loadMutation.isPending || importMutation.isPending) && (
+            <p className="compact-note">{localError || 'Reading workflow JSON...'}</p>
+          )}
+          <p className="compact-note">Widget edits sync Studio controls. Executable workflow override stays disabled until the backend exposes full untruncated workflow JSON.</p>
 
           <div className="workflow-health">
             <span>Available nodes</span>
@@ -129,12 +277,13 @@ export function WorkflowPage() {
                     <span>#{node.id}</span>
                   </header>
                   <p>{node.class_type}</p>
-                  {(node.widgets ?? []).slice(0, 3).map((widget) => (
+                  {(node.widgets ?? []).slice(0, 4).map((widget) => (
                     <div className="workflow-widget" key={`${node.id}-${widget.name}`}>
                       <span>{widget.name}</span>
-                      <em>{String(widget.value ?? '')}</em>
+                      <input value={String(widget.value ?? '')} onChange={(event) => updateWidget(node, String(widget.name || ''), event.currentTarget.value)} />
                     </div>
                   ))}
+                  {widgetValue(node, 'text') !== undefined && <em className="workflow-sync-badge">syncs prompt</em>}
                 </article>
               );
             })}

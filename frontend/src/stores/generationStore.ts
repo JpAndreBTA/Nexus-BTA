@@ -36,6 +36,18 @@ interface GenerationState {
   controlNetStart: number;
   controlNetEnd: number;
   controlNetBalance: string;
+  videoFrames: number;
+  videoFps: number;
+  videoSeconds: number;
+  videoMotionStrength: number;
+  videoActiveAudio: boolean;
+  videoVae: string;
+  audioVae: string;
+  latentUpscale: string;
+  latentUpscaleRefine: boolean;
+  decodeTilesX: number;
+  decodeTilesY: number;
+  decodeOverlap: number;
   setActivity: (activity: 'txt2img' | 'img2img') => void;
   setImg2ImgMode: (mode: 'image' | 'inpaint') => void;
   setPreset: (preset: string) => void;
@@ -63,6 +75,14 @@ interface GenerationState {
   setControlNetStrength: (strength: number) => void;
   setControlNetRange: (start: number, end: number) => void;
   setControlNetBalance: (balance: string) => void;
+  setVideoTiming: (frames: number, fps: number, seconds: number) => void;
+  setVideoMotionStrength: (strength: number) => void;
+  setVideoActiveAudio: (enabled: boolean) => void;
+  setVideoVae: (videoVae: string) => void;
+  setAudioVae: (audioVae: string) => void;
+  setLatentUpscale: (latentUpscale: string) => void;
+  setLatentUpscaleRefine: (enabled: boolean) => void;
+  setDecodeTiles: (tilesX: number, tilesY: number, overlap: number) => void;
 }
 
 export const useGenerationStore = create<GenerationState>()(
@@ -102,9 +122,61 @@ export const useGenerationStore = create<GenerationState>()(
   controlNetStart: 0,
   controlNetEnd: 1,
   controlNetBalance: 'Balanced',
+  videoFrames: 81,
+  videoFps: 16,
+  videoSeconds: 5,
+  videoMotionStrength: 0.85,
+  videoActiveAudio: false,
+  videoVae: 'Automatic',
+  audioVae: 'Automatic',
+  latentUpscale: 'Automatic',
+  latentUpscaleRefine: true,
+  decodeTilesX: 2,
+  decodeTilesY: 2,
+  decodeOverlap: 6,
   setActivity: (activity) => set({ activity }),
   setImg2ImgMode: (img2imgMode) => set({ img2imgMode }),
-  setPreset: (preset) => set({ preset }),
+  setPreset: (preset) =>
+    set((state) => {
+      const lower = preset.toLowerCase();
+      if (lower === 'wan') {
+        return {
+          ...state,
+          preset,
+          width: 512,
+          height: 512,
+          steps: 4,
+          cfg: 1,
+          sampler: 'euler',
+          scheduler: 'simple',
+          videoFrames: 81,
+          videoFps: 16,
+          videoSeconds: 5,
+          videoMotionStrength: 0.85,
+        };
+      }
+      if (lower === 'ltx') {
+        return {
+          ...state,
+          preset,
+          width: 512,
+          height: 512,
+          steps: 8,
+          cfg: 1,
+          sampler: 'euler_ancestral_cfg_pp',
+          scheduler: 'quadratic',
+          videoFrames: 121,
+          videoFps: 24,
+          videoSeconds: 5,
+          videoMotionStrength: 0.85,
+          latentUpscaleRefine: true,
+          decodeTilesX: 2,
+          decodeTilesY: 2,
+          decodeOverlap: 6,
+        };
+      }
+      return { preset };
+    }),
   setWorkflow: (workflowId, workflowName) => set({ workflowId, workflowName }),
   setModel: (modelPath, modelName) => set({ modelPath, modelName }),
   setPrompt: (prompt) => set({ prompt }),
@@ -129,6 +201,14 @@ export const useGenerationStore = create<GenerationState>()(
   setControlNetStrength: (controlNetStrength) => set({ controlNetStrength }),
   setControlNetRange: (controlNetStart, controlNetEnd) => set({ controlNetStart, controlNetEnd }),
   setControlNetBalance: (controlNetBalance) => set({ controlNetBalance }),
+  setVideoTiming: (videoFrames, videoFps, videoSeconds) => set({ videoFrames, videoFps, videoSeconds }),
+  setVideoMotionStrength: (videoMotionStrength) => set({ videoMotionStrength }),
+  setVideoActiveAudio: (videoActiveAudio) => set({ videoActiveAudio }),
+  setVideoVae: (videoVae) => set({ videoVae }),
+  setAudioVae: (audioVae) => set({ audioVae }),
+  setLatentUpscale: (latentUpscale) => set({ latentUpscale }),
+  setLatentUpscaleRefine: (latentUpscaleRefine) => set({ latentUpscaleRefine }),
+  setDecodeTiles: (decodeTilesX, decodeTilesY, decodeOverlap) => set({ decodeTilesX, decodeTilesY, decodeOverlap }),
     }),
     {
       name: 'nexus-generation-state',
@@ -162,6 +242,18 @@ export const useGenerationStore = create<GenerationState>()(
         controlNetStart: state.controlNetStart,
         controlNetEnd: state.controlNetEnd,
         controlNetBalance: state.controlNetBalance,
+        videoFrames: state.videoFrames,
+        videoFps: state.videoFps,
+        videoSeconds: state.videoSeconds,
+        videoMotionStrength: state.videoMotionStrength,
+        videoActiveAudio: state.videoActiveAudio,
+        videoVae: state.videoVae,
+        audioVae: state.audioVae,
+        latentUpscale: state.latentUpscale,
+        latentUpscaleRefine: state.latentUpscaleRefine,
+        decodeTilesX: state.decodeTilesX,
+        decodeTilesY: state.decodeTilesY,
+        decodeOverlap: state.decodeOverlap,
       }),
     },
   ),

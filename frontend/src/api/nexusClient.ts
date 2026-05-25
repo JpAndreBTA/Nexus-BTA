@@ -43,6 +43,26 @@ export const nexusApi = {
   gallery: () => nexusFetch<GalleryItem[]>('/gallery'),
   workflows: () => nexusFetch<WorkflowSummary[]>('/workflows'),
   workflowAnalysis: (workflowId: string) => nexusFetch<WorkflowAnalysis>(`/workflows/${encodeURIComponent(workflowId)}/analysis`),
+  loadWorkflow: async (file: File) => {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    return parseResponse<WorkflowAnalysis>(
+      await fetch(`${API_BASE}/workflows/load`, {
+        method: 'POST',
+        body: form,
+      }),
+    );
+  },
+  importWorkflow: async (file: File) => {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    return parseResponse<WorkflowAnalysis>(
+      await fetch(`${API_BASE}/workflows/import`, {
+        method: 'POST',
+        body: form,
+      }),
+    );
+  },
   startGeneration: (payload: GenerateRequest) =>
     nexusFetch<GenerationJob>('/generate/start', {
       method: 'POST',
