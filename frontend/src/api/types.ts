@@ -144,7 +144,11 @@ export interface GenerateRequest {
   text_encoder: string;
   loras: object[];
   distilled_loras: Array<Record<string, unknown>>;
+  img2img?: Record<string, unknown>;
+  controlnet?: Record<string, unknown>;
   video: Record<string, unknown>;
+  director?: Record<string, unknown>;
+  runtime?: Record<string, unknown>;
 }
 
 export interface GenerationJob {

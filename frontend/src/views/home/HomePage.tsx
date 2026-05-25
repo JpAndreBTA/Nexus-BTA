@@ -19,6 +19,15 @@ function outputUrl(url: string | undefined) {
   return url.startsWith('/') ? url : `/${url.replace(/^\/+/, '')}`;
 }
 
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Failed to read image file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function modelOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data']) {
   return [...(catalog?.categories.checkpoints ?? []), ...(catalog?.categories.unet ?? []), ...(catalog?.categories.diffusion_models ?? [])].map((asset) => ({
     label: asset.relative_path || asset.name,
@@ -80,7 +89,7 @@ export function HomePage() {
 
   const payload = useMemo<GenerateRequest>(
     () => ({
-      activity: 'txt2img',
+      activity: generation.activity,
       workspace: 'viewer',
       preset: generation.preset,
       workflow_id: null,
@@ -96,12 +105,28 @@ export function HomePage() {
       scheduler: generation.scheduler,
       seed: generation.seed,
       batch_size: 1,
-      denoise: 1,
+      denoise: generation.activity === 'img2img' ? generation.denoise : 1,
       vae: 'Automatic',
       text_encoder: 'Automatic',
       loras: loraStore.activeLoras,
       distilled_loras: [],
+      img2img: {
+        mode: 'img2img',
+        resize_mode: 'Just Resize',
+        denoise: generation.denoise,
+        batch_count: 1,
+        mask_blur: 4,
+        mask_content: 'Original',
+        reference_image: generation.referenceImage,
+        reference_images: generation.referenceImage ? [generation.referenceImage] : [],
+        mask_image: null,
+      },
+      controlnet: {
+        enabled: false,
+      },
       video: {},
+      director: {},
+      runtime: {},
     }),
     [generation, loraStore.activeLoras],
   );
@@ -145,6 +170,10 @@ export function HomePage() {
       setLocalError('Select a model before generating.');
       return;
     }
+    if (generation.activity === 'img2img' && !generation.referenceImage) {
+      setLocalError('Load a reference image for img2img.');
+      return;
+    }
     setLocalError('');
     setJobId('');
     await startMutation.mutateAsync();
@@ -165,6 +194,15 @@ export function HomePage() {
 
       <div className="studio-columns">
         <aside className="surface tool-panel">
+          <div className="button-grid">
+            <button className={generation.activity === 'txt2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('txt2img')}>
+              txt2img
+            </button>
+            <button className={generation.activity === 'img2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('img2img')}>
+              img2img
+            </button>
+          </div>
+
           <label className="field">
             <span>Preset</span>
             <select value={generation.preset} onChange={(event) => generation.setPreset(event.currentTarget.value)}>
@@ -208,6 +246,28 @@ export function HomePage() {
             <span>Negative Prompt</span>
             <textarea value={generation.negativePrompt} onChange={(event) => generation.setNegativePrompt(event.currentTarget.value)} placeholder="Avoid..." />
           </label>
+
+          {generation.activity === 'img2img' && (
+            <div className="img2img-source">
+              <label className="dropzone small-dropzone">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (event) => {
+                    const file = event.currentTarget.files?.[0];
+                    if (!file) return;
+                    generation.setReferenceImage(await readFileAsDataUrl(file), file.name);
+                  }}
+                />
+                <span>{generation.referenceImageName || 'Select reference image'}</span>
+              </label>
+              {generation.referenceImage && <img src={generation.referenceImage} alt="img2img reference" />}
+              <label className="field">
+                <span>Denoise {generation.denoise.toFixed(2)}</span>
+                <input type="range" min={0.05} max={1} step={0.01} value={generation.denoise} onChange={(event) => generation.setDenoise(Number(event.currentTarget.value))} />
+              </label>
+            </div>
+          )}
 
           <div className="two-col">
             <label className="field">

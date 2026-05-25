@@ -285,6 +285,23 @@ button {
   display: none;
 }
 
+.small-dropzone {
+  min-height: 82px;
+}
+
+.img2img-source {
+  display: grid;
+  gap: 10px;
+}
+
+.img2img-source img {
+  max-width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  background: black;
+}
+
 .control-row,
 .model-stats {
   display: flex;

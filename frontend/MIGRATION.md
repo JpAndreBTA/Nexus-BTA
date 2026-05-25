@@ -174,3 +174,22 @@ Validation:
 
 - `NEXUS_FRONTEND_BASE=/app/ npm run check` passed.
 - `frontend/scripts/smoke_app.py` passed all desktop/mobile route checks.
+
+## Checkpoint: Studio Simple Img2Img
+
+Implemented:
+
+- Studio mode switch for `txt2img` and `img2img`.
+- Reference image upload and local preview.
+- Denoise slider for img2img.
+- Generation payload now includes `img2img`, disabled `controlnet`, `director` and `runtime` fields.
+
+Validation:
+
+- `NEXUS_FRONTEND_BASE=/app/ npm run check` passed.
+- Img2img smoke loaded `sample.png` as a data URL reference.
+- `frontend/scripts/smoke_app.py` passed all desktop/mobile route checks.
+
+Screenshot:
+
+- `test-results/backend-app-studio-img2img.png`

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 interface GenerationState {
+  activity: 'txt2img' | 'img2img';
   preset: string;
   modelPath: string;
   modelName: string;
@@ -13,6 +14,10 @@ interface GenerationState {
   sampler: string;
   scheduler: string;
   seed: number;
+  denoise: number;
+  referenceImage: string | null;
+  referenceImageName: string;
+  setActivity: (activity: 'txt2img' | 'img2img') => void;
   setPreset: (preset: string) => void;
   setModel: (path: string, name: string) => void;
   setPrompt: (prompt: string) => void;
@@ -23,9 +28,12 @@ interface GenerationState {
   setSampler: (sampler: string) => void;
   setScheduler: (scheduler: string) => void;
   setSeed: (seed: number) => void;
+  setDenoise: (denoise: number) => void;
+  setReferenceImage: (dataUrl: string | null, name?: string) => void;
 }
 
 export const useGenerationStore = create<GenerationState>((set) => ({
+  activity: 'txt2img',
   preset: 'SD',
   modelPath: '',
   modelName: '',
@@ -38,6 +46,10 @@ export const useGenerationStore = create<GenerationState>((set) => ({
   sampler: 'euler_ancestral',
   scheduler: 'karras',
   seed: -1,
+  denoise: 0.75,
+  referenceImage: null,
+  referenceImageName: '',
+  setActivity: (activity) => set({ activity }),
   setPreset: (preset) => set({ preset }),
   setModel: (modelPath, modelName) => set({ modelPath, modelName }),
   setPrompt: (prompt) => set({ prompt }),
@@ -48,4 +60,6 @@ export const useGenerationStore = create<GenerationState>((set) => ({
   setSampler: (sampler) => set({ sampler }),
   setScheduler: (scheduler) => set({ scheduler }),
   setSeed: (seed) => set({ seed }),
+  setDenoise: (denoise) => set({ denoise }),
+  setReferenceImage: (referenceImage, referenceImageName = '') => set({ referenceImage, referenceImageName }),
 }));
