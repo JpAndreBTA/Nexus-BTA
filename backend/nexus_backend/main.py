@@ -5,6 +5,7 @@ import base64
 import importlib.util
 import json
 import os
+import random
 import re
 import shutil
 import time
@@ -787,9 +788,19 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
     }
 
 
+def _resolve_generation_seed(request: GenerateRequest) -> int:
+    if int(request.seed or -1) >= 0:
+        return int(request.seed)
+    seed = random.randint(0, 2**32 - 1)
+    request.seed = seed
+    return seed
+
+
 def _annotate_output_metadata(outputs: list[dict[str, Any]], request: GenerateRequest, assets: dict[str, Any] | None = None) -> None:
     metadata = _generation_metadata(request, assets)
     for output in outputs:
+        output["seed"] = request.seed
+        output["metadata"] = metadata
         relative = str(output.get("path") or output.get("filename") or "")
         if not relative:
             continue
@@ -1074,6 +1085,12 @@ def _apply_runtime_options(options: RuntimeOptions | None) -> bool:
     if changed:
         save_settings(settings)
     return changed
+
+
+def _prepare_runtime_for_generation(request: GenerateRequest) -> None:
+    if request.preset.lower() == "qwen" and request.activity == "img2img":
+        request.runtime.attention_backend = "pytorch"
+        request.runtime.disable_xformers = True
 
 
 async def _optional_comfy_object_info() -> dict[str, Any]:
@@ -1686,7 +1703,9 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
 
     try:
         _cancel_comfy_idle_release()
+        _prepare_runtime_for_generation(request)
         runtime_changed = _apply_runtime_options(request.runtime)
+        _resolve_generation_seed(request)
         if (runtime_changed or comfy.runtime_changed_since_start()) and await comfy.is_running():
             if job_id:
                 _update_generation_job(job_id, {"status": "starting", "progress": 2, "message": "Restarting ComfyUI runtime"}, force=True)

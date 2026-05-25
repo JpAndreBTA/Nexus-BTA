@@ -5147,10 +5147,12 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             });
         }
 
-        function applyModelProfile(presetName, notify = true, syncWorkflow = true) {
+        function applyModelProfile(presetName, notify = true, syncWorkflow = true, options = {}) {
             const profile = modelProfiles[presetName];
             if (!profile) return;
             const previousPreset = activePreset;
+            const restoreState = options.restoreState !== false;
+            const savedFields = restoreState ? (presetRuntimeStates?.[presetName]?.fields || {}) : {};
             const hadExtraReferences = referenceExtraSlotsEnabled();
             const leaveDirectorView = activeWorkspace === 'director' && !(presetName === 'LTX' && profile.template === 'LTX_DIRECTOR_SUITE');
             activePreset = presetName;
@@ -5165,18 +5167,18 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
             activatePresetButton(presetName);
             populateModelSelect(presetName);
-            const selectedModelPath = profile.selectedModelPath || profile.backendModels?.[0]?.value || '';
+            const selectedModelPath = savedFields.modelSelect || profile.selectedModelPath || profile.backendModels?.[0]?.value || '';
             setSelectValue('modelSelect', selectedModelPath);
             setElementOptions('vaeSelect', profile.vae);
             setElementOptions('textEncoderSelect', profile.encoder);
-            setSelectValue('vaeSelect', profile.vae?.[0] || 'Automatic');
-            setSelectValue('textEncoderSelect', profile.encoder?.[0] || 'Automatic');
+            setSelectValue('vaeSelect', savedFields.vaeSelect || profile.vae?.[0] || 'Automatic');
+            setSelectValue('textEncoderSelect', savedFields.textEncoderSelect || profile.encoder?.[0] || 'Automatic');
             setElementOptions('distillSelect', profile.variants);
             setElementOptions('precisionSelect', profile.precision);
             setElementOptions('samplingMethodSelect', uniqueOptions([profile.sampler, ...(profile.samplers || []), ...GLOBAL_SAMPLERS]));
-            setSelectValue('samplingMethodSelect', profile.sampler || profile.samplers?.[0] || 'Euler Ancestral');
+            setSelectValue('samplingMethodSelect', savedFields.samplingMethodSelect || profile.sampler || profile.samplers?.[0] || 'Euler Ancestral');
             setElementOptions('schedulerSelect', uniqueOptions([profile.scheduler, ...(profile.schedulers || []), ...GLOBAL_SCHEDULERS]));
-            setSelectValue('schedulerSelect', profile.scheduler);
+            setSelectValue('schedulerSelect', savedFields.schedulerSelect || profile.scheduler);
             setElementOptions('refinerSelect', profile.refiners || ['Off']);
             setElementOptions('motionSelect', profile.motionAdapters || ['None']);
             setElementOptions('videoVaeSelect', profile.videoVae || ['Automatic', 'None']);
@@ -5184,43 +5186,43 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             setElementOptions('latentUpscaleSelect', profile.latentUpscaleModels || ['Automatic', 'None']);
             setElementOptions('ltxDetailerLoraSelect', profile.detailerLoras || ['Automatic', 'None']);
             setElementOptions('omnicineSelect', ['Off', ...(profile.omnicineLoras || [])]);
-            setSelectValue('videoVaeSelect', profile.videoVae?.[0] || 'Automatic');
-            setSelectValue('audioVaeSelect', profile.audioVae?.[0] || 'Automatic');
-            setSelectValue('latentUpscaleSelect', profile.latentUpscaleModels?.[0] || 'Automatic');
-            setSelectValue('ltxDetailerLoraSelect', profile.detailerLoras?.[0] || 'Automatic');
-            setSelectValue('omnicineSelect', 'Off');
+            setSelectValue('videoVaeSelect', savedFields.videoVaeSelect || profile.videoVae?.[0] || 'Automatic');
+            setSelectValue('audioVaeSelect', savedFields.audioVaeSelect || profile.audioVae?.[0] || 'Automatic');
+            setSelectValue('latentUpscaleSelect', savedFields.latentUpscaleSelect || profile.latentUpscaleModels?.[0] || 'Automatic');
+            setSelectValue('ltxDetailerLoraSelect', savedFields.ltxDetailerLoraSelect || profile.detailerLoras?.[0] || 'Automatic');
+            setSelectValue('omnicineSelect', savedFields.omnicineSelect || 'Off');
             if (presetName === 'LTX') {
                 const audioToggle = document.getElementById('activeAudioToggle');
-                if (audioToggle) audioToggle.checked = false;
+                if (audioToggle) audioToggle.checked = savedFields.activeAudioToggle !== undefined ? !!savedFields.activeAudioToggle : false;
                 const refineToggle = document.getElementById('ltxLatentUpscaleRefineToggle');
-                if (refineToggle) refineToggle.checked = true;
+                if (refineToggle) refineToggle.checked = savedFields.ltxLatentUpscaleRefineToggle !== undefined ? !!savedFields.ltxLatentUpscaleRefineToggle : true;
             }
             setElementOptions('distilledLoraOneSelect', profile.distilledLoras || ['None']);
             setElementOptions('distilledLoraTwoSelect', profile.distilledLoras || ['None']);
-            setSelectValue('distilledLoraOneSelect', profile.distilledDefaults?.[0] || 'None');
-            setSelectValue('distilledLoraTwoSelect', profile.distilledDefaults?.[1] || 'None');
+            setSelectValue('distilledLoraOneSelect', savedFields.distilledLoraOneSelect || profile.distilledDefaults?.[0] || 'None');
+            setSelectValue('distilledLoraTwoSelect', savedFields.distilledLoraTwoSelect || profile.distilledDefaults?.[1] || 'None');
             if (presetName === 'LTX') {
-                if (document.getElementById('distilledLoraOneStrength')) document.getElementById('distilledLoraOneStrength').value = String(LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH);
-                if (document.getElementById('distilledLoraTwoStrength')) document.getElementById('distilledLoraTwoStrength').value = String(LTX_DISTILLED_384_DEFAULT_STRENGTH);
+                if (document.getElementById('distilledLoraOneStrength')) document.getElementById('distilledLoraOneStrength').value = savedFields.distilledLoraOneStrength || String(LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH);
+                if (document.getElementById('distilledLoraTwoStrength')) document.getElementById('distilledLoraTwoStrength').value = savedFields.distilledLoraTwoStrength || String(LTX_DISTILLED_384_DEFAULT_STRENGTH);
             }
             updateDistilledLoraLabels(presetName);
             document.getElementById('distilledLoraRouteText').innerText = profile.distilledRoute || 'No distilled LoRA required for this template.';
             if (profile.videoSettings) {
-                if (document.getElementById('framesInput')) document.getElementById('framesInput').value = profile.videoSettings.frames;
-                if (document.getElementById('fpsInput')) document.getElementById('fpsInput').value = profile.videoSettings.fps;
-                if (document.getElementById('secondsInput')) document.getElementById('secondsInput').value = profile.videoSettings.seconds;
+                if (document.getElementById('framesInput')) document.getElementById('framesInput').value = savedFields.framesInput || profile.videoSettings.frames;
+                if (document.getElementById('fpsInput')) document.getElementById('fpsInput').value = savedFields.fpsInput || profile.videoSettings.fps;
+                if (document.getElementById('secondsInput')) document.getElementById('secondsInput').value = savedFields.secondsInput || profile.videoSettings.seconds;
             }
             syncVideoMotionFields('profile');
-            setDimensions(profile.width, profile.height);
+            setDimensions(savedFields.widthInput || profile.width, savedFields.heightInput || profile.height);
             if (profile.denoise !== undefined && document.getElementById('denoiseSlider')) {
-                document.getElementById('denoiseSlider').value = String(profile.denoise);
+                document.getElementById('denoiseSlider').value = savedFields.denoiseSlider || String(profile.denoise);
             }
             if (profile.batchSize !== undefined && document.getElementById('batchCountInput')) {
-                document.getElementById('batchCountInput').value = String(profile.batchSize);
+                document.getElementById('batchCountInput').value = savedFields.batchCountInput || String(profile.batchSize);
             }
 
-            document.getElementById('stepsSlider').value = profile.steps;
-            document.getElementById('cfgSlider').value = profile.cfg;
+            document.getElementById('stepsSlider').value = savedFields.stepsSlider || profile.steps;
+            document.getElementById('cfgSlider').value = savedFields.cfgSlider || profile.cfg;
             updateRangeLabel('steps');
             updateRangeLabel('cfg');
 
@@ -11489,7 +11491,6 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (presetName === activePreset) return;
             savePresetRuntimeState(activePreset);
             applyModelProfile(presetName);
-            restorePresetRuntimeState(presetName);
         }
 
         function hideAllMainViews() {
@@ -12838,6 +12839,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     return name && !/^(none|automatic|auto)$/i.test(name);
                 });
                 const promptValue = document.getElementById('posPrompt')?.value || 'Change only the requested detail while preserving the reference image.';
+                const qwenUseMultiRefs = referenceExtraSlotsEnabled() && (referenceImageExtraDataUrls || []).some(item => item?.src);
                 const qwenNodes = [
                     { id: 'model', class_type: qwenModelIsGguf ? 'UnetLoaderGGUF' : 'UNETLoader', title: 'Load QWEN Edit Model', x: 70, y: 110, width: 260, height: 118, inputs: [], outputs: ['MODEL'], widgets: qwenModelIsGguf ? [{ name: 'unet_name', value: selectedModelName }] : [{ name: 'unet_name', value: selectedModelName }, { name: 'weight_dtype', value: 'default' }], color: '#1f3b63' },
                     { id: 'edit_lora', class_type: 'LoraLoaderModelOnly', title: 'QWEN Edit Lightning LoRA', x: 370, y: 110, width: 260, height: 118, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: qwenEditLoraName }, { name: 'strength_model', value: qwenEditLoraStrength }], color: '#4c1d95' },
@@ -12846,19 +12848,15 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { id: 'clip', class_type: 'CLIPLoader', title: 'QWEN 2.5 VL Text Encoder', x: 70, y: 275, width: 260, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || compatibleSideAssetChoice(preset, 'text', '') || 'Automatic' }, { name: 'type', value: 'qwen_image' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
                     { id: 'vae', class_type: 'VAELoader', title: 'QWEN Image VAE', x: 370, y: 275, width: 230, height: 105, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || compatibleSideAssetChoice(preset, 'vae', '') || 'Automatic' }], color: '#62305a' },
                     { id: 'positive', class_type: 'TextEncodeQwenImageEditPlus', title: 'Positive Prompt + Image References', x: 660, y: 275, width: 330, height: 150, inputs: ['clip', 'vae', 'image1', 'image2', 'image3', 'prompt'], outputs: ['CONDITIONING'], widgets: [{ name: 'prompt', value: promptValue }], color: '#1f5f3a' },
-                    { id: 'negative', class_type: 'ConditioningZeroOut', title: 'QWEN Empty Negative', x: 1030, y: 295, width: 240, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [], color: '#5a2c2c' },
+                    { id: 'negative', class_type: 'TextEncodeQwenImageEditPlus', title: 'QWEN Negative Prompt + References', x: 1030, y: 295, width: 280, height: 130, inputs: ['clip', 'vae', 'image1', 'image2', 'image3', 'prompt'], outputs: ['CONDITIONING'], widgets: [{ name: 'prompt', value: document.getElementById('negPrompt')?.value || '' }], color: '#5a2c2c' },
                     { id: 'reference', class_type: 'LoadImage', title: 'Image 1 Base Reference', x: 70, y: 520, width: 230, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference image' }], color: '#164e63' },
                     { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize Image 1 To Side Menu', x: 330, y: 520, width: 250, height: 116, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
-                    { id: 'encode_ref1', class_type: 'VAEEncode', title: 'Encode Image 1 Latent', x: 620, y: 520, width: 220, height: 100, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' },
-                    { id: 'ref_latent1', class_type: 'ReferenceLatent', title: 'Reference Latent 1', x: 880, y: 520, width: 230, height: 100, inputs: ['conditioning', 'latent'], outputs: ['CONDITIONING'], widgets: [], color: '#0f766e' },
+                    { id: 'reference_flux_scale', class_type: 'FluxKontextImageScale', title: 'QWEN Base FluxKontext Scale', x: 620, y: 520, width: 250, height: 96, inputs: ['image'], outputs: ['IMAGE'], widgets: [], color: '#0f766e' },
                     { id: 'reference2', class_type: 'LoadImage', title: 'Image 2 Reference', x: 70, y: 675, width: 230, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'image 2 reference' }], color: '#164e63' },
                     { id: 'resize_reference2', class_type: 'ImageScale', title: 'Resize Image 2 To Side Menu', x: 330, y: 675, width: 250, height: 116, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
-                    { id: 'encode_ref2', class_type: 'VAEEncode', title: 'Encode Image 2 Latent', x: 620, y: 675, width: 220, height: 100, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' },
-                    { id: 'ref_latent2', class_type: 'ReferenceLatent', title: 'Reference Latent 2', x: 880, y: 675, width: 230, height: 100, inputs: ['conditioning', 'latent'], outputs: ['CONDITIONING'], widgets: [], color: '#0f766e' },
                     { id: 'reference3', class_type: 'LoadImage', title: 'Image 3 Reference', x: 70, y: 830, width: 230, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'image 3 reference' }], color: '#164e63' },
                     { id: 'resize_reference3', class_type: 'ImageScale', title: 'Resize Image 3 To Side Menu', x: 330, y: 830, width: 250, height: 116, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
-                    { id: 'encode_ref3', class_type: 'VAEEncode', title: 'Encode Image 3 Latent', x: 620, y: 830, width: 220, height: 100, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' },
-                    { id: 'ref_latent3', class_type: 'ReferenceLatent', title: 'Reference Latent 3', x: 880, y: 830, width: 230, height: 100, inputs: ['conditioning', 'latent'], outputs: ['CONDITIONING'], widgets: [], color: '#0f766e' },
+                    { id: 'encode_ref1', class_type: 'VAEEncode', title: 'Encode Image 1 Base Latent', x: 910, y: 520, width: 220, height: 100, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' },
                     { id: 'reference_method', class_type: 'FluxKontextMultiReferenceLatentMethod', title: 'QWEN Reference Method', x: 1190, y: 595, width: 270, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [{ name: 'reference_latents_method', value: 'index_timestep_zero' }], color: '#0f766e' },
                     { id: 'negative_method', class_type: 'FluxKontextMultiReferenceLatentMethod', title: 'QWEN Negative Reference Method', x: 1190, y: 735, width: 270, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [{ name: 'reference_latents_method', value: 'index_timestep_zero' }], color: '#5a2c2c' },
                     { id: 'sampler', class_type: 'KSampler', title: 'QWEN Edit Sampler', x: 1490, y: 570, width: 285, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: sideCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: document.getElementById('denoiseSlider')?.value || '0.75' }], color: '#2f3c4f' },
@@ -12873,26 +12871,21 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { from_node: 'cfgnorm', from_slot: 0, to_node: 'sampler', to_slot: 0, type: 'MODEL' },
                     { from_node: 'clip', from_slot: 0, to_node: 'positive', to_slot: 0, type: 'CLIP' },
                     { from_node: 'vae', from_slot: 0, to_node: 'positive', to_slot: 1, type: 'VAE' },
-                    { from_node: 'positive', from_slot: 0, to_node: 'negative', to_slot: 0, type: 'CONDITIONING' },
+                    { from_node: 'clip', from_slot: 0, to_node: 'negative', to_slot: 0, type: 'CLIP' },
+                    { from_node: 'vae', from_slot: 0, to_node: 'negative', to_slot: 1, type: 'VAE' },
                     { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
-                    { from_node: 'resize_reference', from_slot: 0, to_node: 'positive', to_slot: 2, type: 'IMAGE' },
-                    { from_node: 'resize_reference', from_slot: 0, to_node: 'encode_ref1', to_slot: 0, type: 'IMAGE' },
+                    { from_node: 'resize_reference', from_slot: 0, to_node: 'reference_flux_scale', to_slot: 0, type: 'IMAGE' },
+                    { from_node: 'reference_flux_scale', from_slot: 0, to_node: 'positive', to_slot: 2, type: 'IMAGE' },
+                    { from_node: 'reference_flux_scale', from_slot: 0, to_node: 'negative', to_slot: 2, type: 'IMAGE' },
+                    { from_node: 'reference_flux_scale', from_slot: 0, to_node: 'encode_ref1', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'vae', from_slot: 0, to_node: 'encode_ref1', to_slot: 1, type: 'VAE' },
-                    { from_node: 'positive', from_slot: 0, to_node: 'ref_latent1', to_slot: 0, type: 'CONDITIONING' },
-                    { from_node: 'encode_ref1', from_slot: 0, to_node: 'ref_latent1', to_slot: 1, type: 'LATENT' },
                     { from_node: 'reference2', from_slot: 0, to_node: 'resize_reference2', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'resize_reference2', from_slot: 0, to_node: 'positive', to_slot: 3, type: 'IMAGE' },
-                    { from_node: 'resize_reference2', from_slot: 0, to_node: 'encode_ref2', to_slot: 0, type: 'IMAGE' },
-                    { from_node: 'vae', from_slot: 0, to_node: 'encode_ref2', to_slot: 1, type: 'VAE' },
-                    { from_node: 'ref_latent1', from_slot: 0, to_node: 'ref_latent2', to_slot: 0, type: 'CONDITIONING' },
-                    { from_node: 'encode_ref2', from_slot: 0, to_node: 'ref_latent2', to_slot: 1, type: 'LATENT' },
+                    { from_node: 'resize_reference2', from_slot: 0, to_node: 'negative', to_slot: 3, type: 'IMAGE' },
                     { from_node: 'reference3', from_slot: 0, to_node: 'resize_reference3', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'resize_reference3', from_slot: 0, to_node: 'positive', to_slot: 4, type: 'IMAGE' },
-                    { from_node: 'resize_reference3', from_slot: 0, to_node: 'encode_ref3', to_slot: 0, type: 'IMAGE' },
-                    { from_node: 'vae', from_slot: 0, to_node: 'encode_ref3', to_slot: 1, type: 'VAE' },
-                    { from_node: 'ref_latent2', from_slot: 0, to_node: 'ref_latent3', to_slot: 0, type: 'CONDITIONING' },
-                    { from_node: 'encode_ref3', from_slot: 0, to_node: 'ref_latent3', to_slot: 1, type: 'LATENT' },
-                    { from_node: 'ref_latent3', from_slot: 0, to_node: 'reference_method', to_slot: 0, type: 'CONDITIONING' },
+                    { from_node: 'resize_reference3', from_slot: 0, to_node: 'negative', to_slot: 4, type: 'IMAGE' },
+                    { from_node: 'positive', from_slot: 0, to_node: 'reference_method', to_slot: 0, type: 'CONDITIONING' },
                     { from_node: 'negative', from_slot: 0, to_node: 'negative_method', to_slot: 0, type: 'CONDITIONING' },
                     { from_node: 'reference_method', from_slot: 0, to_node: 'sampler', to_slot: 1, type: 'CONDITIONING' },
                     { from_node: 'negative_method', from_slot: 0, to_node: 'sampler', to_slot: 2, type: 'CONDITIONING' },
@@ -12902,6 +12895,52 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     { from_node: 'decode', from_slot: 0, to_node: 'preview', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'decode', from_slot: 0, to_node: 'save', to_slot: 0, type: 'IMAGE' }
                 ];
+                if (!qwenUseMultiRefs) {
+                    const positiveNode = qwenNodes.find(node => node.id === 'positive');
+                    const negativeNode = qwenNodes.find(node => node.id === 'negative');
+                    if (positiveNode) {
+                        positiveNode.class_type = 'TextEncodeQwenImageEdit';
+                        positiveNode.title = 'Positive Prompt + Image 1';
+                        positiveNode.inputs = ['clip', 'vae', 'image', 'prompt'];
+                    }
+                    if (negativeNode) {
+                        negativeNode.class_type = 'TextEncodeQwenImageEdit';
+                        negativeNode.title = 'QWEN Negative Prompt';
+                        negativeNode.inputs = ['clip', 'vae', 'prompt'];
+                    }
+                    const latentNode = qwenNodes.find(node => node.id === 'encode_ref1');
+                    if (latentNode) {
+                        latentNode.class_type = 'VAEEncode';
+                        latentNode.title = 'Encode Image 1 Base Latent';
+                        latentNode.inputs = ['pixels', 'vae'];
+                        latentNode.widgets = [];
+                    }
+                    ['reference_flux_scale', 'reference_method', 'negative_method'].forEach(nodeId => {
+                        const index = qwenNodes.findIndex(node => node.id === nodeId);
+                        if (index >= 0) qwenNodes.splice(index, 1);
+                    });
+                    for (let index = qwenLinks.length - 1; index >= 0; index -= 1) {
+                        const link = qwenLinks[index];
+                        if (
+                            link.from_node === 'reference_flux_scale'
+                            || link.to_node === 'reference_flux_scale'
+                            || link.from_node === 'reference_method'
+                            || link.to_node === 'reference_method'
+                            || link.from_node === 'negative_method'
+                            || link.to_node === 'negative_method'
+                            || link.to_node === 'positive' && Number(link.to_slot || 0) > 2
+                            || link.to_node === 'negative' && Number(link.to_slot || 0) > 2
+                        ) {
+                            qwenLinks.splice(index, 1);
+                        }
+                    }
+                    qwenLinks.push(
+                        { from_node: 'resize_reference', from_slot: 0, to_node: 'positive', to_slot: 2, type: 'IMAGE' },
+                        { from_node: 'resize_reference', from_slot: 0, to_node: 'encode_ref1', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'positive', from_slot: 0, to_node: 'sampler', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'negative', from_slot: 0, to_node: 'sampler', to_slot: 2, type: 'CONDITIONING' }
+                    );
+                }
                 if (!qwenHasEditLightning) {
                     const editIndex = qwenNodes.findIndex(node => node.id === 'edit_lora');
                     if (editIndex >= 0) qwenNodes.splice(editIndex, 1);
@@ -12938,7 +12977,19 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     qwenLinks.push({ from_node: modelTail, from_slot: 0, to_node: nodeId, to_slot: 0, type: 'MODEL' });
                     modelTail = nodeId;
                 });
-                qwenLinks.push({ from_node: modelTail, from_slot: 0, to_node: 'aura', to_slot: 0, type: 'MODEL' });
+                qwenLinks.push({ from_node: modelTail, from_slot: 0, to_node: qwenUseMultiRefs ? 'aura' : 'sampler', to_slot: 0, type: 'MODEL' });
+                if (!qwenUseMultiRefs) {
+                    ['aura', 'cfgnorm'].forEach(nodeId => {
+                        const index = qwenNodes.findIndex(node => node.id === nodeId);
+                        if (index >= 0) qwenNodes.splice(index, 1);
+                    });
+                    for (let index = qwenLinks.length - 1; index >= 0; index -= 1) {
+                        const link = qwenLinks[index];
+                        if (link.from_node === 'aura' || link.to_node === 'aura' || link.from_node === 'cfgnorm' || link.to_node === 'cfgnorm') {
+                            qwenLinks.splice(index, 1);
+                        }
+                    }
+                }
                 return {
                     nodes: qwenNodes,
                     links: qwenLinks,
@@ -13445,7 +13496,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 prompt: payload.prompt,
                 negative: payload.negative_prompt,
                 model: payload.model_name,
-                seed: String(payload.seed),
+                seed: String(output.seed ?? response.seed ?? payload.seed),
                 steps: String(payload.steps),
                 cfg: String(payload.cfg),
                 sampler: payload.sampler,
@@ -14139,7 +14190,6 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         renderLoraFolderFilters();
         renderLoraLibrary();
         applyModelProfile(activePreset, false);
-        restorePresetRuntimeState(activePreset);
         updateRangeLabel('steps');
         updateRangeLabel('cfg');
         ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {

@@ -222,60 +222,121 @@ def _download_file(
     token: str | None,
     progress_callback: ProgressCallback | None = None,
 ) -> None:
-    urls = [url]
-    parsed = urllib.parse.urlparse(url)
-    if "civitai.com" in parsed.netloc:
-        urls.insert(0, urllib.parse.urlunparse(parsed._replace(netloc="civitai.red")))
-    if token:
-        urls = [_with_token(item, token) for item in urls]
+    urls = _download_candidates(url, token)
     last_error: Exception | None = None
+    part = target.with_suffix(target.suffix + ".part")
     for candidate in urls:
-        try:
-            request = urllib.request.Request(candidate, headers=_headers(token))
-            with urllib.request.urlopen(request, timeout=60) as response, target.open("wb") as output:
-                total = int(response.headers.get("Content-Length") or 0)
-                downloaded = 0
-                started = monotonic()
-                last_emit = started
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    output.write(chunk)
-                    downloaded += len(chunk)
-                    now = monotonic()
-                    if progress_callback and (now - last_emit >= 0.5 or (total and downloaded >= total)):
-                        elapsed = max(0.001, now - started)
+        for attempt in range(4):
+            try:
+                resume_from = part.stat().st_size if part.exists() else 0
+                headers = _headers(token)
+                if resume_from:
+                    headers["Range"] = f"bytes={resume_from}-"
+                request = urllib.request.Request(candidate, headers=headers)
+                with urllib.request.urlopen(request, timeout=180) as response:
+                    status_code = int(getattr(response, "status", 200) or 200)
+                    if resume_from and status_code == 200:
+                        resume_from = 0
+                        part.unlink(missing_ok=True)
+                    total = _response_total_bytes(response, resume_from)
+                    downloaded = resume_from
+                    started = monotonic()
+                    last_emit = started
+                    mode = "ab" if resume_from else "wb"
+                    with part.open(mode) as output:
+                        first_chunk = True
+                        while True:
+                            chunk = response.read(4 * 1024 * 1024)
+                            if not chunk:
+                                break
+                            if first_chunk:
+                                _raise_if_error_payload(response, chunk)
+                                first_chunk = False
+                            output.write(chunk)
+                            downloaded += len(chunk)
+                            now = monotonic()
+                            if progress_callback and (now - last_emit >= 0.5 or (total and downloaded >= total)):
+                                elapsed = max(0.001, now - started)
+                                progress_callback(
+                                    {
+                                        "status": "downloading",
+                                        "bytes_downloaded": downloaded,
+                                        "bytes_total": total,
+                                        "progress": round((downloaded / total) * 100, 2) if total else None,
+                                        "speed_bps": round((downloaded - resume_from) / elapsed),
+                                        "message": f"Downloading via {urllib.parse.urlparse(candidate).netloc}",
+                                    }
+                                )
+                                last_emit = now
+                    if total and downloaded < total:
+                        raise ValueError(f"Download interrupted at {downloaded}/{total} bytes.")
+                    target.unlink(missing_ok=True)
+                    part.replace(target)
+                    if progress_callback:
                         progress_callback(
                             {
-                                "status": "downloading",
+                                "status": "downloaded",
                                 "bytes_downloaded": downloaded,
-                                "bytes_total": total,
-                                "progress": round((downloaded / total) * 100, 2) if total else None,
-                                "speed_bps": round(downloaded / elapsed),
+                                "bytes_total": total or downloaded,
+                                "progress": 100,
+                                "speed_bps": round(max(0, downloaded - resume_from) / max(0.001, monotonic() - started)),
                             }
                         )
-                        last_emit = now
-                if progress_callback:
-                    progress_callback(
-                        {
-                            "status": "downloaded",
-                            "bytes_downloaded": downloaded,
-                            "bytes_total": total or downloaded,
-                            "progress": 100,
-                            "speed_bps": round(downloaded / max(0.001, monotonic() - started)),
-                        }
-                    )
-            return
-        except Exception as exc:
-            last_error = exc
-            if target.exists():
-                target.unlink(missing_ok=True)
+                return
+            except Exception as exc:
+                last_error = exc
+                if attempt < 3:
+                    continue
+        part.unlink(missing_ok=True)
+        if target.exists():
+            target.unlink(missing_ok=True)
     raise ValueError(str(last_error) if last_error else "Download failed.")
 
 
+def _download_candidates(url: str, token: str | None) -> list[str]:
+    parsed = urllib.parse.urlparse(url)
+    variants = []
+    if parsed.netloc:
+        if "civitai." in parsed.netloc:
+            variants.append(urllib.parse.urlunparse(parsed._replace(netloc="civitai.com")))
+            variants.append(urllib.parse.urlunparse(parsed._replace(netloc="civitai.red")))
+        variants.append(url)
+    version_match = re.search(r"/api/download/models/(\d+)", parsed.path)
+    if version_match:
+        version_id = version_match.group(1)
+        variants.append(f"https://civitai.com/api/download/models/{version_id}")
+        variants.append(f"https://civitai.red/api/download/models/{version_id}")
+    deduped: list[str] = []
+    for item in variants:
+        candidate = _with_token(item, token) if token and "civitai." in urllib.parse.urlparse(item).netloc else item
+        if candidate not in deduped:
+            deduped.append(candidate)
+    return deduped
+
+
+def _response_total_bytes(response: Any, resume_from: int = 0) -> int:
+    content_range = response.headers.get("Content-Range") or ""
+    match = re.search(r"/(\d+)\s*$", content_range)
+    if match:
+        return int(match.group(1))
+    content_length = int(response.headers.get("Content-Length") or 0)
+    return content_length + resume_from if resume_from and content_length else content_length
+
+
+def _raise_if_error_payload(response: Any, chunk: bytes) -> None:
+    content_type = str(response.headers.get("Content-Type") or "").lower()
+    if "text/html" not in content_type and "application/json" not in content_type:
+        return
+    snippet = chunk[:800].decode("utf-8", errors="ignore").strip()
+    if "error" in snippet.lower() or "login" in snippet.lower() or "unauthorized" in snippet.lower() or "<html" in snippet.lower():
+        raise ValueError(f"Civitai returned {content_type or 'an error page'} instead of a model file: {snippet[:240]}")
+
+
 def _headers(token: str | None) -> dict[str, str]:
-    headers = {"User-Agent": "NexusBTA/0.1"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 NexusBTA/0.1",
+        "Accept": "application/octet-stream,*/*",
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
