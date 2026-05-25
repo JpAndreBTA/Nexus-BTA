@@ -199,6 +199,19 @@ button {
   gap: 16px;
 }
 
+.studio-layout {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+}
+
+.studio-columns {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
+  gap: 14px;
+}
+
 .segmented-control {
   display: inline-flex;
   gap: 4px;
@@ -346,16 +359,28 @@ button {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   min-width: 0;
   width: 100%;
-  height: 36px;
   border: 1px solid var(--border);
   background: #09090b;
   color: white;
   border-radius: 4px;
-  padding: 0 10px;
   outline: none;
+}
+
+.field input,
+.field select {
+  height: 36px;
+  padding: 0 10px;
+}
+
+.field textarea {
+  min-height: 92px;
+  resize: vertical;
+  padding: 10px;
+  line-height: 1.45;
 }
 
 .field input[type="range"] {
@@ -392,6 +417,10 @@ button {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+.studio-preview {
+  min-height: clamp(320px, 64vh, 760px);
 }
 
 .preview-empty {
@@ -701,6 +730,10 @@ button {
   }
 
   .extras-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .studio-columns {
     grid-template-columns: 1fr;
   }
 

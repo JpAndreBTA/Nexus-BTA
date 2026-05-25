@@ -1,12 +1,121 @@
-import { Server, ShieldCheck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { LoaderCircle, Play, Server, Square } from 'lucide-react';
 
-import { useHealthQuery } from '../../api/queries';
+import { nexusApi } from '../../api/nexusClient';
+import type { GenerateRequest, GenerationJob } from '../../api/types';
+import { useGalleryQuery, useHealthQuery, useModelCatalogQuery } from '../../api/queries';
+import { queryClient } from '../../shared/queryClient';
+import { useGenerationStore } from '../../stores/generationStore';
+
+function terminalStatus(job: GenerationJob | undefined) {
+  return job?.status === 'completed' || job?.status === 'failed' || job?.status === 'cancelled';
+}
+
+function outputUrl(url: string | undefined) {
+  if (!url) return '';
+  return url.startsWith('/') ? url : `/${url.replace(/^\/+/, '')}`;
+}
+
+function modelOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data']) {
+  return [...(catalog?.categories.checkpoints ?? []), ...(catalog?.categories.unet ?? []), ...(catalog?.categories.diffusion_models ?? [])].map((asset) => ({
+    label: asset.relative_path || asset.name,
+    value: asset.relative_path || asset.path,
+    name: asset.name,
+  }));
+}
 
 export function HomePage() {
   const health = useHealthQuery();
+  const catalog = useModelCatalogQuery();
+  const gallery = useGalleryQuery();
+  const generation = useGenerationStore();
+  const [jobId, setJobId] = useState('');
+  const [localError, setLocalError] = useState('');
+
+  const models = useMemo(() => modelOptions(catalog.data), [catalog.data]);
+  const newestGalleryItem = gallery.data?.[0];
+
+  useEffect(() => {
+    if (!generation.modelPath && models[0]) {
+      generation.setModel(models[0].value, models[0].name);
+    }
+  }, [generation, models]);
+
+  const payload = useMemo<GenerateRequest>(
+    () => ({
+      activity: 'txt2img',
+      workspace: 'viewer',
+      preset: generation.preset,
+      workflow_id: null,
+      model_path: generation.modelPath,
+      model_name: generation.modelName,
+      prompt: generation.prompt,
+      negative_prompt: generation.negativePrompt,
+      width: generation.width,
+      height: generation.height,
+      steps: generation.steps,
+      cfg: generation.cfg,
+      sampler: generation.sampler,
+      scheduler: generation.scheduler,
+      seed: generation.seed,
+      batch_size: 1,
+      denoise: 1,
+      vae: 'Automatic',
+      text_encoder: 'Automatic',
+      loras: [],
+      distilled_loras: [],
+      video: {},
+    }),
+    [generation],
+  );
+
+  const startMutation = useMutation({
+    mutationFn: () => nexusApi.startGeneration(payload),
+    onSuccess: (job) => {
+      setJobId(job.job_id);
+      setLocalError('');
+    },
+    onError: (error) => setLocalError(error instanceof Error ? error.message : 'Generation failed to start.'),
+  });
+
+  const jobQuery = useQuery({
+    queryKey: ['generation-job', jobId],
+    queryFn: () => nexusApi.generationJob(jobId),
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const job = query.state.data as GenerationJob | undefined;
+      return job && terminalStatus(job) ? false : 900;
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => nexusApi.cancelGeneration(jobId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['generation-job', jobId] }),
+  });
+
+  const activeJob = jobQuery.data ?? startMutation.data;
+  const processing = startMutation.isPending || (!!activeJob && !terminalStatus(activeJob));
+  const generatedOutput = activeJob?.status === 'completed' ? activeJob.outputs?.[0] : null;
+  const previewUrl = outputUrl(generatedOutput?.url || newestGalleryItem?.image);
+  const previewIsVideo = /\.(mp4|mov|webm|mkv|avi)$/i.test(generatedOutput?.filename || newestGalleryItem?.filename || '');
+
+  async function generate() {
+    if (!generation.prompt.trim()) {
+      setLocalError('Prompt is required.');
+      return;
+    }
+    if (!generation.modelPath && !generation.modelName) {
+      setLocalError('Select a model before generating.');
+      return;
+    }
+    setLocalError('');
+    setJobId('');
+    await startMutation.mutateAsync();
+  }
 
   return (
-    <section className="page page-grid">
+    <section className="page studio-layout">
       <header className="page-header">
         <div>
           <p className="eyebrow">Nexus BTA Web App</p>
@@ -18,27 +127,142 @@ export function HomePage() {
         </span>
       </header>
 
-      <div className="surface hero-surface">
-        <div>
-          <p className="eyebrow">Migration track</p>
-          <h2>React shell active, legacy UI preserved.</h2>
-          <p className="muted">
-            This shell is the migration base for the official responsive web app. The current legacy interface remains available at /ui while each tool is rebuilt in React.
-          </p>
-        </div>
-        <ShieldCheck className="hero-icon" size={72} />
+      <div className="studio-columns">
+        <aside className="surface tool-panel">
+          <label className="field">
+            <span>Preset</span>
+            <select value={generation.preset} onChange={(event) => generation.setPreset(event.currentTarget.value)}>
+              <option>Anima</option>
+              <option>SD</option>
+              <option>XL</option>
+              <option>SDXL</option>
+              <option>Flux</option>
+              <option>Qwen</option>
+              <option>ZImageTurbo</option>
+              <option>Lumina</option>
+              <option>Wan</option>
+              <option>LTX</option>
+            </select>
+          </label>
+
+          <label className="field">
+            <span>Model</span>
+            <select
+              value={generation.modelPath}
+              onChange={(event) => {
+                const selected = models.find((model) => model.value === event.currentTarget.value);
+                generation.setModel(event.currentTarget.value, selected?.name || '');
+              }}
+            >
+              <option value="">Automatic</option>
+              {models.map((model) => (
+                <option key={model.value} value={model.value}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span>Prompt</span>
+            <textarea value={generation.prompt} onChange={(event) => generation.setPrompt(event.currentTarget.value)} placeholder="Describe the image..." />
+          </label>
+
+          <label className="field">
+            <span>Negative Prompt</span>
+            <textarea value={generation.negativePrompt} onChange={(event) => generation.setNegativePrompt(event.currentTarget.value)} placeholder="Avoid..." />
+          </label>
+
+          <div className="two-col">
+            <label className="field">
+              <span>Width</span>
+              <input type="number" min={64} step={8} value={generation.width} onChange={(event) => generation.setSize(Number(event.currentTarget.value), generation.height)} />
+            </label>
+            <label className="field">
+              <span>Height</span>
+              <input type="number" min={64} step={8} value={generation.height} onChange={(event) => generation.setSize(generation.width, Number(event.currentTarget.value))} />
+            </label>
+          </div>
+
+          <div className="two-col">
+            <label className="field">
+              <span>Steps</span>
+              <input type="number" min={1} max={150} value={generation.steps} onChange={(event) => generation.setSteps(Number(event.currentTarget.value))} />
+            </label>
+            <label className="field">
+              <span>CFG</span>
+              <input type="number" min={0} max={30} step={0.1} value={generation.cfg} onChange={(event) => generation.setCfg(Number(event.currentTarget.value))} />
+            </label>
+          </div>
+
+          <div className="two-col">
+            <label className="field">
+              <span>Sampler</span>
+              <select value={generation.sampler} onChange={(event) => generation.setSampler(event.currentTarget.value)}>
+                <option value="euler_ancestral">Euler Ancestral</option>
+                <option value="euler">Euler</option>
+                <option value="dpmpp_2m">DPM++ 2M</option>
+                <option value="dpmpp_sde">DPM++ SDE</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Scheduler</span>
+              <select value={generation.scheduler} onChange={(event) => generation.setScheduler(event.currentTarget.value)}>
+                <option value="karras">Karras</option>
+                <option value="normal">Normal</option>
+                <option value="simple">Simple</option>
+                <option value="sgm_uniform">SGM Uniform</option>
+              </select>
+            </label>
+          </div>
+
+          <label className="field">
+            <span>Seed</span>
+            <input type="number" value={generation.seed} onChange={(event) => generation.setSeed(Number(event.currentTarget.value))} />
+          </label>
+        </aside>
+
+        <main className="surface preview-panel studio-preview">
+          {previewUrl ? (
+            previewIsVideo ? (
+              <video className="extras-media" src={previewUrl} controls playsInline />
+            ) : (
+              <img className="extras-media" src={previewUrl} alt="Studio output preview" />
+            )
+          ) : (
+            <div className="preview-empty">
+              <Play size={38} />
+              <p>Generated outputs will appear here.</p>
+            </div>
+          )}
+
+          {processing && (
+            <div className="job-overlay">
+              <LoaderCircle className="spin" size={34} />
+              <strong>{activeJob?.progress ?? 0}%</strong>
+              <span>{activeJob?.message || 'Starting generation...'}</span>
+            </div>
+          )}
+        </main>
       </div>
 
-      <div className="panel-grid">
-        <article className="surface">
-          <h3>Next slice</h3>
-          <p className="muted">Extras will be migrated first because it already has isolated API jobs, uploads, polling and previews.</p>
-        </article>
-        <article className="surface">
-          <h3>Responsive target</h3>
-          <p className="muted">Desktop uses rail + panels. Tablet and mobile collapse into scrollable tool sections with stable controls.</p>
-        </article>
-      </div>
+      <footer className="extras-action-bar">
+        <div className="status-line">
+          <span>{activeJob?.message || 'Studio generation ready'}</span>
+          {(localError || activeJob?.status === 'failed') && <strong>{localError || activeJob?.error || activeJob?.message}</strong>}
+          {activeJob?.status === 'completed' && <em>{generatedOutput?.filename || 'Generation completed'}</em>}
+        </div>
+        <div className="action-buttons">
+          <button type="button" className="flat-button" onClick={() => cancelMutation.mutate()} disabled={!processing || !jobId}>
+            <Square size={14} />
+            Cancel
+          </button>
+          <button type="button" className="primary-button" onClick={generate} disabled={processing}>
+            {processing ? <LoaderCircle className="spin" size={14} /> : <Play size={14} />}
+            Generate
+          </button>
+        </div>
+      </footer>
     </section>
   );
 }

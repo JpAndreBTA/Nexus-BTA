@@ -119,3 +119,44 @@ export interface GalleryItem {
   metadata?: Record<string, unknown>;
   modified: number;
 }
+
+export interface GenerateRequest {
+  activity: string;
+  workspace: string;
+  preset: string;
+  workflow_id?: string | null;
+  model_path?: string;
+  model_name?: string;
+  prompt: string;
+  negative_prompt: string;
+  width: number;
+  height: number;
+  steps: number;
+  cfg: number;
+  sampler: string;
+  scheduler: string;
+  seed: number;
+  batch_size: number;
+  denoise: number;
+  vae: string;
+  text_encoder: string;
+  loras: Array<Record<string, unknown>>;
+  distilled_loras: Array<Record<string, unknown>>;
+  video: Record<string, unknown>;
+}
+
+export interface GenerationJob {
+  job_id: string;
+  prompt_id: string | null;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | string;
+  progress: number;
+  message: string;
+  outputs: OutputItem[];
+  error: string | null;
+  queue_position?: number;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+  preset?: string;
+  workflow_id?: string | null;
+}

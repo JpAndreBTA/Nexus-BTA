@@ -1,4 +1,4 @@
-import type { ExtrasJob, ExtrasPlan, GalleryItem, HealthResponse, ModelCatalog } from './types';
+import type { ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, ModelCatalog } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -40,4 +40,12 @@ export const nexusApi = {
   },
   extrasJob: (jobId: string) => nexusFetch<ExtrasJob>(`/extras/${encodeURIComponent(jobId)}`),
   gallery: () => nexusFetch<GalleryItem[]>('/gallery'),
+  startGeneration: (payload: GenerateRequest) =>
+    nexusFetch<GenerationJob>('/generate/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  generationJob: (jobId: string) => nexusFetch<GenerationJob>(`/generate/${encodeURIComponent(jobId)}`),
+  cancelGeneration: (jobId: string) => nexusFetch<GenerationJob>(`/generate/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }),
 };

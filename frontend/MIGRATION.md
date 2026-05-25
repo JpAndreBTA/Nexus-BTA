@@ -88,3 +88,25 @@ Screenshots:
 - `test-results/backend-app-gallery.png`
 - `test-results/backend-app-gallery-to-extras.png`
 - `test-results/backend-app-extras-remote-source-smoke.png`
+
+## Checkpoint: Studio Basic Generation Shell
+
+Implemented:
+
+- `/app` Studio now has a React txt2img form instead of only a placeholder.
+- Typed generation request/job contracts in `src/api/types.ts`.
+- Generation API methods for `/api/generate/start`, `/api/generate/{job_id}` and cancel.
+- Zustand generation form state in `src/stores/generationStore.ts`.
+- Prompt, negative prompt, preset, model, size, steps, cfg, sampler, scheduler and seed controls.
+- Job polling, cancel action, progress overlay and output preview.
+
+Validation:
+
+- `npm run check` passed with `NEXUS_FRONTEND_BASE=/app/`.
+- `/app` renders Studio through backend in desktop and mobile.
+- Default preset is `SD` to avoid Anima-specific smoke requirements.
+
+Screenshots:
+
+- `test-results/backend-app-studio-desktop.png`
+- `test-results/backend-app-studio-mobile.png`
