@@ -1,10 +1,11 @@
 import { Link, Outlet, createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
-import { Activity, GalleryHorizontalEnd, ImageUp, Images, MonitorCog, Sparkles } from 'lucide-react';
+import { Activity, GalleryHorizontalEnd, ImageUp, Images, MonitorCog, Settings, Sparkles } from 'lucide-react';
 
 import { ExtrasPage } from '../views/extras/ExtrasPage';
 import { GalleryPage } from '../views/gallery/GalleryPage';
 import { HomePage } from '../views/home/HomePage';
 import { ModelsPage } from '../views/modelCatalog/ModelsPage';
+import { SettingsPage } from '../views/settings/SettingsPage';
 
 function RootLayout() {
   return (
@@ -29,6 +30,10 @@ function RootLayout() {
           <Link to="/gallery" activeProps={{ className: 'nav-item active' }} inactiveProps={{ className: 'nav-item' }}>
             <Images size={18} />
             <span>Gallery</span>
+          </Link>
+          <Link to="/settings" activeProps={{ className: 'nav-item active' }} inactiveProps={{ className: 'nav-item' }}>
+            <Settings size={18} />
+            <span>Settings</span>
           </Link>
           <a className="nav-item" href="/ui">
             <GalleryHorizontalEnd size={18} />
@@ -71,7 +76,13 @@ const galleryRoute = createRoute({
   component: GalleryPage,
 });
 
-const routeTree = rootRoute.addChildren([homeRoute, extrasRoute, modelsRoute, galleryRoute]);
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  component: SettingsPage,
+});
+
+const routeTree = rootRoute.addChildren([homeRoute, extrasRoute, modelsRoute, galleryRoute, settingsRoute]);
 
 const routerBasepath = typeof window !== 'undefined' && window.location.pathname.startsWith('/app') ? '/app' : '';
 

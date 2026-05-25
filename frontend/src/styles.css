@@ -794,6 +794,89 @@ button {
   font-size: 12px;
 }
 
+.settings-layout {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.settings-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.settings-card svg {
+  color: var(--accent);
+}
+
+.settings-card h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.settings-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.settings-card dl div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.settings-card dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.settings-card dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: white;
+  font-size: 12px;
+}
+
+.access-list {
+  display: grid;
+  gap: 8px;
+}
+
+.access-list span,
+.warning-card li {
+  border: 1px solid var(--border);
+  background: #0d0d10;
+  border-radius: 4px;
+  padding: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.warning-card ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wide-card {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 1024px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -827,6 +910,10 @@ button {
   }
 
   .gallery-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 

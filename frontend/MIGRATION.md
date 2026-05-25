@@ -130,3 +130,22 @@ Validation:
 Screenshot:
 
 - `test-results/backend-app-studio-lora.png`
+
+## Checkpoint: Settings and Remote Readiness Shell
+
+Implemented:
+
+- `/settings` route in React.
+- Runtime cards for backend, Comfy status, model/custom node paths.
+- Access-mode checklist for local, LAN and internet usage.
+- Security gate notes before any public internet exposure.
+
+Validation:
+
+- `NEXUS_FRONTEND_BASE=/app/ npm run check` passed.
+- `/app/settings` renders through backend in desktop and mobile.
+
+Screenshots:
+
+- `test-results/backend-app-settings-desktop.png`
+- `test-results/backend-app-settings-mobile.png`
