@@ -4862,6 +4862,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
         }
 
+        async function refreshNewestGalleryPreview(options = {}) {
+            await syncGalleryFromBackend({ quiet: true, preferNewest: true, force: true, ...options });
+            const newest = galleryItems[activeGalleryIndex] || galleryItems[0] || null;
+            if (newest) setLinearOutput(newest, { force: true });
+            return newest;
+        }
+
         function renderAssetCounts() {
             const checkpointCount = (backendCatalog?.categories?.checkpoints || []).length;
             const diffusionCount = (backendCatalog?.categories?.diffusion_models || []).length + (backendCatalog?.categories?.unet || []).length;
@@ -13152,8 +13159,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 renderGalleryModal();
             }
             setTimeout(async () => {
-                await syncGalleryFromBackend({ quiet: true, preferNewest: true, force: true });
-                if (galleryItems[0]) setLinearOutput(galleryItems[0], { force: true });
+                await refreshNewestGalleryPreview();
                 if (document.getElementById('galleryModal') && !document.getElementById('galleryModal').classList.contains('hidden')) {
                     renderGalleryModal();
                 }
@@ -13206,6 +13212,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 setGenerationProgress(job.progress || 0, job.message || job.status || 'Generating', generationJobSubtext(job));
                 if (job.status === 'completed') {
                     addGeneratedOutputsToGallery({ outputs: job.outputs || [], message: job.message }, payload);
+                    await sleep(250);
+                    await refreshNewestGalleryPreview();
                     return job;
                 }
                 if (job.status === 'cancelled') {
