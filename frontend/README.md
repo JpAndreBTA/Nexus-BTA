@@ -20,6 +20,13 @@ npm run check
 
 This runs TypeScript checking and a production build.
 
+With the FastAPI backend running and the React build served at `/app`:
+
+```powershell
+cd D:\NexusBTA
+.\runtime\.venv\Scripts\python.exe .\frontend\scripts\smoke_app.py
+```
+
 ## Migration Rule
 
 The legacy UI remains at `/ui`. React becomes official only after the migrated pages are feature-complete and responsive.

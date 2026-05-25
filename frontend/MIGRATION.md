@@ -149,3 +149,16 @@ Screenshots:
 
 - `test-results/backend-app-settings-desktop.png`
 - `test-results/backend-app-settings-mobile.png`
+
+## Checkpoint: Repeatable App Smoke
+
+Implemented:
+
+- `frontend/scripts/smoke_app.py` checks `/app`, `/app/extras`, `/app/gallery`, `/app/models` and `/app/settings`.
+- Each route is validated on desktop and mobile viewports and writes screenshots to `test-results/app-smoke-*.png`.
+
+Validation:
+
+- Python compile passed for backend and smoke script.
+- `NEXUS_FRONTEND_BASE=/app/ npm run check` passed.
+- `python frontend/scripts/smoke_app.py` passed all 10 route/viewport checks.
