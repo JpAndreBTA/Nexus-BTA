@@ -1440,7 +1440,7 @@
                             </label>
                             <label class="space-y-1">
                                 <span class="mini-label">Strength</span>
-                                <input id="distilledLoraOneStrength" class="flat-input font-mono text-center" type="number" value="0.35" min="0" max="2" step="0.05">
+                                <input id="distilledLoraOneStrength" class="flat-input font-mono text-center" type="number" value="0.80" min="0" max="2" step="0.05">
                             </label>
                         </div>
                         <div class="grid grid-cols-[minmax(0,1fr)_56px] gap-2 items-end">
@@ -3035,6 +3035,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let templateWorkflowSelections = nexusSafeStorage.json('nexus_template_workflows', {});
         let activeRightSidebarTab = nexusSafeStorage.get('nexus_right_sidebar_tab', 'nodes');
         let savedTemplateState = nexusSafeStorage.json('nexus_saved_template_state', null);
+        let presetRuntimeStates = nexusSafeStorage.json('nexus_preset_runtime_states', {});
         let sortableDrag = null;
         let backendRetryTimer = null;
         let viewerZoom = 1;
@@ -3068,7 +3069,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         const LTX_OMNICINE_LORA_NAME = 'ltx\\Singularity LTX-2.3  OmniCine Preview v0.1.safetensors';
         const LTX_TEXT_PROJECTION_NAME = 'ltx\\ltx-2.3_text_projection_bf16.safetensors';
         const LTX_OMNICINE_DEFAULT_STRENGTH = 0.75;
-        const LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH = 0.35;
+        const LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH = 0.80;
         const LTX_DISTILLED_384_DEFAULT_STRENGTH = 0.50;
         const LTX_DISTILLED_8_STEP_SIGMAS = '1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0';
         const LTX_UPSCALE_REFINER_SIGMAS = '0.85, 0.7250, 0.4219, 0.0';
@@ -3369,8 +3370,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 distilledRoute: 'LTX 2.3 route uses distilled motion LoRAs; OmniCine is opt-in when a compatible Singularity model is installed.',
                 summary: 'LTX template favors fast latent video, short step counts and low CFG defaults.',
                 chips: ['LTX 2.3', 'Video', 'Distilled', 'Fast'],
-                video: 'LTX 2.3 Director route enabled: fast 16 FPS aligned video timing.',
-                videoSettings: { frames: 81, fps: 16, seconds: 5 }
+                video: 'LTX 2.3 Director route enabled: 24 FPS aligned video timing.',
+                videoSettings: { frames: 121, fps: 24, seconds: 5 }
             },
             Anima: {
                 template: 'ANIMA_PORTRAIT',
@@ -3712,9 +3713,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 if (audioVaes.length) profile.audioVae = presetName === 'LTX'
                     ? uniqueOptions([audioVaes.find(name => /ltx23.*audio|audio.*ltx23|audio_vae/i.test(name)) || audioVaes[0], ...audioVaes, 'Automatic', 'None'])
                     : uniqueOptions(['Automatic', ...audioVaes, 'None']);
-                if (latentUpscale.length) profile.latentUpscaleModels = presetName === 'LTX'
-                    ? uniqueOptions(['None', 'Automatic', ...latentUpscale])
-                    : uniqueOptions(['Automatic', ...latentUpscale, 'None']);
+                if (latentUpscale.length) {
+                    if (presetName === 'LTX') {
+                        const ltxSpatialX2 = latentUpscale.find(name => /ltx|spatial|x\s*2|x2/i.test(name)) || latentUpscale[0];
+                        profile.latentUpscaleModels = uniqueOptions([ltxSpatialX2, 'None', 'Automatic', ...latentUpscale]);
+                    } else {
+                        profile.latentUpscaleModels = uniqueOptions(['Automatic', ...latentUpscale, 'None']);
+                    }
+                }
             }
             if (presetName === 'LTX') {
                 profile.detailerLoras = uniqueOptions(['Automatic', ...ltxDetailers, 'None']);
@@ -5166,7 +5172,6 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             setSelectValue('ltxDetailerLoraSelect', profile.detailerLoras?.[0] || 'Automatic');
             setSelectValue('omnicineSelect', 'Off');
             if (presetName === 'LTX') {
-                setSelectValue('latentUpscaleSelect', 'None');
                 const audioToggle = document.getElementById('activeAudioToggle');
                 if (audioToggle) audioToggle.checked = false;
             }
@@ -5229,13 +5234,39 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (presetName && modelProfiles[presetName]) {
                 modelProfiles[presetName].checkpoint = option.dataset.model || option.textContent.trim();
                 modelProfiles[presetName].selectedModelPath = option.value;
+                if (presetName === activePreset) {
+                    const previousWorkflowPreset = activeWorkflowGraph?.nexus_preset;
+                    if (!activeWorkflowGraph || previousWorkflowPreset !== presetName) {
+                        primeWorkflowGraphForPreset(presetName);
+                    }
+                    if (presetName === 'LTX') {
+                        const minSteps = ltxMinimumSteps(modelProfiles[presetName].checkpoint || option.value);
+                        const stepsSlider = document.getElementById('stepsSlider');
+                        if (stepsSlider) {
+                            const currentSteps = parseInt(stepsSlider.value || '0', 10);
+                            if (!Number.isFinite(currentSteps) || currentSteps < minSteps) {
+                                stepsSlider.value = String(minSteps);
+                                updateRangeLabel('steps');
+                            }
+                        }
+                    }
+                    updateModelTypeUi();
+                    updateOmnicineStatus();
+                    syncGraphWidgetsFromSideMenu();
+                    updateWorkflowPreview();
+                    showToast("Model Selected", `${option.dataset.model || option.textContent.trim()} synced without resetting settings.`);
+                    return;
+                }
                 applyModelProfile(presetName);
                 if (presetName === 'LTX') {
                     const minSteps = ltxMinimumSteps(modelProfiles[presetName].checkpoint || option.value);
                     const stepsSlider = document.getElementById('stepsSlider');
                     if (stepsSlider) {
-                        stepsSlider.value = String(minSteps);
-                        updateRangeLabel('steps');
+                        const currentSteps = parseInt(stepsSlider.value || '0', 10);
+                        if (!Number.isFinite(currentSteps) || currentSteps < minSteps) {
+                            stepsSlider.value = String(minSteps);
+                            updateRangeLabel('steps');
+                        }
                     }
                     updateWorkflowPreview();
                 }
@@ -7840,17 +7871,24 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function ltxDirectorDefaultDistilledLoras() {
-            const selected = ['distilledLoraOneSelect', 'distilledLoraTwoSelect']
-                .map(id => ltxDirectorNormalizeLoraName(document.getElementById(id)?.value || ''))
-                .filter(name => name && !/^(none|automatic|auto)$/i.test(name));
+            const selected = [
+                {
+                    name: ltxDirectorNormalizeLoraName(document.getElementById('distilledLoraOneSelect')?.value || ''),
+                    strength: parseFloat(document.getElementById('distilledLoraOneStrength')?.value || String(LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH))
+                },
+                {
+                    name: ltxDirectorNormalizeLoraName(document.getElementById('distilledLoraTwoSelect')?.value || ''),
+                    strength: parseFloat(document.getElementById('distilledLoraTwoStrength')?.value || String(LTX_DISTILLED_384_DEFAULT_STRENGTH))
+                }
+            ].filter(item => item.name && !/^(none|automatic|auto)$/i.test(item.name));
             const seen = new Set();
             return selected
-                .filter(name => /ltx/i.test(name) && !seen.has(name.toLowerCase()) && seen.add(name.toLowerCase()))
+                .filter(item => /ltx/i.test(item.name) && !seen.has(item.name.toLowerCase()) && seen.add(item.name.toLowerCase()))
                 .slice(0, 2)
-                .map(name => ({
-                    name,
-                    relative_name: name,
-                    strength: /condsafe/i.test(name) ? LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH : LTX_DISTILLED_384_DEFAULT_STRENGTH,
+                .map(item => ({
+                    name: item.name,
+                    relative_name: item.name,
+                    strength: Math.max(0, Math.min(2, Number.isFinite(item.strength) ? item.strength : (/condsafe/i.test(item.name) ? LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH : LTX_DISTILLED_384_DEFAULT_STRENGTH))),
                     strength_clip: 0,
                     auto_distilled: true
                 }));
@@ -7934,7 +7972,6 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const name = String(loraName || '').toLowerCase();
             if (!/distill|distilled/.test(name)) return strength;
             let recommended = /condsafe/.test(name) ? LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH : LTX_DISTILLED_384_DEFAULT_STRENGTH;
-            if (/lightspeed|lightning|turbo|distill|distilled/.test(String(checkpointName || '').toLowerCase())) recommended *= 0.5;
             return strength >= 0.95 ? recommended : Math.min(strength, recommended);
         }
 
@@ -8946,12 +8983,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function workflowLoraNodeRole(node) {
-            const text = `${node?.title || ''} ${node?.class_type || ''}`.toLowerCase();
+            const widgetLora = workflowNodeWidgetValue(node, ['lora_name', 'lora']);
+            const text = `${node?.title || ''} ${node?.class_type || ''} ${widgetLora || ''}`.toLowerCase();
             if (!/lora/.test(text)) return '';
             if (/detailer/.test(text)) return 'detailer';
             if (/omni|singularity/.test(text)) return 'omnicine';
             if (/control/.test(text)) return 'control';
-            if (/edit.*lightning/.test(text)) return 'lightning';
+            if (/edit.*lightning|distill|distilled|lightning|turbo/.test(text)) return 'lightning';
             return 'concept';
         }
 
@@ -8988,9 +9026,11 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const strengthClip = Math.max(0, Math.min(2, Number(rawClipStrength) || 0));
 
             if (role === 'lightning') {
-                ensureSelectOption('distilledLoraOneSelect', loraName);
-                if (loraName) setSelectValue('distilledLoraOneSelect', loraName);
-                const strengthInput = document.getElementById('distilledLoraOneStrength');
+                const slotId = activePreset === 'LTX' && /384/i.test(loraName) ? 'distilledLoraTwoSelect' : 'distilledLoraOneSelect';
+                const strengthId = slotId === 'distilledLoraTwoSelect' ? 'distilledLoraTwoStrength' : 'distilledLoraOneStrength';
+                ensureSelectOption(slotId, loraName);
+                if (loraName) setSelectValue(slotId, loraName);
+                const strengthInput = document.getElementById(strengthId);
                 if (strengthInput) strengthInput.value = strength.toFixed(2);
                 return true;
             }
@@ -9615,7 +9655,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 { category: 'model', classType: 'CLIPLoader', title: 'Load Text Encoder', inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || 'Automatic' }, { name: 'type', value: activePreset === 'Qwen' ? 'qwen_image' : 'stable_diffusion' }] },
                 { category: 'model', classType: 'VAELoader', title: 'Load VAE', inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || 'Automatic' }] },
                 { category: 'model', classType: 'LoraLoader', title: 'LoRA Loader', inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: [{ name: 'lora_name', value: 'select_lora.safetensors' }, { name: 'strength_model', value: '0.65' }, { name: 'strength_clip', value: '0.65' }] },
-                { category: 'model', classType: 'LTX2LoraLoaderAdvanced', title: 'LTX LoRA Stack', inputs: ['model', 'clip'], outputs: ['MODEL', 'CLIP'], widgets: [{ name: 'lora_name', value: 'ltx/distilled_or_concept.safetensors' }, { name: 'strength_model', value: '0.50' }, { name: 'strength_clip', value: '0.00' }] },
+                { category: 'model', classType: 'LoraLoaderModelOnly', title: 'LTX Concept / Distilled LoRA', inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: 'ltx/distilled_or_concept.safetensors' }, { name: 'strength_model', value: '0.80' }] },
+                { category: 'model', classType: 'LTX2LoraLoaderAdvanced', title: 'LTX OmniCine / Singularity LoRA', inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: 'ltx/Singularity LTX-2.3  OmniCine Preview v0.1.safetensors' }, { name: 'strength_model', value: '0.75' }, { name: 'video', value: '0.75' }, { name: 'video_to_audio', value: '0.00' }, { name: 'audio', value: '0.00' }, { name: 'audio_to_video', value: '0.00' }, { name: 'other', value: '0.75' }] },
                 { category: 'conditioning', classType: 'CLIPTextEncode', title: 'CLIP Text Encode', inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || '' }] },
                 { category: 'conditioning', classType: 'TextEncodeQwenImageEdit', title: 'Qwen Image Edit Text', inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || '' }] },
                 { category: 'conditioning', classType: 'ConditioningConcat', title: 'Conditioning Concat', inputs: ['conditioning_to', 'conditioning_from'], outputs: ['CONDITIONING'], widgets: [] },
@@ -11412,7 +11453,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         // Preset selector (Top Bar)
         function setPreset(btn, presetName) {
+            if (presetName === activePreset) return;
+            savePresetRuntimeState(activePreset);
             applyModelProfile(presetName);
+            restorePresetRuntimeState(presetName);
         }
 
         function hideAllMainViews() {
@@ -11923,6 +11967,60 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             'controlNetEnabledToggle', 'controlNetTypeSelect', 'controlNetModelSelect', 'controlNetBalanceSelect',
             'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'
         ];
+
+        function persistPresetRuntimeStates() {
+            try {
+                localStorage.setItem('nexus_preset_runtime_states', JSON.stringify(presetRuntimeStates));
+            } catch (error) {
+                console.warn('Unable to persist preset runtime state:', error);
+            }
+        }
+
+        function savePresetRuntimeState(presetName = activePreset) {
+            if (!presetName || !modelProfiles[presetName]) return;
+            const fields = {};
+            TEMPLATE_FIELD_IDS.forEach(id => {
+                const element = document.getElementById(id);
+                if (!element) return;
+                fields[id] = element.type === 'checkbox' ? element.checked : element.value;
+            });
+            presetRuntimeStates[presetName] = {
+                version: 1,
+                savedAt: new Date().toISOString(),
+                fields,
+                loras: Array.isArray(activeLoras) ? activeLoras.map(item => ({ ...item })) : []
+            };
+            persistPresetRuntimeStates();
+        }
+
+        function restorePresetRuntimeState(presetName = activePreset) {
+            const state = presetRuntimeStates?.[presetName];
+            if (!state?.fields) return false;
+            Object.entries(state.fields).forEach(([id, value]) => {
+                const element = document.getElementById(id);
+                if (!element) return;
+                if (element.type === 'checkbox') element.checked = !!value;
+                else setSelectValue(id, value);
+                if (id === 'widthInput' || id === 'heightInput') syncSlider(id === 'widthInput' ? 'width' : 'height');
+            });
+            const modelSelect = document.getElementById('modelSelect');
+            const selectedOption = modelSelect?.selectedOptions?.[0];
+            if (selectedOption && modelProfiles[presetName]) {
+                modelProfiles[presetName].checkpoint = selectedOption.dataset.model || selectedOption.textContent.trim();
+                modelProfiles[presetName].selectedModelPath = selectedOption.value;
+            }
+            activeLoras = Array.isArray(state.loras) ? state.loras.map(item => ({ ...item })) : activeLoras;
+            renderActiveLoras();
+            updatePromptWithLoras();
+            updateRangeLabel('steps');
+            updateRangeLabel('cfg');
+            syncVideoMotionFields('restore');
+            updateModelTypeUi();
+            updateOmnicineStatus();
+            syncGraphWidgetsFromSideMenu();
+            updateWorkflowPreview();
+            return true;
+        }
 
         function captureTemplateState() {
             const fields = {};
@@ -13897,12 +13995,16 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         renderLoraFolderFilters();
         renderLoraLibrary();
         applyModelProfile(activePreset, false);
+        restorePresetRuntimeState(activePreset);
         updateRangeLabel('steps');
         updateRangeLabel('cfg');
         ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
             const element = document.getElementById(id);
             if (element) element.addEventListener('input', updateWorkflowPreview);
-            if (element) element.addEventListener('change', updateWorkflowPreview);
+            if (element) element.addEventListener('change', () => {
+                updateWorkflowPreview();
+                savePresetRuntimeState(activePreset);
+            });
         });
         document.getElementById('omnicineSelect')?.addEventListener('change', updateOmnicineStatus);
         document.getElementById('ltxDetailerStrengthSlider')?.addEventListener('input', event => {

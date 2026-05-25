@@ -454,7 +454,7 @@ def _ensure_ltx_default_distilled_loras(request: GenerateRequest, assets: dict[s
     }
     additions: list[DistilledLoraSelection] = []
     default_strengths = {
-        "distilled_lora_1": 0.35,
+        "distilled_lora_1": 0.80,
         "distilled_lora_2": 0.50,
     }
     if not explicit_distilled_slots:

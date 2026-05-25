@@ -79,7 +79,7 @@ UI_HELPER_NODE_TYPES = {
 
 LTX_OMNICINE_LORA_NAME = "ltx\\Singularity LTX-2.3  OmniCine Preview v0.1.safetensors"
 LTX_OMNICINE_DEFAULT_STRENGTH = 0.75
-LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH = 0.35
+LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH = 0.80
 LTX_DISTILLED_384_DEFAULT_STRENGTH = 0.50
 LTX_DISTILLED_8_STEP_SIGMAS = "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
 LTX_UPSCALE_REFINER_SIGMAS = "0.85, 0.7250, 0.4219, 0.0"
@@ -2339,14 +2339,10 @@ def _lora_is_compatible_with_preset(name: str, preset: str) -> bool:
 def _effective_ltx_lora_strength(checkpoint_name: str, lora_name: str, requested_strength: float) -> float:
     strength = max(-2.0, min(2.0, float(requested_strength)))
     lower = lora_name.lower()
-    checkpoint_lower = checkpoint_name.lower()
     if "distill" not in lower and "distilled" not in lower:
         return strength
 
     recommended = LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH if "condsafe" in lower else LTX_DISTILLED_384_DEFAULT_STRENGTH
-    already_fast = any(token in checkpoint_lower for token in ("lightspeed", "lightning", "turbo", "distill", "distilled"))
-    if already_fast:
-        recommended *= 0.5
     if strength >= 0.95:
         return recommended
     return min(strength, recommended)
@@ -3569,6 +3565,11 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
             if _ltx_lora_prefers_advanced_loader(selection[0]) == wants_advanced:
                 return remaining.pop(index)
         if wants_advanced:
+            current_lora = str((node.get("inputs") or {}).get("lora_name") or "")
+            if not _ltx_lora_prefers_advanced_loader(current_lora):
+                for index, selection in enumerate(remaining):
+                    if not _ltx_lora_prefers_advanced_loader(selection[0]):
+                        return remaining.pop(index)
             return None
         for index, selection in enumerate(remaining):
             if not _ltx_lora_prefers_advanced_loader(selection[0]):
@@ -3583,10 +3584,18 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
         and isinstance(node.get("inputs"), dict)
     ]
     remaining = list(selections)
-    for _node_id, node in existing_nodes:
+    for node_id, node in existing_nodes:
         selection = pop_selection_for_node(remaining, node)
         inputs = node.setdefault("inputs", {})
         if not selection:
+            if is_ltx and str(node.get("class_type", "")).lower() == "ltx2loraloaderadvanced":
+                current_lora = str(inputs.get("lora_name") or "")
+                if not _ltx_lora_prefers_advanced_loader(current_lora):
+                    model_value = inputs.get("model")
+                    if isinstance(model_value, list):
+                        _replace_model_refs(api, [node_id, 0], list(model_value))
+                    api.pop(node_id, None)
+                    continue
             if "strength_model" in inputs:
                 inputs["strength_model"] = 0.0
             elif "strength" in inputs:
@@ -3597,6 +3606,13 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
                 patch_ltx2_lora_inputs(inputs, 0.0)
             continue
         lora_name, strength_model, strength_clip = selection
+        if is_ltx and str(node.get("class_type", "")).lower() == "ltx2loraloaderadvanced" and not _ltx_lora_prefers_advanced_loader(lora_name):
+            model_value = inputs.get("model")
+            node["class_type"] = "LoraLoaderModelOnly"
+            node.setdefault("_meta", {})["title"] = f"LoRA - {Path(lora_name).name}"
+            inputs.clear()
+            if model_value is not None:
+                inputs["model"] = model_value
         strength_model = effective_strength(lora_name, strength_model)
         if model_only_lora and str(node.get("class_type", "")).lower() != "ltx2loraloaderadvanced":
             model_value = inputs.get("model")
