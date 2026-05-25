@@ -10,7 +10,16 @@ RESULTS.mkdir(exist_ok=True)
 BASE = "http://127.0.0.1:7861/app"
 SAMPLE = ROOT / "temp" / "extras_validation" / "sample.png"
 ALPHA = ROOT / "temp" / "extras_validation" / "alpha_source.png"
-THIRD = ROOT / "output" / "extras" / "image" / "20260525_054329_upscale_5681d9.png"
+THIRD = ROOT / "temp" / "extras_validation" / "third_reference.png"
+SAMPLE_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000a49444154789c63600000020001544a0d0a0000000049454e44ae426082"
+)
+
+
+def ensure_sample(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(SAMPLE_PNG + path.stem.encode("ascii"))
 
 
 def job_body() -> str:
@@ -30,6 +39,9 @@ def job_body() -> str:
 
 
 def main() -> None:
+    ensure_sample(SAMPLE)
+    ensure_sample(ALPHA)
+    ensure_sample(THIRD)
     payloads: list[dict[str, object]] = []
 
     def capture_generate(route: Route) -> None:
@@ -46,7 +58,7 @@ def main() -> None:
 
         page.goto(BASE, wait_until="networkidle", timeout=60000)
         page.get_by_role("button", name="LTX 2.3").click()
-        page.get_by_role("button", name="img2img").click()
+        page.get_by_role("button", name="img2img", exact=True).click()
         page.get_by_placeholder("Describe the image...").fill("ltx director contract")
         page.locator(".img2img-source input[type='file']").first.set_input_files(str(SAMPLE))
         extras = [str(ALPHA)]
@@ -54,7 +66,7 @@ def main() -> None:
             extras.append(str(THIRD))
         page.locator(".multi-reference-dropzone input[type='file']").set_input_files(extras)
         page.get_by_label("Toggle LTX Director").click()
-        page.get_by_role("button", name="Generate").click()
+        page.get_by_role("button", name="Generate").first.click()
         page.wait_for_timeout(500)
         page.screenshot(path=str(RESULTS / "app-smoke-director-contract.png"), full_page=True)
         browser.close()

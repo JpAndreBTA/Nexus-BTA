@@ -223,7 +223,7 @@ export function WorkflowPage() {
         </span>
       </header>
 
-      <div className="workflow-columns">
+      <div className="workflow-columns workflow-fullscreen">
         <aside className="surface workflow-sidebar">
           <label className="field">
             <span>Workflow</span>
@@ -333,6 +333,12 @@ export function WorkflowPage() {
               <LocateFixed size={14} />
             </button>
             <span className="workflow-select-count"><MousePointer2 size={12} /> {selectedNodeIds.length}</span>
+            {selectedWorkflow && (
+              <button className="mini-button" type="button" onClick={() => activateWorkflow(selectedWorkflow)} title="Activate workflow">
+                <Workflow size={14} />
+                Activate
+              </button>
+            )}
           </div>
           {analysis.isFetching && (
             <div className="workflow-loading">

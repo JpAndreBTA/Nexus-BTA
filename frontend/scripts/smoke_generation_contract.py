@@ -9,9 +9,19 @@ RESULTS = ROOT / "test-results"
 RESULTS.mkdir(exist_ok=True)
 BASE = "http://127.0.0.1:7861/app"
 SAMPLE = ROOT / "temp" / "extras_validation" / "sample.png"
+SAMPLE_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000a49444154789c63600000020001544a0d0a0000000049454e44ae426082"
+)
+
+
+def ensure_sample(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(SAMPLE_PNG + path.stem.encode("ascii"))
 
 
 def main() -> None:
+    ensure_sample(SAMPLE)
     captured: dict[str, object] = {}
 
     def capture_generate(route: Route) -> None:
@@ -64,17 +74,17 @@ def main() -> None:
         page.get_by_role("button", name="Activate").click()
 
         page.goto(BASE, wait_until="networkidle", timeout=60000)
-        page.get_by_role("button", name="img2img").click()
+        page.get_by_role("button", name="img2img", exact=True).click()
         page.get_by_placeholder("Describe the image...").fill("contract smoke inpaint")
         page.locator(".img2img-source input[type='file']").first.set_input_files(str(SAMPLE))
-        page.get_by_role("button", name="Inpaint", exact=True).click()
+        page.get_by_role("button", name="Inpaint Canvas").click()
 
-        canvas = page.locator("canvas[aria-label='Inpaint mask canvas']")
+        canvas = page.locator(".studio-inpaint-workspace canvas[aria-label='Inpaint mask canvas']").first
         canvas.wait_for(timeout=30000)
         page.wait_for_function(
             """
             () => {
-              const canvas = document.querySelector('canvas[aria-label="Inpaint mask canvas"]');
+              const canvas = document.querySelector('.studio-inpaint-workspace canvas[aria-label="Inpaint mask canvas"]');
               return canvas && canvas.width > 16 && canvas.height > 16;
             }
             """
@@ -109,9 +119,10 @@ def main() -> None:
         if not masked:
             raise AssertionError("Inpaint canvas did not record mask pixels.")
 
+        page.locator("details.control-section").filter(has_text="ControlNet / Reference").locator("summary").click()
         page.get_by_label("Toggle ControlNet").click()
         page.locator(".controlnet-panel input[type='file']").set_input_files(str(SAMPLE))
-        page.get_by_role("button", name="Generate").click()
+        page.get_by_role("button", name="Generate").first.click()
         page.wait_for_timeout(300)
         page.screenshot(path=str(RESULTS / "app-smoke-generation-contract.png"), full_page=True)
         browser.close()

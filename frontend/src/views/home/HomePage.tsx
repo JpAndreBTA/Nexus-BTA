@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Clapperboard, FilePlus2, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Play, Send, Square, Workflow, X } from 'lucide-react';
+import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Play, Save, Send, SlidersHorizontal, Square, Workflow, X } from 'lucide-react';
 
 import { nexusApi } from '../../api/nexusClient';
 import type { CatalogAsset, GenerateRequest, GenerationJob } from '../../api/types';
@@ -124,7 +124,7 @@ export function HomePage() {
   const [localError, setLocalError] = useState('');
   const [loraSearch, setLoraSearch] = useState('');
   const [loraModalOpen, setLoraModalOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'linear' | 'inpaint' | 'workflow'>('linear');
+  const [viewMode, setViewMode] = useState<'director' | 'linear' | 'inpaint' | 'workflow'>('linear');
 
   const allModels = useMemo(() => modelOptions(catalog.data), [catalog.data]);
   const models = useMemo(() => {
@@ -345,36 +345,20 @@ export function HomePage() {
         .filter(Boolean)
         .join(' ')}
     >
-      <header className="page-controls">
-        <span className="route-sentinel" data-route="studio" aria-label="Studio workspace" />
-        <div className="studio-header-tools">
-          <button className="status-pill" type="button" onClick={() => ui.toggleStudioControls()}>
-            {ui.studioControlsCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
-            Controls
-          </button>
-          <button className="status-pill" type="button" onClick={() => ui.toggleStudioGallery()}>
-            {ui.studioGalleryOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
-            Gallery
-          </button>
-        </div>
-      </header>
+      <span className="route-sentinel" data-route="studio" aria-label="Studio workspace" />
 
       <div className="studio-columns">
         <aside className="surface tool-panel studio-controls-panel">
           <button className="collapse-handle" type="button" onClick={() => ui.toggleStudioControls()} title={ui.studioControlsCollapsed ? 'Show controls' : 'Hide controls'}>
             {ui.studioControlsCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
-          <div className="button-grid">
-            <button className={generation.activity === 'txt2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('txt2img')}>
-              txt2img
-            </button>
-            <button className={generation.activity === 'img2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('img2img')}>
-              img2img
-            </button>
-          </div>
-
-          <div className="compact-note">
-            {generation.modelName || generation.modelPath ? `Checkpoint: ${generation.modelName || generation.modelPath}` : 'Checkpoint: Automatic'} / Workflow: {generation.workflowName || 'Default backend route'}
+          <button type="button" className="primary-button studio-generate-top" onClick={generate} disabled={processing}>
+            {processing ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}
+            Generate
+          </button>
+          <div className="button-grid mode-switch">
+            <button className={generation.activity === 'txt2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('txt2img')}>txt2img</button>
+            <button className={generation.activity === 'img2img' ? 'active' : ''} type="button" onClick={() => generation.setActivity('img2img')}>img2img</button>
           </div>
 
           <label className="field">
@@ -387,16 +371,71 @@ export function HomePage() {
             <textarea value={generation.negativePrompt} onChange={(event) => generation.setNegativePrompt(event.currentTarget.value)} placeholder="Avoid..." />
           </label>
 
-          {generation.activity === 'img2img' && (
-            <div className="img2img-source">
-              <div className="segmented-control compact-control">
-                <button className={generation.img2imgMode === 'image' ? 'active' : ''} type="button" onClick={() => generation.setImg2ImgMode('image')}>
-                  Image
-                </button>
-                <button className={generation.img2imgMode === 'inpaint' ? 'active' : ''} type="button" onClick={() => generation.setImg2ImgMode('inpaint')}>
-                  Inpaint
-                </button>
+          <details className="control-section" open>
+            <summary>Concepts (LoRA) <button className="mini-button" type="button" onClick={(event) => { event.preventDefault(); setLoraModalOpen(true); }}><FilePlus2 size={13} /> Add</button></summary>
+            <div className="control-stack">
+              {loraStore.activeLoras.length > 0 ? (
+                <div className="active-lora-list">
+                  {loraStore.activeLoras.map((lora) => (
+                    <div className="active-lora" key={lora.relative_name}>
+                      <span title={lora.relative_name}>{lora.name}</span>
+                      <input type="number" min={-2} max={2} step={0.05} value={lora.strength} onChange={(event) => loraStore.updateStrength(lora.relative_name, Number(event.currentTarget.value))} />
+                      <button type="button" onClick={() => loraStore.removeLora(lora.relative_name)}>Remove</button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="compact-note">No active LoRA concepts.</p>
+              )}
+            </div>
+          </details>
+
+          <details className="control-section">
+            <summary>VAE / Text Encoder</summary>
+            <div className="control-stack">
+              <label className="field"><span>Video VAE</span><input value={generation.videoVae} onChange={(event) => generation.setVideoVae(event.currentTarget.value)} /></label>
+              <label className="field"><span>Audio VAE</span><input value={generation.audioVae} onChange={(event) => generation.setAudioVae(event.currentTarget.value)} /></label>
+            </div>
+          </details>
+
+          <details className="control-section">
+            <summary>{generation.preset === 'Qwen' ? 'Lightning LoRA' : 'Distilled LoRA'}</summary>
+            <div className="control-stack">
+              <p className="compact-note">{generation.preset === 'Qwen' ? 'Qwen routes use lightning/reference helpers when available.' : 'Distilled route helpers are resolved by the backend template.'}</p>
+            </div>
+          </details>
+
+          <details className="control-section" open>
+            <summary>Frame Dimensions</summary>
+            <div className="control-stack">
+              <div className="two-col">
+                <label className="field"><span>Width</span><input type="number" min={64} step={8} value={generation.width} onChange={(event) => generation.setSize(Number(event.currentTarget.value), generation.height)} /></label>
+                <label className="field"><span>Height</span><input type="number" min={64} step={8} value={generation.height} onChange={(event) => generation.setSize(generation.width, Number(event.currentTarget.value))} /></label>
               </div>
+              <div className="button-grid">
+                <button type="button" onClick={() => generation.setSize(832, 480)}>16:9</button>
+                <button type="button" onClick={() => generation.setSize(512, 512)}>1:1</button>
+              </div>
+            </div>
+          </details>
+
+          <details className="control-section" open>
+            <summary>Generation Settings <span>Synced</span></summary>
+            <div className="control-stack">
+              <div className="two-col">
+                <label className="field"><span>Sampling Method</span><select value={generation.sampler} onChange={(event) => generation.setSampler(event.currentTarget.value)}><option value="euler_ancestral">Euler Ancestral</option><option value="euler_ancestral_cfg_pp">Euler CFG++</option><option value="euler">Euler</option><option value="dpmpp_2m">DPM++ 2M</option><option value="dpmpp_sde">DPM++ SDE</option></select></label>
+                <label className="field"><span>Schedule Type</span><select value={generation.scheduler} onChange={(event) => generation.setScheduler(event.currentTarget.value)}><option value="karras">Karras</option><option value="normal">Normal</option><option value="quadratic">Quadratic</option><option value="simple">Simple</option><option value="sgm_uniform">SGM Uniform</option></select></label>
+              </div>
+              <div className="two-col">
+                <label className="field"><span>Steps</span><input type="number" min={1} max={150} value={generation.steps} onChange={(event) => generation.setSteps(Number(event.currentTarget.value))} /></label>
+                <label className="field"><span>CFG Scale</span><input type="number" min={0} max={30} step={0.1} value={generation.cfg} onChange={(event) => generation.setCfg(Number(event.currentTarget.value))} /></label>
+              </div>
+              <label className="field"><span>Seed</span><input type="number" value={generation.seed} onChange={(event) => generation.setSeed(Number(event.currentTarget.value))} /></label>
+            </div>
+          </details>
+
+          {(viewMode === 'inpaint' || generation.activity === 'img2img') && (
+            <div className="img2img-source">
               <label className="dropzone small-dropzone">
                 <input
                   type="file"
@@ -468,6 +507,8 @@ export function HomePage() {
             </div>
           )}
 
+          <details className="control-section">
+            <summary>ControlNet / Reference</summary>
           <section className="controlnet-panel">
             <div className="control-row">
               <span>ControlNet</span>
@@ -555,8 +596,11 @@ export function HomePage() {
             )}
             {!controlNetCompatible && <p className="compact-note">ControlNet is available for SD, SDXL and LTX routes.</p>}
           </section>
+          </details>
 
           {videoMode && (
+            <details className="control-section" open={generation.preset.toLowerCase() === 'ltx'}>
+              <summary>Video / Motion</summary>
             <section className="video-panel">
               <div className="control-row">
                 <span>{generation.preset} Video</span>
@@ -626,9 +670,12 @@ export function HomePage() {
               )}
               <p className="compact-note">{generation.preset === 'Wan' ? 'Wan I2V uses the img2img reference as the start frame.' : 'LTX img2video uses the img2img reference for the linear route.'}</p>
             </section>
+            </details>
           )}
 
           {generation.preset.toLowerCase() === 'ltx' && (
+            <details className="control-section" open>
+              <summary>LTX 2.3 Director</summary>
             <section className="director-panel">
               <div className="control-row">
                 <span>LTX Director</span>
@@ -685,89 +732,24 @@ export function HomePage() {
                 </div>
               )}
             </section>
+            </details>
           )}
 
-          <div className="two-col">
-            <label className="field">
-              <span>Width</span>
-              <input type="number" min={64} step={8} value={generation.width} onChange={(event) => generation.setSize(Number(event.currentTarget.value), generation.height)} />
-            </label>
-            <label className="field">
-              <span>Height</span>
-              <input type="number" min={64} step={8} value={generation.height} onChange={(event) => generation.setSize(generation.width, Number(event.currentTarget.value))} />
-            </label>
-          </div>
-
-          <div className="two-col">
-            <label className="field">
-              <span>Steps</span>
-              <input type="number" min={1} max={150} value={generation.steps} onChange={(event) => generation.setSteps(Number(event.currentTarget.value))} />
-            </label>
-            <label className="field">
-              <span>CFG</span>
-              <input type="number" min={0} max={30} step={0.1} value={generation.cfg} onChange={(event) => generation.setCfg(Number(event.currentTarget.value))} />
-            </label>
-          </div>
-
-          <div className="two-col">
-            <label className="field">
-              <span>Sampler</span>
-              <select value={generation.sampler} onChange={(event) => generation.setSampler(event.currentTarget.value)}>
-                <option value="euler_ancestral">Euler Ancestral</option>
-                <option value="euler_ancestral_cfg_pp">Euler Ancestral CFG++</option>
-                <option value="euler">Euler</option>
-                <option value="dpmpp_2m">DPM++ 2M</option>
-                <option value="dpmpp_sde">DPM++ SDE</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Scheduler</span>
-              <select value={generation.scheduler} onChange={(event) => generation.setScheduler(event.currentTarget.value)}>
-                <option value="karras">Karras</option>
-                <option value="normal">Normal</option>
-                <option value="quadratic">Quadratic</option>
-                <option value="simple">Simple</option>
-                <option value="sgm_uniform">SGM Uniform</option>
-              </select>
-            </label>
-          </div>
-
-          <label className="field">
-            <span>Seed</span>
-            <input type="number" value={generation.seed} onChange={(event) => generation.setSeed(Number(event.currentTarget.value))} />
-          </label>
-
-          <section className="lora-panel">
-            <div className="control-row">
-              <span>LoRAs</span>
-              <div className="inline-actions">
-                <button className="mini-button" type="button" onClick={() => setLoraModalOpen(true)}>
-                  <FilePlus2 size={13} />
-                  Add
-                </button>
-                <button className="mini-button" type="button" onClick={() => loraStore.clearLoras()} disabled={!loraStore.activeLoras.length}>
-                  Clear
-                </button>
-              </div>
-            </div>
-            {loraStore.activeLoras.length > 0 && (
-              <div className="active-lora-list">
-                {loraStore.activeLoras.map((lora) => (
-                  <div className="active-lora" key={lora.relative_name}>
-                    <span title={lora.relative_name}>{lora.name}</span>
-                    <input type="number" min={-2} max={2} step={0.05} value={lora.strength} onChange={(event) => loraStore.updateStrength(lora.relative_name, Number(event.currentTarget.value))} />
-                    <button type="button" onClick={() => loraStore.removeLora(lora.relative_name)}>
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          <details className="control-section">
+            <summary>Refiner</summary>
+            <p className="compact-note">Refiner controls are template-aware and remain disabled unless the selected workflow exposes them.</p>
+          </details>
+          <details className="control-section">
+            <summary>Advanced</summary>
+            <p className="compact-note">{generation.modelName || generation.modelPath ? `Checkpoint: ${generation.modelName || generation.modelPath}` : 'Checkpoint: Automatic'} / Workflow: {generation.workflowName || 'Default backend route'}</p>
+          </details>
         </aside>
 
         <main className="surface preview-panel studio-preview">
-          <div className="studio-view-strip">
+          <div className="studio-subheader">
+            <div />
+            <div className="studio-view-strip">
+            {generation.preset.toLowerCase() === 'ltx' && <button className={viewMode === 'director' ? 'active' : ''} type="button" onClick={() => { setViewMode('director'); generation.setDirectorEnabled(true); }}><Clapperboard size={13} /> LTX 2.3 Director</button>}
             <button className={viewMode === 'linear' ? 'active' : ''} type="button" onClick={() => setViewMode('linear')}>Linear Viewer</button>
             <button
               className={viewMode === 'inpaint' ? 'active' : ''}
@@ -784,18 +766,47 @@ export function HomePage() {
               <Workflow size={13} />
               Node Workflow
             </button>
+            </div>
+            <button className="studio-gallery-toggle" type="button" onClick={() => ui.toggleStudioGallery()}><Images size={14} /> Gallery</button>
           </div>
-          <div className="preview-title">Live Output Preview</div>
-          {previewUrl ? (
-            previewIsVideo ? (
-              <video className="extras-media" src={previewUrl} controls playsInline />
-            ) : (
-              <img className="extras-media" src={previewUrl} alt="Studio output preview" />
-            )
-          ) : (
-            <div className="preview-empty">
-              <Play size={38} />
-              <p>Generated outputs will appear here.</p>
+          <div className="preview-actions">
+            <button type="button" className="icon-button" title="Clear preview" onClick={() => setJobId('')}><X size={14} /></button>
+            <button type="button" className="icon-button" title="Adjust preview"><SlidersHorizontal size={14} /></button>
+            <button type="button" className="icon-button" title="Save preview"><Save size={14} /></button>
+          </div>
+          {viewMode === 'linear' && (
+            <div className="studio-preview-content">
+              {previewUrl ? (
+                previewIsVideo ? <video className="extras-media" src={previewUrl} controls playsInline /> : <img className="extras-media" src={previewUrl} alt="Studio output preview" />
+              ) : (
+                <div className="preview-empty"><Images size={38} /><p>No output loaded</p><span>Generated files appear from ./output</span></div>
+              )}
+            </div>
+          )}
+          {viewMode === 'inpaint' && (
+            <div className="studio-inpaint-workspace">
+              <div className="inpaint-tool-rail"><button className="active" type="button"><Brush size={16} /></button><button type="button"><Grid3X3 size={16} /></button><button type="button"><X size={16} /></button></div>
+              <div className="studio-inpaint-stage">
+                {generation.referenceImage ? <InpaintCanvas image={generation.referenceImage} brushSize={generation.brushSize} onBrushSizeChange={generation.setBrushSize} onMaskChange={generation.setInpaintMaskImage} /> : <div className="preview-empty"><span>No source image</span></div>}
+              </div>
+              <div className="inpaint-bottom-bar"><span>Brush</span><input type="range" min={4} max={128} value={generation.brushSize} onChange={(event) => generation.setBrushSize(Number(event.currentTarget.value))} /><strong>{generation.brushSize}px</strong></div>
+            </div>
+          )}
+          {viewMode === 'workflow' && (
+            <div className="studio-node-workspace">
+              <div className="studio-node-group">LTX 2.3 Default</div>
+              {['Load Model', 'Positive Prompt', 'Video / Motion Settings', 'Preview Output', 'Save Video', 'Reference Image', 'Inpaint Mask', 'Video VAE / Audio VAE'].map((label, index) => (
+                <article className={`studio-template-node node-${index % 5}`} key={label} style={{ left: `${8 + (index % 4) * 22}%`, top: `${14 + Math.floor(index / 4) * 34}%` }}>
+                  <strong>{label}</strong><span>{index === 2 ? `${alignedFrames} frames / ${generation.videoFps} fps` : 'template synced'}</span>
+                </article>
+              ))}
+            </div>
+          )}
+          {viewMode === 'director' && (
+            <div className="director-suite">
+              <div className="director-stats"><span>Duration <strong>{generation.directorDuration.toFixed(2)}s</strong></span><span>Frame Rate <strong>{generation.videoFps} fps</strong></span><span>Custom Width <strong>{generation.width}</strong></span><span>Custom Height <strong>{generation.height}</strong></span><span>Resize <strong>{generation.directorResizeMethod}</strong></span></div>
+              <div className="director-timeline"><div className="director-segment selected">Segment #1<br />image</div><div className="director-segment motion">Segment #2<br />new text-only motion beat</div><div className="director-audio">custom audio waveform</div></div>
+              <div className="director-prompts"><textarea value={generation.directorLocalPrompt} onChange={(event) => generation.setDirectorPrompts(event.currentTarget.value, generation.directorLocalNegative)} placeholder="Prompt for selected segment..." /><textarea value={generation.directorLocalNegative} onChange={(event) => generation.setDirectorPrompts(generation.directorLocalPrompt, event.currentTarget.value)} placeholder="Negative prompt for selected segment..." /></div>
             </div>
           )}
 
