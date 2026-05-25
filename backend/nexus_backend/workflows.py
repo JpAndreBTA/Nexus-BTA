@@ -1492,23 +1492,35 @@ def build_basic_qwen_image_workflow(
             workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
             workflow[scale_id]["_meta"]["title"] = f"Resize QWEN Reference {index} To Side Menu"
         if len(refs) == 1:
+            workflow["70"] = _qwen_flux_image_scale_node(["60", 0], "QWEN Base FluxKontext Image Scale")
             workflow["7"] = {
                 "class_type": "VAEEncode",
-                "inputs": {"pixels": ["60", 0], "vae": ["3", 0]},
+                "inputs": {"pixels": ["70", 0], "vae": ["3", 0]},
                 "_meta": {"title": "Encode QWEN Base Reference"},
             }
-            workflow["10"]["inputs"]["model"] = model_ref
             workflow["10"]["inputs"]["latent_image"] = ["7", 0]
             workflow["5"] = {
-                "class_type": "TextEncodeQwenImageEdit",
-                "inputs": {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0], "image": ["60", 0]},
+                "class_type": "TextEncodeQwenImageEditPlus",
+                "inputs": {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0], "image1": ["70", 0]},
                 "_meta": {"title": "Positive Prompt"},
             }
             workflow["6"] = {
-                "class_type": "TextEncodeQwenImageEdit",
-                "inputs": {"clip": ["2", 0], "prompt": request.negative_prompt or "", "vae": ["3", 0]},
+                "class_type": "TextEncodeQwenImageEditPlus",
+                "inputs": {"clip": ["2", 0], "prompt": request.negative_prompt or "", "vae": ["3", 0], "image1": ["70", 0]},
                 "_meta": {"title": "QWEN Negative Prompt"},
             }
+            workflow["15"] = {
+                "class_type": "FluxKontextMultiReferenceLatentMethod",
+                "inputs": {"conditioning": ["5", 0], "reference_latents_method": "index_timestep_zero"},
+                "_meta": {"title": "QWEN Reference Method"},
+            }
+            workflow["16"] = {
+                "class_type": "FluxKontextMultiReferenceLatentMethod",
+                "inputs": {"conditioning": ["6", 0], "reference_latents_method": "index_timestep_zero"},
+                "_meta": {"title": "QWEN Negative Reference Method"},
+            }
+            workflow["10"]["inputs"]["positive"] = ["15", 0]
+            workflow["10"]["inputs"]["negative"] = ["16", 0]
         else:
             workflow["7"] = {
                 "class_type": "VAEEncode",
@@ -2344,6 +2356,8 @@ def _normalize_lora_name(value: Any) -> str:
             break
     if name.lower().startswith("ltx2\\"):
         name = "ltx\\" + name.split("\\", 1)[1]
+    if name.lower().startswith("qwenqwen"):
+        name = "qwen\\" + name[4:]
     return name
 
 
@@ -3273,6 +3287,7 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
     if isinstance(raw_refs, str):
         raw_refs = [raw_refs]
     multi_reference = len([str(name) for name in raw_refs if str(name or "").strip()][:3]) > 1
+    use_qwen_plus_route = True
 
     loader_id = _find_qwen_reference_loader_id(api, 1, reference_image) or _add_load_image_node(api, reference_image, "Reference Image 1")
     if not loader_id:
@@ -3288,11 +3303,7 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
         request.height,
         "Resize QWEN Reference 1 To Side Menu",
     ) or [str(loader_id), 0]
-    qwen_base_ref = (
-        _ensure_qwen_flux_image_ref(api, scaled_loader_ref, "QWEN Base FluxKontext Image Scale") or scaled_loader_ref
-        if multi_reference
-        else scaled_loader_ref
-    )
+    qwen_base_ref = _ensure_qwen_flux_image_ref(api, scaled_loader_ref, "QWEN Base FluxKontext Image Scale") or scaled_loader_ref
 
     vae_ref = _find_vae_ref(api)
     positive_node_id: str | None = None
@@ -3303,7 +3314,7 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
         class_lower = str(node.get("class_type", "")).lower()
         if class_lower not in {"textencodeqwenimageedit", "textencodeqwenimageeditplus"}:
             continue
-        node["class_type"] = "TextEncodeQwenImageEditPlus" if multi_reference else "TextEncodeQwenImageEdit"
+        node["class_type"] = "TextEncodeQwenImageEditPlus" if use_qwen_plus_route else "TextEncodeQwenImageEdit"
         inputs = node.setdefault("inputs", {})
         if not isinstance(inputs, dict):
             continue
@@ -3315,7 +3326,7 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
             inputs["prompt"] = request.negative_prompt if "negative" in title else request.prompt
         if vae_ref and "vae" not in inputs:
             inputs["vae"] = vae_ref
-        if multi_reference:
+        if use_qwen_plus_route:
             inputs.pop("image", None)
             inputs["image1"] = qwen_base_ref
         else:
@@ -3355,7 +3366,7 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
     if vae_ref:
         latent_inputs["vae"] = vae_ref
     sampler_inputs = api[sampler_id].setdefault("inputs", {})
-    if multi_reference:
+    if use_qwen_plus_route:
         sampler_inputs["latent_image"] = [latent_id, 0]
     else:
         api[latent_id]["class_type"] = "VAEEncode"
@@ -3368,13 +3379,13 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
         if model_loader_ref:
             sampler_inputs["model"] = model_loader_ref
     if positive_node_id:
-        if multi_reference:
+        if use_qwen_plus_route:
             method_id = _ensure_conditioning_method_node(api, "QWEN Reference Method", [positive_node_id, 0])
             sampler_inputs["positive"] = [method_id, 0]
         else:
             sampler_inputs["positive"] = [positive_node_id, 0]
     if negative_node_id:
-        if multi_reference:
+        if use_qwen_plus_route:
             method_id = _ensure_conditioning_method_node(api, "QWEN Negative Reference Method", [negative_node_id, 0])
             sampler_inputs["negative"] = [method_id, 0]
         else:

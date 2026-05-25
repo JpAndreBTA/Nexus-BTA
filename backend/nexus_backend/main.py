@@ -892,7 +892,7 @@ def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[st
             resolved = path.resolve()
             if not resolved.is_relative_to(root):
                 continue
-            if path.stat().st_mtime + 2 < start_timestamp:
+            if path.stat().st_mtime + 30 < start_timestamp:
                 continue
         except Exception:
             continue
@@ -917,7 +917,7 @@ def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[st
 
 async def _recover_outputs_from_history(prompt_id: str | None, start_timestamp: float) -> list[dict[str, Any]]:
     if prompt_id:
-        for _ in range(6):
+        for _ in range(12):
             try:
                 history = await comfy.history(prompt_id)
                 outputs = extract_outputs(history.get(prompt_id, {}))
@@ -926,7 +926,7 @@ async def _recover_outputs_from_history(prompt_id: str | None, start_timestamp: 
             except Exception:
                 pass
             await asyncio.sleep(1)
-    return _recent_output_files(start_timestamp)
+    return _recent_output_files(start_timestamp - 300)
 
 
 def _read_output_metadata(path: Path) -> dict[str, Any]:

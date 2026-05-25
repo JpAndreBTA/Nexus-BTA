@@ -3242,7 +3242,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 models: ['Qwen-Image-Edit-2509-Q4_K_M.gguf', 'Qwen_Image_20B_Q4_K_M.gguf', 'Qwen_Image_Lightning.safetensors'],
                 width: 512,
                 height: 512,
-                denoise: 0.75,
+                denoise: 1,
                 batchSize: 1,
                 steps: 4,
                 cfg: 1,
@@ -12839,7 +12839,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     return name && !/^(none|automatic|auto)$/i.test(name);
                 });
                 const promptValue = document.getElementById('posPrompt')?.value || 'Change only the requested detail while preserving the reference image.';
-                const qwenUseMultiRefs = referenceExtraSlotsEnabled() && (referenceImageExtraDataUrls || []).some(item => item?.src);
+                const qwenUseMultiRefs = true;
                 const qwenNodes = [
                     { id: 'model', class_type: qwenModelIsGguf ? 'UnetLoaderGGUF' : 'UNETLoader', title: 'Load QWEN Edit Model', x: 70, y: 110, width: 260, height: 118, inputs: [], outputs: ['MODEL'], widgets: qwenModelIsGguf ? [{ name: 'unet_name', value: selectedModelName }] : [{ name: 'unet_name', value: selectedModelName }, { name: 'weight_dtype', value: 'default' }], color: '#1f3b63' },
                     { id: 'edit_lora', class_type: 'LoraLoaderModelOnly', title: 'QWEN Edit Lightning LoRA', x: 370, y: 110, width: 260, height: 118, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: qwenEditLoraName }, { name: 'strength_model', value: qwenEditLoraStrength }], color: '#4c1d95' },
@@ -13431,6 +13431,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 payload.img2img.batch_count = 1;
                 payload.distilled_loras = payload.distilled_loras.filter(item => /qwen.*edit.*lightning/i.test(String(item.name || '')));
                 payload.video.qwen_auto_edit_lora = payload.distilled_loras.length > 0;
+                payload.runtime.attention_backend = 'PyTorch SDPA';
+                payload.runtime.disable_xformers = true;
             }
             if (activePreset === 'LTX' && payload.video.omnicine_enabled && isOmnicineLoraName(payload.video.omnicine_lora)) {
                 const existingOmni = payload.distilled_loras.some(item => ltxDirectorNormalizeLoraName(item.name).toLowerCase() === ltxDirectorNormalizeLoraName(payload.video.omnicine_lora).toLowerCase());
