@@ -8,6 +8,7 @@ $root = $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath(
 $python = Join-Path $root "runtime\.venv\Scripts\python.exe"
 $bootstrap = Join-Path $root "scripts\bootstrap_nexus_runtime.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
+$wan22Deps = Join-Path $root "scripts\install_wan22_deps.ps1"
 $terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
 
 if (Test-Path -LiteralPath $terminalHelpers) {
@@ -52,6 +53,10 @@ if (Test-Path -LiteralPath $python) {
 
     if (Test-Path -LiteralPath $ltxDirectorDeps) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $python
+    }
+
+    if (Test-Path -LiteralPath $wan22Deps) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $python
     }
 } else {
     Write-NexusLine "Runtime Python not found; run run.bat after bootstrap." "Warn"

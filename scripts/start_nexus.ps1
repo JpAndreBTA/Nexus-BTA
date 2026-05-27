@@ -15,6 +15,7 @@ $bootstrap = Join-Path $root "scripts\bootstrap_nexus_runtime.ps1"
 $watcher = Join-Path $root "scripts\watch_launcher.ps1"
 $runtimeHotfixes = Join-Path $root "scripts\apply_runtime_hotfixes.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
+$wan22Deps = Join-Path $root "scripts\install_wan22_deps.ps1"
 $terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
 $uiUrl = "http://127.0.0.1:7861/ui"
 
@@ -119,6 +120,11 @@ if (!(Test-Path -LiteralPath $python)) {
 if (Test-Path -LiteralPath $ltxDirectorDeps) {
     Write-NexusSection "Requirements"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $python
+}
+
+if (Test-Path -LiteralPath $wan22Deps) {
+    Write-NexusSection "Wan 2.2"
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $python
 }
 
 if (Test-Path -LiteralPath $runtimeHotfixes) {
