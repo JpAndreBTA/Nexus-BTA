@@ -961,6 +961,179 @@ def _annotate_output_metadata(outputs: list[dict[str, Any]], request: GenerateRe
             continue
 
 
+def _safe_output_media_path(output: dict[str, Any]) -> Path | None:
+    relative = str(output.get("path") or output.get("filename") or "").strip()
+    if not relative:
+        return None
+    try:
+        path = (settings.output_dir / relative).resolve()
+        if not path.exists() or not path.is_relative_to(settings.output_dir.resolve()):
+            return None
+    except Exception:
+        return None
+    return path
+
+
+def _input_reference_path(name: str | None) -> Path | None:
+    if not name:
+        return None
+    try:
+        path = (settings.input_dir / str(name)).resolve()
+        if path.exists() and path.is_file() and path.is_relative_to(settings.input_dir.resolve()):
+            return path
+    except Exception:
+        return None
+    return None
+
+
+def _director_endpoint_reference_paths(request: GenerateRequest) -> tuple[Path | None, Path | None]:
+    director = getattr(request, "director", None)
+    if not isinstance(director, dict):
+        return None, None
+    timeline = director.get("timeline_data") if isinstance(director.get("timeline_data"), dict) else {}
+    visual_segments = [
+        segment
+        for segment in timeline.get("segments", []) or []
+        if isinstance(segment, dict) and str(segment.get("sourceType") or segment.get("type") or "image").lower() in {"image", "video"}
+    ]
+    visual_segments.sort(key=lambda item: int(item.get("start") or 0))
+    paths: list[Path] = []
+    for index, segment in enumerate(visual_segments):
+        image_value = str(segment.get("imageB64") or segment.get("imageSrc") or "").strip()
+        image_file = str(segment.get("imageFile") or "").strip()
+        if image_value.startswith("data:image/"):
+            paths.append(_input_reference_path(_write_input_data_image(image_value, f"nexus_director_frame_{index + 1}")) or Path())
+            continue
+        if image_file:
+            candidate = _input_reference_path(image_file)
+            if candidate:
+                paths.append(candidate)
+    paths = [path for path in paths if path and path.exists()]
+    if not paths:
+        return None, None
+    return paths[0], paths[-1] if len(paths) > 1 else paths[0]
+
+
+def _replace_video_frame_with_image(frame_path: Path, image_path: Path, width: int, height: int) -> bool:
+    ffmpeg = _ffmpeg_binary()
+    if not ffmpeg:
+        return False
+    filter_expr = (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
+    )
+    command = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(image_path),
+        "-vf",
+        filter_expr,
+        "-frames:v",
+        "1",
+        str(frame_path),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    return result.returncode == 0
+
+
+def _video_dimensions(video_path: Path) -> tuple[int, int]:
+    ffprobe = _ffprobe_binary()
+    if not ffprobe:
+        return 512, 512
+    command = [
+        ffprobe,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "csv=s=x:p=0",
+        str(video_path),
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        width, height = [int(part) for part in result.stdout.strip().split("x", 1)]
+        return max(1, width), max(1, height)
+    except Exception:
+        return 512, 512
+
+
+def _lock_video_endpoint_frames(video_path: Path, start_image: Path | None, end_image: Path | None) -> bool:
+    if not start_image and not end_image:
+        return False
+    ffmpeg = _ffmpeg_binary()
+    if not ffmpeg or not video_path.exists():
+        return False
+    temp_root = settings.temp_dir / f"ltx_frame_lock_{uuid.uuid4().hex[:8]}"
+    frames_dir = temp_root / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    locked_video = temp_root / "locked.mp4"
+    try:
+        extract_command = [ffmpeg, "-y", "-i", str(video_path), str(frames_dir / "frame_%06d.png")]
+        if subprocess.run(extract_command, capture_output=True, text=True).returncode != 0:
+            return False
+        frames = sorted(frames_dir.glob("frame_*.png"))
+        if not frames:
+            return False
+        width, height = _video_dimensions(video_path)
+        changed = False
+        if start_image and start_image.exists():
+            changed = _replace_video_frame_with_image(frames[0], start_image, width, height) or changed
+        if end_image and end_image.exists() and len(frames) > 1:
+            changed = _replace_video_frame_with_image(frames[-1], end_image, width, height) or changed
+        if not changed:
+            return False
+        fps = max(1.0, min(120.0, _ffprobe_fps(video_path)))
+        encode_command = [
+            ffmpeg,
+            "-y",
+            "-framerate",
+            f"{fps:.6f}",
+            "-i",
+            str(frames_dir / "frame_%06d.png"),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "16",
+            str(locked_video),
+        ]
+        if subprocess.run(encode_command, capture_output=True, text=True).returncode != 0 or not locked_video.exists():
+            return False
+        shutil.move(str(locked_video), str(video_path))
+        return True
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def _apply_ltx_reference_frame_lock(
+    outputs: list[dict[str, Any]],
+    request: GenerateRequest,
+    reference_image_names: list[str],
+) -> None:
+    if request.preset.lower() != "ltx":
+        return
+    start_image = _input_reference_path(reference_image_names[0]) if reference_image_names else None
+    end_image = _input_reference_path(reference_image_names[1]) if len(reference_image_names) > 1 else None
+    if getattr(request, "workspace", "") == "director":
+        director_start, director_end = _director_endpoint_reference_paths(request)
+        start_image = director_start or start_image
+        end_image = director_end or end_image
+    if not start_image and not end_image:
+        return
+    for output in outputs:
+        path = _safe_output_media_path(output)
+        if not path or path.suffix.lower() not in {".mp4", ".webm", ".mkv", ".mov", ".avi"}:
+            continue
+        if _lock_video_endpoint_frames(path, start_image, end_image):
+            output.setdefault("metadata", {})
+            output["ltx_frame_lock"] = True
+
+
 def _output_slug(value: str, fallback: str = "generation") -> str:
     text = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(value or "").strip())
     text = text.strip("._-")
@@ -2160,7 +2333,7 @@ def _find_video2video_workflow(preset: str) -> Path | None:
 
 
 def _cleanup_generation_temp() -> None:
-    for pattern in ("nexus_reference_*", "nexus_base_video_*", "nexus_mask_*", "nexus_controlnet_*", "nexus_director_audio_*"):
+    for pattern in ("nexus_reference_*", "nexus_base_video_*", "nexus_mask_*", "nexus_controlnet_*", "nexus_director_audio_*", "nexus_director_frame_*"):
         for path in settings.input_dir.glob(pattern):
             if path.is_file():
                 path.unlink(missing_ok=True)
@@ -3437,6 +3610,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if not outputs:
             await asyncio.sleep(1.0)
             outputs = _cleanup_video_sidecar_images(_recent_output_files(generation_started_at - 300, limit=20), generation_started_at)
+        _apply_ltx_reference_frame_lock(outputs, request, reference_image_names)
         _annotate_output_metadata(outputs, request, assets)
         _cleanup_generation_temp()
         response = GenerateResponse(

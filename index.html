@@ -7870,6 +7870,17 @@
             `;
         }
 
+        function ltxDirectorEffectivePrompt(segment) {
+            const base = String(segment?.prompt || '').trim() || 'director timeline segment';
+            if (!segment?.transitionLoraEnabled || !segment?.transitionPrompt) return base;
+            const addon = String(segment.transitionPrompt || '')
+                .replace(/\bzhuanchang\b/ig, '')
+                .replace(/\s+,/g, ',')
+                .replace(/,+\s*$/g, '')
+                .trim();
+            return addon ? `${base}, ${addon}` : base;
+        }
+
         function ltxDirectorContiguousPromptPlan(segments, fps, durationFrames) {
             const sorted = [...(segments || [])].sort((a, b) => Number(a.start || 0) - Number(b.start || 0));
             const lengths = [];
@@ -7892,7 +7903,7 @@
                 const clippedEnd = Math.min(startFrame + rawLength, cutoff);
                 const clippedLength = Math.max(1, clippedEnd - startFrame);
                 lengths.push(clippedLength + pendingGap);
-                prompts.push(String(segment.prompt || '').trim() || 'director timeline segment');
+                prompts.push(ltxDirectorEffectivePrompt(segment));
                 pendingGap = 0;
                 currentCursor = startFrame + rawLength;
             });
@@ -8330,7 +8341,7 @@
             const segmentLengths = promptPlan.lengths;
             const guideStrength = directorSegments
                 .filter(segment => segment.type === 'image')
-                .map(segment => Number(segment.guideStrength ?? 1).toFixed(2));
+                .map(segment => Number(segment.transitionLoraEnabled ? Math.max(1, Number(segment.guideStrength ?? 1)) : (segment.guideStrength ?? 1)).toFixed(2));
             const timelineData = {
                 segments: directorSegments.map(segment => {
                     const effectiveType = segment.type === 'video' && (segment.imageB64 || segment.imageSrc)
@@ -8344,7 +8355,7 @@
                     id: segment.id,
                     start: Math.max(0, Math.round(Number(segment.start || 0) * fps)),
                     length: Math.max(1, Math.round(Number(segment.length || LTX_DIRECTOR_MIN_SECONDS) * fps)),
-                    prompt: `${String(segment.prompt || '').trim() || 'director timeline segment'}${segment.transitionLoraEnabled && segment.transitionPrompt ? `, ${String(segment.transitionPrompt).replace(/\bzhuanchang\b/ig, '').replace(/\s+,/g, ',').trim()}` : ''}`,
+                    prompt: ltxDirectorEffectivePrompt(segment),
                     negativePrompt: String(segment.negativePrompt || '').trim(),
                     type: effectiveType,
                     sourceType: segment.type || 'image',
@@ -8352,7 +8363,7 @@
                     imageB64: segment.imageB64 || '',
                     videoFile: segment.videoFile || '',
                     videoB64: segment.videoSrc || '',
-                    guideStrength: Number(segment.guideStrength ?? 1),
+                    guideStrength: Number(segment.transitionLoraEnabled ? Math.max(1, Number(segment.guideStrength ?? 1)) : (segment.guideStrength ?? 1)),
                     transitionLoraEnabled: !!segment.transitionLoraEnabled,
                     transitionToNextVisual: !!transitionTarget,
                     transitionTargetId: transitionTarget?.id || '',
