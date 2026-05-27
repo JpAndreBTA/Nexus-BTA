@@ -41,13 +41,15 @@ $modelsDir = Join-Path $root "models"
 $diffusionModelsDir = Join-Path $modelsDir "diffusion_models"
 $melDir = Join-Path $diffusionModelsDir "MelRoFormer"
 $melModel = Join-Path $melDir "MelBandRoformer_fp16.safetensors"
+$ltxTransitionDir = Join-Path $modelsDir "loras\ltx_transition"
+$ltxTransitionLora = Join-Path $ltxTransitionDir "ltx2.3-transition.safetensors"
 
 if (!$RuntimePython) {
     $candidate = Join-Path $root "runtime\.venv\Scripts\python.exe"
     $RuntimePython = if (Test-Path -LiteralPath $candidate) { $candidate } else { "python" }
 }
 
-New-Item -ItemType Directory -Force -Path $customNodesDir, $diffusionModelsDir, $melDir | Out-Null
+New-Item -ItemType Directory -Force -Path $customNodesDir, $diffusionModelsDir, $melDir, $ltxTransitionDir | Out-Null
 
 $repos = @(
     @{
@@ -111,6 +113,24 @@ Invoke-NexusStep -Label "Downloading MelBandRoFormer model" -Step {
     Write-NexusLine "Downloading MelBandRoformer_fp16.safetensors..." "Info"
     Invoke-WebRequest -Uri $url -OutFile $partial -TimeoutSec 1800
     Move-Item -LiteralPath $partial -Destination $melModel -Force
+}
+
+Invoke-NexusStep -Label "Downloading LTX 2.3 Transition LoRA" -Step {
+    if (Test-Path -LiteralPath $ltxTransitionLora) {
+        $size = (Get-Item -LiteralPath $ltxTransitionLora).Length
+        if ($size -gt 10MB) {
+            Write-NexusLine "LTX 2.3 Transition LoRA already present." "Ok"
+            return
+        }
+        Remove-Item -LiteralPath $ltxTransitionLora -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-NexusLine "Downloading ltx2.3-transition.safetensors..." "Info"
+    $url = "https://huggingface.co/joyfox/LTX-2.3-Transition-LORA/resolve/main/ltx2.3-transition.safetensors?download=true"
+    $partial = "$ltxTransitionLora.part"
+    Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+    Invoke-WebRequest -Uri $url -OutFile $partial -TimeoutSec 1800
+    Move-Item -LiteralPath $partial -Destination $ltxTransitionLora -Force
 }
 
 Write-NexusLine "LTX Director requirements satisfied." "Ok"

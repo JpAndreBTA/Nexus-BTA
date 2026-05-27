@@ -1720,6 +1720,16 @@
                                         <input id="ltxDecodeOverlapInput" class="flat-input font-mono text-right" type="number" value="6" min="0" max="256">
                                     </label>
                                 </div>
+                                <div id="ltxTransitionLoraWrapper" class="hidden bg-nexus-panel border border-nexus-border px-2 py-2 rounded-sm space-y-2">
+                                    <label class="flex items-center justify-between gap-3 text-xs text-white">
+                                        <span class="font-bold">Transition LoRA</span>
+                                        <span class="toggle-switch"><input id="ltxTransitionLoraToggle" type="checkbox" checked><span class="toggle-track"></span></span>
+                                    </label>
+                                    <label class="space-y-1 block">
+                                        <span class="mini-label">Transition Strength</span>
+                                        <input id="ltxTransitionLoraStrength" class="flat-input font-mono text-right" type="number" value="1.0" min="0" max="1.5" step="0.05">
+                                    </label>
+                                </div>
                                 <div class="bg-nexus-panel border border-nexus-border p-2 rounded-sm text-[10px] text-nexus-muted leading-4">
                                     <span class="text-white font-bold">Auto route:</span>
                                     <span id="videoRouteText">ANIMA routes still-image generation; video adapters stay optional.</span>
@@ -3328,8 +3338,11 @@
         const LTX_DIRECTOR_MIN_SECONDS = 0.25;
         const LTX_DIRECTOR_PIXELS_PER_SECOND = 120;
         const LTX_OMNICINE_LORA_NAME = 'ltx\\Singularity LTX-2.3  OmniCine Preview v0.1.safetensors';
+        const LTX_TRANSITION_LORA_NAME = 'ltx_transition\\ltx2.3-transition.safetensors';
+        const LTX_TRANSITION_TRIGGER = 'zhuanchang';
         const LTX_TEXT_PROJECTION_NAME = 'ltx\\ltx-2.3_text_projection_bf16.safetensors';
         const LTX_OMNICINE_DEFAULT_STRENGTH = 0.75;
+        const LTX_TRANSITION_DEFAULT_STRENGTH = 1.0;
         const LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH = 0.80;
         const LTX_DISTILLED_384_DEFAULT_STRENGTH = 0.50;
         const LTX_DISTILLED_8_STEP_SIGMAS = '1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0';
@@ -5715,6 +5728,7 @@
             const omnicineWrapper = document.getElementById('omnicineWrapper');
             const ltxUpscaleControls = document.getElementById('ltxUpscaleControls');
             const ltxDetailerControls = document.getElementById('ltxDetailerControls');
+            const ltxTransitionLoraWrapper = document.getElementById('ltxTransitionLoraWrapper');
 
             if (videoPanel) videoPanel.classList.toggle('hidden', !isVideo);
             if (framesWrapper) framesWrapper.classList.toggle('hidden', ltxOnly);
@@ -5725,6 +5739,7 @@
             if (omnicineWrapper) omnicineWrapper.classList.toggle('hidden', !ltxOnly);
             if (ltxUpscaleControls) ltxUpscaleControls.classList.toggle('hidden', !ltxOnly);
             if (ltxDetailerControls) ltxDetailerControls.classList.toggle('hidden', !ltxOnly);
+            if (ltxTransitionLoraWrapper) ltxTransitionLoraWrapper.classList.toggle('hidden', !ltxOnly);
             updateExtrasModeUi();
             updateEmbeddingButtonState();
             if (dimensionsTitle) dimensionsTitle.innerText = isVideo ? 'Frame Dimensions' : 'Image Dimensions';
@@ -8341,8 +8356,12 @@
             const omniLoras = payload?.video?.omnicine_enabled
                 ? [{ name: payload.video.omnicine_lora, relative_name: payload.video.omnicine_lora, strength: LTX_OMNICINE_DEFAULT_STRENGTH, strength_clip: 0 }]
                 : [];
+            const transitionEnabled = payload?.video?.transition_lora_enabled !== false;
+            const transitionLoras = transitionEnabled
+                ? [{ name: payload?.video?.transition_lora || LTX_TRANSITION_LORA_NAME, relative_name: payload?.video?.transition_lora || LTX_TRANSITION_LORA_NAME, strength: Number(payload?.video?.transition_lora_strength || LTX_TRANSITION_DEFAULT_STRENGTH), strength_clip: 0 }]
+                : [];
             const seen = new Set();
-            const ordered = [...distilledLoras, ...(sideMenuLoras || []), ...omniLoras];
+            const ordered = [...distilledLoras, ...(sideMenuLoras || []), ...omniLoras, ...transitionLoras];
             const mapped = ordered
                 .map(item => {
                     const name = ltxDirectorNormalizeLoraName(item?.relative_name || item?.relative_path || item?.lora_name || item?.name);
@@ -8412,6 +8431,13 @@
         function ltxLoraPrefersAdvancedLoader(loraName) {
             const name = String(loraName || '').trim();
             return !!name && !/^(none|off|automatic|auto)$/i.test(name);
+        }
+
+        function ltxTransitionPrompt(text, video = {}) {
+            if (video?.transition_lora_enabled === false) return text || '';
+            const prompt = String(text || '').trim();
+            if (prompt.toLowerCase().includes(LTX_TRANSITION_TRIGGER)) return prompt;
+            return prompt ? `${prompt}, seamless continuous transition motion that completes at the final frame, ${LTX_TRANSITION_TRIGGER}` : LTX_TRANSITION_TRIGGER;
         }
 
         function comfyFileNameFromValue(value) {
@@ -8817,7 +8843,7 @@
                         model: directorModelRef,
                         clip: ['2', 0],
                         audio_vae: ['3', 0],
-                        global_prompt: payload?.prompt ?? director.global_prompt ?? '',
+                        global_prompt: ltxTransitionPrompt(payload?.prompt ?? director.global_prompt ?? '', payload?.video || {}),
                         duration_frames: director.duration_frames,
                         duration_seconds: director.duration_seconds,
                         timeline_data: director.timeline_data_json,
@@ -12550,7 +12576,7 @@
             'resizeModeSelect', 'denoiseSlider', 'batchCountInput', 'framesInput', 'fpsInput', 'secondsInput', 'motionSelect',
             'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'refinerSelect',
             'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
-            'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect',
+            'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraStrength',
             'controlNetEnabledToggle', 'controlNetTypeSelect', 'controlNetModelSelect', 'controlNetBalanceSelect',
             'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'
         ];
@@ -14542,7 +14568,9 @@
                     ltx_ic_crop: document.getElementById('ltxIcCropSelect')?.value || 'disabled',
                     ltx_ic_tiled_encode: document.getElementById('ltxIcTiledEncodeSelect')?.value === 'true',
                     ltx_ic_tile_size: 256,
-                    ltx_ic_tile_overlap: 64
+                    ltx_ic_tile_overlap: 64,
+                    transition_lora_enabled: activePreset === 'LTX' && !!document.getElementById('ltxTransitionLoraToggle')?.checked,
+                    transition_lora_strength: parseFloat(document.getElementById('ltxTransitionLoraStrength')?.value || '1.0')
                 },
                 runtime: {
                     vram_policy: document.getElementById('vramPolicySelect')?.value || 'VRAM Shared',
@@ -15385,7 +15413,7 @@
         applyModelProfile(activePreset, false);
         updateRangeLabel('steps');
         updateRangeLabel('cfg');
-        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
+        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraStrength', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
             const element = document.getElementById(id);
             if (element) element.addEventListener('input', updateWorkflowPreview);
             if (element) element.addEventListener('change', () => {

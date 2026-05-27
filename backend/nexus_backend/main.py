@@ -249,6 +249,15 @@ def _update_generation_job(job_id: str, update: dict[str, Any], *, force: bool =
 
 
 def _public_generation_job(job: dict[str, Any]) -> dict[str, Any]:
+    if str(job.get("status") or "").lower() == "completed" and not job.get("outputs"):
+        try:
+            created = datetime.fromisoformat(str(job.get("created_at") or ""))
+            start_timestamp = created.timestamp()
+        except Exception:
+            start_timestamp = datetime.now().timestamp() - 600
+        recovered_outputs = _cleanup_video_sidecar_images(_recent_output_files(start_timestamp - 300, limit=20), start_timestamp)
+        if recovered_outputs:
+            job["outputs"] = recovered_outputs
     public = {key: value for key, value in job.items() if not key.startswith("_")}
     if job.get("_started_monotonic") and "elapsed_seconds" not in public:
         public["elapsed_seconds"] = round(time.monotonic() - float(job["_started_monotonic"]), 1)
@@ -636,6 +645,65 @@ def _prepare_base_video(request: GenerateRequest) -> str | None:
     return _prepare_video_value(value)
 
 
+def _prepare_ltx_motion_scaffold(reference_names: list[str], request: GenerateRequest) -> str | None:
+    if request.preset.lower() != "ltx" or len(reference_names) < 2:
+        return None
+    video_options = request.video or {}
+    if str(video_options.get("ltx_start_end_mode") or "transition_lora").lower() in {"transition_lora", "flf_guides", "director_keyframe", "keyframe", "sequencer", "off"}:
+        return None
+    try:
+        import cv2
+        import numpy as np
+        from PIL import Image, ImageOps
+    except Exception:
+        return None
+
+    def load_rgb(name: str) -> "np.ndarray":
+        image = Image.open(settings.input_dir / name)
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        image = image.resize((max(64, int(request.width)), max(64, int(request.height))), Image.Resampling.LANCZOS)
+        return np.asarray(image, dtype=np.uint8)
+
+    try:
+        start = load_rgb(reference_names[0])
+        end = load_rgb(reference_names[1])
+        frames = max(9, int(round(float(video_options.get("frames") or 17))))
+        if (frames - 1) % 8 != 0:
+            frames = (((frames - 1) // 8) + 1) * 8 + 1
+        fps = max(1, int(float(video_options.get("fps") or 8)))
+        start_gray = cv2.cvtColor(start, cv2.COLOR_RGB2GRAY)
+        end_gray = cv2.cvtColor(end, cv2.COLOR_RGB2GRAY)
+        flow_fw = cv2.DISOpticalFlow_create(cv2.DISOPTICAL_FLOW_PRESET_MEDIUM).calc(start_gray, end_gray, None)
+        flow_bw = cv2.DISOpticalFlow_create(cv2.DISOPTICAL_FLOW_PRESET_MEDIUM).calc(end_gray, start_gray, None)
+        height, width = start.shape[:2]
+        grid_x, grid_y = np.meshgrid(np.arange(width, dtype=np.float32), np.arange(height, dtype=np.float32))
+        out_name = f"nexus_base_video_ltx_scaffold_{uuid.uuid4().hex[:10]}.mp4"
+        target = settings.input_dir / out_name
+        writer = cv2.VideoWriter(str(target), cv2.VideoWriter_fourcc(*"mp4v"), float(fps), (width, height))
+        for index in range(frames):
+            t = index / max(frames - 1, 1)
+            eased = t * t * (3.0 - 2.0 * t)
+            s_map_x = grid_x + flow_fw[..., 0] * eased
+            s_map_y = grid_y + flow_fw[..., 1] * eased
+            e_map_x = grid_x + flow_bw[..., 0] * (1.0 - eased)
+            e_map_y = grid_y + flow_bw[..., 1] * (1.0 - eased)
+            start_warp = cv2.remap(start, s_map_x, s_map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+            end_warp = cv2.remap(end, e_map_x, e_map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+            frame = cv2.addWeighted(start_warp, 1.0 - eased, end_warp, eased, 0.0)
+            writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        writer.release()
+        video_options["ltx_motion_scaffold"] = True
+        video_options["frames"] = frames
+        video_options["fps"] = fps
+        request.video = video_options
+        return out_name
+    except Exception:
+        return None
+
+
+
+
+
 def _reference_image_values(request: GenerateRequest) -> list[str]:
     values: list[str] = []
     if request.img2img.reference_image:
@@ -810,6 +878,7 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
         current_value = str(video.get(target_key) or "").strip().lower()
         if assets.get(source_key) and (not current_value or current_value in {"automatic", "auto"}):
             video[target_key] = assets[source_key]
+    activity_label = _generation_activity_label(request)
     return {
         "prompt": request.prompt,
         "negative": request.negative_prompt,
@@ -820,7 +889,7 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
         "sampler": request.sampler,
         "scheduler": request.scheduler,
         "preset": request.preset,
-        "activity": request.activity,
+        "activity": activity_label,
         "width": request.width,
         "height": request.height,
         "workflow_id": request.workflow_id or "Default",
@@ -832,6 +901,18 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
         "text_encoder": assets.get("text_encoder") or request.text_encoder,
         "controlnet": controlnet,
     }
+
+
+def _generation_activity_label(request: GenerateRequest) -> str:
+    if request.activity != "img2img":
+        return request.activity
+    base_video = bool((request.img2img.base_video or "").strip())
+    refs = [value for value in _reference_image_values(request) if str(value or "").strip()]
+    if base_video:
+        return "v2v"
+    if refs and (request.preset.lower() in {"wan", "ltx"} or (request.video or {})):
+        return "i2v"
+    return request.activity
 
 
 def _resolve_generation_seed(request: GenerateRequest) -> int:
@@ -907,7 +988,7 @@ def _apply_output_prefixes(prompt: dict[str, Any], request: GenerateRequest) -> 
         for part in (
             timestamp,
             _output_slug(request.preset, "preset"),
-            _output_slug(request.activity, "generation"),
+            _output_slug(_generation_activity_label(request), "generation"),
         )
         if part
     )
@@ -923,6 +1004,36 @@ def _apply_output_prefixes(prompt: dict[str, Any], request: GenerateRequest) -> 
         current = _output_slug(Path(str(inputs.get("filename_prefix") or "")).name, "")
         suffix = f"_{current}" if current and current.lower() not in {"comfyui", "nexus_bta"} else ""
         inputs["filename_prefix"] = f"{kind}/{base}{suffix}"
+
+
+def _cleanup_video_sidecar_images(outputs: list[dict[str, Any]], start_timestamp: float) -> list[dict[str, Any]]:
+    if not outputs:
+        return outputs
+    video_root = (settings.output_dir / "video").resolve()
+    try:
+        output_root = settings.output_dir.resolve()
+    except Exception:
+        return outputs
+    has_video = any(str(item.get("kind") or item.get("type") or "").lower() == "video" or str(item.get("url") or "").lower().endswith((".mp4", ".webm", ".mkv", ".mov", ".avi")) for item in outputs)
+    if not has_video or not video_root.exists():
+        return outputs
+    image_suffixes = {".png", ".jpg", ".jpeg", ".webp"}
+    deleted: set[str] = set()
+    for path in video_root.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in image_suffixes:
+            continue
+        try:
+            resolved = path.resolve()
+            if not resolved.is_relative_to(output_root) or not resolved.is_relative_to(video_root):
+                continue
+            relative = path.relative_to(settings.output_dir).as_posix()
+            path.unlink(missing_ok=True)
+            deleted.add(relative)
+        except Exception:
+            continue
+    if not deleted:
+        return outputs
+    return [item for item in outputs if str(item.get("path") or "").replace("\\", "/") not in deleted]
 
 
 def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[str, Any]]:
@@ -3062,6 +3173,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 raise ValueError("Z-Image Turbo missing required assets: " + ", ".join(missing_zimage_assets) + ".")
         reference_image_names = _prepare_reference_images(request)
         base_video_name = _prepare_base_video(request)
+        if not base_video_name and request.preset.lower() == "ltx" and len(reference_image_names) >= 2:
+            base_video_name = _prepare_ltx_motion_scaffold(reference_image_names, request)
         reference_image_name = reference_image_names[0] if reference_image_names else None
         reference_end_image_name = reference_image_names[1] if len(reference_image_names) > 1 else None
         mask_image_name = _prepare_mask_image(request)
@@ -3155,10 +3268,12 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     reference_image_name,
                     reference_end_image_name=reference_end_image_name,
                     base_video_name=base_video_name,
+                    ic_lora_name=assets.get("ic_lora"),
                     text_projection_name=assets.get("text_projection"),
                     audio_vae_name=assets.get("audio_vae"),
                     video_vae_name=assets.get("video_vae") or assets.get("vae"),
                     latent_upscale_name=assets.get("latent_upscale"),
+                    transition_lora_name=assets.get("transition_lora"),
                     video_combine_node=_available_comfy_node(object_info, "VHS_VideoCombine"),
                 )
             elif request.preset.lower() == "wan":
@@ -3302,6 +3417,12 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         prompt_id, outputs = await comfy.run_workflow(prompt, progress_callback=progress_callback)
         if not outputs:
             outputs = await _recover_outputs_from_history(prompt_id, generation_started_at)
+        outputs = _cleanup_video_sidecar_images(outputs, generation_started_at)
+        if not outputs:
+            outputs = _cleanup_video_sidecar_images(_recent_output_files(generation_started_at - 300, limit=12), generation_started_at)
+        if not outputs:
+            await asyncio.sleep(1.0)
+            outputs = _cleanup_video_sidecar_images(_recent_output_files(generation_started_at - 300, limit=20), generation_started_at)
         _annotate_output_metadata(outputs, request, assets)
         _cleanup_generation_temp()
         response = GenerateResponse(
@@ -3460,6 +3581,8 @@ async def gallery() -> list[dict[str, Any]]:
         relative = path.relative_to(settings.output_dir).as_posix()
         url_path = quote(relative, safe="/")
         media_type = "video" if path.suffix.lower() in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "image"
+        if media_type == "image" and relative.replace("\\", "/").startswith("video/"):
+            continue
         metadata = _read_output_metadata(path)
         items.append(
             {

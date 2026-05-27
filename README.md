@@ -22,7 +22,7 @@ Switch to Node Workflow when you want to inspect or tune the generated Comfy gra
 
 ![LTX 2.3 linear video workspace](examples/LTX_2.3.png)
 
-The LTX 2.3 Linear View keeps img2video/txt2video controls synchronized with the Comfy workflow, including video VAE, audio VAE, distilled LoRAs and latent upscaling.
+The LTX 2.3 Linear View keeps img2video/txt2video controls synchronized with the Comfy workflow, including video VAE, audio VAE, distilled LoRAs, latent upscaling and the optional Transition LoRA for start/end frame motion.
 
 ![LTX 2.3 Director timeline](examples/LTX_2.3Director.png)
 
@@ -61,7 +61,7 @@ If this is a fresh machine, bootstrap the runtime first:
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap_nexus_runtime.ps1 -CopyPythonEnv
 ```
 
-`run.bat`, `update.bat`, and the bootstrap script also check LTX Director dependencies. They install the WhatDreamsCost Director node, Kijai's Mel-Band RoFormer node, its Python requirements, and the `MelBandRoformer_fp16.safetensors` model into the expected local folders when they are missing.
+`run.bat`, `update.bat`, and the bootstrap script also check LTX Director dependencies. They install the WhatDreamsCost Director node, Kijai's Mel-Band RoFormer node, its Python requirements, the `MelBandRoformer_fp16.safetensors` model, and `ltx2.3-transition.safetensors` for LTX start/end transitions into the expected local folders when they are missing.
 
 ## Model Folders
 
@@ -92,8 +92,14 @@ Use [requirements/model_assets.md](requirements/model_assets.md) as the friendly
 - WAN 2.2 and LTX 2.3 use video-specific encoders, so use their model, VAE, text encoder and distilled LoRA assets instead of classic textual inversion. WAN 2.2 4-step runs need the matching high/low 4-step LoRA pair under `models/loras/wan`.
 - LTX 2.3 assets are available from [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3); WAN 2.2 assets are available from [Wan-AI](https://huggingface.co/Wan-AI).
 - LTX 2.3 latent upscale is part of the normal route. For a `512x512` output, Nexus samples the base latent at `256x256`, applies `LatentUpscaleModelLoader` + `LTXVLatentUpsampler`, refines it, and then decodes the final video.
+- LTX 2.3 start/end frame and transition-style txt2video/img2video use [joyfox/LTX-2.3-Transition-LORA](https://huggingface.co/joyfox/LTX-2.3-Transition-LORA) with trigger `zhuanchang`, installed under `models/loras/ltx_transition`.
 - Extras uses `models/upscale_models` for image/video raster upscalers, `models/frame_interpolation` for RIFE/FILM frame interpolation, and `models/background_removal` for 2026 background-removal routes such as ComfyUI native BiRefNet. Alpha-aware video export is exposed as PNG sequence or MOV ProRes 4444.
 - Remove BG expects `models/background_removal/birefnet.safetensors` for the native ComfyUI BiRefNet workflow. RMBG-2.0, InSPyReNet and BEN/BEN2 remain selectable compatibility routes when matching ComfyUI custom nodes are installed.
+
+## Credits
+
+- LTX 2.3 Director integration credits: [WhatDreamsCost/WhatDreamsCost-ComfyUI](https://github.com/WhatDreamsCost/WhatDreamsCost-ComfyUI).
+- LTX 2.3 Transition LoRA credits: [joyfox/LTX-2.3-Transition-LORA](https://huggingface.co/joyfox/LTX-2.3-Transition-LORA).
 
 ## Output Layout
 

@@ -16,6 +16,8 @@
   let searchDebounceTimer = null;
   const tokenStorageKey = "nexus_civitai_api_key";
   const downloadJobs = new Map();
+  const lazyPageSize = 10;
+  let modalVideoObserver = null;
 
   function el(id) {
     return document.getElementById(id);
@@ -221,13 +223,65 @@
     return /\.(mp4|webm|mov)(\?|$)/i.test(url) ? "video" : "image";
   }
 
-  function mediaHtml(preview, className, alt) {
+  function lowResVideoUrl(preview) {
+    if (typeof preview === "string") return preview;
+    const candidates = [
+      preview?.lowResUrl,
+      preview?.lowresUrl,
+      preview?.lowRes,
+      preview?.mobileUrl,
+      preview?.previewUrl,
+      preview?.video?.lowResUrl,
+      preview?.video?.url,
+      ...(Array.isArray(preview?.sources) ? preview.sources.map((source) => source?.url || source?.src) : []),
+      ...(Array.isArray(preview?.variants) ? preview.variants.map((variant) => variant?.url || variant?.src) : []),
+      preview?.url,
+    ].filter(Boolean);
+    const videoCandidates = candidates.filter((candidate) => mediaType(candidate) === "video");
+    const url = String(videoCandidates[0] || preview?.url || "");
+    return url.replace(/\/width=\d+\//i, "/width=450/");
+  }
+
+  function mediaUrl(preview) {
     const url = typeof preview === "string" ? preview : preview?.url;
+    if (!url) return "";
+    return (preview?.type || mediaType(url)) === "video" ? lowResVideoUrl(preview) : url;
+  }
+
+  function mediaHtml(preview, className, alt) {
+    const url = mediaUrl(preview);
     if (!url) return `<div class="${className} flex items-center justify-center text-nexus-muted"><i class="fa-regular fa-image text-2xl"></i></div>`;
     if ((preview?.type || mediaType(url)) === "video") {
-      return `<video src="${html(url)}" preload="metadata" muted loop playsinline class="${className} object-cover"></video>`;
+      return `<video src="${html(url)}" preload="none" muted loop playsinline class="${className} object-cover"></video>`;
     }
     return `<img src="${html(url)}" loading="lazy" decoding="async" alt="${html(alt)}" class="${className} object-cover">`;
+  }
+
+  function isInstalled(data, downloaded = false) {
+    const flag = data?.installed ?? data?.downloaded ?? data?.already_downloaded ?? data?.exists ?? downloaded;
+    if (flag === true) return true;
+    if (String(flag).toLowerCase() === "true") return true;
+    return !!(data?.path || data?.relative_path || data?.local_path || data?.installed_path);
+  }
+
+  function installedPath(data) {
+    return data?.relative_path || data?.path || data?.local_path || data?.installed_path || "";
+  }
+
+  function wireModalVideoPlayback() {
+    if (modalVideoObserver) modalVideoObserver.disconnect();
+    const modal = el("civitaiMediaModal");
+    const video = el("civitaiMediaStage")?.querySelector("video");
+    if (!modal || !video) return;
+    modalVideoObserver = new IntersectionObserver((entries) => {
+      const visible = entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.6);
+      if (!visible || modal.classList.contains("hidden")) {
+        video.pause();
+        return;
+      }
+      video.play().catch(() => {});
+    }, { threshold: [0, 0.6, 1] });
+    modalVideoObserver.observe(video);
   }
 
   function mediaIsMature(preview, owner) {
@@ -292,17 +346,18 @@
     const blurMature = !!el("civitaiBlurMatureToggle")?.checked;
     const mature = mediaIsMature(preview, currentDetail?.data);
     const blurClass = mature && blurMature ? "blur-xl scale-110" : "";
-    const url = typeof preview === "string" ? preview : preview.url;
+    const url = mediaUrl(preview);
     const isVideo = (preview?.type || mediaType(url)) === "video";
     stage.innerHTML = `
       <div class="relative max-w-full max-h-full overflow-hidden border border-nexus-border bg-black">
         ${isVideo
-          ? `<video src="${html(url)}" controls autoplay playsinline class="max-w-full max-h-[76vh] object-contain ${blurClass}"></video>`
+          ? `<video src="${html(url)}" controls muted playsinline class="max-w-full max-h-[76vh] object-contain ${blurClass}"></video>`
           : `<img src="${html(url)}" alt="Civitai preview" class="max-w-full max-h-[76vh] object-contain ${blurClass}">`}
         ${mature && blurMature ? `<span class="absolute top-3 left-3 bg-yellow-400 text-black text-[9px] font-bold px-2 py-1 uppercase">Mature preview blurred</span>` : ""}
       </div>
     `;
     if (counter) counter.innerText = `${mediaIndex + 1} / ${mediaItems.length}`;
+    wireModalVideoPlayback();
   }
 
   function openMediaModal(index = 0) {
@@ -321,7 +376,9 @@
     const modal = el("civitaiMediaModal");
     if (!modal) return;
     modal.classList.add("hidden");
+    if (modalVideoObserver) modalVideoObserver.disconnect();
     const stage = el("civitaiMediaStage");
+    stage?.querySelectorAll("video").forEach((video) => video.pause());
     if (stage) stage.innerHTML = "";
   }
 
@@ -447,6 +504,8 @@
     viewMode = "detail";
     currentDetail = { data, downloaded };
     const previews = visiblePreviews(data);
+    const installed = isInstalled(data, downloaded);
+    const localPath = installedPath(data);
     panel.innerHTML = `
       <div class="mb-4 flex justify-between items-center border-b border-nexus-border pb-3">
         <button onclick="window.NexusCivitai?.backToSearch()" class="flat-button px-3 py-2 text-xs font-bold"><i class="fa-solid fa-arrow-left text-nexus-red mr-1"></i>Back to exploration list</button>
@@ -455,7 +514,7 @@
       <div class="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5">
         <div class="space-y-3">
           ${previews[0] ? previewTile(previews[0], 0, data, "aspect-[3/4]") : `<div class="aspect-[3/4] bg-nexus-bg border border-nexus-border flex items-center justify-center text-center text-nexus-muted p-4">No visible preview with current mature filter.</div>`}
-          <div class="bg-nexus-bg border border-nexus-border p-2 text-[10px] text-nexus-muted font-mono">${downloaded ? "Downloaded" : "Resolved"}</div>
+          <div class="bg-nexus-bg border border-nexus-border p-2 text-[10px] text-nexus-muted font-mono">${installed ? "Installed" : "Resolved"}</div>
         </div>
         <div class="space-y-4">
           <div>
@@ -478,12 +537,12 @@
                 <p class="text-xs text-white font-bold break-all">${html(data.file_name)}</p>
                 <p class="text-[10px] text-nexus-muted font-mono">${html(data.model_type || data.target_kind)} - ${html(data.version_name || "Version")} - ${html(formatSize(data.file_size_kb))}</p>
               </div>
-              <button onclick="window.NexusCivitai?.download()" class="bg-nexus-red hover:bg-nexus-darkRed text-white px-3 py-2 rounded-sm text-[10px] font-bold uppercase"><i class="fa-solid fa-cloud-arrow-down mr-1"></i>Download</button>
+              <button ${installed ? "disabled" : `onclick="window.NexusCivitai?.download()"`} class="${installed ? "bg-nexus-hover text-nexus-muted cursor-default" : "bg-nexus-red hover:bg-nexus-darkRed text-white"} px-3 py-2 rounded-sm text-[10px] font-bold uppercase"><i class="fa-solid ${installed ? "fa-circle-check" : "fa-cloud-arrow-down"} mr-1"></i>${installed ? "Installed" : "Download"}</button>
             </div>
           </section>
           ${data.description ? `<section><span class="mini-label">Description & author notes</span><p class="mt-2 text-xs leading-5 text-white">${html(stripHtml(data.description)).slice(0, 1400)}</p></section>` : ""}
           ${previews.length > 1 ? `<section><span class="mini-label">Model gallery</span><div class="grid grid-cols-4 lg:grid-cols-6 gap-2 mt-2">${previews.slice(0, 24).map((preview, index) => previewTile(preview, index, data)).join("")}</div></section>` : ""}
-          ${downloaded ? `<div class="border border-nexus-red bg-nexus-bg p-2 text-[10px] text-white font-mono break-all">${html(data.relative_path || data.path)}</div>` : ""}
+          ${installed && localPath ? `<div class="border border-nexus-red bg-nexus-bg p-2 text-[10px] text-white font-mono break-all">${html(localPath)}</div>` : ""}
         </div>
       </div>
     `;
@@ -576,7 +635,7 @@
       sort: el("civitaiSortFilter")?.value || "Newest",
       period: "AllTime",
       nsfw: !!el("civitaiNsfwToggle")?.checked,
-      limit: 24,
+      limit: lazyPageSize,
       cursor: append ? searchCursor : null,
     };
     try {
@@ -663,6 +722,12 @@
         base_model: version.base_model,
         file_name: version.file_name,
         file_size_kb: version.file_size_kb,
+        installed: version.installed ?? item.installed,
+        downloaded: version.downloaded ?? item.downloaded,
+        already_downloaded: version.already_downloaded ?? item.already_downloaded,
+        exists: version.exists ?? item.exists,
+        relative_path: version.relative_path || item.relative_path || "",
+        path: version.path || item.path || "",
         nsfw: item.nsfw,
         preview: version.preview || item.preview,
         previews: previewList(item, version),

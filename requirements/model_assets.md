@@ -30,7 +30,7 @@ models/diffusion_models/MelRoFormer  Mel-Band RoFormer audio cleanup model for L
 | Flux.2 Dev | [black-forest-labs/FLUX.2-dev](https://github.com/black-forest-labs/flux2) or Comfy split files | `models/checkpoints/flux` or `models/diffusion_models`, `models/text_encoders/mistral_3_small_flux2_bf16.safetensors`, `models/vae/flux2-vae.safetensors` |
 | Flux.2 Klein | [FLUX.2 Klein 4B/9B](https://docs.comfy.org/tutorials/flux/flux-2-klein) | `models/checkpoints/flux` or `models/diffusion_models`, 4B: `qwen_3_4b.safetensors`, 9B: `qwen_3_8b_fp8mixed.safetensors`, plus `models/vae/flux2-vae.safetensors` |
 | WAN 2.2 | [Wan-AI/Wan2.2-I2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B), [Wan-AI/Wan2.2-T2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B), [Wan-AI/Wan2.2-TI2V-5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B), compatible CLIP Vision such as `clip_vision_h.safetensors` | `models/checkpoints/wan`, `models/text_encoders`, `models/vae`, `models/clip_vision` |
-| LTX 2.3 | [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) | `models/checkpoints/ltx`, `models/loras/ltx`, `models/latent_upscale_models`, `models/vae`, `models/text_encoders` |
+| LTX 2.3 | [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3), [joyfox/LTX-2.3-Transition-LORA](https://huggingface.co/joyfox/LTX-2.3-Transition-LORA) | `models/checkpoints/ltx`, `models/loras/ltx`, `models/loras/ltx_transition`, `models/latent_upscale_models`, `models/vae`, `models/text_encoders` |
 | Extras Remove BG | [Comfy-Org/BiRefNet](https://huggingface.co/Comfy-Org/BiRefNet) | `models/background_removal/birefnet.safetensors` |
 
 ## Lightweight LoRA Starter List
@@ -86,9 +86,10 @@ Nexus enables the embedding picker for SD 1.5, SDXL, Pony and Illustrious-compat
 - LTX 2.3 smoke preset: `512x512`, `4s`, `24 FPS`; distilled checkpoints and distilled LoRA variants usually run at low CFG and short step counts.
 - LTX 2.3 latent upscale is expected for normal `512x512` outputs: Nexus samples the base video latent at half resolution, runs the spatial latent upscaler/refiner, then decodes the final frames. A `256x256` result usually means the smoke test explicitly selected `None` or a `256x256` output size.
 - LTX 2.3 assets include full, distilled, distilled LoRA, spatial upscaler and temporal upscaler variants on the official Hugging Face repository.
+- LTX 2.3 first/last-frame and transition-style txt2video/img2video use `ltx2.3-transition.safetensors` in `models/loras/ltx_transition`. Nexus auto-adds the trigger `zhuanchang` near the end of the positive prompt when the Transition LoRA is enabled.
 - LTX 2.3 video-to-video motion transfer uses IC-LoRA Union Control when available. Download `ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors` from [Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control](https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control) into `models/loras/ltx`; Nexus auto-detects it before fallback IC-LoRAs such as Cameraman.
 - LTX 2.3 Director audio workflows that follow WhatDreamsCost v30 use Kijai's `ComfyUI-MelBandRoFormer` custom node and `MelRoFormer/MelBandRoformer_fp16.safetensors` under `models/diffusion_models`. This keeps source/background audio and generated speech/ambience from being routed as raw noisy audio latents.
-- `run.bat`, `update.bat`, and `scripts/bootstrap_nexus_runtime.ps1` run `scripts/install_ltx_director_deps.ps1`, which installs the LTX Director custom-node dependencies and downloads `MelBandRoformer_fp16.safetensors` to `models/diffusion_models/MelRoFormer` if it is missing.
+- `run.bat`, `update.bat`, and `scripts/bootstrap_nexus_runtime.ps1` run `scripts/install_ltx_director_deps.ps1`, which installs the LTX Director custom-node dependencies and downloads `MelBandRoformer_fp16.safetensors` plus the LTX 2.3 Transition LoRA if missing.
 - Keep WAN high-noise and low-noise model files together so Nexus can pick the paired route automatically. A style LoRA without a 4-step/distill token is treated as a user Concept LoRA, not as the required fast adapter.
 
 ## Download Helper

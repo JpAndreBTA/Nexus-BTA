@@ -326,6 +326,9 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, re
     id_lora = _first_ltx_lora(by_category, [["id-lora"], ["id", "lora"], ["celebvhq"]])
     if id_lora:
         assets["id_lora"] = _comfy_name(id_lora)
+    transition_lora = _first_ltx_lora(by_category, [["transition"], ["zhuanchang"]])
+    if transition_lora:
+        assets["transition_lora"] = _comfy_name(transition_lora)
     return assets
 
 
