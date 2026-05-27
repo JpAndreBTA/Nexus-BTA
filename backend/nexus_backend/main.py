@@ -635,25 +635,6 @@ def _prepare_base_video(request: GenerateRequest) -> str | None:
     return _prepare_video_value(value)
 
 
-def _extract_video_start_frame(video_name: str, start_frame: int = 0) -> str:
-    settings.input_dir.mkdir(parents=True, exist_ok=True)
-    source = (settings.input_dir / video_name).resolve()
-    if not source.exists() or not source.is_relative_to(settings.input_dir.resolve()):
-        raise ValueError("Base video file is not available.")
-    target_name = f"nexus_video_start_{uuid.uuid4().hex[:10]}.png"
-    target = settings.input_dir / target_name
-    frame_index = max(0, int(start_frame or 0))
-    if frame_index:
-        selector = f"select=eq(n\\,{frame_index})"
-        command = [_ffmpeg_binary(), "-y", "-i", str(source), "-vf", selector, "-frames:v", "1", str(target)]
-    else:
-        command = [_ffmpeg_binary(), "-y", "-i", str(source), "-frames:v", "1", str(target)]
-    _run_ffmpeg(command)
-    if not target.exists():
-        raise ValueError("Could not extract start frame from base video.")
-    return target_name
-
-
 def _reference_image_values(request: GenerateRequest) -> list[str]:
     values: list[str] = []
     if request.img2img.reference_image:
@@ -2047,8 +2028,26 @@ def _plugin_repo_name(url: str) -> str:
     return name[:80]
 
 
+def _find_video2video_workflow(preset: str) -> Path | None:
+    preset_lower = preset.lower()
+    workflows = workflow_registry.list_workflows()
+    for workflow in workflows:
+        classes = {item.lower() for item in workflow.class_types}
+        name = f"{workflow.id} {workflow.name}".lower()
+        has_video_loader = any(item in classes for item in {"loadvideo", "vhs_loadvideo", "loadvideoui"})
+        if preset_lower == "wan" and has_video_loader and (
+            "wanvideoanimateembeds" in classes or "wan animate" in name or "wan2-2-animate" in name
+        ):
+            return Path(workflow.path)
+        if preset_lower == "ltx" and has_video_loader and (
+            "ltxaddvideoicloraguide" in classes or "ic-lora" in name or "union-control" in name
+        ):
+            return Path(workflow.path)
+    return None
+
+
 def _cleanup_generation_temp() -> None:
-    for pattern in ("nexus_reference_*", "nexus_base_video_*", "nexus_video_start_*", "nexus_mask_*", "nexus_controlnet_*", "nexus_director_audio_*"):
+    for pattern in ("nexus_reference_*", "nexus_base_video_*", "nexus_mask_*", "nexus_controlnet_*", "nexus_director_audio_*"):
         for path in settings.input_dir.glob(pattern):
             if path.is_file():
                 path.unlink(missing_ok=True)
@@ -3062,9 +3061,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 raise ValueError("Z-Image Turbo missing required assets: " + ", ".join(missing_zimage_assets) + ".")
         reference_image_names = _prepare_reference_images(request)
         base_video_name = _prepare_base_video(request)
-        extracted_base_start_image = _extract_video_start_frame(base_video_name, int(_coerce_number(request.video.get("base_start_frame"), 0) or 0)) if base_video_name else None
-        reference_image_name = extracted_base_start_image or (reference_image_names[0] if reference_image_names else None)
-        reference_end_image_name = reference_image_names[0] if extracted_base_start_image and reference_image_names else (reference_image_names[1] if len(reference_image_names) > 1 else None)
+        reference_image_name = reference_image_names[0] if reference_image_names else None
+        reference_end_image_name = reference_image_names[1] if len(reference_image_names) > 1 else None
         mask_image_name = _prepare_mask_image(request)
         controlnet_image_name = _prepare_controlnet_image(request)
         if reference_image_name:
@@ -3082,6 +3080,12 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         workflow_path = workflow_registry.find(request.workflow_id, request.preset)
         if request.preset.lower() == "ltx" and not request.workflow_id:
             workflow_path = None
+        if request.preset.lower() == "wan" and not request.workflow_id:
+            workflow_path = None
+        if base_video_name and not request.workflow_id and request.preset.lower() in {"wan", "ltx"}:
+            workflow_path = _find_video2video_workflow(request.preset)
+            if not workflow_path:
+                raise ValueError(f"{request.preset} video2video requires a compatible V2V workflow with LoadVideo/VHS_LoadVideo.")
         if request.preset.lower() == "qwen" and request.activity == "img2img" and reference_image_name:
             request.workflow_override = None
             workflow_path = None

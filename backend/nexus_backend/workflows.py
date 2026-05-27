@@ -655,6 +655,20 @@ def _known_ui_widget_order(node_type: str) -> list[str]:
         return ["seed", "control_after_generate", "steps", "cfg", "sampler_name", "scheduler", "denoise"]
     if "cfgguider" in lower:
         return ["cfg"]
+    if lower == "loadimage":
+        return ["image", "upload"]
+    if lower == "loadvideo":
+        return ["video", "output_mode"]
+    if lower in {"vhs_loadvideo", "loadvideoui"}:
+        return [
+            "video",
+            "force_rate",
+            "custom_width",
+            "custom_height",
+            "frame_load_cap",
+            "skip_first_frames",
+            "select_every_nth",
+        ]
     if "lora" in lower:
         return ["lora_name", "strength_model", "strength_clip", "video", "video_to_audio", "audio", "audio_to_video", "other"]
     if "vaeloader" in lower:
@@ -3174,8 +3188,19 @@ def patch_workflow(
         if "batch_size" in inputs:
             batch_size_value = 1 if preset == "qwen" and request.activity == "img2img" else max(1, request.batch_size)
             set_input_or_linked(inputs, "batch_size", batch_size_value)
-        if assets.get("base_video") and "video" in inputs and ("loadvideo" in class_lower or "video" in title):
+        is_video_loader = class_lower in {"loadvideo", "vhs_loadvideo", "loadvideoui"} or "load video" in title
+        if assets.get("base_video") and is_video_loader and "video" in inputs:
             inputs["video"] = assets["base_video"]
+        if assets.get("base_video") and is_video_loader and "force_rate" in inputs and fps_value is not None:
+            set_input_or_linked(inputs, "force_rate", fps_value)
+        if assets.get("base_video") and is_video_loader and "frame_load_cap" in inputs and frames_value is not None:
+            set_input_or_linked(inputs, "frame_load_cap", max(1, int(round(frames_value))))
+        if assets.get("base_video") and is_video_loader and "skip_first_frames" in inputs:
+            set_input_or_linked(inputs, "skip_first_frames", max(0, int(round(_number_or_none(video_options.get("base_start_frame")) or 0))))
+        if assets.get("base_video") and is_video_loader and "custom_width" in inputs:
+            set_input_or_linked(inputs, "custom_width", request.width)
+        if assets.get("base_video") and is_video_loader and "custom_height" in inputs:
+            set_input_or_linked(inputs, "custom_height", request.height)
         if assets.get("base_video") and "start_frame" in inputs:
             set_input_or_linked(inputs, "start_frame", max(0, int(round(_number_or_none(video_options.get("base_start_frame")) or 0))))
         if assets.get("base_video") and "end_frame" in inputs and frames_value is not None:
