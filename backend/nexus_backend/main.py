@@ -3568,6 +3568,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     transition_lora_name=assets.get("transition_lora"),
                     frame_guides=ltx_director_frame_guides,
                     video_combine_node=_available_comfy_node(object_info, "VHS_VideoCombine"),
+                    available_nodes=set(object_info or {}),
                 )
             elif request.preset.lower() == "wan":
                 high_model_name = assets.get("wan_high_model")

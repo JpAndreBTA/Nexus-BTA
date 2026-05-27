@@ -317,7 +317,7 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, re
         selected_control_lora
         if selected_control_lora and "ic" in " ".join([selected_control_lora.name, selected_control_lora.folder, selected_control_lora.relative_path]).lower()
         else None
-    ) or _first_ltx_lora(by_category, [["ic-lora", "union"], ["ic-lora", "control"], ["ic-lora", "cameraman"], ["ic", "lora"]])
+    ) or _first_ltx_lora(by_category, [["ic-lora", "union"], ["union", "control"], ["ltx_ic", "union"], ["ic-lora", "control"], ["ic-lora", "cameraman"], ["ic", "lora"]])
     if ic_lora:
         assets["ic_lora"] = _comfy_name(ic_lora)
     detailer_lora = _first_ltx_lora(by_category, [["detailer"], ["ic-lora", "detail"]])

@@ -186,7 +186,7 @@ LTX:
   Scheduler: LCM.
   Steps/CFG: 8 / 3.0.
   Encoder: T5-XXL fp8 or automatic.
-  Supports: fast latent video, distilled/turbo variants and quick previews.
+  Supports: fast latent video, distilled/turbo variants, LTX 2.3 IC-LoRA Union Motion Transfer and quick previews.
 
 ANIMA:
   Checkpoint: AnimaPencil_v1.safetensors.
@@ -215,6 +215,7 @@ Backend Runtime Requirements
 6. LoRA, LyCORIS, textual inversion and embedding loading where the active model family supports them.
 7. VAE and text encoder override loading.
 8. Video pipeline support for WAN, LTX and adapter-based workflows.
+9. LTX 2.3 Motion Transfer must expose IC modes Pose/DWPose, Canny/Edges and Depth/Geometry; install comfyui_controlnet_aux and ComfyUI-Video-Depth-Anything for preprocessors, use IC-LoRA Union Control at strength 1.0 and fall back safely if a Comfy preprocessor is unavailable.
 9. Metadata writer/reader for PNG, WebP and sidecar JSON.
 10. Queue system with progress, cancel, preview and history.
 11. Date/time output naming for default templates, loaded workflows and visual Node Workflow overrides.
@@ -241,6 +242,8 @@ models/
   checkpoints/
   vae/
   loras/
+    ltx_ic/
+    ltx_transition/
   embeddings/
   text_encoders/
   controlnet/

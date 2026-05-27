@@ -100,6 +100,8 @@ $modelDirs = @(
     "clip",
     "clip_vision",
     "controlnet",
+    "loras\ltx_ic",
+    "loras\ltx_transition",
     "upscale_models",
     "latent_upscale_models",
     "embeddings",

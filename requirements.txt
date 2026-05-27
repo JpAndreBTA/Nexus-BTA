@@ -52,6 +52,16 @@ einops>=0.8
 tqdm>=4.66
 psutil>=6.0
 
+# LTX 2.3 IC-LoRA motion transfer preprocessors (Pose/DWPose, Canny, Depth)
+controlnet-aux>=0.0.10
+onnxruntime>=1.18
+
+# Required ComfyUI custom-node repos for LTX 2.3 IC preprocessors.
+# Installed by scripts/install_ltx_director_deps.ps1:
+# - https://github.com/Fannovel16/comfyui_controlnet_aux.git
+# - https://github.com/yuvraj108c/ComfyUI-Video-Depth-Anything.git
+# - https://github.com/Lightricks/ComfyUI-LTXVideo.git
+
 # Optional attention/runtime packages, install only when compatible with the GPU and PyTorch build:
 # xformers
 # flash-attn

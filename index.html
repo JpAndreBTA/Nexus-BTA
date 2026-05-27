@@ -1218,7 +1218,7 @@
     </div>
 
     <!-- TOP BAR (Global App Header) -->
-    <header class="h-12 bg-nexus-bg border-b border-nexus-border flex items-center justify-between px-2 shrink-0 gap-2 overflow-hidden">
+    <header class="h-12 bg-nexus-bg border-b border-nexus-border flex items-center justify-between px-2 shrink-0 gap-2 overflow-visible">
         <!-- Logo -->
         <div class="flex items-center gap-2 shrink-0">
             <div class="h-7 w-7 bg-nexus-red flex items-center justify-center text-white font-bold text-lg rounded-sm">
@@ -1274,12 +1274,23 @@
                 <i class="fa-solid fa-floppy-disk text-nexus-red"></i>
                 <span class="hidden 2xl:inline text-[10px]">Save Workflow</span>
             </button>
-            <button onclick="toggleAdjusts()" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Adjusts">
-                <i class="fa-solid fa-sliders text-nexus-red"></i>
-                <span class="hidden 2xl:inline text-[10px]">Adjusts</span>
-            </button>
+            <div class="relative" id="languageSelector">
+                <button onclick="toggleLanguageMenu(event)" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Translate page">
+                    <i class="fa-solid fa-language text-nexus-red"></i>
+                    <span id="nexusLanguageLabel" class="hidden 2xl:inline text-[10px]">en-us</span>
+                    <i class="fa-solid fa-chevron-down text-[8px]"></i>
+                </button>
+                <div id="languageMenu" class="hidden absolute right-0 top-full mt-2 w-56 z-50 border border-nexus-border bg-nexus-panel shadow-2xl">
+                    <div class="px-3 py-2 border-b border-nexus-border">
+                        <p class="text-[10px] font-bold uppercase text-white">Page Language</p>
+                        <p class="text-[9px] font-mono text-nexus-muted">Google Translate</p>
+                    </div>
+                    <div id="languageMenuList" class="max-h-72 overflow-y-auto p-1"></div>
+                </div>
+            </div>
         </div>
     </header>
+    <div id="google_translate_element" class="hidden"></div>
 
     <!-- MAIN APP WRAPPER -->
     <div class="flex-1 flex overflow-hidden">
@@ -1768,6 +1779,14 @@
                                         <span class="toggle-switch"><input id="ltxMotionTransferToggle" type="checkbox"><span class="toggle-track"></span></span>
                                     </label>
                                     <div class="text-[9px] font-mono text-nexus-muted leading-4">Start = motion video. End = image target via IC Union Control.</div>
+                                    <label class="space-y-1 block">
+                                        <span class="mini-label">IC Mode</span>
+                                        <select id="ltxMotionTransferModeSelect" class="flat-input appearance-none cursor-pointer">
+                                            <option value="pose" selected>Pose / DWPose</option>
+                                            <option value="canny">Canny / Edges</option>
+                                            <option value="depth">Depth / Geometry</option>
+                                        </select>
+                                    </label>
                                 </div>
                                 <div class="bg-nexus-panel border border-nexus-border p-2 rounded-sm text-[10px] text-nexus-muted leading-4">
                                     <span class="text-white font-bold">Auto route:</span>
@@ -5876,7 +5895,8 @@
         }
 
         function referenceSlotLabel(slot) {
-            if (isStartEndFrameMode()) return slot === 1 ? 'Start Frame' : 'End Frame';
+            const motionTransferOn = activePreset === 'LTX' && !!document.getElementById('ltxMotionTransferToggle')?.checked;
+            if (isStartEndFrameMode()) return motionTransferOn ? (slot === 1 ? 'Video' : 'Target') : (slot === 1 ? 'Start Frame' : 'End Frame');
             return slot === 1 ? 'Picture 1' : `Image ${slot}`;
         }
 
@@ -10983,11 +11003,24 @@
                     }).join('') : '';
                 } else if (activePreset === 'LTX') {
                     const motionTransferOn = !!document.getElementById('ltxMotionTransferToggle')?.checked;
+                    const motionTransferMode = String(document.getElementById('ltxMotionTransferModeSelect')?.value || 'pose').toLowerCase();
+                    const motionTransferModes = [
+                        ['pose', 'fa-person-running', 'Pose'],
+                        ['canny', 'fa-wave-square', 'Canny'],
+                        ['depth', 'fa-layer-group', 'Depth']
+                    ];
                     multiList.innerHTML += `
                         <label class="col-span-2 flex items-center justify-between gap-3 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted" onclick="event.preventDefault();event.stopPropagation();syncLtxMotionTransferToggle(!document.getElementById('ltxMotionTransferToggle')?.checked);">
                             <span><i class="fa-solid fa-arrows-spin text-nexus-red mr-1"></i>Motion Transfer</span>
                             <span class="toggle-switch"><input id="ltxMotionTransferInlineToggle" type="checkbox" ${motionTransferOn ? 'checked' : ''} onclick="event.stopPropagation();" onchange="event.stopPropagation();syncLtxMotionTransferToggle(this.checked)"><span class="toggle-track"></span></span>
                         </label>
+                        <div class="col-span-2 grid grid-cols-3 gap-1">
+                            ${motionTransferModes.map(([value, icon, label]) => `
+                                <button type="button" class="border ${motionTransferOn && motionTransferMode === value ? 'border-nexus-red bg-nexus-red text-white' : 'border-nexus-border bg-zinc-950 text-nexus-muted'} px-2 py-1 text-[9px] font-bold uppercase ${motionTransferOn ? 'hover:border-nexus-red hover:text-white' : 'hover:border-nexus-border'}" onclick="event.preventDefault();event.stopPropagation();setLtxMotionTransferMode('${value}');" title="IC-LoRA ${label}">
+                                    <i class="fa-solid ${icon} mr-1"></i>${label}
+                                </button>
+                            `).join('')}
+                        </div>
                     `;
                 }
             }
@@ -11025,6 +11058,15 @@
             const inlineToggle = document.getElementById('ltxMotionTransferInlineToggle');
             if (sideToggle) sideToggle.checked = !!value;
             if (inlineToggle) inlineToggle.checked = !!value;
+            syncReferenceImageSurfaces();
+            updateWorkflowPreview();
+        }
+
+        function setLtxMotionTransferMode(value) {
+            const mode = ['pose', 'canny', 'depth'].includes(String(value).toLowerCase()) ? String(value).toLowerCase() : 'pose';
+            const select = document.getElementById('ltxMotionTransferModeSelect');
+            if (select) select.value = mode;
+            syncReferenceImageSurfaces();
             updateWorkflowPreview();
         }
 
@@ -12580,6 +12622,94 @@
             toggleAdjusts();
         }
 
+        const NEXUS_LANGUAGES = [
+            { code: 'en', label: 'en-us - English', short: 'en-us' },
+            { code: 'pt', label: 'pt-br - Portuguese', short: 'pt-br' },
+            { code: 'es', label: 'es-es - Spanish', short: 'es-es' },
+            { code: 'fr', label: 'fr-fr - French', short: 'fr-fr' },
+            { code: 'de', label: 'de-de - German', short: 'de-de' },
+            { code: 'it', label: 'it-it - Italian', short: 'it-it' },
+            { code: 'ja', label: 'ja-jp - Japanese', short: 'ja-jp' },
+            { code: 'ko', label: 'ko-kr - Korean', short: 'ko-kr' },
+            { code: 'zh-CN', label: 'zh-cn - Chinese', short: 'zh-cn' }
+        ];
+        let nexusLanguage = nexusSafeStorage.get('nexus_language', 'en') || 'en';
+        let googleTranslateScriptLoaded = false;
+
+        function googleTranslateElementInit() {
+            if (!window.google?.translate?.TranslateElement) return;
+            new google.translate.TranslateElement({
+                pageLanguage: 'en',
+                includedLanguages: NEXUS_LANGUAGES.map(item => item.code).join(','),
+                autoDisplay: false
+            }, 'google_translate_element');
+            setTimeout(() => applyGoogleTranslateLanguage(nexusLanguage, { quiet: true }), 400);
+        }
+        window.googleTranslateElementInit = googleTranslateElementInit;
+
+        function loadGoogleTranslateScript() {
+            if (googleTranslateScriptLoaded || document.getElementById('googleTranslateScript')) return;
+            googleTranslateScriptLoaded = true;
+            const script = document.createElement('script');
+            script.id = 'googleTranslateScript';
+            script.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
+            document.body.appendChild(script);
+        }
+
+        function setGoogleTranslateCookie(lang) {
+            const value = lang === 'en' ? '/en/en' : `/en/${lang}`;
+            document.cookie = `googtrans=${value};path=/`;
+            if (location.hostname) document.cookie = `googtrans=${value};path=/;domain=${location.hostname}`;
+        }
+
+        function renderLanguageMenu() {
+            const list = document.getElementById('languageMenuList');
+            const label = document.getElementById('nexusLanguageLabel');
+            const active = NEXUS_LANGUAGES.find(item => item.code === nexusLanguage) || NEXUS_LANGUAGES[0];
+            if (label) label.innerText = active.short;
+            if (!list) return;
+            list.innerHTML = NEXUS_LANGUAGES.map(item => `
+                <button type="button" class="w-full flex items-center justify-between gap-2 px-2 py-2 text-left text-[10px] font-mono border ${item.code === nexusLanguage ? 'border-nexus-red bg-nexus-red text-white' : 'border-transparent text-nexus-muted hover:border-nexus-red hover:text-white'}" onclick="setNexusLanguage('${item.code}')">
+                    <span>${escapeHtml(item.label)}</span>
+                    ${item.code === nexusLanguage ? '<i class="fa-solid fa-check text-[9px]"></i>' : ''}
+                </button>
+            `).join('');
+        }
+
+        function toggleLanguageMenu(event) {
+            event?.preventDefault();
+            event?.stopPropagation();
+            renderLanguageMenu();
+            document.getElementById('languageMenu')?.classList.toggle('hidden');
+        }
+
+        function applyGoogleTranslateLanguage(lang, options = {}) {
+            const select = document.querySelector('.goog-te-combo');
+            setGoogleTranslateCookie(lang);
+            if (select) {
+                select.value = lang === 'en' ? '' : lang;
+                select.dispatchEvent(new Event('change'));
+            } else if (lang !== 'en') {
+                loadGoogleTranslateScript();
+            }
+            if (!options.quiet && lang === 'en') location.reload();
+        }
+
+        function setNexusLanguage(lang) {
+            nexusLanguage = NEXUS_LANGUAGES.some(item => item.code === lang) ? lang : 'en';
+            nexusSafeStorage.set('nexus_language', nexusLanguage);
+            document.getElementById('languageMenu')?.classList.add('hidden');
+            renderLanguageMenu();
+            applyGoogleTranslateLanguage(nexusLanguage);
+        }
+
+        document.addEventListener('click', event => {
+            const selector = document.getElementById('languageSelector');
+            if (selector && !selector.contains(event.target)) document.getElementById('languageMenu')?.classList.add('hidden');
+        });
+        renderLanguageMenu();
+        if (nexusLanguage !== 'en') loadGoogleTranslateScript();
+
         function applySidebarLayout() {
             const left = document.getElementById('leftSidebar');
             const leftHandle = document.getElementById('leftSidebarResizeHandle');
@@ -12828,7 +12958,7 @@
             'resizeModeSelect', 'denoiseSlider', 'batchCountInput', 'framesInput', 'fpsInput', 'secondsInput', 'motionSelect',
             'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'refinerSelect',
             'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
-            'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'ltxMotionTransferToggle',
+            'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'ltxMotionTransferToggle', 'ltxMotionTransferModeSelect',
             'controlNetEnabledToggle', 'controlNetTypeSelect', 'controlNetModelSelect', 'controlNetBalanceSelect',
             'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'
         ];
@@ -14840,6 +14970,7 @@
                     ltx_ic_tile_overlap: 64,
                     motion_transfer_enabled: ltxMotionTransferRoute,
                     motion_transfer_mode: ltxMotionTransferRoute ? 'ltx_ic_union' : 'off',
+                    motion_transfer_control_mode: ltxMotionTransferRoute ? (document.getElementById('ltxMotionTransferModeSelect')?.value || 'pose') : 'off',
                     ltx_ic_lora_strength: ltxMotionTransferRoute ? 1.0 : undefined,
                     transition_lora_enabled: activePreset === 'LTX' && !ltxMotionTransferRoute && (!!document.getElementById('ltxTransitionLoraToggle')?.checked || hasLtxEndFrame),
                     transition_lora: document.getElementById('ltxTransitionLoraSelect')?.value || 'Automatic',

@@ -43,13 +43,15 @@ $melDir = Join-Path $diffusionModelsDir "MelRoFormer"
 $melModel = Join-Path $melDir "MelBandRoformer_fp16.safetensors"
 $ltxTransitionDir = Join-Path $modelsDir "loras\ltx_transition"
 $ltxTransitionLora = Join-Path $ltxTransitionDir "ltx2.3-transition.safetensors"
+$ltxIcDir = Join-Path $modelsDir "loras\ltx_ic"
+$ltxUnionIcLora = Join-Path $ltxIcDir "ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
 
 if (!$RuntimePython) {
     $candidate = Join-Path $root "runtime\.venv\Scripts\python.exe"
     $RuntimePython = if (Test-Path -LiteralPath $candidate) { $candidate } else { "python" }
 }
 
-New-Item -ItemType Directory -Force -Path $customNodesDir, $diffusionModelsDir, $melDir, $ltxTransitionDir | Out-Null
+New-Item -ItemType Directory -Force -Path $customNodesDir, $diffusionModelsDir, $melDir, $ltxTransitionDir, $ltxIcDir | Out-Null
 
 $repos = @(
     @{
@@ -77,6 +79,16 @@ $repos = @(
         Name = "ComfyUI-MelBandRoFormer"
         Url = "https://github.com/kijai/ComfyUI-MelBandRoFormer.git"
         Path = Join-Path $customNodesDir "ComfyUI-MelBandRoFormer"
+    },
+    @{
+        Name = "comfyui_controlnet_aux"
+        Url = "https://github.com/Fannovel16/comfyui_controlnet_aux.git"
+        Path = Join-Path $customNodesDir "comfyui_controlnet_aux"
+    },
+    @{
+        Name = "ComfyUI-Video-Depth-Anything"
+        Url = "https://github.com/yuvraj108c/ComfyUI-Video-Depth-Anything.git"
+        Path = Join-Path $customNodesDir "ComfyUI-Video-Depth-Anything"
     }
 )
 
@@ -151,6 +163,24 @@ Invoke-NexusStep -Label "Downloading LTX 2.3 Transition LoRA" -Step {
     Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
     Invoke-WebRequest -Uri $url -OutFile $partial -TimeoutSec 1800
     Move-Item -LiteralPath $partial -Destination $ltxTransitionLora -Force
+}
+
+Invoke-NexusStep -Label "Downloading LTX 2.3 IC-LoRA Union Control" -Step {
+    if (Test-Path -LiteralPath $ltxUnionIcLora) {
+        $size = (Get-Item -LiteralPath $ltxUnionIcLora).Length
+        if ($size -gt 100MB) {
+            Write-NexusLine "LTX 2.3 IC-LoRA Union Control already present." "Ok"
+            return
+        }
+        Remove-Item -LiteralPath $ltxUnionIcLora -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-NexusLine "Downloading ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors..." "Info"
+    $url = "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control/resolve/main/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors?download=true"
+    $partial = "$ltxUnionIcLora.part"
+    Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+    Invoke-WebRequest -Uri $url -OutFile $partial -TimeoutSec 1800
+    Move-Item -LiteralPath $partial -Destination $ltxUnionIcLora -Force
 }
 
 Write-NexusLine "LTX Director requirements satisfied." "Ok"

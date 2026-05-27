@@ -2744,9 +2744,11 @@ def build_basic_ltx_img2video_workflow(
     transition_lora_name: str | None = None,
     frame_guides: list[dict[str, Any]] | None = None,
     video_combine_node: str | None = None,
+    available_nodes: set[str] | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     video_options = request.video or {}
+    available_nodes = available_nodes or set()
     active_audio = video_options.get("active_audio", False)
     if isinstance(active_audio, str):
         active_audio = active_audio.lower() not in {"false", "0", "off", "none", "no"}
@@ -2979,13 +2981,16 @@ def build_basic_ltx_img2video_workflow(
                 scheduler_latent_ref = ["77", 2]
         if (base_video_name or "").strip():
             motion_transfer_enabled = _bool_option(video_options.get("motion_transfer_enabled"), False)
+            motion_control_mode = str(video_options.get("motion_transfer_control_mode") or "pose").strip().lower()
+            if motion_control_mode not in {"pose", "canny", "depth", "raw"}:
+                motion_control_mode = "pose"
             motion_strength = float(
                 _number_or_none(video_options.get("motion_strength") or video_options.get("video_strength"))
                 or request.img2img.denoise
                 or 0.95
             )
             if motion_transfer_enabled:
-                motion_strength = float(_number_or_none(video_options.get("motion_transfer_motion_strength")) or 0.34)
+                motion_strength = float(_number_or_none(video_options.get("motion_transfer_motion_strength")) or 1.0)
             preprocess_nodes["72"] = {
                 "class_type": "VHS_LoadVideo",
                 "inputs": {
@@ -3000,6 +3005,81 @@ def build_basic_ltx_img2video_workflow(
                 },
                 "_meta": {"title": "LTX Base Motion Video"},
             }
+            motion_guide_image_ref: list[Any] = ["72", 0]
+            if motion_transfer_enabled:
+                if motion_control_mode == "pose" and ("DWPreprocessor" in available_nodes or "OpenposePreprocessor" in available_nodes):
+                    pose_node = "DWPreprocessor" if "DWPreprocessor" in available_nodes else "OpenposePreprocessor"
+                    pose_inputs: dict[str, Any] = {
+                        "image": ["72", 0],
+                        "detect_hand": "enable",
+                        "detect_body": "enable",
+                        "detect_face": "enable",
+                        "resolution": max(width, height),
+                        "scale_stick_for_xinsr_cn": "disable",
+                    }
+                    if pose_node == "DWPreprocessor":
+                        pose_inputs["bbox_detector"] = "yolox_l.onnx"
+                        pose_inputs["pose_estimator"] = "dw-ll_ucoco_384_bs5.torchscript.pt"
+                    preprocess_nodes["271"] = {
+                        "class_type": pose_node,
+                        "inputs": pose_inputs,
+                        "_meta": {"title": "LTX Motion Transfer Pose / DWPose"},
+                    }
+                    if "RenderPeopleKps" in available_nodes:
+                        preprocess_nodes["272"] = {
+                            "class_type": "RenderPeopleKps",
+                            "inputs": {
+                                "kps": ["271", 1],
+                                "render_body": True,
+                                "render_hand": True,
+                                "render_face": True,
+                            },
+                            "_meta": {"title": "Draw LTX Motion Transfer Pose"},
+                        }
+                        motion_guide_image_ref = ["272", 0]
+                    else:
+                        motion_guide_image_ref = ["271", 0]
+                elif motion_control_mode == "canny" and ("CannyEdgePreprocessor" in available_nodes or "Canny" in available_nodes):
+                    canny_node = "CannyEdgePreprocessor" if "CannyEdgePreprocessor" in available_nodes else "Canny"
+                    canny_inputs: dict[str, Any] = {
+                        "image": ["72", 0],
+                    }
+                    if canny_node == "CannyEdgePreprocessor":
+                        canny_inputs["low_threshold"] = int(_number_or_none(video_options.get("motion_transfer_canny_low")) or 92)
+                        canny_inputs["high_threshold"] = int(_number_or_none(video_options.get("motion_transfer_canny_high")) or 200)
+                        canny_inputs["resolution"] = max(width, height)
+                    else:
+                        canny_inputs["low_threshold"] = float(_number_or_none(video_options.get("motion_transfer_canny_low")) or 0.4)
+                        canny_inputs["high_threshold"] = float(_number_or_none(video_options.get("motion_transfer_canny_high")) or 0.8)
+                    preprocess_nodes["271"] = {
+                        "class_type": canny_node,
+                        "inputs": canny_inputs,
+                        "_meta": {"title": "LTX Motion Transfer Canny"},
+                    }
+                    motion_guide_image_ref = ["271", 0]
+                elif motion_control_mode == "depth" and {"LoadVideoDepthAnythingModel", "VideoDepthAnythingProcess", "VideoDepthAnythingOutput"}.issubset(available_nodes):
+                    preprocess_nodes["271"] = {
+                        "class_type": "LoadVideoDepthAnythingModel",
+                        "inputs": {"model": str(video_options.get("motion_transfer_depth_model") or "video_depth_anything_vits.pth")},
+                        "_meta": {"title": "Load LTX Motion Transfer Depth Model"},
+                    }
+                    preprocess_nodes["272"] = {
+                        "class_type": "VideoDepthAnythingProcess",
+                        "inputs": {
+                            "vda_model": ["271", 0],
+                            "images": ["72", 0],
+                            "input_size": int(_number_or_none(video_options.get("motion_transfer_depth_input_size")) or 518),
+                            "max_res": max(width, height),
+                            "precision": "fp32",
+                        },
+                        "_meta": {"title": "LTX Motion Transfer Depth"},
+                    }
+                    preprocess_nodes["273"] = {
+                        "class_type": "VideoDepthAnythingOutput",
+                        "inputs": {"depths": ["272", 0], "colormap": "gray"},
+                        "_meta": {"title": "LTX Motion Transfer Depth Images"},
+                    }
+                    motion_guide_image_ref = ["273", 0]
             if ic_lora_loader_ref:
                 preprocess_nodes["73"] = {
                     "class_type": "LTXAddVideoICLoRAGuide",
@@ -3008,7 +3088,7 @@ def build_basic_ltx_img2video_workflow(
                         "negative": ltx_negative_ref,
                         "vae": video_vae_ref,
                         "latent": sampler_latent_ref,
-                        "image": ["72", 0],
+                        "image": motion_guide_image_ref,
                         "frame_idx": 0,
                         "strength": max(0.0, min(1.0, motion_strength)),
                         "latent_downscale_factor": 1.0,
@@ -3017,7 +3097,7 @@ def build_basic_ltx_img2video_workflow(
                         "tile_size": int(_number_or_none(video_options.get("ltx_ic_tile_size")) or 256),
                         "tile_overlap": int(_number_or_none(video_options.get("ltx_ic_tile_overlap")) or 64),
                     },
-                    "_meta": {"title": "Guide LTX Motion With IC-LoRA"},
+                    "_meta": {"title": f"Guide LTX Motion With IC-LoRA ({motion_control_mode})"},
                 }
             else:
                 preprocess_nodes["73"] = {
