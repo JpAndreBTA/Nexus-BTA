@@ -2978,11 +2978,14 @@ def build_basic_ltx_img2video_workflow(
                 sampler_latent_ref = ["77", 2]
                 scheduler_latent_ref = ["77", 2]
         if (base_video_name or "").strip():
+            motion_transfer_enabled = _bool_option(video_options.get("motion_transfer_enabled"), False)
             motion_strength = float(
                 _number_or_none(video_options.get("motion_strength") or video_options.get("video_strength"))
                 or request.img2img.denoise
                 or 0.95
             )
+            if motion_transfer_enabled:
+                motion_strength = float(_number_or_none(video_options.get("motion_transfer_motion_strength")) or 0.34)
             preprocess_nodes["72"] = {
                 "class_type": "VHS_LoadVideo",
                 "inputs": {
@@ -3034,6 +3037,50 @@ def build_basic_ltx_img2video_workflow(
             ltx_negative_ref = ["73", 1]
             sampler_latent_ref = ["73", 2]
             scheduler_latent_ref = ["73", 2]
+            motion_target_image_name = str(reference_end_image_name or reference_image_name or "").strip()
+            if motion_transfer_enabled and motion_target_image_name and ic_lora_loader_ref:
+                preprocess_nodes["78"] = {
+                    "class_type": "LoadImage",
+                    "inputs": {"image": motion_target_image_name},
+                    "_meta": {"title": "LTX Motion Transfer Target Image"},
+                }
+                preprocess_nodes["79"] = {
+                    "class_type": "ImageResizeKJv2",
+                    "inputs": {
+                        "image": ["78", 0],
+                        "width": width,
+                        "height": height,
+                        "upscale_method": "lanczos",
+                        "keep_proportion": "crop",
+                        "pad_color": "0, 0, 0",
+                        "crop_position": "center",
+                        "divisible_by": 32,
+                        "device": "cpu",
+                    },
+                    "_meta": {"title": "Resize LTX Motion Target Image"},
+                }
+                preprocess_nodes["80"] = {
+                    "class_type": "LTXAddVideoICLoRAGuide",
+                    "inputs": {
+                        "positive": ltx_positive_ref,
+                        "negative": ltx_negative_ref,
+                        "vae": video_vae_ref,
+                        "latent": sampler_latent_ref,
+                        "image": ["79", 0],
+                        "frame_idx": max(0, length - 1),
+                        "strength": max(0.0, min(1.0, float(_number_or_none(video_options.get("motion_transfer_target_strength") or video_options.get("end_frame_strength")) or 1.0))),
+                        "latent_downscale_factor": 1.0,
+                        "crop": str(video_options.get("ltx_ic_crop") or "disabled"),
+                        "use_tiled_encode": bool(video_options.get("ltx_ic_tiled_encode") or False),
+                        "tile_size": int(_number_or_none(video_options.get("ltx_ic_tile_size")) or 256),
+                        "tile_overlap": int(_number_or_none(video_options.get("ltx_ic_tile_overlap")) or 64),
+                    },
+                    "_meta": {"title": "LTX IC-LoRA Motion Transfer Target"},
+                }
+                ltx_positive_ref = ["80", 0]
+                ltx_negative_ref = ["80", 1]
+                sampler_latent_ref = ["80", 2]
+                scheduler_latent_ref = ["80", 2]
 
     audio_nodes: dict[str, Any] = {}
     if has_audio_context:

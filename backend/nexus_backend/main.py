@@ -391,13 +391,20 @@ def _materialize_ltx_director_audio(prompt: dict[str, Any]) -> None:
             if not isinstance(segment, dict):
                 continue
             audio_b64 = str(segment.get("audioB64") or "")
+            source_video_b64 = str(segment.get("sourceVideoB64") or "")
             old_names = [
                 segment.get("audioFile"),
                 segment.get("fileName"),
                 segment.get("title"),
             ]
             filename = ""
-            if audio_b64.startswith("data:audio/"):
+            if source_video_b64.startswith("data:video/"):
+                video_name = _write_input_data_video(source_video_b64, "nexus_director_audio_source")
+                filename = _extract_audio_to_input(settings.input_dir / video_name, "nexus_director_audio")
+                old_names.extend([segment.get("sourceVideoFile"), video_name])
+                segment["sourceVideoB64"] = ""
+                segment["sourceVideoFile"] = video_name
+            elif audio_b64.startswith("data:audio/"):
                 filename = _write_input_data_audio(audio_b64, "nexus_director_audio")
             elif audio_b64 and audio_b64.lower() not in {"embedded", "none", "null"}:
                 try:
@@ -416,6 +423,7 @@ def _materialize_ltx_director_audio(prompt: dict[str, Any]) -> None:
                 segment["audioFile"] = filename
                 segment["fileName"] = filename
                 segment["audioB64"] = ""
+                segment["sourceVideoB64"] = ""
                 changed = True
                 continue
 
@@ -1358,6 +1366,31 @@ def _ffprobe_binary() -> str | None:
         if candidate.exists():
             return str(candidate)
     return None
+
+
+def _extract_audio_to_input(video_path: Path, prefix: str = "nexus_director_audio") -> str:
+    ffmpeg = _ffmpeg_binary()
+    filename = f"{prefix}_{uuid.uuid4().hex[:10]}.wav"
+    target = settings.input_dir / filename
+    command = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(video_path),
+        "-vn",
+        "-acodec",
+        "pcm_s16le",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        str(target),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0 or not target.exists() or target.stat().st_size <= 44:
+        target.unlink(missing_ok=True)
+        raise ValueError("Selected Director video has no readable audio track.")
+    return filename
 
 
 def _safe_upload_name(name: str, fallback: str = "source") -> str:

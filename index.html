@@ -1762,6 +1762,13 @@
                                         <input id="ltxTransitionLoraStrength" class="flat-input font-mono text-right" type="number" value="1.0" min="0" max="1.5" step="0.05">
                                     </label>
                                 </div>
+                                <div id="ltxMotionTransferWrapper" class="hidden bg-nexus-panel border border-nexus-border px-2 py-2 rounded-sm space-y-2">
+                                    <label class="flex items-center justify-between gap-3 text-xs text-white">
+                                        <span class="font-bold">Motion Transfer</span>
+                                        <span class="toggle-switch"><input id="ltxMotionTransferToggle" type="checkbox"><span class="toggle-track"></span></span>
+                                    </label>
+                                    <div class="text-[9px] font-mono text-nexus-muted leading-4">Start = motion video. End = image target via IC Union Control.</div>
+                                </div>
                                 <div class="bg-nexus-panel border border-nexus-border p-2 rounded-sm text-[10px] text-nexus-muted leading-4">
                                     <span class="text-white font-bold">Auto route:</span>
                                     <span id="videoRouteText">ANIMA routes still-image generation; video adapters stay optional.</span>
@@ -5657,6 +5664,8 @@
                 if (refineToggle) refineToggle.checked = savedFields.ltxLatentUpscaleRefineToggle !== undefined ? !!savedFields.ltxLatentUpscaleRefineToggle : true;
                 const transitionToggle = document.getElementById('ltxTransitionLoraToggle');
                 if (transitionToggle) transitionToggle.checked = savedFields.ltxTransitionLoraToggle !== undefined ? !!savedFields.ltxTransitionLoraToggle : false;
+                const motionTransferToggle = document.getElementById('ltxMotionTransferToggle');
+                if (motionTransferToggle) motionTransferToggle.checked = savedFields.ltxMotionTransferToggle !== undefined ? !!savedFields.ltxMotionTransferToggle : false;
             }
             setElementOptions('distilledLoraOneSelect', profile.distilledLoras || ['None']);
             setElementOptions('distilledLoraTwoSelect', profile.distilledLoras || ['None']);
@@ -5775,6 +5784,7 @@
             const ltxUpscaleControls = document.getElementById('ltxUpscaleControls');
             const ltxDetailerControls = document.getElementById('ltxDetailerControls');
             const ltxTransitionLoraWrapper = document.getElementById('ltxTransitionLoraWrapper');
+            const ltxMotionTransferWrapper = document.getElementById('ltxMotionTransferWrapper');
 
             if (videoPanel) videoPanel.classList.toggle('hidden', !isVideo);
             if (framesWrapper) framesWrapper.classList.toggle('hidden', ltxOnly);
@@ -5786,6 +5796,7 @@
             if (ltxUpscaleControls) ltxUpscaleControls.classList.toggle('hidden', !ltxOnly);
             if (ltxDetailerControls) ltxDetailerControls.classList.toggle('hidden', !ltxOnly);
             if (ltxTransitionLoraWrapper) ltxTransitionLoraWrapper.classList.toggle('hidden', !ltxOnly);
+            if (ltxMotionTransferWrapper) ltxMotionTransferWrapper.classList.add('hidden');
             updateExtrasModeUi();
             updateEmbeddingButtonState();
             if (dimensionsTitle) dimensionsTitle.innerText = isVideo ? 'Frame Dimensions' : 'Image Dimensions';
@@ -7257,7 +7268,8 @@
                 const dataUrl = await ltxDirectorReadFileAsDataUrl(file);
                 const posterDataUrl = await ltxDirectorVideoPosterDataUrl(dataUrl);
                 const start = Math.max(0, ...ltxDirectorState.segments.map(ltxDirectorEnd));
-                const length = Math.min(5, Math.max(1, ltxDirectorState.duration - start || 5));
+                const sourceDuration = await ltxDirectorVideoMetadataDuration(dataUrl);
+                const length = Math.min(sourceDuration || 5, Math.max(1, ltxDirectorState.duration - start || sourceDuration || 5));
                 const id = `ltx-video-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
                 ltxDirectorState.segments.push({
                     id,
@@ -7291,13 +7303,31 @@
                     cameraKeyframes: []
                 });
                 ltxDirectorConstrainSegment(ltxDirectorState.segments[ltxDirectorState.segments.length - 1], { type: 'segment', syncLoadVideo: true });
+                const audioId = `ltx-audio-from-video-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+                ltxDirectorState.audioSegments.push({
+                    id: audioId,
+                    type: 'audio',
+                    start,
+                    length,
+                    trimStart: 0,
+                    sourceDuration: Math.max(length, sourceDuration || length),
+                    audioDurationFrames: ltxDirectorSecondsToFrames(length),
+                    audioFile: `${file.name}#audio`,
+                    fileName: `${file.name} audio`,
+                    sourceVideoFile: file.name,
+                    sourceVideoB64: dataUrl,
+                    audioB64: '',
+                    waveformPeaks: ltxDirectorWaveformPeaks(file.name)
+                });
+                ltxDirectorConstrainSegment(ltxDirectorState.audioSegments[ltxDirectorState.audioSegments.length - 1], { type: 'audio' });
+                ltxDirectorState.customAudio = true;
                 ltxDirectorState.selectedType = 'segment';
                 ltxDirectorState.selectedId = id;
             }
             fitLtxDirectorTimeline({ quiet: true });
             renderLtxDirector();
             syncLtxDirectorWorkflowGraph(false);
-            showToast("Director Video Added", `${videos.length} Load Video UI source${videos.length === 1 ? '' : 's'} linked.`);
+            showToast("Director Video Added", `${videos.length} video source${videos.length === 1 ? '' : 's'} linked with editable audio tracks.`);
         }
 
         async function addLtxDirectorReferenceImageFiles(files) {
@@ -7872,7 +7902,7 @@
             `).join('');
             return `
                 <div class="space-y-2">
-                    <audio src="${escapeHtml(audio.audioB64 || '')}" controls class="w-full h-9"></audio>
+                    ${audio.audioB64 ? `<audio src="${escapeHtml(audio.audioB64 || '')}" controls class="w-full h-9"></audio>` : `<div class="h-9 border border-nexus-border bg-black flex items-center px-2 text-[10px] font-mono text-nexus-muted">audio will be extracted from video on render</div>`}
                     <div class="ltx-audio-ruler">${ticks}</div>
                     <div class="ltx-audio-trim-track" data-ltx-audio-trim-track onpointerdown="beginLtxDirectorAudioTrimDrag(event)">
                         <div class="ltx-audio-trim-window" data-ltx-audio-trim-window style="left:${left}%;width:${width}%;">
@@ -8543,6 +8573,31 @@
                 if (finalSeen.has(key)) return false;
                 finalSeen.add(key);
                 return true;
+            });
+        }
+
+        function ltxDirectorVideoMetadataDuration(dataUrl) {
+            return new Promise(resolve => {
+                const video = document.createElement('video');
+                let settled = false;
+                const done = value => {
+                    if (settled) return;
+                    settled = true;
+                    video.removeAttribute('src');
+                    video.load?.();
+                    resolve(Number.isFinite(value) && value > 0 ? value : 0);
+                };
+                const timer = setTimeout(() => done(0), 2500);
+                video.preload = 'metadata';
+                video.onloadedmetadata = () => {
+                    clearTimeout(timer);
+                    done(Number(video.duration || 0));
+                };
+                video.onerror = () => {
+                    clearTimeout(timer);
+                    done(0);
+                };
+                video.src = dataUrl;
             });
         }
 
@@ -10926,6 +10981,14 @@
                         </button>
                     `;
                     }).join('') : '';
+                } else if (activePreset === 'LTX') {
+                    const motionTransferOn = !!document.getElementById('ltxMotionTransferToggle')?.checked;
+                    multiList.innerHTML += `
+                        <label class="col-span-2 flex items-center justify-between gap-3 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted" onclick="event.preventDefault();event.stopPropagation();syncLtxMotionTransferToggle(!document.getElementById('ltxMotionTransferToggle')?.checked);">
+                            <span><i class="fa-solid fa-arrows-spin text-nexus-red mr-1"></i>Motion Transfer</span>
+                            <span class="toggle-switch"><input id="ltxMotionTransferInlineToggle" type="checkbox" ${motionTransferOn ? 'checked' : ''} onclick="event.stopPropagation();" onchange="event.stopPropagation();syncLtxMotionTransferToggle(this.checked)"><span class="toggle-track"></span></span>
+                        </label>
+                    `;
                 }
             }
             if (state && !hasImage) state.innerText = 'drop or click to load';
@@ -10955,6 +11018,14 @@
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
             if (!options.quiet) showToast("Reference Cleared", `${img2imgActivityLabel()}/inpaint source image was removed.`);
+        }
+
+        function syncLtxMotionTransferToggle(value) {
+            const sideToggle = document.getElementById('ltxMotionTransferToggle');
+            const inlineToggle = document.getElementById('ltxMotionTransferInlineToggle');
+            if (sideToggle) sideToggle.checked = !!value;
+            if (inlineToggle) inlineToggle.checked = !!value;
+            updateWorkflowPreview();
         }
 
         function setReferenceImageSource(src, label = 'reference image', options = {}) {
@@ -11453,6 +11524,12 @@
             const dataUrl = await readVideoFileAsDataUrl(file);
             referenceBaseVideoDataUrl = dataUrl;
             referenceBaseVideoMeta = { src: dataUrl, label: file.name || 'base video', width: 0, height: 0, duration: 0 };
+            if (activePreset === 'LTX' && currentActivity === 'img2img') {
+                const toggle = document.getElementById('ltxMotionTransferToggle');
+                if (toggle) toggle.checked = true;
+                const inlineToggle = document.getElementById('ltxMotionTransferInlineToggle');
+                if (inlineToggle) inlineToggle.checked = true;
+            }
             const video = document.createElement('video');
             video.preload = 'metadata';
             video.onloadedmetadata = () => {
@@ -12751,7 +12828,7 @@
             'resizeModeSelect', 'denoiseSlider', 'batchCountInput', 'framesInput', 'fpsInput', 'secondsInput', 'motionSelect',
             'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'refinerSelect',
             'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
-            'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength',
+            'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'ltxMotionTransferToggle',
             'controlNetEnabledToggle', 'controlNetTypeSelect', 'controlNetModelSelect', 'controlNetBalanceSelect',
             'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'
         ];
@@ -14655,7 +14732,11 @@
                 && referenceExtraSlotsEnabled()
                 && !!referenceImageDataUrl
                 && (referenceImageExtraDataUrls || []).some(item => !!item?.src);
-            const ltxTransitionRoute = activePreset === 'LTX' && hasLtxEndFrame;
+            const hasLtxMotionTargetImage = activePreset === 'LTX' && !!referenceBaseVideoDataUrl && (
+                !!referenceImageDataUrl || (referenceImageExtraDataUrls || []).some(item => !!item?.src)
+            );
+            const ltxMotionTransferRoute = hasLtxMotionTargetImage && !!document.getElementById('ltxMotionTransferToggle')?.checked;
+            const ltxTransitionRoute = activePreset === 'LTX' && hasLtxEndFrame && !ltxMotionTransferRoute;
             const requestedSeconds = parseFloat(document.getElementById('secondsInput')?.value || '5');
             const effectiveVideoSeconds = requestedSeconds;
             const requestedFpsRaw = parseFloat(document.getElementById('fpsInput')?.value || '16');
@@ -14703,9 +14784,11 @@
                     mask_blur: parseInt(document.getElementById('maskBlurSlider')?.value || '4', 10),
                     mask_content: document.getElementById('maskContentSelect')?.value || 'Original',
                     reference_image: referenceImageDataUrl || null,
-                    reference_images: referenceExtraSlotsEnabled()
-                        ? [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean)
-                        : (referenceImageDataUrl ? [referenceImageDataUrl] : []),
+                    reference_images: ltxMotionTransferRoute
+                        ? [(referenceImageExtraDataUrls || []).find(item => item?.src)?.src || referenceImageDataUrl].filter(Boolean)
+                        : (referenceExtraSlotsEnabled()
+                            ? [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean)
+                            : (referenceImageDataUrl ? [referenceImageDataUrl] : [])),
                     base_video: referenceBaseVideoDataUrl || null,
                     mask_image: exportInpaintMaskDataUrl()
                 },
@@ -14755,7 +14838,10 @@
                     ltx_ic_tiled_encode: document.getElementById('ltxIcTiledEncodeSelect')?.value === 'true',
                     ltx_ic_tile_size: 256,
                     ltx_ic_tile_overlap: 64,
-                    transition_lora_enabled: activePreset === 'LTX' && (!!document.getElementById('ltxTransitionLoraToggle')?.checked || hasLtxEndFrame),
+                    motion_transfer_enabled: ltxMotionTransferRoute,
+                    motion_transfer_mode: ltxMotionTransferRoute ? 'ltx_ic_union' : 'off',
+                    ltx_ic_lora_strength: ltxMotionTransferRoute ? 1.0 : undefined,
+                    transition_lora_enabled: activePreset === 'LTX' && !ltxMotionTransferRoute && (!!document.getElementById('ltxTransitionLoraToggle')?.checked || hasLtxEndFrame),
                     transition_lora: document.getElementById('ltxTransitionLoraSelect')?.value || 'Automatic',
                     transition_lora_strength: parseFloat(document.getElementById('ltxTransitionLoraStrength')?.value || String(LTX_TRANSITION_DEFAULT_STRENGTH)),
                     start_frame_strength: ltxTransitionRoute ? 1.0 : undefined,

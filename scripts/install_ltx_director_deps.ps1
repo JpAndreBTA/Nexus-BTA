@@ -92,6 +92,11 @@ foreach ($repo in $repos) {
         if ($repo.Commit -and (Test-Path -LiteralPath (Join-Path $repo.Path ".git"))) {
             Push-Location $repo.Path
             try {
+                $localDirectorDirty = $repo.Name -eq "WhatDreamsCost-ComfyUI" -and [string]::IsNullOrWhiteSpace((git status --porcelain -- "ltx_director.py")) -eq $false
+                if ($localDirectorDirty) {
+                    Write-NexusLine "$($repo.Name) local LTX Director hotfixes preserved; upstream checkout skipped." "Ok"
+                    return
+                }
                 $currentCommit = (git rev-parse HEAD).Trim()
                 if ($currentCommit -ne $repo.Commit) {
                     Write-NexusLine "Pinning $($repo.Name) to $($repo.Commit.Substring(0, 7))..." "Info"
