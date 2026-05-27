@@ -727,6 +727,55 @@ def _prepare_reference_images(request: GenerateRequest) -> list[str]:
     return [_prepare_reference_value(value, f"nexus_reference_{index + 1}") for index, value in enumerate(values)]
 
 
+def _prepare_ltx_director_frame_guides(request: GenerateRequest) -> list[dict[str, Any]]:
+    if request.preset.lower() != "ltx" or getattr(request, "workspace", "") != "director":
+        return []
+    director = request.director if isinstance(request.director, dict) else {}
+    timeline = director.get("timeline_data") if isinstance(director.get("timeline_data"), dict) else {}
+    if not timeline and isinstance(director.get("timeline_data_json"), str):
+        try:
+            parsed = json.loads(str(director.get("timeline_data_json") or "{}"))
+            if isinstance(parsed, dict):
+                timeline = parsed
+        except Exception:
+            timeline = {}
+    segments_all = [segment for segment in timeline.get("segments", []) or [] if isinstance(segment, dict)]
+    if any(str(segment.get("sourceType") or segment.get("type") or "").lower() in {"text", "video"} for segment in segments_all):
+        return []
+    if timeline.get("audioSegments"):
+        return []
+    if director.get("use_custom_audio"):
+        return []
+    fps = int(_number_or_none((request.video or {}).get("fps") or director.get("frame_rate")) or 8)
+    source_fps = int(_number_or_none(director.get("frame_rate")) or fps)
+    segments = [
+        segment
+        for segment in segments_all
+        if isinstance(segment, dict) and str(segment.get("sourceType") or segment.get("type") or "image").lower() == "image"
+    ]
+    segments.sort(key=lambda item: int(item.get("start") or 0))
+    guides: list[dict[str, Any]] = []
+    for index, segment in enumerate(segments[:8]):
+        image_value = str(segment.get("imageB64") or segment.get("imageSrc") or "").strip()
+        if not image_value.startswith("data:image/"):
+            continue
+        image_name = _write_input_data_image(image_value, f"nexus_director_frame_{index + 1}")
+        raw_start = int(_number_or_none(segment.get("start")) or 0)
+        guide_index = raw_start
+        if source_fps > 0 and fps > 0:
+            guide_index = int(round(raw_start * (fps / source_fps)))
+        guides.append(
+            {
+                "image": image_name,
+                "index": -1 if index == len(segments[:8]) - 1 and len(segments[:8]) > 1 else max(0, guide_index),
+                "strength": max(0.0, min(1.0, float(_number_or_none(segment.get("guideStrength")) or 1.0))),
+            }
+        )
+    if guides and director.get("local_prompts") and not (request.prompt or "").strip():
+        request.prompt = str(director.get("local_prompts") or "")
+    return guides
+
+
 def _available_comfy_node(object_info: dict[str, Any], *names: str) -> str | None:
     available = set(object_info or {})
     for name in names:
@@ -924,6 +973,15 @@ def _resolve_generation_seed(request: GenerateRequest) -> int:
     return seed
 
 
+def _number_or_none(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _annotate_output_metadata(outputs: list[dict[str, Any]], request: GenerateRequest, assets: dict[str, Any] | None = None) -> None:
     metadata = _generation_metadata(request, assets)
     for output in outputs:
@@ -1116,6 +1174,12 @@ def _apply_ltx_reference_frame_lock(
     reference_image_names: list[str],
 ) -> None:
     if request.preset.lower() != "ltx":
+        return
+    video_options = request.video or {}
+    frame_lock_enabled = video_options.get("ltx_endpoint_frame_lock") or video_options.get("endpoint_frame_lock")
+    if isinstance(frame_lock_enabled, str):
+        frame_lock_enabled = frame_lock_enabled.lower() in {"true", "1", "on", "yes"}
+    if not frame_lock_enabled:
         return
     start_image = _input_reference_path(reference_image_names[0]) if reference_image_names else None
     end_image = _input_reference_path(reference_image_names[1]) if len(reference_image_names) > 1 else None
@@ -3350,6 +3414,14 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             if missing_zimage_assets:
                 raise ValueError("Z-Image Turbo missing required assets: " + ", ".join(missing_zimage_assets) + ".")
         reference_image_names = _prepare_reference_images(request)
+        ltx_director_frame_guides: list[dict[str, Any]] = []
+        if request.preset.lower() == "ltx" and getattr(request, "workspace", "") == "director":
+            ltx_director_frame_guides = _prepare_ltx_director_frame_guides(request)
+            if ltx_director_frame_guides:
+                reference_image_names = [str(guide["image"]) for guide in ltx_director_frame_guides]
+                request.activity = "img2img"
+                request.workflow_override = None
+                request.workflow_id = None
         base_video_name = _prepare_base_video(request)
         if not base_video_name and request.preset.lower() == "ltx" and len(reference_image_names) >= 2:
             base_video_name = _prepare_ltx_motion_scaffold(reference_image_names, request)
@@ -3461,6 +3533,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     video_vae_name=assets.get("video_vae") or assets.get("vae"),
                     latent_upscale_name=assets.get("latent_upscale"),
                     transition_lora_name=assets.get("transition_lora"),
+                    frame_guides=ltx_director_frame_guides,
                     video_combine_node=_available_comfy_node(object_info, "VHS_VideoCombine"),
                 )
             elif request.preset.lower() == "wan":

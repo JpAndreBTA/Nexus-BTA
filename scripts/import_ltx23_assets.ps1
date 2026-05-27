@@ -42,8 +42,7 @@ $assets = @(
     "latent_upscale_models\ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
     "loras\ltx\ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors",
     "loras\ltx\ltx-2.3-22b-distilled-lora-384-1.1.safetensors",
-    "loras\ltx\LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors",
-    "loras\ltx\LTX2.3_reasoning_I2V_V3.safetensors"
+    "loras\ltx\LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors"
 )
 
 if ($IncludeErosModel) {

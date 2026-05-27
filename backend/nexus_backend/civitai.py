@@ -196,16 +196,22 @@ def download_civitai_asset(
     _download_file(download_url, target, token, progress_callback=progress_callback)
 
     preview_path = None
-    if save_preview and resolved.get("preview"):
-        preview_url = str(resolved["preview"])
-        preview_is_video = any(item.get("type") == "video" and item.get("url") == preview_url for item in resolved.get("previews") or [])
+    preview_source = _preview_download_source(resolved)
+    if save_preview and preview_source:
+        preview_url = preview_source["url"]
+        preview_is_video = preview_source["type"] == "video"
         suffix = ".jpg" if preview_is_video else (Path(str(urllib.parse.urlparse(preview_url).path)).suffix or ".png")
         preview_path = target.with_suffix(target.suffix + f".preview{suffix}")
         try:
             if progress_callback:
                 progress_callback({"status": "saving_preview", "progress": 100, "message": "Saving preview"})
-            if preview_is_video and _save_video_first_frame(preview_url, preview_path):
-                pass
+            if preview_is_video:
+                if _save_video_first_frame(preview_url, preview_path):
+                    pass
+                elif preview_source.get("poster"):
+                    _download_file(preview_source["poster"], preview_path, token=None)
+                else:
+                    preview_path = None
             else:
                 _download_file(preview_url, preview_path, token=None)
         except Exception:
@@ -410,19 +416,55 @@ def _preview_media(version: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         mime = str(image.get("mimeType") or image.get("type") or "").lower()
         lower_url = url.lower()
-        media_type = "video" if "video" in mime or lower_url.endswith((".mp4", ".webm", ".mov")) else "image"
+        video = image.get("video") if isinstance(image.get("video"), dict) else {}
+        video_url = str(
+            image.get("videoUrl")
+            or image.get("video_url")
+            or video.get("url")
+            or video.get("lowResUrl")
+            or ""
+        )
+        media_type = "video" if video_url or "video" in mime or lower_url.endswith((".mp4", ".webm", ".mov")) else "image"
+        poster_url = str(
+            image.get("thumbnailUrl")
+            or image.get("thumbUrl")
+            or image.get("imageUrl")
+            or image.get("lowResUrl")
+            or (url if not lower_url.endswith((".mp4", ".webm", ".mov")) else "")
+        )
         previews.append(
             {
                 "url": url,
                 "type": media_type,
-                "thumbnailUrl": image.get("thumbnailUrl") or image.get("thumbUrl") or image.get("url"),
+                "thumbnailUrl": poster_url,
+                "posterUrl": poster_url,
+                "videoUrl": video_url,
                 "lowResUrl": image.get("lowResUrl") or image.get("url"),
+                "lowResVideoUrl": video.get("lowResUrl") or video_url,
                 "nsfw": image.get("nsfw") or image.get("needsReview"),
                 "width": image.get("width"),
                 "height": image.get("height"),
             }
         )
     return previews
+
+
+def _preview_download_source(resolved: dict[str, Any]) -> dict[str, str] | None:
+    preview_url = str(resolved.get("preview") or "")
+    for item in resolved.get("previews") or []:
+        if not isinstance(item, dict):
+            continue
+        item_url = str(item.get("url") or "")
+        video_url = str(item.get("videoUrl") or item.get("video_url") or item.get("lowResVideoUrl") or "")
+        poster_url = str(item.get("posterUrl") or item.get("thumbnailUrl") or item.get("imageUrl") or item.get("lowResUrl") or item_url)
+        item_type = str(item.get("type") or "").lower()
+        if item_type == "video" and video_url and (not preview_url or item_url == preview_url):
+            return {"url": video_url, "type": "video", "poster": poster_url}
+    if preview_url:
+        suffix = Path(str(urllib.parse.urlparse(preview_url).path)).suffix.lower()
+        media_type = "video" if suffix in {".mp4", ".webm", ".mov"} else "image"
+        return {"url": preview_url, "type": media_type}
+    return None
 
 
 def _target_kind(model_type: Any, filename: str, requested: str) -> str:

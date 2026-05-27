@@ -224,35 +224,73 @@
     return /\.(mp4|webm|mov)(\?|$)/i.test(url) ? "video" : "image";
   }
 
-  function lowResVideoUrl(preview) {
-    if (typeof preview === "string") return preview;
-    const candidates = [
-      preview?.lowResUrl,
-      preview?.lowresUrl,
-      preview?.lowRes,
-      preview?.mobileUrl,
-      preview?.previewUrl,
+  function normalizedUrl(value) {
+    const url = String(value || "").trim();
+    if (!url) return "";
+    return url.startsWith("//") ? `${window.location.protocol}${url}` : url;
+  }
+
+  function previewCandidates(preview) {
+    if (typeof preview === "string") return [preview];
+    return [
+      preview?.videoUrl,
+      preview?.video_url,
+      preview?.lowResVideoUrl,
+      preview?.lowresVideoUrl,
+      preview?.originalVideoUrl,
       preview?.video?.lowResUrl,
       preview?.video?.url,
+      preview?.video?.src,
       ...(Array.isArray(preview?.sources) ? preview.sources.map((source) => source?.url || source?.src) : []),
       ...(Array.isArray(preview?.variants) ? preview.variants.map((variant) => variant?.url || variant?.src) : []),
+      preview?.lowResUrl,
+      preview?.lowresUrl,
+      preview?.mobileUrl,
+      preview?.previewUrl,
       preview?.url,
     ].filter(Boolean);
-    const videoCandidates = candidates.filter((candidate) => mediaType(candidate) === "video");
-    return String(videoCandidates[0] || preview?.url || "");
+  }
+
+  function videoUrl(preview) {
+    return previewCandidates(preview).map(normalizedUrl).find((candidate) => mediaType(candidate) === "video") || "";
+  }
+
+  function posterUrl(preview) {
+    if (typeof preview === "string") return mediaType(preview) === "video" ? "" : normalizedUrl(preview);
+    const candidates = [
+      preview?.posterUrl,
+      preview?.poster_url,
+      preview?.thumbnailUrl,
+      preview?.thumbUrl,
+      preview?.imageUrl,
+      preview?.image_url,
+      preview?.lowResUrl,
+      preview?.lowresUrl,
+      preview?.mobileUrl,
+      preview?.previewUrl,
+      preview?.url,
+    ].filter(Boolean);
+    return candidates.map(normalizedUrl).find((candidate) => mediaType(candidate) !== "video") || "";
   }
 
   function mediaUrl(preview) {
     const url = typeof preview === "string" ? preview : preview?.url;
-    if (!url) return "";
-    return (preview?.type || mediaType(url)) === "video" ? lowResVideoUrl(preview) : url;
+    if (!url) return posterUrl(preview) || videoUrl(preview);
+    return normalizedUrl((preview?.type || mediaType(url)) === "video" ? (posterUrl(preview) || videoUrl(preview)) : url);
+  }
+
+  function previewKind(preview) {
+    const url = mediaUrl(preview);
+    if ((preview?.type || mediaType(url)) !== "video") return videoUrl(preview) ? "video" : "image";
+    return videoUrl(preview) ? "video" : "image";
   }
 
   function mediaHtml(preview, className, alt) {
     const url = mediaUrl(preview);
     if (!url) return `<div class="${className} flex items-center justify-center text-nexus-muted"><i class="fa-regular fa-image text-2xl"></i></div>`;
-    if ((preview?.type || mediaType(url)) === "video") {
-      return `<video data-src="${html(url)}" preload="none" muted loop playsinline poster="${html(preview?.thumbnailUrl || preview?.thumbUrl || preview?.url || "")}" class="${className} object-cover"></video>`;
+    if (previewKind(preview) === "video") {
+      const poster = posterUrl(preview);
+      return `<div class="${className} relative bg-black"><video data-src="${html(videoUrl(preview))}" preload="none" muted loop playsinline poster="${html(poster)}" class="w-full h-full object-cover"></video>${poster ? `<img src="${html(poster)}" loading="lazy" decoding="async" alt="${html(alt)}" class="absolute inset-0 w-full h-full object-cover pointer-events-none" data-civitai-poster>` : ""}<span class="absolute bottom-2 left-2 bg-black/80 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-play mr-1"></i>Video</span></div>`;
     }
     return `<img src="${html(url)}" loading="lazy" decoding="async" alt="${html(alt)}" class="${className} object-cover">`;
   }
@@ -268,6 +306,28 @@
     return data?.relative_path || data?.path || data?.local_path || data?.installed_path || "";
   }
 
+  function markInstalled(data) {
+    if (!data) return;
+    const versionId = String(data.version_id || data.id || "");
+    const path = installedPath(data);
+    currentItems = currentItems.map((item) => {
+      const versions = (item.versions || []).map((version) => {
+        if (versionId && String(version.id || "") !== versionId) return version;
+        return {
+          ...version,
+          installed: true,
+          downloaded: true,
+          already_downloaded: true,
+          exists: true,
+          relative_path: data.relative_path || version.relative_path || path,
+          path: data.path || version.path || "",
+        };
+      });
+      const matched = versions.some((version) => version.installed && (!versionId || String(version.id || "") === versionId));
+      return matched ? { ...item, versions, installed: true, downloaded: true, relative_path: data.relative_path || item.relative_path || path, path: data.path || item.path || "" } : { ...item, versions };
+    });
+  }
+
   function wireModalVideoPlayback() {
     if (modalVideoObserver) modalVideoObserver.disconnect();
     const modal = el("civitaiMediaModal");
@@ -279,6 +339,8 @@
         video.pause();
         return;
       }
+      if (!video.src) video.src = video.dataset.src || "";
+      video.addEventListener("playing", () => video.parentElement?.querySelector("[data-civitai-poster]")?.remove(), { once: true });
       video.play().catch(() => {});
     }, { threshold: [0, 0.6, 1] });
     modalVideoObserver.observe(video);
@@ -294,6 +356,7 @@
         const visible = entry.isIntersecting && entry.intersectionRatio >= 0.55;
         if (visible) {
           if (!video.src) video.src = video.dataset.src || "";
+          video.addEventListener("playing", () => video.parentElement?.querySelector("[data-civitai-poster]")?.remove(), { once: true });
           video.play().catch(() => {});
         } else {
           video.pause();
@@ -366,11 +429,12 @@
     const mature = mediaIsMature(preview, currentDetail?.data);
     const blurClass = mature && blurMature ? "blur-xl scale-110" : "";
     const url = mediaUrl(preview);
-    const isVideo = (preview?.type || mediaType(url)) === "video";
+    const isVideo = previewKind(preview) === "video";
+    const poster = posterUrl(preview);
     stage.innerHTML = `
       <div class="relative max-w-full max-h-full overflow-hidden border border-nexus-border bg-black">
         ${isVideo
-          ? `<video src="${html(url)}" controls muted playsinline preload="metadata" poster="${html(preview?.thumbnailUrl || preview?.thumbUrl || "")}" class="max-w-full max-h-[76vh] object-contain ${blurClass}"></video>`
+          ? `<div class="relative max-w-full max-h-[76vh]"><video data-src="${html(videoUrl(preview))}" controls muted playsinline preload="none" poster="${html(poster)}" class="max-w-full max-h-[76vh] object-contain ${blurClass}"></video>${poster ? `<img src="${html(poster)}" loading="eager" decoding="async" alt="Civitai video poster" class="absolute inset-0 w-full h-full object-contain pointer-events-none ${blurClass}" data-civitai-poster>` : ""}</div>`
           : `<img src="${html(url)}" alt="Civitai preview" class="max-w-full max-h-[76vh] object-contain ${blurClass}">`}
         ${mature && blurMature ? `<span class="absolute top-3 left-3 bg-yellow-400 text-black text-[9px] font-bold px-2 py-1 uppercase">Mature preview blurred</span>` : ""}
       </div>
@@ -452,17 +516,18 @@
 
     const progress = Math.max(0, Math.min(100, Number(latest.progress || 0)));
     const label = latest.model_name || latest.file_name || latest.message || "Civitai download";
-    const statusText = latest.status === "completed"
+    const statusText = latest.status === "completed" || latest.status === "downloaded"
       ? "Complete"
       : latest.status === "failed"
         ? "Failed"
         : `${progress.toFixed(progress < 10 && progress > 0 ? 1 : 0)}%`;
     if (summary) summary.innerText = `${statusText}: ${label}`;
-    if (name) name.innerText = `${latest.status || "download"} · ${label}`;
+    const latestStatus = latest.status === "downloaded" ? "installed" : (latest.status || "download");
+    if (name) name.innerText = `${latestStatus} - ${label}`;
     if (percent) percent.innerText = `${progress.toFixed(progress < 10 && progress > 0 ? 1 : 0)}%`;
     if (speed) {
       const total = latest.bytes_total ? ` / ${formatBytes(latest.bytes_total)}` : "";
-      speed.innerText = `${formatBytes(latest.bytes_downloaded)}${total} · ${formatBytes(latest.speed_bps)}/s`;
+      speed.innerText = `${formatBytes(latest.bytes_downloaded)}${total} - ${formatBytes(latest.speed_bps)}/s`;
     }
     if (bar) bar.style.width = `${progress}%`;
     panel?.classList.remove("hidden");
@@ -490,11 +555,14 @@
       rememberDownloadJob(job);
       if (job.status === "completed") {
         resolved = job.result;
-        if (job.result) renderResult(job.result, true);
-        status("Downloaded.");
+        if (job.result) {
+          markInstalled(job.result);
+          renderResult({ ...job.result, installed: true, downloaded: true, already_downloaded: true, exists: true }, true);
+        }
+        status("Installed.");
         window.refreshModelCatalog?.();
         window.refreshLoraLibrary?.();
-        window.showToast?.("Civitai Download Complete", job.file_name || job.model_name || "Model saved.");
+        window.showToast?.("Civitai Installed", job.file_name || job.model_name || "Model saved.");
         return job;
       }
       if (job.status === "failed") {
@@ -565,6 +633,7 @@
         </div>
       </div>
     `;
+    wireTileVideoLazyload();
   }
 
   function renderSearch(items, append) {
@@ -587,6 +656,7 @@
           const preview = previewList(item, version)[0];
           const mature = mediaIsMature(preview, item);
           const matureClass = mature && blurMature ? "blur-xl scale-110" : "";
+          const installed = isInstalled(version, isInstalled(item));
           return `
             <article class="group bg-nexus-panel border border-nexus-border hover:border-nexus-red rounded-sm overflow-hidden">
               <button class="block w-full text-left" onclick="window.NexusCivitai?.selectSearchResult(${index})">
@@ -596,6 +666,7 @@
                   </div>
                   <span class="absolute top-2 left-2 bg-nexus-red text-white text-[7px] font-mono font-bold px-1.5 py-0.5 uppercase">${html(item.type)}</span>
                   ${mature ? `<span class="absolute top-2 right-2 bg-yellow-400 text-black text-[7px] font-bold px-1.5 py-0.5 uppercase">Mature</span>` : ""}
+                  ${installed ? `<span class="absolute bottom-7 left-2 bg-emerald-500 text-black text-[7px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-circle-check mr-1"></i>Installed</span>` : ""}
                   <span class="absolute bottom-2 right-2 bg-black/80 text-zinc-300 text-[8px] font-mono px-1.5 py-0.5 rounded-sm">${html(version.base_model || "Base")}</span>
                 </div>
                 <div class="p-2 space-y-1">
