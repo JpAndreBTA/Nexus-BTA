@@ -35,7 +35,12 @@ if (Test-Path -LiteralPath $python) {
     Write-NexusSection "Requirements"
     Write-NexusLine "Backend Python..." "Info"
     & $python -m pip install -q --upgrade pip
-    & $python -m pip install -q "uvicorn[standard]>=0.30" fastapi pydantic python-multipart httpx websockets pillow soundfile opencv-contrib-python
+    $nexusRequirements = Join-Path $root "requirements.txt"
+    if (Test-Path -LiteralPath $nexusRequirements) {
+        & $python -m pip install -q -r $nexusRequirements
+    } else {
+        & $python -m pip install -q "uvicorn[standard]>=0.30" fastapi pydantic python-multipart httpx websockets pillow soundfile opencv-contrib-python
+    }
     Write-NexusLine "Backend Python requirements satisfied." "Ok"
 
     $comfyRequirements = Join-Path $root "runtime\ComfyUI\requirements.txt"

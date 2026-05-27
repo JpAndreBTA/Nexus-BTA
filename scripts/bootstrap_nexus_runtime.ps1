@@ -114,11 +114,16 @@ if ($CopyPythonEnv) {
     Copy-Directory $PythonEnvSource (Join-Path $root "runtime\.venv")
     $runtimePython = Join-Path $root "runtime\.venv\Scripts\python.exe"
     $comfyRequirements = Join-Path $root "runtime\ComfyUI\requirements.txt"
+    $nexusRequirements = Join-Path $root "requirements.txt"
     if (Test-Path -LiteralPath $runtimePython) {
         if (Test-Path -LiteralPath $comfyRequirements) {
             & $runtimePython -m pip install -r $comfyRequirements
         }
-        & $runtimePython -m pip install "uvicorn[standard]>=0.30" "comfyui-frontend-package>=1.43" python-multipart soundfile opencv-contrib-python
+        if (Test-Path -LiteralPath $nexusRequirements) {
+            & $runtimePython -m pip install -r $nexusRequirements
+        } else {
+            & $runtimePython -m pip install "uvicorn[standard]>=0.30" "comfyui-frontend-package>=1.43" python-multipart soundfile opencv-contrib-python
+        }
     }
 }
 

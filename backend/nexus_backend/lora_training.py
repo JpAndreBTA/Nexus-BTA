@@ -340,8 +340,10 @@ def _trainer_candidates(settings: NexusSettings, trainer: str, script: str | Non
         for base in (runtime / "ai-toolkit", runtime / "ai_toolkit", root / "ai-toolkit"):
             candidates.append((base, [python_bin, str(base / "run.py")]))
     elif trainer == "ltx_trainer":
+        uv = shutil.which("uv")
+        if not uv:
+            return candidates
         for base in (runtime / "LTX-2", root / "LTX-2"):
-            uv = shutil.which("uv") or "uv"
             candidates.append((base, [uv, "run", "python", "packages/ltx-trainer/scripts/train.py"]))
     elif trainer == "musubi_tuner":
         for base in (runtime / "musubi-tuner", runtime / "musubi_tuner", root / "musubi-tuner"):
