@@ -47,6 +47,26 @@ function Link-Directory([string]$Source, [string]$Target) {
     }
 }
 
+function Resolve-BootstrapPython {
+    $candidates = @(
+        @{ File = "py"; Args = @("-3.11") },
+        @{ File = "py"; Args = @("-3.12") },
+        @{ File = "python"; Args = @() }
+    )
+    foreach ($candidate in $candidates) {
+        try {
+            $cmd = Get-Command $candidate.File -ErrorAction Stop
+            $version = & $cmd.Source @($candidate.Args + @("-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")) 2>$null
+            if ($LASTEXITCODE -eq 0 -and $version -match "^(3\.1[01]|3\.12)$") {
+                return @{ File = $cmd.Source; Args = $candidate.Args }
+            }
+        } catch {
+            continue
+        }
+    }
+    throw "Python 3.10, 3.11 or 3.12 was not found. Install Python 3.11/3.12 and run run.bat again."
+}
+
 $root = Resolve-AbsolutePath $ProjectRoot
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
 if (!(Test-Path -LiteralPath $root)) {
@@ -108,14 +128,27 @@ foreach ($dir in $checkpointPresetDirs) {
     New-Item -ItemType Directory -Path (Join-Path $root "models\checkpoints\$dir") -Force | Out-Null
 }
 
-Copy-Directory $ComfyCoreSource (Join-Path $root "runtime\ComfyUI")
+$comfyTarget = Join-Path $root "runtime\ComfyUI"
+if (Test-Path -LiteralPath $ComfyCoreSource) {
+    Copy-Directory $ComfyCoreSource $comfyTarget
+} elseif (!(Test-Path -LiteralPath (Join-Path $comfyTarget "main.py"))) {
+    git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git $comfyTarget
+}
 
-if ($CopyPythonEnv) {
+if ($CopyPythonEnv -and (Test-Path -LiteralPath $PythonEnvSource)) {
     Copy-Directory $PythonEnvSource (Join-Path $root "runtime\.venv")
+}
+
+if ($CopyPythonEnv -or !(Test-Path -LiteralPath (Join-Path $root "runtime\.venv\Scripts\python.exe"))) {
     $runtimePython = Join-Path $root "runtime\.venv\Scripts\python.exe"
+    if (!(Test-Path -LiteralPath $runtimePython)) {
+        $bootstrapPython = Resolve-BootstrapPython
+        & $bootstrapPython.File @($bootstrapPython.Args + @("-m", "venv", (Join-Path $root "runtime\.venv")))
+    }
     $comfyRequirements = Join-Path $root "runtime\ComfyUI\requirements.txt"
     $nexusRequirements = Join-Path $root "requirements.txt"
     if (Test-Path -LiteralPath $runtimePython) {
+        & $runtimePython -m pip install --upgrade pip wheel setuptools
         if (Test-Path -LiteralPath $comfyRequirements) {
             & $runtimePython -m pip install -r $comfyRequirements
         }
@@ -127,15 +160,15 @@ if ($CopyPythonEnv) {
     }
 }
 
-if ($ImportCustomNodes) {
+if ($ImportCustomNodes -and (Test-Path -LiteralPath $CustomNodesSource)) {
     Copy-Directory $CustomNodesSource (Join-Path $root "custom_nodes")
 }
 
-if ($ImportWorkflows) {
+if ($ImportWorkflows -and (Test-Path -LiteralPath $WorkflowsSource)) {
     Copy-Directory $WorkflowsSource (Join-Path $root "workflows\comfyui")
 }
 
-if ($ImportModels) {
+if ($ImportModels -and (Test-Path -LiteralPath $ModelsSource)) {
     if ($LinkModels) {
         foreach ($dir in Get-ChildItem -LiteralPath $ModelsSource -Directory) {
             Link-Directory $dir.FullName (Join-Path $root "models\$($dir.Name)")

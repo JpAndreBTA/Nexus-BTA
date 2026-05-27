@@ -26,7 +26,7 @@ Write-NexusLogo
 Write-NexusSection "Updates"
 Invoke-NexusRepositoryUpdate -ProjectRoot $root -Strict
 
-if (!(Test-Path -LiteralPath (Join-Path $root "runtime\ComfyUI\main.py"))) {
+if (!(Test-Path -LiteralPath (Join-Path $root "runtime\ComfyUI\main.py")) -or !(Test-Path -LiteralPath $python)) {
     Write-NexusLine "Embedded ComfyUI is missing; preparing local runtime..." "Warn"
     & $bootstrap -ProjectRoot $root -CopyPythonEnv
 }

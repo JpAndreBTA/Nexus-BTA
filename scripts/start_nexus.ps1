@@ -11,6 +11,7 @@ $python = Join-Path $root "runtime\.venv\Scripts\python.exe"
 $backend = Join-Path $root "backend\run_backend.py"
 $comfyMain = Join-Path $root "runtime\ComfyUI\main.py"
 $comfyRoot = Join-Path $root "runtime\ComfyUI"
+$bootstrap = Join-Path $root "scripts\bootstrap_nexus_runtime.ps1"
 $watcher = Join-Path $root "scripts\watch_launcher.ps1"
 $runtimeHotfixes = Join-Path $root "scripts\apply_runtime_hotfixes.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
@@ -94,17 +95,26 @@ if (!$NoOpen) {
     }
 }
 
-if (!(Test-Path -LiteralPath $comfyMain)) {
-    throw "Embedded ComfyUI runtime not found at $comfyMain. Run scripts\bootstrap_nexus_runtime.ps1 first."
-}
-
-if (!(Test-Path -LiteralPath $python)) {
-    $python = "python"
-}
-
 Write-NexusLogo
 Write-NexusSection "Updates"
 Invoke-NexusRepositoryUpdate -ProjectRoot $root
+
+if (!(Test-Path -LiteralPath $comfyMain) -or !(Test-Path -LiteralPath $python)) {
+    if (!(Test-Path -LiteralPath $bootstrap)) {
+        throw "Runtime missing and bootstrap script not found."
+    }
+    Write-NexusSection "First Run"
+    Write-NexusLine "Preparing embedded ComfyUI runtime..." "Info"
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $bootstrap -ProjectRoot $root -CopyPythonEnv
+}
+
+if (!(Test-Path -LiteralPath $comfyMain)) {
+    throw "Embedded ComfyUI runtime not found at $comfyMain."
+}
+
+if (!(Test-Path -LiteralPath $python)) {
+    throw "Runtime Python was not created at $python."
+}
 
 if (Test-Path -LiteralPath $ltxDirectorDeps) {
     Write-NexusSection "Requirements"

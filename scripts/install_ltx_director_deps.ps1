@@ -51,6 +51,21 @@ New-Item -ItemType Directory -Force -Path $customNodesDir, $diffusionModelsDir, 
 
 $repos = @(
     @{
+        Name = "ComfyUI-LTXVideo"
+        Url = "https://github.com/Lightricks/ComfyUI-LTXVideo.git"
+        Path = Join-Path $customNodesDir "ComfyUI-LTXVideo"
+    },
+    @{
+        Name = "ComfyUI-VideoHelperSuite"
+        Url = "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git"
+        Path = Join-Path $customNodesDir "ComfyUI-VideoHelperSuite"
+    },
+    @{
+        Name = "ComfyUI-KJNodes"
+        Url = "https://github.com/kijai/ComfyUI-KJNodes.git"
+        Path = Join-Path $customNodesDir "comfyui-kjnodes"
+    },
+    @{
         Name = "WhatDreamsCost-ComfyUI"
         Url = "https://github.com/WhatDreamsCost/WhatDreamsCost-ComfyUI.git"
         Path = Join-Path $customNodesDir "WhatDreamsCost-ComfyUI"

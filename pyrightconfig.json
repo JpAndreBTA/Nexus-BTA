@@ -1,0 +1,25 @@
+{
+  "include": [
+    "backend",
+    "scripts",
+    "frontend/scripts",
+    "custom_nodes/WhatDreamsCost-ComfyUI",
+    "custom_nodes/ComfyUI-LTXVideo",
+    "custom_nodes/comfyui-kjnodes"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    ".git",
+    ".serena",
+    "models",
+    "output",
+    "temp",
+    "runtime",
+    "user",
+    "training",
+    "frontend/node_modules",
+    "custom_nodes/**/.git"
+  ],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic"
+}
