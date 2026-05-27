@@ -217,42 +217,27 @@
         }
 
         .ltx-director-segment.is-transition-on {
-            border-color: rgba(255, 59, 59, 0.82) !important;
-            box-shadow: inset 0 0 0 1px rgba(255, 59, 59, 0.45), 0 0 18px rgba(255, 59, 59, 0.14);
+            border-color: rgba(168, 85, 247, 0.9) !important;
+            box-shadow: inset 0 0 0 1px rgba(168, 85, 247, 0.52), 0 0 18px rgba(168, 85, 247, 0.18);
         }
 
-        .ltx-transition-badge {
+        .ltx-director-segment.is-selected.is-transition-on {
+            border-color: #ff3b3b !important;
+            outline-color: rgba(255, 59, 59, 0.92);
+            box-shadow: inset 0 0 0 1px rgba(168, 85, 247, 0.56), 0 0 20px rgba(168, 85, 247, 0.18);
+        }
+
+        .ltx-director-segment.is-transition-on::after {
+            content: "";
             position: absolute;
-            right: 6px;
-            top: 6px;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
             z-index: 6;
-            border: 1px solid rgba(255, 59, 59, 0.8);
-            background: rgba(8, 9, 13, 0.9);
-            color: #fff;
-            font-size: 8px;
-            font-weight: 800;
-            letter-spacing: .04em;
-            text-transform: uppercase;
-            padding: 2px 5px;
-            opacity: .86;
-        }
-
-        .ltx-transition-badge::after {
-            content: "Transition ON";
-            position: absolute;
-            right: 0;
-            top: calc(100% + 6px);
-            white-space: nowrap;
-            background: #18181b;
-            border: 1px solid #ff3b3b;
-            color: #fff;
-            padding: 4px 6px;
-            opacity: 0;
+            background: #a855f7;
+            box-shadow: 0 0 12px rgba(168, 85, 247, 0.75);
             pointer-events: none;
-        }
-
-        .ltx-director-segment:hover .ltx-transition-badge::after {
-            opacity: 1;
         }
 
         .ltx-director-reference {
@@ -6698,7 +6683,7 @@
             }
             if (segment.speechAdditionalTime === undefined) segment.speechAdditionalTime = 0;
             if (segment.transitionLoraEnabled === undefined) segment.transitionLoraEnabled = false;
-            if (segment.transitionPrompt === undefined) segment.transitionPrompt = 'continuous motion continuation into the next visual segment, transformation or angle change as described, no dissolve, no crossfade, zhuanchang';
+            if (segment.transitionPrompt === undefined) segment.transitionPrompt = 'continuous motion continuation into the next visual segment, transformation or angle change as described, no dissolve, no crossfade';
             if (!segment.speechText && segment.type === 'text') segment.speechText = segment.prompt || '';
             return segment;
         }
@@ -6909,13 +6894,12 @@
                         ? `<video src="${escapeHtml(segment.videoSrc || '')}" class="w-full h-full object-cover" muted playsinline></video>`
                         : `<img src="${escapeHtml(segment.imageSrc || segment.imageB64 || '')}" alt="LTX keyframe" class="w-full h-full object-cover">`;
                 return `
-                    <article class="ltx-director-segment ${selected ? 'is-selected' : ''} ${transitionOn ? 'is-transition-on' : ''} bg-zinc-950 border border-nexus-border rounded-sm overflow-hidden cursor-grab group" data-ltx-segment-id="${escapeHtml(segment.id)}" style="left:${left}px;width:${width}px;" title="${transitionOn ? 'Transition ON' : ''}">
+                    <article class="ltx-director-segment ${selected ? 'is-selected' : ''} ${transitionOn ? 'is-transition-on' : ''} bg-zinc-950 border border-nexus-border rounded-sm overflow-hidden cursor-grab group" data-ltx-segment-id="${escapeHtml(segment.id)}" style="left:${left}px;width:${width}px;">
                         <button type="button" class="ltx-director-remove" data-ltx-remove-type="segment" data-ltx-remove-id="${escapeHtml(segment.id)}" onclick="removeLtxDirectorItem(event)" onpointerdown="event.stopPropagation()" title="Remove segment"><i class="fa-solid fa-xmark"></i></button>
                         <span class="ltx-director-handle left" data-ltx-handle="left"></span>
                         <span class="ltx-director-handle right" data-ltx-handle="right"></span>
                         <div class="h-[70%] bg-black relative overflow-hidden">
                             ${media}
-                            ${transitionOn ? '<span class="ltx-transition-badge">TRN</span>' : ''}
                             <span class="absolute bottom-1 left-1 bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-white">${ltxDirectorDisplayTime(segment.start)} - ${ltxDirectorDisplayTime(ltxDirectorEnd(segment))}</span>
                         </div>
                         <div class="h-[30%] px-2 py-1 overflow-hidden">
@@ -6933,11 +6917,11 @@
                     && Math.abs(Number(ltxDirectorInsertMenu.start) - gap.start) < 0.001
                     && Math.abs(Number(ltxDirectorInsertMenu.end) - gap.end) < 0.001;
                 return `
-                    <button type="button" class="ltx-gap-insert ${open ? 'is-open' : ''}" style="left:${left}px;" onclick="toggleLtxDirectorInsertMenu(event, ${gap.start}, ${gap.end}, 'segment')" title="Insert segment">
+                    <button type="button" class="ltx-gap-insert ${open ? 'is-open' : ''}" style="left:${left}px;" onpointerdown="toggleLtxDirectorInsertMenu(event, ${gap.start}, ${gap.end}, 'segment')" title="Insert segment">
                         <i class="fa-solid fa-plus text-[10px]"></i>
                     </button>
                     ${open ? `
-                        <div class="ltx-gap-menu" style="left:${menuLeft}px;">
+                        <div class="ltx-gap-menu" style="left:${menuLeft}px;" onpointerdown="event.stopPropagation()">
                             <button type="button" onclick="insertLtxDirectorImageAtGap(${gap.start}, ${gap.end})"><i class="fa-regular fa-image text-nexus-red"></i>Add Img</button>
                             <button type="button" onclick="insertLtxDirectorTextAtGap(${gap.start}, ${gap.end})"><i class="fa-solid fa-font text-nexus-red"></i>Add Txt</button>
                         </div>
@@ -6975,11 +6959,11 @@
                     && Math.abs(Number(ltxDirectorInsertMenu.start) - gap.start) < 0.001
                     && Math.abs(Number(ltxDirectorInsertMenu.end) - gap.end) < 0.001;
                 return `
-                    <button type="button" class="ltx-gap-insert ${open ? 'is-open' : ''}" style="left:${left}px;" onclick="toggleLtxDirectorInsertMenu(event, ${gap.start}, ${gap.end}, 'audio')" title="Insert audio">
+                    <button type="button" class="ltx-gap-insert ${open ? 'is-open' : ''}" style="left:${left}px;" onpointerdown="toggleLtxDirectorInsertMenu(event, ${gap.start}, ${gap.end}, 'audio')" title="Insert audio">
                         <i class="fa-solid fa-plus text-[10px]"></i>
                     </button>
                     ${open ? `
-                        <div class="ltx-gap-menu" style="left:${menuLeft}px;">
+                        <div class="ltx-gap-menu" style="left:${menuLeft}px;" onpointerdown="event.stopPropagation()">
                             <button type="button" onclick="insertLtxDirectorAudioAtGap(${gap.start}, ${gap.end})"><i class="fa-solid fa-music text-nexus-red"></i>Add Audio</button>
                         </div>
                     ` : ''}
@@ -7554,6 +7538,22 @@
             syncLtxDirectorWorkflowGraph(false);
         }
 
+        function setLtxDirectorTransitionPromptPreset(kind) {
+            const segment = ltxDirectorSelectedSegment();
+            if (!segment) return;
+            const presets = {
+                motion: 'continuous motion carried into the next visual segment, same subject momentum, natural movement completion, no dissolve, no crossfade',
+                angle: 'camera angle transition into the next visual segment, preserve subject identity and motion direction, cinematic parallax, no dissolve, no crossfade',
+                zoom: 'smooth camera push-in toward the next visual segment, continuous subject motion, depth-aware zoom, no dissolve, no crossfade',
+                orbit: 'subtle orbit camera move into the next visual segment, continuous body and smoke motion, stable identity, no dissolve, no crossfade',
+                transform: 'controlled transformation into the next visual segment, shape and style evolve continuously, stable composition, no dissolve, no crossfade'
+            };
+            segment.transitionLoraEnabled = true;
+            segment.transitionPrompt = presets[kind] || presets.motion;
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+        }
+
         function toggleLtxDirectorPlayback(force = null) {
             const shouldPlay = force === null ? !ltxDirectorPlaybackTimer : !!force;
             const icon = document.getElementById('ltxDirectorPlayIcon');
@@ -8011,7 +8011,16 @@
                         </label>
                         ${segment.transitionLoraEnabled ? `
                             <div class="ltx-info-field space-y-2">
-                                <span class="mini-label">Transition Prompt Add-On</span>
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="mini-label">Transition Prompt Add-On</span>
+                                    <div class="flex gap-1">
+                                        <button type="button" class="flat-button px-2 py-1 text-[9px]" title="Continuous motion" onclick="setLtxDirectorTransitionPromptPreset('motion')"><i class="fa-solid fa-person-running text-purple-400"></i></button>
+                                        <button type="button" class="flat-button px-2 py-1 text-[9px]" title="Camera angle change" onclick="setLtxDirectorTransitionPromptPreset('angle')"><i class="fa-solid fa-video text-purple-400"></i></button>
+                                        <button type="button" class="flat-button px-2 py-1 text-[9px]" title="Push-in / zoom" onclick="setLtxDirectorTransitionPromptPreset('zoom')"><i class="fa-solid fa-magnifying-glass-plus text-purple-400"></i></button>
+                                        <button type="button" class="flat-button px-2 py-1 text-[9px]" title="Orbit / rotate" onclick="setLtxDirectorTransitionPromptPreset('orbit')"><i class="fa-solid fa-rotate text-purple-400"></i></button>
+                                        <button type="button" class="flat-button px-2 py-1 text-[9px]" title="Transformation" onclick="setLtxDirectorTransitionPromptPreset('transform')"><i class="fa-solid fa-wand-magic-sparkles text-purple-400"></i></button>
+                                    </div>
+                                </div>
                                 <textarea data-ltx-info="segment.transitionPrompt" rows="2" oninput="updateLtxDirectorInfoField(this)" class="w-full bg-zinc-950 border border-nexus-border p-2 text-xs text-white outline-none focus:border-nexus-red resize-none" placeholder="Describe motion continuation, transformation, angle change...">${escapeHtml(segment.transitionPrompt || '')}</textarea>
                             </div>
                         ` : ''}
@@ -8105,7 +8114,7 @@
                 } else if (key === 'transitionLoraEnabled') {
                     segment.transitionLoraEnabled = !!element.checked;
                     if (segment.transitionLoraEnabled && !segment.transitionPrompt) {
-                        segment.transitionPrompt = 'continuous motion continuation into the next visual segment, transformation or angle change as described, no dissolve, no crossfade, zhuanchang';
+                        segment.transitionPrompt = 'continuous motion carried into the next visual segment, same subject momentum, natural movement completion, no dissolve, no crossfade';
                     }
                 } else if (key === 'transitionPrompt') {
                     segment.transitionPrompt = String(value || '');
@@ -8335,7 +8344,7 @@
                     id: segment.id,
                     start: Math.max(0, Math.round(Number(segment.start || 0) * fps)),
                     length: Math.max(1, Math.round(Number(segment.length || LTX_DIRECTOR_MIN_SECONDS) * fps)),
-                    prompt: `${String(segment.prompt || '').trim() || 'director timeline segment'}${segment.transitionLoraEnabled && segment.transitionPrompt ? `, ${String(segment.transitionPrompt).trim()}` : ''}`,
+                    prompt: `${String(segment.prompt || '').trim() || 'director timeline segment'}${segment.transitionLoraEnabled && segment.transitionPrompt ? `, ${String(segment.transitionPrompt).replace(/\bzhuanchang\b/ig, '').replace(/\s+,/g, ',').trim()}` : ''}`,
                     negativePrompt: String(segment.negativePrompt || '').trim(),
                     type: effectiveType,
                     sourceType: segment.type || 'image',
@@ -14758,6 +14767,8 @@
                     seconds: director.duration_seconds,
                     duration: director.duration_seconds,
                     active_audio: director.use_custom_audio,
+                    transition_lora_enabled: payload.video.transition_lora_enabled || director.timeline_data.segments.some(segment => segment.transitionLoraEnabled),
+                    transition_lora: document.getElementById('ltxTransitionLoraSelect')?.value || payload.video.transition_lora || 'Automatic',
                     omnicine_enabled: !!activeOmnicineSelection(),
                     omnicine_lora: activeOmnicineSelection() || 'Off',
                     latent_upscale_refine: !!document.getElementById('ltxLatentUpscaleRefineToggle')?.checked,
