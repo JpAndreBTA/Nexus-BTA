@@ -7,6 +7,7 @@ temp/
 user/
 custom_nodes/
 test-results/
+training/
 
 # Third-party/imported ComfyUI workflows. Keep only Nexus-owned base workflows.
 workflows/comfyui/

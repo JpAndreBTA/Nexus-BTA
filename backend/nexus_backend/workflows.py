@@ -1531,12 +1531,14 @@ def build_basic_qwen_image_workflow(
             positive_inputs = {"clip": ["2", 0], "prompt": prompt_text, "vae": ["3", 0]}
             negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt or "", "vae": ["3", 0]}
             previous_conditioning: list[Any] = ["5", 0]
+            previous_negative_conditioning: list[Any] = ["6", 0]
             for index, _name in enumerate(refs, start=1):
                 image_ref = [str(59 + index), 0]
                 positive_inputs[f"image{index}"] = image_ref
                 negative_inputs[f"image{index}"] = image_ref
                 encode_id = str(69 + index)
                 ref_id = str(79 + index)
+                negative_ref_id = str(89 + index)
                 workflow[encode_id] = {
                     "class_type": "VAEEncode",
                     "inputs": {"pixels": image_ref, "vae": ["3", 0]},
@@ -1547,7 +1549,13 @@ def build_basic_qwen_image_workflow(
                     "inputs": {"conditioning": previous_conditioning, "latent": [encode_id, 0]},
                     "_meta": {"title": f"Reference Latent {index}"},
                 }
+                workflow[negative_ref_id] = {
+                    "class_type": "ReferenceLatent",
+                    "inputs": {"conditioning": previous_negative_conditioning, "latent": [encode_id, 0]},
+                    "_meta": {"title": f"Negative Reference Latent {index}"},
+                }
                 previous_conditioning = [ref_id, 0]
+                previous_negative_conditioning = [negative_ref_id, 0]
             workflow["5"] = {
                 "class_type": "TextEncodeQwenImageEditPlus",
                 "inputs": positive_inputs,
@@ -1565,7 +1573,7 @@ def build_basic_qwen_image_workflow(
             }
             workflow["16"] = {
                 "class_type": "FluxKontextMultiReferenceLatentMethod",
-                "inputs": {"conditioning": ["6", 0], "reference_latents_method": "index_timestep_zero"},
+                "inputs": {"conditioning": previous_negative_conditioning, "reference_latents_method": "index_timestep_zero"},
                 "_meta": {"title": "QWEN Negative Reference Method"},
             }
             workflow["10"]["inputs"]["positive"] = ["15", 0]
@@ -2448,6 +2456,7 @@ def build_basic_ltx_img2video_workflow(
     checkpoint_name: str,
     text_encoder_name: str,
     reference_image_name: str,
+    reference_end_image_name: str | None = None,
     text_projection_name: str | None = None,
     audio_vae_name: str | None = None,
     video_vae_name: str | None = None,
@@ -2527,11 +2536,56 @@ def build_basic_ltx_img2video_workflow(
     text_to_video = request.activity == "txt2img" and not (reference_image_name or "").strip()
     sampler_latent_ref: list[Any] = ["7", 2] if not text_to_video else ["7", 0]
     scheduler_latent_ref: list[Any] = sampler_latent_ref
+    ltx_positive_ref: list[Any] = ["6", 0] if text_to_video else ["7", 0]
+    ltx_negative_ref: list[Any] = ["6", 1] if text_to_video else ["7", 1]
     decode_latent_ref: list[Any] = ["12", 0]
     create_video_image_ref: list[Any] = ["13", 0]
     create_video_inputs: dict[str, Any] = {"images": create_video_image_ref, "fps": float(fps)}
     has_audio_context = active_audio and bool(audio_vae_name)
     first_audio_latent_ref: list[Any] | None = None
+
+    preprocess_nodes: dict[str, Any] = {}
+    reference_image_ref: list[Any] = ["3", 0]
+    if not text_to_video:
+        preprocess_nodes["22"] = {
+            "class_type": "LTXVPreprocess",
+            "inputs": {"image": ["3", 0], "img_compression": img_compression},
+            "_meta": {"title": "LTX Start Frame Preprocess"},
+        }
+        reference_image_ref = ["22", 0]
+        if (reference_end_image_name or "").strip():
+            end_frame_strength = float(
+                _number_or_none(video_options.get("end_frame_strength") or video_options.get("motion_strength"))
+                or request.img2img.denoise
+                or 0.85
+            )
+            preprocess_nodes["35"] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": reference_end_image_name},
+                "_meta": {"title": "End Frame"},
+            }
+            preprocess_nodes["36"] = {
+                "class_type": "LTXVPreprocess",
+                "inputs": {"image": ["35", 0], "img_compression": img_compression},
+                "_meta": {"title": "LTX End Frame Preprocess"},
+            }
+            preprocess_nodes["37"] = {
+                "class_type": "LTXVAddGuide",
+                "inputs": {
+                    "positive": ["7", 0],
+                    "negative": ["7", 1],
+                    "vae": video_vae_ref,
+                    "latent": ["7", 2],
+                    "image": ["36", 0],
+                    "frame_idx": max(0, length - 1),
+                    "strength": max(0.0, min(1.0, end_frame_strength)),
+                },
+                "_meta": {"title": "Guide End Frame"},
+            }
+            ltx_positive_ref = ["37", 0]
+            ltx_negative_ref = ["37", 1]
+            sampler_latent_ref = ["37", 2]
+            scheduler_latent_ref = ["37", 2]
 
     audio_nodes: dict[str, Any] = {}
     if has_audio_context:
@@ -2553,7 +2607,7 @@ def build_basic_ltx_img2video_workflow(
             },
             "18": {
                 "class_type": "LTXVConcatAVLatent",
-                "inputs": {"video_latent": ["7", 0] if text_to_video else ["7", 2], "audio_latent": ["17", 0]},
+                "inputs": {"video_latent": sampler_latent_ref, "audio_latent": ["17", 0]},
                 "_meta": {"title": "Merge Video + Audio Latents"},
             },
             "19": {
@@ -2574,16 +2628,6 @@ def build_basic_ltx_img2video_workflow(
             "inputs": {"vae_name": video_vae_name},
             "_meta": {"title": "Load LTX Video VAE"},
         }
-
-    preprocess_nodes: dict[str, Any] = {}
-    reference_image_ref: list[Any] = ["3", 0]
-    if not text_to_video:
-        preprocess_nodes["22"] = {
-            "class_type": "LTXVPreprocess",
-            "inputs": {"image": ["3", 0], "img_compression": img_compression},
-            "_meta": {"title": "LTX Reference Preprocess"},
-        }
-        reference_image_ref = ["22", 0]
 
     latent_upscale_nodes: dict[str, Any] = {}
     if use_latent_upscale:
@@ -2632,8 +2676,8 @@ def build_basic_ltx_img2video_workflow(
                 "class_type": "CFGGuider",
                 "inputs": {
                     "model": ltx_model_ref,
-                    "positive": ["6", 0] if text_to_video else ["7", 0],
-                    "negative": ["6", 1] if text_to_video else ["7", 1],
+                    "positive": ltx_positive_ref,
+                    "negative": ltx_negative_ref,
                     "cfg": request.cfg,
                 },
                 "_meta": {"title": "Upscale Refiner CFG Guider"},
@@ -2836,8 +2880,8 @@ def build_basic_ltx_img2video_workflow(
             "class_type": "CFGGuider",
             "inputs": {
                 "model": ltx_model_ref,
-                "positive": ["6", 0] if text_to_video else ["7", 0],
-                "negative": ["6", 1] if text_to_video else ["7", 1],
+                "positive": ltx_positive_ref,
+                "negative": ltx_negative_ref,
                 "cfg": request.cfg,
             },
             "_meta": {"title": "CFG Guider"},

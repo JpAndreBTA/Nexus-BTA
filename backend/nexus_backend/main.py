@@ -27,6 +27,13 @@ from .comfy_client import ComfyClient, extract_outputs
 from .config import load_settings, save_settings
 from .dependencies import custom_node_requirements, install_custom_node_dependencies
 from .importer import import_resource
+from .lora_training import (
+    build_train_lora_catalog,
+    build_train_lora_job,
+    public_train_lora_job,
+    train_lora_command_text,
+    train_lora_job_root,
+)
 from .scanner import ensure_model_tree, scan_custom_nodes, scan_models
 from .schemas import (
     DependencyInstallRequest,
@@ -63,6 +70,7 @@ settings = load_settings()
 generation_jobs: dict[str, dict[str, Any]] = {}
 extras_jobs: dict[str, dict[str, Any]] = {}
 download_jobs: dict[str, dict[str, Any]] = {}
+train_lora_jobs: dict[str, dict[str, Any]] = {}
 generation_lock = asyncio.Lock()
 comfy_idle_task: asyncio.Task[None] | None = None
 _birefnet_cache: dict[str, Any] = {}
@@ -994,6 +1002,155 @@ async def _save_extras_uploads(files: list[UploadFile]) -> list[Path]:
                 handle.write(chunk)
         saved.append(target)
     return saved
+
+
+async def _save_train_lora_uploads(job_id: str, files: list[UploadFile]) -> list[dict[str, Any]]:
+    dataset_dir = train_lora_job_root(settings, job_id) / "dataset"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    saved: list[dict[str, Any]] = []
+    for index, upload in enumerate(files):
+        if not upload.filename:
+            continue
+        target = dataset_dir / f"{index + 1:04d}_{_safe_upload_name(upload.filename, 'dataset')}"
+        with target.open("wb") as handle:
+            size = 0
+            while True:
+                chunk = await upload.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                handle.write(chunk)
+        saved.append(
+            {
+                "filename": upload.filename,
+                "saved_name": target.name,
+                "path": str(target),
+                "size": size,
+                "content_type": upload.content_type or "",
+            }
+        )
+    return saved
+
+
+def _update_train_lora_job(job_id: str, update: dict[str, Any]) -> None:
+    job = train_lora_jobs.get(job_id)
+    if not job:
+        return
+    if job.get("status") == "cancelled" and update.get("status") != "cancelled":
+        return
+    job.update({key: value for key, value in update.items() if value is not None})
+    job["updated_at"] = datetime.now().isoformat(timespec="seconds")
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+async def _monitor_train_lora_process(job_id: str) -> None:
+    job = train_lora_jobs.get(job_id)
+    process: subprocess.Popen[Any] | None = job.get("_process") if job else None
+    if not job or not process:
+        return
+    try:
+        while process.poll() is None:
+            if train_lora_jobs.get(job_id, {}).get("status") == "cancelled":
+                return
+            await asyncio.sleep(2)
+        if train_lora_jobs.get(job_id, {}).get("status") == "cancelled":
+            return
+        return_code = process.returncode
+        if return_code == 0:
+            _update_train_lora_job(
+                job_id,
+                {"status": "completed", "progress": 100, "message": "Train LoRA job completed.", "completed_at": datetime.now().isoformat(timespec="seconds")},
+            )
+        else:
+            _update_train_lora_job(
+                job_id,
+                {
+                    "status": "failed",
+                    "progress": 100,
+                    "message": f"Train LoRA runner exited with code {return_code}.",
+                    "error": f"exit code {return_code}",
+                    "completed_at": datetime.now().isoformat(timespec="seconds"),
+                },
+            )
+    finally:
+        current = train_lora_jobs.get(job_id)
+        if current:
+            current.pop("_process", None)
+            log_handle = current.pop("_log_handle", None)
+            try:
+                if log_handle:
+                    log_handle.close()
+            except Exception:
+                pass
+
+
+def _launch_train_lora_job(job_id: str) -> None:
+    job = train_lora_jobs[job_id]
+    runner = job.get("runner") or {}
+    command = [str(part) for part in runner.get("command") or []]
+    cwd = str(runner.get("cwd") or "")
+    if not command or not cwd:
+        _update_train_lora_job(job_id, {"status": "blocked", "message": runner.get("install_hint") or "Train LoRA runner is not available."})
+        return
+    log_path = Path((job.get("paths") or {}).get("terminal_log") or (Path((job.get("paths") or {}).get("job") or train_lora_job_root(settings, job_id)) / "runner.log"))
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(f"\n[{datetime.now().isoformat(timespec='seconds')}] Launching runner\n")
+        handle.write("command=" + " ".join(command) + "\n\n")
+    log_handle = log_path.open("ab")
+    try:
+        process = subprocess.Popen(command, cwd=cwd, stdout=log_handle, stderr=subprocess.STDOUT)
+    except Exception as exc:
+        log_handle.close()
+        _update_train_lora_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+        return
+    job["_process"] = process
+    job["_log_handle"] = log_handle
+    _update_train_lora_job(
+        job_id,
+        {
+            "status": "running",
+            "progress": 25,
+            "message": "Train LoRA runner started.",
+            "command": train_lora_command_text(job),
+            "log_path": str(log_path),
+        },
+    )
+    asyncio.create_task(_monitor_train_lora_process(job_id))
+
+
+def _pick_local_folder_dialog(title: str) -> str:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askdirectory(title=title)
+        root.destroy()
+        return str(selected or "")
+    except Exception as exc:
+        raise RuntimeError(f"Folder picker unavailable: {exc}") from exc
+
+
+def _pick_local_file_dialog(title: str, filetypes: list[tuple[str, str]]) -> str:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askopenfilename(title=title, filetypes=filetypes)
+        root.destroy()
+        return str(selected or "")
+    except Exception as exc:
+        raise RuntimeError(f"File picker unavailable: {exc}") from exc
 
 
 def _resolve_extras_source_url(value: str) -> Path | None:
@@ -2387,6 +2544,116 @@ async def import_endpoint(request: ImportRequest) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/train-lora/templates")
+async def train_lora_templates() -> dict[str, Any]:
+    return build_train_lora_catalog(settings, await _runtime_memory_snapshot())
+
+
+@app.get("/api/train-lora/devices")
+async def train_lora_devices() -> dict[str, Any]:
+    catalog = build_train_lora_catalog(settings, await _runtime_memory_snapshot())
+    return {
+        "device_profiles": catalog["device_profiles"],
+        "recommended_device": catalog["recommended_device"],
+        "detected_vram_gb": catalog["detected_vram_gb"],
+    }
+
+
+@app.get("/api/train-lora/pick-path")
+async def train_lora_pick_path(kind: str = Query("dataset")) -> dict[str, str]:
+    normalized = str(kind).lower()
+    if normalized in {"base_model", "resume"}:
+        title = "Select base model" if normalized == "base_model" else "Select LoRA checkpoint to continue training"
+        patterns = [("Model files", "*.safetensors *.ckpt *.pt *.pth"), ("All files", "*.*")]
+        try:
+            path = await asyncio.to_thread(_pick_local_file_dialog, title, patterns)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {"path": path}
+    label = "output" if normalized == "output" else "dataset"
+    try:
+        path = await asyncio.to_thread(_pick_local_folder_dialog, f"Select Train LoRA {label} folder")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"path": path}
+
+
+@app.get("/api/train-lora/pick-folder")
+async def train_lora_pick_folder(kind: str = Query("dataset")) -> dict[str, str]:
+    return await train_lora_pick_path(kind)
+
+
+@app.post("/api/train-lora/start")
+async def train_lora_start(plan: str = Form("{}"), files: list[UploadFile] = File(default=[])) -> dict[str, Any]:
+    try:
+        parsed_plan = json.loads(plan or "{}")
+        if not isinstance(parsed_plan, dict):
+            raise ValueError("Train LoRA plan must be a JSON object.")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid Train LoRA plan: {exc}") from exc
+
+    job_id = uuid.uuid4().hex[:12]
+    saved_files = await _save_train_lora_uploads(job_id, files or [])
+    try:
+        job = build_train_lora_job(settings, job_id, parsed_plan, saved_files, await _runtime_memory_snapshot())
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    train_lora_jobs[job_id] = job
+    if _truthy(parsed_plan.get("launch")) and (job.get("runner") or {}).get("available"):
+        _launch_train_lora_job(job_id)
+    return public_train_lora_job(train_lora_jobs[job_id])
+
+
+@app.get("/api/train-lora/{job_id}")
+async def train_lora_status(job_id: str) -> dict[str, Any]:
+    job = train_lora_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Train LoRA job not found.")
+    return public_train_lora_job(job)
+
+
+@app.get("/api/train-lora/{job_id}/log")
+async def train_lora_log(job_id: str) -> dict[str, Any]:
+    job = train_lora_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Train LoRA job not found.")
+    log_path = Path(str(job.get("log_path") or (job.get("paths") or {}).get("terminal_log") or ""))
+    if not log_path.exists():
+        return {"job_id": job_id, "text": "", "path": str(log_path)}
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    return {"job_id": job_id, "text": text[-40000:], "path": str(log_path)}
+
+
+@app.post("/api/train-lora/{job_id}/cancel")
+async def train_lora_cancel(job_id: str) -> dict[str, Any]:
+    job = train_lora_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Train LoRA job not found.")
+    process: subprocess.Popen[Any] | None = job.get("_process")
+    if process and process.poll() is None:
+        try:
+            process.terminate()
+        except Exception:
+            pass
+    log_handle = job.pop("_log_handle", None)
+    try:
+        if log_handle:
+            log_handle.close()
+    except Exception:
+        pass
+    _update_train_lora_job(
+        job_id,
+        {
+            "status": "cancelled",
+            "progress": 100,
+            "message": "Train LoRA job cancelled.",
+            "error": "cancelled",
+            "completed_at": datetime.now().isoformat(timespec="seconds"),
+        },
+    )
+    return public_train_lora_job(job)
+
+
 @app.post("/api/extras/start")
 async def extras_start(plan: str = Form("{}"), files: list[UploadFile] = File(default=[])) -> dict[str, Any]:
     try:
@@ -2545,6 +2812,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     checkpoint_name,
                     text_encoder_name,
                     reference_image_name,
+                    reference_end_image_name=reference_image_names[1] if len(reference_image_names) > 1 else None,
                     text_projection_name=assets.get("text_projection"),
                     audio_vae_name=assets.get("audio_vae"),
                     video_vae_name=assets.get("video_vae") or assets.get("vae"),

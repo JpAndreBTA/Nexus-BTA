@@ -27,6 +27,7 @@ def search_civitai_models(
     limit: int = 24,
     cursor: str | None = None,
 ) -> dict[str, Any]:
+    query = _normalize_search_query(query)
     params: dict[str, Any] = {
         "limit": max(1, min(int(limit or 24), 100)),
         "sort": sort or "Newest",
@@ -43,10 +44,24 @@ def search_civitai_models(
         params["cursor"] = cursor
     data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(params)}", token)
     items = data.get("items") or []
+    if query and not items:
+        fallback_query = _fallback_search_query(query)
+        if fallback_query and fallback_query != query:
+            params["query"] = fallback_query
+            data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(params)}", token)
+            items = data.get("items") or []
     return {
         "items": [_normalize_model_item(item) for item in items if isinstance(item, dict)],
         "metadata": data.get("metadata") or {},
     }
+
+
+def _normalize_search_query(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lstrip("#"))
+
+
+def _fallback_search_query(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[_#,;:]+", " ", value)).strip()
 
 
 def resolve_civitai_asset(settings: NexusSettings, url: str, token: str | None = None, target_kind: str = "auto", preset: str | None = None) -> dict[str, Any]:

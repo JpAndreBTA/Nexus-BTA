@@ -1173,9 +1173,9 @@
     </div>
 
     <!-- TOP BAR (Global App Header) -->
-    <header class="h-12 bg-nexus-bg border-b border-nexus-border flex items-center justify-between px-3 shrink-0 gap-4">
+    <header class="h-12 bg-nexus-bg border-b border-nexus-border flex items-center justify-between px-2 shrink-0 gap-2 overflow-hidden">
         <!-- Logo -->
-        <div class="flex items-center gap-3 shrink-0">
+        <div class="flex items-center gap-2 shrink-0">
             <div class="h-7 w-7 bg-nexus-red flex items-center justify-center text-white font-bold text-lg rounded-sm">
                 <i class="fa-solid fa-bolt-lightning text-sm"></i>
             </div>
@@ -1183,24 +1183,24 @@
         </div>
 
         <!-- Central Container: Presets + Checkpoints -->
-        <div class="flex flex-1 items-center gap-3 overflow-hidden">
+        <div class="flex flex-1 min-w-0 items-center gap-2 overflow-hidden">
             <!-- UI Presets (Flat Chips) -->
-            <div class="flex items-center gap-1 bg-nexus-panel border border-nexus-border p-1 rounded-sm overflow-x-auto no-scrollbar shrink-0">
-                <button data-preset="SD" class="preset-btn px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors" onclick="setPreset(this, 'SD')">SD 1.5</button>
-                <button data-preset="XL" class="preset-btn px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors" onclick="setPreset(this, 'XL')">SDXL</button>
-                <button data-preset="Flux" class="preset-btn px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors" onclick="setPreset(this, 'Flux')">FLUX</button>
-                <button data-preset="Qwen" class="preset-btn px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors" onclick="setPreset(this, 'Qwen')">QWEN</button>
-                <button data-preset="ZImageTurbo" class="preset-btn px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors" onclick="setPreset(this, 'ZImageTurbo')">Z-IMG</button>
-                <button data-preset="Lumina" class="preset-btn px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors" onclick="setPreset(this, 'Lumina')">LUMINA</button>
-                <button data-preset="Wan" class="preset-btn px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors" onclick="setPreset(this, 'Wan')">WAN</button>
-                <button data-preset="LTX" class="preset-btn px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors" onclick="setPreset(this, 'LTX')">LTX 2.3</button>
-                <button data-preset="Anima" class="preset-btn active px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white bg-nexus-red rounded-sm transition-colors" onclick="setPreset(this, 'Anima')">ANIMA</button>
+            <div class="flex w-fit max-w-[48vw] min-w-0 shrink items-center gap-1 bg-nexus-panel border border-nexus-border p-1 rounded-sm overflow-x-auto no-scrollbar">
+                <button data-preset="SD" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'SD')">SD 1.5</button>
+                <button data-preset="XL" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'XL')">SDXL</button>
+                <button data-preset="Flux" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Flux')">FLUX</button>
+                <button data-preset="Qwen" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Qwen')">QWEN</button>
+                <button data-preset="ZImageTurbo" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'ZImageTurbo')">Z-IMG</button>
+                <button data-preset="Lumina" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Lumina')">LUMINA</button>
+                <button data-preset="Wan" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Wan')">WAN</button>
+                <button data-preset="LTX" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'LTX')">LTX 2.3</button>
+                <button data-preset="Anima" class="preset-btn active px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white bg-nexus-red rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Anima')">ANIMA</button>
             </div>
 
             <!-- Global Model / Checkpoint Selector -->
-            <div class="flex items-center gap-1.5 bg-nexus-panel border border-nexus-border rounded-sm px-2 py-1 min-w-[240px] max-w-[360px] shrink-0">
+            <div class="flex items-center gap-1.5 bg-nexus-panel border border-nexus-border rounded-sm px-2 py-1 min-w-[160px] max-w-[220px] shrink">
                 <i class="fa-solid fa-cubes text-[10px] text-nexus-red"></i>
-                <select id="modelSelect" onchange="applyModelFromSelect()" class="w-full bg-transparent text-[10px] text-white outline-none cursor-pointer appearance-none">
+                <select id="modelSelect" onchange="applyModelFromSelect()" class="w-full min-w-0 bg-transparent text-[10px] text-white outline-none cursor-pointer appearance-none truncate">
                     <option>Loading model folder...</option>
                 </select>
                 <i class="fa-solid fa-chevron-down text-[8px] text-nexus-muted"></i>
@@ -1208,30 +1208,30 @@
             <button onclick="refreshModelCatalog()" class="h-[30px] w-[30px] flex items-center justify-center bg-nexus-panel border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm transition-colors shrink-0" title="Refresh models">
                 <i class="fa-solid fa-rotate text-[11px]"></i>
             </button>
-            <button onclick="openTemplateTools()" class="h-[30px] px-2 flex items-center gap-1.5 bg-nexus-panel border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm transition-colors shrink-0" title="Template tools">
-                <i class="fa-solid fa-layer-group text-[10px] text-nexus-red"></i>
-                <span class="text-[10px] font-bold uppercase">Template</span>
+            <button onclick="openTrainLoraTab()" class="relative z-20 h-[30px] px-2 flex items-center gap-1.5 bg-nexus-panel border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm transition-colors shrink-0" title="Train LoRA">
+                <i class="fa-solid fa-dumbbell text-[10px] text-nexus-red"></i>
+                <span class="hidden xl:inline text-[10px] font-bold uppercase">Train LoRA</span>
             </button>
         </div>
 
         <!-- Right System Indicators -->
-        <div class="flex items-center gap-4 text-xs text-nexus-muted font-mono shrink-0">
+        <div class="flex items-center gap-2 text-xs text-nexus-muted font-mono shrink-0">
             <input id="workflowFileInput" type="file" accept=".json,application/json" class="hidden" onchange="handleWorkflowFileInput(event)">
             <button onclick="window.NexusCivitai?.open()" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Civitai downloads">
                 <i class="fa-solid fa-cloud-arrow-down text-nexus-red"></i>
-                <span class="text-[10px]">Civitai</span>
+                <span class="hidden 2xl:inline text-[10px]">Civitai</span>
             </button>
             <button onclick="openWorkflowPicker()" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Load ComfyUI workflow">
                 <i class="fa-solid fa-folder-open text-nexus-red"></i>
-                <span class="text-[10px]">Load Workflow</span>
+                <span class="hidden 2xl:inline text-[10px]">Load Workflow</span>
             </button>
             <button onclick="saveActiveWorkflow()" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Save active Nexus workflow">
                 <i class="fa-solid fa-floppy-disk text-nexus-red"></i>
-                <span class="text-[10px]">Save Workflow</span>
+                <span class="hidden 2xl:inline text-[10px]">Save Workflow</span>
             </button>
             <button onclick="toggleAdjusts()" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Adjusts">
                 <i class="fa-solid fa-sliders text-nexus-red"></i>
-                <span class="text-[10px]">Adjusts</span>
+                <span class="hidden 2xl:inline text-[10px]">Adjusts</span>
             </button>
         </div>
     </header>
@@ -1241,10 +1241,10 @@
 
         <!-- 1. LEFTMOST ACTIVITY BAR (Forge Tabs Concept) -->
         <nav class="w-14 bg-nexus-bg border-r border-nexus-border flex flex-col items-center py-4 gap-3 shrink-0 overflow-y-auto no-scrollbar">
-            <button class="activity-btn w-9 h-9 rounded-sm bg-nexus-hover text-nexus-red flex items-center justify-center transition-colors" title="txt2img" onclick="switchActivity('txt2img', this)">
+            <button data-activity="txt2img" class="activity-btn w-9 h-9 rounded-sm bg-nexus-hover text-nexus-red flex items-center justify-center transition-colors" title="txt2img" onclick="switchActivity('txt2img', this)">
                 <i class="fa-solid fa-feather text-sm"></i>
             </button>
-            <button class="activity-btn w-9 h-9 rounded-sm text-nexus-muted hover:text-white hover:bg-nexus-hover flex items-center justify-center transition-colors" title="img2img" onclick="switchActivity('img2img', this)">
+            <button data-activity="img2img" class="activity-btn w-9 h-9 rounded-sm text-nexus-muted hover:text-white hover:bg-nexus-hover flex items-center justify-center transition-colors" title="img2img" onclick="switchActivity('img2img', this)">
                 <i class="fa-solid fa-wand-magic-sparkles text-sm"></i>
             </button>
             <button class="activity-btn w-9 h-9 rounded-sm text-nexus-muted hover:text-white hover:bg-nexus-hover flex items-center justify-center transition-colors" title="Extras" onclick="switchActivity('extras', this)">
@@ -1255,6 +1255,9 @@
             </button>
             <button class="activity-btn w-9 h-9 rounded-sm text-nexus-muted hover:text-white hover:bg-nexus-hover flex items-center justify-center transition-colors" title="Checkpoint Merger" onclick="switchActivity('merge', this)">
                 <i class="fa-solid fa-code-merge text-sm"></i>
+            </button>
+            <button data-activity="trainLora" class="activity-btn w-9 h-9 rounded-sm text-nexus-muted hover:text-white hover:bg-nexus-hover flex items-center justify-center transition-colors" title="Train LoRA" onclick="openTrainLoraTab(this)">
+                <i class="fa-solid fa-dumbbell text-sm"></i>
             </button>
             
             <div class="w-6 h-px bg-nexus-border my-2"></div>
@@ -1470,6 +1473,12 @@
 
                     <!-- Inline Sliders exactly as requested -->
                     <div class="space-y-3">
+                        <div class="grid grid-cols-4 gap-1">
+                            <button type="button" onclick="setAspectRatio(1, 1)" class="flex items-center justify-center gap-1 py-1.5 bg-nexus-bg hover:bg-nexus-hover text-nexus-muted hover:text-white rounded-sm border border-nexus-border transition-all text-[9px] font-mono" title="Square 1:1"><i class="fa-regular fa-square text-[10px]"></i>1:1</button>
+                            <button type="button" onclick="setAspectRatio(3, 2)" class="flex items-center justify-center gap-1 py-1.5 bg-nexus-bg hover:bg-nexus-hover text-nexus-muted hover:text-white rounded-sm border border-nexus-border transition-all text-[9px] font-mono" title="Landscape 3:2"><i class="fa-regular fa-image text-[10px]"></i>3:2</button>
+                            <button type="button" onclick="setAspectRatio(9, 16)" class="flex items-center justify-center gap-1 py-1.5 bg-nexus-bg hover:bg-nexus-hover text-nexus-muted hover:text-white rounded-sm border border-nexus-border transition-all text-[9px] font-mono" title="Portrait 9:16"><i class="fa-solid fa-mobile-screen text-[10px]"></i>9:16</button>
+                            <button type="button" onclick="setAspectRatio(16, 9)" class="flex items-center justify-center gap-1 py-1.5 bg-nexus-bg hover:bg-nexus-hover text-nexus-muted hover:text-white rounded-sm border border-nexus-border transition-all text-[9px] font-mono" title="Widescreen 16:9"><i class="fa-solid fa-tv text-[10px]"></i>16:9</button>
+                        </div>
                         <!-- Width Row -->
                         <div class="flex items-center gap-3">
                             <span class="text-[10px] font-bold text-nexus-muted w-10">Width</span>
@@ -1482,6 +1491,15 @@
                             <span class="text-[10px] font-bold text-nexus-muted w-10">Height</span>
                             <input type="range" id="heightSlider" min="256" max="2048" step="8" value="512" class="flex-1" oninput="syncInput('height')">
                             <input type="number" id="heightInput" value="512" class="w-14 bg-nexus-bg border border-nexus-border rounded-sm py-1 px-1 text-center text-[10px] font-mono text-white outline-none focus:border-nexus-red" oninput="syncSlider('height')">
+                        </div>
+
+                        <div class="space-y-1">
+                            <div class="flex items-center gap-3">
+                                <span class="text-[10px] font-bold text-nexus-muted w-10">Scale</span>
+                                <input type="range" id="resizePercentSlider" min="10" max="200" step="1" value="100" class="flex-1" oninput="applyReferenceResizePercent('slider')">
+                                <input type="number" id="resizePercentInput" min="10" max="200" step="1" value="100" class="w-14 bg-nexus-bg border border-nexus-border rounded-sm py-1 px-1 text-center text-[10px] font-mono text-white outline-none focus:border-nexus-red" oninput="applyReferenceResizePercent('input')">
+                            </div>
+                            <p id="resizePercentGuide" class="pl-[3.25rem] text-[9px] font-mono text-nexus-muted">100% of current dimensions</p>
                         </div>
 
                         <!-- Action Buttons for Dimensions (Swap / Auto Detect) side by side below Height -->
@@ -2791,6 +2809,161 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 </div>
             </div>
 
+            <!-- Activity: Train LoRA -->
+            <div id="view-trainLora" class="activity-panel flex-1 flex-col bg-nexus-bg overflow-y-auto">
+                <div class="h-12 border-b border-nexus-border flex items-center justify-between px-4 bg-nexus-panel shrink-0">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-dumbbell text-nexus-red"></i>
+                        <span class="text-xs font-bold text-white uppercase tracking-wider">Train LoRA</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="trainLoraDeviceBadge" class="px-2 py-1 bg-nexus-bg border border-nexus-border text-[10px] font-mono text-nexus-muted rounded-sm">device auto</span>
+                        <button onclick="resetTrainLoraSettings()" class="flat-button px-3 py-1.5 text-xs font-bold"><i class="fa-solid fa-rotate-left mr-1"></i> Reset Preset</button>
+                        <button id="trainLoraStartBtn" onclick="startTrainLoraJob()" class="bg-nexus-red hover:bg-nexus-darkRed text-white px-3 py-1.5 rounded-sm text-xs font-bold uppercase"><i class="fa-solid fa-play mr-1"></i> Prepare</button>
+                    </div>
+                </div>
+                <div class="p-4 space-y-3">
+                    <section class="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-3">
+                        <div class="data-card p-3 space-y-3">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                <label class="space-y-1 min-w-0">
+                                    <span class="mini-label">Template</span>
+                                    <select id="trainLoraPresetSelect" onchange="resetTrainLoraSettings()" class="flat-input"></select>
+                                </label>
+                                <label class="space-y-1 min-w-0">
+                                    <span class="mini-label">Preset</span>
+                                    <select id="trainLoraModeSelect" onchange="resetTrainLoraSettings()" class="flat-input">
+                                        <option value="character">Character LoRA</option>
+                                        <option value="style">Style LoRA</option>
+                                    </select>
+                                </label>
+                                <label class="space-y-1 min-w-0">
+                                    <span class="mini-label">Device</span>
+                                    <select id="trainLoraDeviceSelect" onchange="applyTrainLoraDeviceProfile()" class="flat-input"></select>
+                                </label>
+                                <div class="space-y-1 min-w-0">
+                                    <span class="mini-label">Output</span>
+                                    <div class="grid grid-cols-[1fr_34px] gap-1">
+                                        <input id="trainLoraOutputName" class="flat-input" placeholder="my_lora">
+                                        <input id="trainLoraOutputDir" type="hidden">
+                                        <input id="trainLoraOutputPicker" type="file" webkitdirectory directory class="hidden" onchange="syncTrainLoraOutputPicker()">
+                                        <button type="button" onclick="pickTrainLoraFolder('output')" class="bg-nexus-bg border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm" title="Pick output folder"><i class="fa-solid fa-folder-tree text-nexus-red"></i></button>
+                                    </div>
+                                    <span id="trainLoraOutputDirLabel" class="block text-[9px] font-mono text-nexus-muted truncate">backend default output</span>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-[1fr_1.2fr] gap-2">
+                                <label class="space-y-1 min-w-0">
+                                    <span class="mini-label">Trigger</span>
+                                    <input id="trainLoraTrigger" class="flat-input" placeholder="nexus_style">
+                                </label>
+                                <div class="space-y-1 min-w-0">
+                                    <span class="mini-label">Source Folder</span>
+                                    <input id="trainLoraSourceDir" type="hidden">
+                                    <input id="trainLoraFolderInput" type="file" webkitdirectory directory multiple class="hidden" onchange="syncTrainLoraFolderSelection()">
+                                    <button type="button" onclick="pickTrainLoraFolder('source')" class="flat-input flex items-center justify-between gap-2 text-left">
+                                        <span id="trainLoraSourceDirLabel" class="truncate font-mono text-[11px] text-nexus-muted">select folder</span>
+                                        <i class="fa-solid fa-folder-open text-nexus-red"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <div class="space-y-1 min-w-0">
+                                    <span class="mini-label">Base Model</span>
+                                    <div class="grid grid-cols-[1fr_34px] gap-1">
+                                        <input id="trainLoraBaseModelPath" class="flat-input font-mono text-[11px]" placeholder="Automatic from template / selected model">
+                                        <button type="button" onclick="pickTrainLoraPath('base_model')" class="bg-nexus-bg border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm" title="Pick base model"><i class="fa-solid fa-cube text-nexus-red"></i></button>
+                                    </div>
+                                </div>
+                                <div class="space-y-1 min-w-0">
+                                    <span class="mini-label">Continue Training</span>
+                                    <div class="grid grid-cols-[1fr_34px] gap-1">
+                                        <input id="trainLoraResumeFrom" class="flat-input font-mono text-[11px]" placeholder="Optional previous LoRA checkpoint">
+                                        <button type="button" onclick="pickTrainLoraPath('resume')" class="bg-nexus-bg border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm" title="Pick LoRA checkpoint"><i class="fa-solid fa-rotate-right text-nexus-red"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                            <label class="block space-y-1">
+                                <span class="mini-label">Dataset Upload</span>
+                                <div id="trainLoraDropZone" class="border border-dashed border-nexus-border bg-zinc-950/70 hover:border-nexus-red rounded-sm p-4 transition-colors">
+                                    <input id="trainLoraDatasetFiles" type="file" multiple accept=".png,.jpg,.jpeg,.webp,.txt,.caption,.mp4,.mov,.webm" class="hidden" onchange="syncTrainLoraFileSummary()">
+                                    <button type="button" onclick="document.getElementById('trainLoraDatasetFiles')?.click()" class="w-full h-20 flex flex-col items-center justify-center gap-2 text-nexus-muted hover:text-white">
+                                        <i class="fa-solid fa-folder-open text-lg text-nexus-red"></i>
+                                        <span id="trainLoraFileSummary" class="text-[11px] font-mono">drop/click images, captions or clips</span>
+                                    </button>
+                                </div>
+                            </label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <div class="bg-nexus-bg border border-nexus-border rounded-sm p-3">
+                                    <span class="mini-label">Preset Notes</span>
+                                    <p id="trainLoraPresetNotes" class="mt-2 text-[11px] leading-5 text-nexus-muted"></p>
+                                </div>
+                                <div class="bg-nexus-bg border border-nexus-border rounded-sm p-3">
+                                    <span class="mini-label">Detected Captions</span>
+                                    <p id="trainLoraCaptionSummary" class="mt-2 text-[11px] leading-5 text-nexus-muted">No caption files selected.</p>
+                                </div>
+                            </div>
+                            <textarea id="trainLoraCaption" class="hidden"></textarea>
+                        </div>
+                        <div class="data-card p-3 space-y-3">
+                            <div class="grid grid-cols-3 xl:grid-cols-4 gap-2">
+                                <label class="space-y-1"><span class="mini-label">Resolution</span><input id="trainLoraResolution" class="flat-input"></label>
+                                <label id="trainLoraFramesField" class="space-y-1"><span class="mini-label">Frames</span><input id="trainLoraFrames" type="number" min="1" max="257" class="flat-input"></label>
+                                <label class="space-y-1"><span class="mini-label">Steps</span><input id="trainLoraSteps" type="number" min="100" class="flat-input"></label>
+                                <label class="space-y-1"><span class="mini-label">Save / Steps</span><input id="trainLoraSaveSteps" type="number" min="25" class="flat-input"></label>
+                                <label class="space-y-1"><span class="mini-label">Rank</span><input id="trainLoraRank" type="number" min="1" class="flat-input"></label>
+                                <label class="space-y-1"><span class="mini-label">Alpha</span><input id="trainLoraAlpha" type="number" min="1" class="flat-input"></label>
+                                <label class="space-y-1"><span class="mini-label">LR</span><input id="trainLoraLearningRate" type="number" step="0.000001" class="flat-input"></label>
+                                <label class="space-y-1"><span class="mini-label">Batch</span><input id="trainLoraBatchSize" type="number" min="1" class="flat-input"></label>
+                                <label class="space-y-1"><span class="mini-label">Repeats</span><input id="trainLoraRepeats" type="number" min="1" class="flat-input"></label>
+                                <label class="space-y-1"><span class="mini-label">Grad Accum</span><input id="trainLoraGradAccum" type="number" min="1" class="flat-input"></label>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <label class="space-y-1"><span class="mini-label">Precision</span><select id="trainLoraPrecision" class="flat-input"><option>fp16</option><option>bf16</option><option>fp32</option></select></label>
+                                <label class="space-y-1"><span class="mini-label">Optimizer</span><select id="trainLoraOptimizer" class="flat-input"><option>adamw8bit</option><option>adamw</option><option>prodigy</option></select></label>
+                            </div>
+                            <label class="space-y-1 block">
+                                <span class="mini-label">Memory Policy</span>
+                                <select id="trainLoraMemoryPolicy" class="flat-input" onchange="syncTrainLoraMemoryHint()">
+                                    <option value="auto">Auto</option>
+                                    <option value="shared">Shared VRAM + CPU/RAM</option>
+                                    <option value="gpu_only">GPU Only</option>
+                                </select>
+                                <span id="trainLoraMemoryHint" class="text-[10px] text-nexus-muted font-mono">Auto selects the safest profile for this device.</span>
+                            </label>
+                            <div class="grid grid-cols-3 gap-2">
+                                <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">Cache<span class="toggle-switch"><input id="trainLoraCacheLatents" type="checkbox" checked><span class="toggle-track"></span></span></label>
+                                <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">Grad CP<span class="toggle-switch"><input id="trainLoraGradCheckpoint" type="checkbox" checked><span class="toggle-track"></span></span></label>
+                                <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">Launch<span class="toggle-switch"><input id="trainLoraLaunchToggle" type="checkbox"><span class="toggle-track"></span></span></label>
+                            </div>
+                            <div class="bg-nexus-bg border border-nexus-border rounded-sm p-3 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="mini-label">Job Status</span>
+                                    <span id="trainLoraJobStatus" class="text-[10px] font-mono text-nexus-muted">idle</span>
+                                </div>
+                                <div class="h-1.5 bg-nexus-border overflow-hidden"><div id="trainLoraProgressBar" class="h-full bg-nexus-red transition-all duration-300" style="width:0%"></div></div>
+                                <p id="trainLoraJobMessage" class="text-[10px] font-mono text-nexus-muted truncate">Load a preset to begin.</p>
+                                <p id="trainLoraJobPath" class="text-[10px] font-mono text-nexus-muted truncate"></p>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="data-card p-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="mini-label">Training Sources / Dependencies</span>
+                            <span id="trainLoraTrainerBadge" class="text-[10px] font-mono text-nexus-muted">trainer pending</span>
+                        </div>
+                        <div id="trainLoraSources" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 text-[10px]"></div>
+                    </section>
+                    <section class="data-card p-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="mini-label">Backend Terminal</span>
+                            <button onclick="refreshTrainLoraTerminal()" class="flat-button px-2 py-1 text-[10px] font-bold"><i class="fa-solid fa-rotate mr-1"></i> Sync</button>
+                        </div>
+                        <pre id="trainLoraTerminal" class="h-44 overflow-auto bg-black border border-nexus-border rounded-sm p-3 text-[10px] leading-4 text-emerald-300 font-mono whitespace-pre-wrap">terminal idle</pre>
+                    </section>
+                </div>
+            </div>
+
             <!-- Activity: Settings -->
             <div id="view-settings" class="activity-panel flex-1 flex-col bg-nexus-bg overflow-y-auto">
                 <div class="h-12 border-b border-nexus-border flex items-center justify-between px-4 bg-nexus-panel shrink-0">
@@ -3015,6 +3188,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let activePreset = nexusSafeStorage.get('nexus_active_preset', 'Anima');
         let activeWorkspace = nexusSafeStorage.get('nexus_active_workspace', 'viewer');
         let currentActivity = nexusSafeStorage.get('nexus_current_activity', 'txt2img');
+        let trainLoraCatalog = null;
+        let trainLoraCurrentJob = null;
+        let trainLoraPollTimer = null;
+        let trainLoraLogTimer = null;
         let activeLoraFolderFilter = 'All';
         let activeGalleryIndex = 0;
         let activeGalleryFolder = '';
@@ -3058,6 +3235,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let viewerZoom = 1;
         let referenceImageDataUrl = '';
         let referenceImageExtraDataUrls = [];
+        let resizePercentBaseSnapshot = null;
+        let resizePercentApplying = false;
         let controlNetImageDataUrl = '';
         let controlNetImageMeta = { src: '', label: '', width: 0, height: 0 };
         let activeGenerationJobId = null;
@@ -5163,7 +5342,76 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             document.getElementById('heightInput').value = height;
             syncSlider('width');
             syncSlider('height');
+            updateResizePercentGuide();
             updateInpaintAreaLabel();
+        }
+
+        function alignDimension(value) {
+            const aligned = Math.round(Number(value || 0) / 8) * 8;
+            return Math.max(64, Math.min(4096, aligned || 512));
+        }
+
+        function setAspectRatio(ratioWidth, ratioHeight) {
+            const width = Number(document.getElementById('widthInput')?.value || 512);
+            const height = Number(document.getElementById('heightInput')?.value || 512);
+            const area = Math.max(64 * 64, width * height);
+            const ratio = Math.max(0.01, Number(ratioWidth) / Math.max(1, Number(ratioHeight)));
+            const nextWidth = alignDimension(Math.sqrt(area * ratio));
+            const nextHeight = alignDimension(nextWidth / ratio);
+            resizePercentBaseSnapshot = null;
+            setDimensions(nextWidth, nextHeight);
+            showToast("Aspect Ratio", `${ratioWidth}:${ratioHeight} set to ${nextWidth}x${nextHeight}.`);
+        }
+
+        function resizePercentBaseDimensions() {
+            if (referenceImageMeta?.width && referenceImageMeta?.height) {
+                resizePercentBaseSnapshot = null;
+                return { width: referenceImageMeta.width, height: referenceImageMeta.height, label: 'reference' };
+            }
+            if (!resizePercentBaseSnapshot) {
+                resizePercentBaseSnapshot = {
+                    width: Number(document.getElementById('widthInput')?.value || 512),
+                    height: Number(document.getElementById('heightInput')?.value || 512)
+                };
+            }
+            return {
+                width: resizePercentBaseSnapshot.width,
+                height: resizePercentBaseSnapshot.height,
+                label: 'current'
+            };
+        }
+
+        function updateResizePercentGuide() {
+            const guide = document.getElementById('resizePercentGuide');
+            if (!guide) return;
+            const percent = Math.max(10, Math.min(200, Number(document.getElementById('resizePercentInput')?.value || 100)));
+            const base = resizePercentBaseDimensions();
+            const width = alignDimension(base.width * percent / 100);
+            const height = alignDimension(base.height * percent / 100);
+            guide.innerText = `${width}x${height}px at ${percent}% of ${base.label} ${Math.round(base.width)}x${Math.round(base.height)}`;
+        }
+
+        function applyReferenceResizePercent(source = 'slider') {
+            const slider = document.getElementById('resizePercentSlider');
+            const input = document.getElementById('resizePercentInput');
+            if (!slider || !input) return;
+            const raw = source === 'input' ? input.value : slider.value;
+            const percent = Math.max(10, Math.min(200, Math.round(Number(raw || 100))));
+            slider.value = String(percent);
+            input.value = String(percent);
+            const base = resizePercentBaseDimensions();
+            resizePercentApplying = true;
+            setDimensions(alignDimension(base.width * percent / 100), alignDimension(base.height * percent / 100));
+            resizePercentApplying = false;
+            updateResizePercentGuide();
+        }
+
+        function dimensionAspectRatioLabel() {
+            const width = Math.max(1, Math.round(Number(document.getElementById('widthInput')?.value || 1)));
+            const height = Math.max(1, Math.round(Number(document.getElementById('heightInput')?.value || 1)));
+            const gcd = (a, b) => b ? gcd(b, a % b) : a;
+            const divisor = gcd(width, height);
+            return `${Math.round(width / divisor)}:${Math.round(height / divisor)}`;
         }
 
         function alignedVideoFrames(presetName, seconds, fps, requestedFrames = null) {
@@ -5237,6 +5485,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const hadExtraReferences = referenceExtraSlotsEnabled();
             const leaveDirectorView = activeWorkspace === 'director' && !(presetName === 'LTX' && profile.template === 'LTX_DIRECTOR_SUITE');
             activePreset = presetName;
+            if (presetName === 'Qwen' && profile.template === 'QWEN_IMAGE_EDIT' && currentActivity !== 'img2img') {
+                currentActivity = 'img2img';
+                localStorage.setItem('nexus_current_activity', currentActivity);
+                setActiveActivityButton(getActivityButton('img2img'));
+            }
+            if (currentActivity === 'trainLora') {
+                setActiveActivityButton(getActivityButton('trainLora'));
+            }
             localStorage.setItem('nexus_active_preset', presetName);
             if (hadExtraReferences && !referenceExtraSlotsEnabled()) {
                 referenceImageExtraDataUrls = [];
@@ -5322,6 +5578,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (syncWorkflow) loadTemplateWorkflow(presetName, { quiet: !notify });
 
             if (notify) showToast("Preset Loaded", `${presetButtonLabels[presetName]} template applied.`);
+            if (currentActivity === 'trainLora') syncTrainLoraPresetViewFromGlobal(presetName);
         }
 
         function applyModelFromSelect() {
@@ -5463,18 +5720,26 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             return activePreset === 'Wan' && currentActivity === 'img2img';
         }
 
+        function isLtxLinearStartEndFrameMode() {
+            return activePreset === 'LTX' && currentActivity === 'img2img' && !isDirectorWorkspaceActive();
+        }
+
+        function isStartEndFrameMode() {
+            return isWanStartEndFrameMode() || isLtxLinearStartEndFrameMode();
+        }
+
         function referenceExtraSlotsEnabled() {
-            return isQwenImageEditTemplateActive() || isWanStartEndFrameMode();
+            return isQwenImageEditTemplateActive() || isStartEndFrameMode();
         }
 
         function referenceExtraSlotNumbers() {
             if (isQwenImageEditTemplateActive()) return [2, 3];
-            if (isWanStartEndFrameMode()) return [2];
+            if (isStartEndFrameMode()) return [2];
             return [];
         }
 
         function referenceSlotLabel(slot) {
-            if (isWanStartEndFrameMode()) return slot === 1 ? 'Start Frame' : 'End Frame';
+            if (isStartEndFrameMode()) return slot === 1 ? 'Start Frame' : 'End Frame';
             return slot === 1 ? 'Picture 1' : `Image ${slot}`;
         }
 
@@ -5580,6 +5845,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function updateSidePanelForActivity() {
+            updateActivityAvailability();
             const isImg2Img = currentActivity === 'img2img';
             const directorWorkspace = isDirectorWorkspaceActive();
             updateActivityLabels();
@@ -10332,21 +10598,21 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const maskCanvas = document.getElementById('inpaintMaskCanvas');
             const empty = document.getElementById('inpaintEmptyState');
             const hasImage = !!referenceImageMeta.src;
-            const wanStartEnd = isWanStartEndFrameMode();
+            const startEndFrame = isStartEndFrameMode();
             panel?.classList.toggle('has-reference', hasImage);
             if (clearButton) {
-                clearButton.classList.toggle('hidden', !hasImage || wanStartEnd);
-                clearButton.classList.toggle('flex', hasImage && !wanStartEnd);
+                clearButton.classList.toggle('hidden', !hasImage || startEndFrame);
+                clearButton.classList.toggle('flex', hasImage && !startEndFrame);
             }
             if (thumb) {
-                thumb.classList.toggle('hidden', !hasImage || wanStartEnd);
-                thumb.src = hasImage && !wanStartEnd ? referenceImageMeta.src : '';
+                thumb.classList.toggle('hidden', !hasImage || startEndFrame);
+                thumb.src = hasImage && !startEndFrame ? referenceImageMeta.src : '';
             }
-            document.querySelector('#referenceImagePanel .reference-placeholder')?.classList.toggle('hidden', wanStartEnd);
+            document.querySelector('#referenceImagePanel .reference-placeholder')?.classList.toggle('hidden', startEndFrame);
             if (loadedLabel) {
-                loadedLabel.classList.toggle('hidden', !hasImage || wanStartEnd);
+                loadedLabel.classList.toggle('hidden', !hasImage || startEndFrame);
                 const extraCount = (referenceImageExtraDataUrls || []).filter(item => item?.src).length;
-                const extraLabel = isWanStartEndFrameMode()
+                const extraLabel = startEndFrame
                     ? (extraCount ? ' + End Frame' : '')
                     : (extraCount ? ` + ${extraCount} Qwen ref` : '');
                 loadedLabel.innerText = hasImage
@@ -10356,13 +10622,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             if (multiList) {
                 const extraSlots = referenceExtraSlotNumbers();
                 const extraRefs = referenceImageExtraDataUrls || [];
-                const showSlots = extraSlots.length > 0 || wanStartEnd;
+                const showSlots = extraSlots.length > 0 || startEndFrame;
                 multiList.classList.toggle('hidden', !showSlots);
-                multiList.classList.toggle('mt-2', !wanStartEnd);
-                multiList.classList.toggle('mt-0', wanStartEnd);
-                const slots = wanStartEnd ? [1, 2] : extraSlots;
+                multiList.classList.toggle('mt-2', !startEndFrame);
+                multiList.classList.toggle('mt-0', startEndFrame);
+                const slots = startEndFrame ? [1, 2] : extraSlots;
                 multiList.innerHTML = showSlots ? slots.map(slot => {
-                    const isStartSlot = wanStartEnd && slot === 1;
+                    const isStartSlot = startEndFrame && slot === 1;
                     const item = isStartSlot ? referenceImageMeta : (extraRefs[slot - 2] || {});
                     const hasSlotImage = !!item.src;
                     const slotLabel = referenceSlotLabel(slot);
@@ -10384,7 +10650,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                         </button>
                     `;
                 }).join('') : '';
-                if (!wanStartEnd) {
+                if (!startEndFrame) {
                     multiList.innerHTML = showSlots ? extraSlots.map(slot => {
                     const item = extraRefs[slot - 2] || {};
                     const hasSlotImage = !!item.src;
@@ -10413,6 +10679,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function clearReferenceImage(options = {}) {
             referenceImageDataUrl = '';
             referenceImageExtraDataUrls = [];
+            resizePercentBaseSnapshot = null;
             referenceImageMeta = { src: '', label: '', width: 0, height: 0 };
             const canvas = document.getElementById('inpaintMaskCanvas');
             const ctx = canvas?.getContext('2d');
@@ -10429,6 +10696,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function setReferenceImageSource(src, label = 'reference image', options = {}) {
             if (!src) return;
             if (!options.keepExtraReferences) referenceImageExtraDataUrls = [];
+            resizePercentBaseSnapshot = null;
             referenceImageDataUrl = src;
             referenceImageMeta = { src, label, width: 0, height: 0 };
             syncReferenceImageSurfaces();
@@ -10437,6 +10705,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 referenceImageMeta.width = image.naturalWidth || image.width || 0;
                 referenceImageMeta.height = image.naturalHeight || image.height || 0;
                 syncReferenceImageSurfaces();
+                updateResizePercentGuide();
                 if (referenceImageMeta.width && referenceImageMeta.height) {
                     resizeInpaintSurface(referenceImageMeta.width, referenceImageMeta.height);
                     if (options.autoSize) setDimensions(referenceImageMeta.width, referenceImageMeta.height);
@@ -10829,7 +11098,22 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function getActivityButton(activity) {
-            return [...document.querySelectorAll('.activity-btn')].find(btn => btn.getAttribute('onclick')?.includes(`'${activity}'`));
+            return [...document.querySelectorAll('.activity-btn')].find(btn => btn.dataset.activity === activity || btn.getAttribute('onclick')?.includes(`'${activity}'`));
+        }
+
+        function updateActivityAvailability() {
+            const txt2imgButton = getActivityButton('txt2img');
+            const qwenImgEditOnly = isQwenImageEditTemplateActive();
+            if (txt2imgButton) {
+                txt2imgButton.classList.toggle('hidden', qwenImgEditOnly);
+                txt2imgButton.disabled = qwenImgEditOnly;
+                txt2imgButton.title = qwenImgEditOnly ? 'Qwen starts in img2img' : 'txt2img';
+            }
+            if (qwenImgEditOnly && currentActivity !== 'img2img') {
+                currentActivity = 'img2img';
+                localStorage.setItem('nexus_current_activity', currentActivity);
+                setActiveActivityButton(getActivityButton('img2img'));
+            }
         }
 
         function sendViewerTo(target) {
@@ -10900,7 +11184,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     setReferenceImageExtraSlot(index + 1, dataUrl, file.name || referenceSlotLabel(index + 1));
                 }
             });
-            const hint = isWanStartEndFrameMode()
+            const hint = isStartEndFrameMode()
                 ? 'Use the first image as Start Frame and the second as End Frame.'
                 : 'Use Picture 1, Image 2 and Image 3 in Qwen prompts.';
             showToast("References Loaded", `${loaded.length} image reference${loaded.length === 1 ? '' : 's'} ready. ${hint}`);
@@ -11136,10 +11420,14 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             restoreGalleryGenerationSettings(item);
 
             if (target === 'txt2img') {
+                if (isQwenImageEditTemplateActive()) {
+                    target = 'img2img';
+                } else {
                 document.getElementById('posPrompt').value = item.prompt;
                 document.getElementById('negPrompt').value = item.negative;
                 switchActivity('txt2img', getActivityButton('txt2img'));
                 showToast("Sent to txt2img", "Prompt and metadata loaded from gallery item.");
+                }
             }
 
             if (target === 'img2img' || target === 'inpaint') {
@@ -11569,13 +11857,35 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         // Preset selector (Top Bar)
         function setPreset(btn, presetName) {
-            if (presetName === activePreset) return;
+            if (presetName === activePreset) {
+                if (currentActivity === 'trainLora') {
+                    currentActivity = presetName === 'Qwen' ? 'img2img' : 'txt2img';
+                    activeWorkspace = 'viewer';
+                    localStorage.setItem('nexus_current_activity', currentActivity);
+                    localStorage.setItem('nexus_active_workspace', activeWorkspace);
+                    toggleLeftSidebar(false);
+                    setActiveActivityButton(getActivityButton(currentActivity));
+                    switchView('viewer');
+                }
+                return;
+            }
             savePresetRuntimeState(activePreset);
+            if (currentActivity === 'trainLora') {
+                currentActivity = presetName === 'Qwen' ? 'img2img' : 'txt2img';
+                activeWorkspace = 'viewer';
+                localStorage.setItem('nexus_current_activity', currentActivity);
+                localStorage.setItem('nexus_active_workspace', activeWorkspace);
+                toggleLeftSidebar(false);
+            }
             applyModelProfile(presetName);
+            if (currentActivity === 'txt2img' || currentActivity === 'img2img') {
+                setActiveActivityButton(getActivityButton(currentActivity));
+                switchView('viewer');
+            }
         }
 
         function hideAllMainViews() {
-            ['director', 'viewer', 'canvas', 'workflow', 'img2img', 'extras', 'pnginfo', 'merge', 'extensions', 'settings'].forEach(id => {
+            ['director', 'viewer', 'canvas', 'workflow', 'img2img', 'extras', 'pnginfo', 'merge', 'trainLora', 'extensions', 'settings'].forEach(id => {
                 const view = document.getElementById('view-' + id);
                 if (!view) return;
                 view.classList.add('hidden');
@@ -11681,6 +11991,29 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function switchActivity(activity, btn) {
+            if (activity === 'trainLora') {
+                setActiveActivityButton(btn || getActivityButton('trainLora'));
+                currentActivity = 'trainLora';
+                localStorage.setItem('nexus_current_activity', currentActivity);
+                document.getElementById('referenceImagePanel')?.classList.add('hidden');
+                document.getElementById('img2imgControls')?.classList.add('hidden');
+                document.getElementById('promptPanelTitle').innerText = 'Train LoRA';
+                document.getElementById('workspaceSwitcher').classList.add('hidden');
+                document.getElementById('workspaceSwitcher').classList.remove('flex');
+                hideAllMainViews();
+                const view = document.getElementById('view-trainLora');
+                if (view) {
+                    view.classList.remove('hidden');
+                    view.classList.add('active');
+                }
+                toggleLeftSidebar(true);
+                syncGenerationActionUi();
+                return;
+            }
+            if (activity === 'txt2img' && isQwenImageEditTemplateActive()) {
+                activity = 'img2img';
+                btn = getActivityButton('img2img');
+            }
             const previousActivity = currentActivity;
             setActiveActivityButton(btn);
             currentActivity = activity;
@@ -11725,6 +12058,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 extras: 'extras',
                 pnginfo: 'PNG info',
                 merge: 'checkpoint merge',
+                trainLora: 'Train LoRA',
                 extensions: 'extensions',
                 settings: 'settings'
             };
@@ -11757,6 +12091,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function syncSlider(id) {
             const inputVal = document.getElementById(id + 'Input').value;
             document.getElementById(id + 'Slider').value = inputVal;
+            if (!resizePercentApplying && (id === 'width' || id === 'height')) resizePercentBaseSnapshot = null;
+            updateResizePercentGuide();
             updateInpaintAreaLabel();
             if (isDirectorWorkspaceActive() && (id === 'width' || id === 'height')) {
                 ltxDirectorState[id] = Math.max(0, Math.round(Number(inputVal || 0)));
@@ -11772,6 +12108,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function syncInput(id) {
             const sliderVal = document.getElementById(id + 'Slider').value;
             document.getElementById(id + 'Input').value = sliderVal;
+            if (!resizePercentApplying && (id === 'width' || id === 'height')) resizePercentBaseSnapshot = null;
+            updateResizePercentGuide();
             updateInpaintAreaLabel();
             if (isDirectorWorkspaceActive() && (id === 'width' || id === 'height')) {
                 ltxDirectorState[id] = Math.max(0, Math.round(Number(sliderVal || 0)));
@@ -11837,6 +12175,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const leftHandle = document.getElementById('leftSidebarResizeHandle');
             const leftReveal = document.getElementById('leftSidebarRevealBtn');
             const leftIcon = document.getElementById('leftSidebarToggleIcon');
+            const trainLoraActive = currentActivity === 'trainLora';
             if (left) {
                 left.style.width = `${sidebarLayout.leftWidth}px`;
                 left.classList.toggle('hidden', !!sidebarLayout.leftCollapsed);
@@ -11844,6 +12183,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             }
             leftHandle?.classList.toggle('hidden', !!sidebarLayout.leftCollapsed);
             leftReveal?.classList.toggle('hidden', !sidebarLayout.leftCollapsed);
+            leftReveal?.classList.toggle('mt-16', trainLoraActive);
             if (leftIcon) leftIcon.className = sidebarLayout.leftCollapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
             const right = document.getElementById('rightSidebar');
             const rightHandle = document.getElementById('rightSidebarResizeHandle');
@@ -12074,7 +12414,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         const TEMPLATE_FIELD_IDS = [
             'posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'distillSelect', 'precisionSelect',
             'distilledLoraOneSelect', 'distilledLoraOneStrength', 'distilledLoraTwoSelect', 'distilledLoraTwoStrength',
-            'widthInput', 'heightInput', 'samplingMethodSelect', 'schedulerSelect', 'stepsSlider', 'cfgSlider', 'seedInput',
+            'widthInput', 'heightInput', 'resizePercentSlider', 'resizePercentInput', 'samplingMethodSelect', 'schedulerSelect', 'stepsSlider', 'cfgSlider', 'seedInput',
             'resizeModeSelect', 'denoiseSlider', 'batchCountInput', 'framesInput', 'fpsInput', 'secondsInput', 'motionSelect',
             'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'refinerSelect',
             'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
@@ -12089,6 +12429,13 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             } catch (error) {
                 console.warn('Unable to persist preset runtime state:', error);
             }
+        }
+
+        function syncTrainLoraPresetViewFromGlobal(presetName = activePreset) {
+            const select = document.getElementById('trainLoraPresetSelect');
+            if (!select || !trainLoraCatalog?.templates?.[presetName]) return;
+            select.value = presetName;
+            resetTrainLoraSettings();
         }
 
         function savePresetRuntimeState(presetName = activePreset) {
@@ -12208,6 +12555,355 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             document.getElementById('templateToolsStatus').innerText = savedTemplateState?.savedAt
                 ? `Saved ${new Date(savedTemplateState.savedAt).toLocaleString()}`
                 : 'Default Nexus BTA';
+        }
+
+        async function openTrainLoraTab(btn = null) {
+            btn = btn || getActivityButton('trainLora');
+            switchActivity('trainLora', btn);
+            await ensureTrainLoraCatalog();
+            renderTrainLoraCatalog();
+            syncTrainLoraPresetViewFromGlobal(activePreset);
+            syncTrainLoraJobUi(trainLoraCurrentJob);
+        }
+
+        async function ensureTrainLoraCatalog(force = false) {
+            if (trainLoraCatalog && !force) return trainLoraCatalog;
+            try {
+                trainLoraCatalog = await nexusFetch('/train-lora/templates');
+            } catch (error) {
+                showToast("Train LoRA Offline", error.message.slice(0, 140));
+                trainLoraCatalog = {
+                    templates: {},
+                    template_order: [],
+                    device_profiles: {},
+                    recommended_device: 'low',
+                    detected_vram_gb: 0,
+                    sources: []
+                };
+            }
+            return trainLoraCatalog;
+        }
+
+        function trainLoraSelectedPreset() {
+            const key = document.getElementById('trainLoraPresetSelect')?.value || activePreset;
+            return trainLoraCatalog?.templates?.[key] || null;
+        }
+
+        function trainLoraTemplateDefaults() {
+            const preset = trainLoraSelectedPreset();
+            const mode = document.getElementById('trainLoraModeSelect')?.value || 'character';
+            return { preset, mode, defaults: preset?.templates?.[mode] || {} };
+        }
+
+        function trainLoraIsVideoPreset(preset = trainLoraSelectedPreset()) {
+            const trainer = String(preset?.trainer || '').toLowerCase();
+            return trainer.includes('ltx') || trainer.includes('musubi') || Number(preset?.frames || 1) > 1 || String(preset?.base || '').toLowerCase().includes('video');
+        }
+
+        function syncTrainLoraTemplateUi() {
+            const preset = trainLoraSelectedPreset();
+            const isVideo = trainLoraIsVideoPreset(preset);
+            document.getElementById('trainLoraFramesField')?.classList.toggle('hidden', !isVideo);
+            const input = document.getElementById('trainLoraDatasetFiles');
+            if (input) input.accept = isVideo ? '.mp4,.mov,.webm,.png,.jpg,.jpeg,.webp,.txt,.caption' : '.png,.jpg,.jpeg,.webp,.txt,.caption';
+            const summary = document.getElementById('trainLoraFileSummary');
+            if (summary && !input?.files?.length) summary.innerText = isVideo ? 'drop/click clips, frames and captions' : 'drop/click images and captions';
+        }
+
+        function renderTrainLoraCatalog() {
+            if (!trainLoraCatalog) return;
+            const presetSelect = document.getElementById('trainLoraPresetSelect');
+            const deviceSelect = document.getElementById('trainLoraDeviceSelect');
+            const firstPresetRender = !!presetSelect && !presetSelect.options.length;
+            const firstDeviceRender = !!deviceSelect && !deviceSelect.options.length;
+            if (firstPresetRender) {
+                const order = trainLoraCatalog.template_order?.length ? trainLoraCatalog.template_order : Object.keys(trainLoraCatalog.templates || {});
+                presetSelect.innerHTML = order.map(key => {
+                    const item = trainLoraCatalog.templates[key] || {};
+                    return `<option value="${escapeHtml(key)}">${escapeHtml(item.label || key)}</option>`;
+                }).join('');
+                presetSelect.value = trainLoraCatalog.templates?.[activePreset] ? activePreset : (order[0] || 'SD');
+            }
+            if (firstDeviceRender) {
+                const profiles = trainLoraCatalog.device_profiles || {};
+                deviceSelect.innerHTML = Object.entries(profiles).map(([key, item]) => `<option value="${escapeHtml(key)}">${escapeHtml(item.label || key)}</option>`).join('');
+                deviceSelect.value = trainLoraCatalog.recommended_device || 'low';
+            }
+            const sources = document.getElementById('trainLoraSources');
+            if (sources) {
+                sources.innerHTML = (trainLoraCatalog.sources || []).map(source => `
+                    <a href="${escapeHtml(source.url)}" target="_blank" rel="noopener" class="block bg-nexus-bg border border-nexus-border hover:border-nexus-red rounded-sm p-2 text-nexus-muted hover:text-white">
+                        <span class="block font-bold text-white uppercase">${escapeHtml(source.label)}</span>
+                        <span class="block mt-1 leading-4">${escapeHtml(source.note || '')}</span>
+                    </a>
+                `).join('');
+            }
+            if (firstPresetRender || firstDeviceRender) resetTrainLoraSettings();
+        }
+
+        function applyTrainLoraDeviceProfile() {
+            const selectedKey = document.getElementById('trainLoraDeviceSelect')?.value || 'auto';
+            const profileKey = selectedKey === 'auto' ? (trainLoraCatalog?.recommended_device || 'low') : selectedKey;
+            const profile = trainLoraCatalog?.device_profiles?.[profileKey] || {};
+            if (profile.precision) document.getElementById('trainLoraPrecision').value = profile.precision;
+            if (profile.optimizer) document.getElementById('trainLoraOptimizer').value = profile.optimizer;
+            const memorySelect = document.getElementById('trainLoraMemoryPolicy');
+            if (memorySelect && memorySelect.value === 'auto' && profile.memory_policy) memorySelect.dataset.resolvedPolicy = profile.memory_policy;
+            if (profile.batch_size) document.getElementById('trainLoraBatchSize').value = profile.batch_size;
+            if (profile.gradient_accumulation) document.getElementById('trainLoraGradAccum').value = profile.gradient_accumulation;
+            if (profile.max_rank) {
+                const rank = document.getElementById('trainLoraRank');
+                if (rank) rank.value = Math.min(parseInt(rank.value || profile.max_rank, 10), profile.max_rank);
+            }
+            document.getElementById('trainLoraCacheLatents').checked = profile.cache_latents !== false;
+            document.getElementById('trainLoraGradCheckpoint').checked = profile.gradient_checkpointing !== false;
+            const badge = document.getElementById('trainLoraDeviceBadge');
+            if (badge) badge.innerText = `${selectedKey === 'auto' ? 'Auto -> ' : ''}${profile.label || profileKey} / ${trainLoraCatalog?.detected_vram_gb || 0}GB`;
+            syncTrainLoraMemoryHint();
+        }
+
+        function syncTrainLoraMemoryHint() {
+            const select = document.getElementById('trainLoraMemoryPolicy');
+            const selected = select?.value || 'auto';
+            const deviceKey = document.getElementById('trainLoraDeviceSelect')?.value || trainLoraCatalog?.recommended_device || 'low';
+            const resolvedDevice = deviceKey === 'auto' ? (trainLoraCatalog?.recommended_device || 'low') : deviceKey;
+            const resolved = selected === 'auto'
+                ? (trainLoraCatalog?.device_profiles?.[resolvedDevice]?.memory_policy || trainLoraCatalog?.runtime_vram_policy || 'shared')
+                : selected;
+            const hint = document.getElementById('trainLoraMemoryHint');
+            if (hint) hint.innerText = resolved === 'shared'
+                ? 'Shared usa CPU/RAM + VRAM: mais compatível em pouca VRAM, porém bem mais lento.'
+                : 'GPU Only é mais rápido e ideal quando o modelo cabe na VRAM.';
+            if (select) select.dataset.resolvedPolicy = resolved;
+        }
+
+        function resetTrainLoraSettings() {
+            const { preset, mode, defaults } = trainLoraTemplateDefaults();
+            if (!preset) return;
+            const key = document.getElementById('trainLoraPresetSelect')?.value || activePreset;
+            const safeKey = String(key).toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            document.getElementById('trainLoraOutputName').value = `nexus_${safeKey}_${mode}_lora`;
+            if (!document.getElementById('trainLoraOutputDir')?.value) {
+                const outputLabel = document.getElementById('trainLoraOutputDirLabel');
+                if (outputLabel) outputLabel.innerText = trainLoraCatalog?.paths?.outputs || 'backend default output';
+            }
+            document.getElementById('trainLoraTrigger').value = `nexus_${safeKey}_${mode}`;
+            const selectedModel = document.getElementById('modelSelect')?.value || '';
+            document.getElementById('trainLoraBaseModelPath').value = selectedModel;
+            document.getElementById('trainLoraResolution').value = preset.resolution || 1024;
+            document.getElementById('trainLoraFrames').value = preset.frames || 1;
+            document.getElementById('trainLoraSteps').value = defaults.steps || 1200;
+            document.getElementById('trainLoraSaveSteps').value = defaults.save_every_n_steps || 250;
+            document.getElementById('trainLoraRank').value = defaults.rank || 16;
+            document.getElementById('trainLoraAlpha').value = defaults.alpha || defaults.rank || 16;
+            document.getElementById('trainLoraLearningRate').value = defaults.learning_rate || 0.0001;
+            document.getElementById('trainLoraBatchSize').value = defaults.batch_size || 1;
+            document.getElementById('trainLoraRepeats').value = defaults.repeats || 8;
+            document.getElementById('trainLoraCaption').value = preset.caption || '';
+            const notes = document.getElementById('trainLoraPresetNotes');
+            if (notes) notes.innerText = preset.caption || '';
+            document.getElementById('trainLoraTrainerBadge').innerText = preset.trainer_label || preset.trainer || 'trainer';
+            applyTrainLoraDeviceProfile();
+            syncTrainLoraMemoryHint();
+            syncTrainLoraTemplateUi();
+            syncTrainLoraJobUi(null);
+        }
+
+        async function syncTrainLoraFileSummary() {
+            const files = [...(document.getElementById('trainLoraDatasetFiles')?.files || [])];
+            const summary = document.getElementById('trainLoraFileSummary');
+            if (summary) summary.innerText = files.length ? `${files.length} file${files.length === 1 ? '' : 's'} selected` : 'drop/click images, captions or clips';
+            await syncTrainLoraCaptionSummary(files, [...(document.getElementById('trainLoraFolderInput')?.files || [])]);
+        }
+
+        async function syncTrainLoraFolderSelection() {
+            const input = document.getElementById('trainLoraFolderInput');
+            const files = [...(input?.files || [])];
+            const root = files[0]?.webkitRelativePath?.split('/')?.[0] || '';
+            document.getElementById('trainLoraSourceDir').value = root ? `[browser-folder] ${root}` : '';
+            const label = document.getElementById('trainLoraSourceDirLabel');
+            if (label) label.innerText = files.length ? `${root || 'folder'} (${files.length} files)` : 'select folder';
+            await syncTrainLoraCaptionSummary([...(document.getElementById('trainLoraDatasetFiles')?.files || [])], files);
+        }
+
+        async function pickTrainLoraFolder(kind) {
+            try {
+                const result = await nexusFetch(`/train-lora/pick-path?kind=${encodeURIComponent(kind === 'output' ? 'output' : 'dataset')}`);
+                if (result?.path) {
+                    if (kind === 'output') {
+                        document.getElementById('trainLoraOutputDir').value = result.path;
+                        document.getElementById('trainLoraOutputDirLabel').innerText = result.path;
+                    } else {
+                        document.getElementById('trainLoraSourceDir').value = result.path;
+                        document.getElementById('trainLoraSourceDirLabel').innerText = result.path;
+                    }
+                    return;
+                }
+            } catch (error) {
+                showToast("Folder Picker", error.message.slice(0, 140));
+            }
+            document.getElementById(kind === 'output' ? 'trainLoraOutputPicker' : 'trainLoraFolderInput')?.click();
+        }
+
+        async function pickTrainLoraPath(kind) {
+            try {
+                const result = await nexusFetch(`/train-lora/pick-path?kind=${encodeURIComponent(kind)}`);
+                if (result?.path) {
+                    const target = kind === 'resume' ? 'trainLoraResumeFrom' : 'trainLoraBaseModelPath';
+                    document.getElementById(target).value = result.path;
+                }
+            } catch (error) {
+                showToast("Model Picker", error.message.slice(0, 140));
+            }
+        }
+
+        function syncTrainLoraOutputPicker() {
+            const input = document.getElementById('trainLoraOutputPicker');
+            const files = [...(input?.files || [])];
+            const root = files[0]?.webkitRelativePath?.split('/')?.[0] || '';
+            document.getElementById('trainLoraOutputDir').value = root ? `[browser-folder] ${root}` : '';
+            const label = document.getElementById('trainLoraOutputDirLabel');
+            if (label) label.innerText = root ? `${root} (${files.length || 0} existing files)` : (trainLoraCatalog?.paths?.outputs || 'backend default output');
+        }
+
+        async function syncTrainLoraCaptionSummary(uploadFiles = [], folderFiles = []) {
+            const textFiles = [...uploadFiles, ...folderFiles].filter(file => /\.(txt|caption)$/i.test(file.name || file.webkitRelativePath || ''));
+            const mediaFiles = [...uploadFiles, ...folderFiles].filter(file => /\.(png|jpe?g|webp|mp4|mov|webm)$/i.test(file.name || file.webkitRelativePath || ''));
+            const samples = [];
+            for (const file of textFiles.slice(0, 8)) {
+                try {
+                    const text = (await file.text()).trim().replace(/\s+/g, ' ').slice(0, 180);
+                    samples.push(`${file.webkitRelativePath || file.name}: ${text || '(empty)'}`);
+                } catch {
+                    samples.push(`${file.webkitRelativePath || file.name}: unreadable`);
+                }
+            }
+            const summary = document.getElementById('trainLoraCaptionSummary');
+            if (summary) {
+                summary.innerText = textFiles.length
+                    ? `${textFiles.length} caption file${textFiles.length === 1 ? '' : 's'} for ${mediaFiles.length} media file${mediaFiles.length === 1 ? '' : 's'}.\n${samples.join('\n')}`
+                    : `${mediaFiles.length || 0} media file${mediaFiles.length === 1 ? '' : 's'} selected. No .txt/.caption found.`;
+            }
+        }
+
+        function initTrainLoraDropZone() {
+            const zone = document.getElementById('trainLoraDropZone');
+            const input = document.getElementById('trainLoraDatasetFiles');
+            if (!zone || !input) return;
+            ['dragenter', 'dragover'].forEach(type => zone.addEventListener(type, event => {
+                event.preventDefault();
+                zone.classList.add('border-nexus-red');
+            }));
+            ['dragleave', 'drop'].forEach(type => zone.addEventListener(type, event => {
+                event.preventDefault();
+                zone.classList.remove('border-nexus-red');
+            }));
+            zone.addEventListener('drop', event => {
+                if (event.dataTransfer?.files?.length) {
+                    input.files = event.dataTransfer.files;
+                    syncTrainLoraFileSummary();
+                }
+            });
+        }
+
+        function collectTrainLoraPlan() {
+            return {
+                preset: document.getElementById('trainLoraPresetSelect')?.value || activePreset,
+                mode: document.getElementById('trainLoraModeSelect')?.value || 'character',
+                device_profile: document.getElementById('trainLoraDeviceSelect')?.value || 'auto',
+                output_name: document.getElementById('trainLoraOutputName')?.value || '',
+                output_dir: document.getElementById('trainLoraOutputDir')?.value || '',
+                base_model_path: document.getElementById('trainLoraBaseModelPath')?.value || '',
+                resume_from: document.getElementById('trainLoraResumeFrom')?.value || '',
+                trigger_word: document.getElementById('trainLoraTrigger')?.value || '',
+                source_dir: document.getElementById('trainLoraSourceDir')?.value || '',
+                caption: document.getElementById('trainLoraCaption')?.value || '',
+                launch: !!document.getElementById('trainLoraLaunchToggle')?.checked,
+                training: {
+                    resolution: document.getElementById('trainLoraResolution')?.value || 1024,
+                    frames: parseInt(document.getElementById('trainLoraFrames')?.value || '1', 10),
+                    steps: parseInt(document.getElementById('trainLoraSteps')?.value || '1200', 10),
+                    save_every_n_steps: parseInt(document.getElementById('trainLoraSaveSteps')?.value || '250', 10),
+                    rank: parseInt(document.getElementById('trainLoraRank')?.value || '16', 10),
+                    alpha: parseInt(document.getElementById('trainLoraAlpha')?.value || '16', 10),
+                    learning_rate: parseFloat(document.getElementById('trainLoraLearningRate')?.value || '0.0001'),
+                    batch_size: parseInt(document.getElementById('trainLoraBatchSize')?.value || '1', 10),
+                    repeats: parseInt(document.getElementById('trainLoraRepeats')?.value || '8', 10),
+                    gradient_accumulation: parseInt(document.getElementById('trainLoraGradAccum')?.value || '1', 10),
+                    precision: document.getElementById('trainLoraPrecision')?.value || 'fp16',
+                    optimizer: document.getElementById('trainLoraOptimizer')?.value || 'adamw8bit',
+                    memory_policy: document.getElementById('trainLoraMemoryPolicy')?.value || 'auto',
+                    cache_latents: !!document.getElementById('trainLoraCacheLatents')?.checked,
+                    gradient_checkpointing: !!document.getElementById('trainLoraGradCheckpoint')?.checked
+                }
+            };
+        }
+
+        async function startTrainLoraJob() {
+            await ensureTrainLoraCatalog();
+            const form = new FormData();
+            form.append('plan', JSON.stringify(collectTrainLoraPlan()));
+            [...(document.getElementById('trainLoraDatasetFiles')?.files || [])].forEach(file => form.append('files', file));
+            [...(document.getElementById('trainLoraFolderInput')?.files || [])].forEach(file => form.append('files', file));
+            syncTrainLoraJobUi({ status: 'preparing', progress: 5, message: 'Preparing Train LoRA job...' });
+            try {
+                trainLoraCurrentJob = await nexusFetchForm('/train-lora/start', form);
+                syncTrainLoraJobUi(trainLoraCurrentJob);
+                refreshTrainLoraTerminal();
+                if (['queued', 'running'].includes(String(trainLoraCurrentJob.status || '').toLowerCase())) pollTrainLoraJob(trainLoraCurrentJob.job_id);
+                showToast("Train LoRA", trainLoraCurrentJob.message || "Job prepared.");
+            } catch (error) {
+                syncTrainLoraJobUi({ status: 'error', progress: 0, message: error.message });
+                showToast("Train LoRA Failed", error.message.slice(0, 160));
+            }
+        }
+
+        async function pollTrainLoraJob(jobId) {
+            clearTimeout(trainLoraPollTimer);
+            if (!jobId) return;
+            try {
+                trainLoraCurrentJob = await nexusFetch(`/train-lora/${encodeURIComponent(jobId)}`);
+                syncTrainLoraJobUi(trainLoraCurrentJob);
+                refreshTrainLoraTerminal();
+                if (['queued', 'running'].includes(String(trainLoraCurrentJob.status || '').toLowerCase())) {
+                    trainLoraPollTimer = setTimeout(() => pollTrainLoraJob(jobId), 2000);
+                }
+            } catch (error) {
+                syncTrainLoraJobUi({ status: 'error', progress: 0, message: error.message });
+            }
+        }
+
+        function syncTrainLoraJobUi(job) {
+            const status = document.getElementById('trainLoraJobStatus');
+            const message = document.getElementById('trainLoraJobMessage');
+            const path = document.getElementById('trainLoraJobPath');
+            const bar = document.getElementById('trainLoraProgressBar');
+            const normalized = job?.status || 'idle';
+            const progress = Math.max(0, Math.min(100, Number(job?.progress || 0)));
+            if (status) status.innerText = normalized;
+            if (message) message.innerText = job?.message || 'Load a preset to begin.';
+            if (path) path.innerText = job?.paths?.config || '';
+            if (bar) bar.style.width = `${progress}%`;
+        }
+
+        async function refreshTrainLoraTerminal() {
+            clearTimeout(trainLoraLogTimer);
+            const terminal = document.getElementById('trainLoraTerminal');
+            const jobId = trainLoraCurrentJob?.job_id;
+            if (!terminal || !jobId) {
+                if (terminal) terminal.innerText = 'terminal idle';
+                return;
+            }
+            try {
+                const log = await nexusFetch(`/train-lora/${encodeURIComponent(jobId)}/log`);
+                terminal.innerText = log.text || 'waiting for backend log...';
+                terminal.scrollTop = terminal.scrollHeight;
+            } catch (error) {
+                terminal.innerText = error.message;
+            }
+            if (['queued', 'running'].includes(String(trainLoraCurrentJob?.status || '').toLowerCase())) {
+                trainLoraLogTimer = setTimeout(refreshTrainLoraTerminal, 2000);
+            }
         }
 
         function closeTemplateTools() {
@@ -13444,6 +14140,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 img2img: {
                     mode: effectiveImg2ImgMode,
                     resize_mode: document.getElementById('resizeModeSelect')?.value || 'Just Resize',
+                    aspect_ratio: dimensionAspectRatioLabel(),
+                    resize_percent: parseInt(document.getElementById('resizePercentInput')?.value || '100', 10),
                     denoise: parseFloat(document.getElementById('denoiseSlider')?.value || '0.75'),
                     batch_count: parseInt(document.getElementById('batchCountInput')?.value || '1', 10),
                     mask_blur: parseInt(document.getElementById('maskBlurSlider')?.value || '4', 10),
@@ -14340,7 +15038,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         applyModelProfile(activePreset, false);
         updateRangeLabel('steps');
         updateRangeLabel('cfg');
-        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
+        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
             const element = document.getElementById(id);
             if (element) element.addEventListener('input', updateWorkflowPreview);
             if (element) element.addEventListener('change', () => {
@@ -14675,6 +15373,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         initLtxDirectorEvents();
         renderLtxDirector();
         initLinearViewerZoom();
+        initTrainLoraDropZone();
         initPanZoomSurface('canvas');
         initPanZoomSurface('workflow');
         initWorkflowNodeDragging();

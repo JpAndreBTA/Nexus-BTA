@@ -1,0 +1,570 @@
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from .config import NexusSettings, runtime_python
+
+
+TRAIN_LORA_SOURCES = [
+    {
+        "label": "ComfyUI LTX multi-frame workflows",
+        "url": "https://docs.comfy.org/tutorials/video/ltxv",
+        "note": "Official ComfyUI LTX examples include multi-frame control with start and end frames.",
+    },
+    {
+        "label": "LTX-2 LoRA trainer",
+        "url": "https://ltx.io/model/model-blog/how-to-fine-tune-a-video-generation-model-with-lora",
+        "note": "Official LTX guide uses cached latents/embeddings and YAML configs.",
+    },
+    {
+        "label": "kohya-ss sd-scripts",
+        "url": "https://github.com/kohya-ss/sd-scripts",
+        "note": "Common SD 1.5/SDXL LoRA runner via train_network.py and sdxl_train_network.py.",
+    },
+    {
+        "label": "AI Toolkit",
+        "url": "https://github.com/ostris/ai-toolkit",
+        "note": "Diffusion training suite with FLUX and Qwen Image/Edit support.",
+    },
+]
+
+
+TRAIN_LORA_PRESETS: dict[str, dict[str, Any]] = {
+    "SD": {
+        "label": "SD 1.5",
+        "base": "Stable Diffusion 1.5",
+        "trainer": "kohya_ss",
+        "trainer_label": "kohya-ss sd-scripts",
+        "script": "train_network.py",
+        "resolution": 512,
+        "caption": "Use a short trigger token plus concrete subject/style captions.",
+        "templates": {
+            "character": {"rank": 16, "alpha": 16, "learning_rate": 1e-4, "steps": 1800, "repeats": 12, "batch_size": 2},
+            "style": {"rank": 8, "alpha": 8, "learning_rate": 8e-5, "steps": 1200, "repeats": 8, "batch_size": 2},
+        },
+    },
+    "XL": {
+        "label": "SDXL",
+        "base": "Stable Diffusion XL",
+        "trainer": "kohya_ss",
+        "trainer_label": "kohya-ss sd-scripts",
+        "script": "sdxl_train_network.py",
+        "resolution": 1024,
+        "caption": "Prefer 1024px buckets, captions with trigger token and visual attributes.",
+        "templates": {
+            "character": {"rank": 16, "alpha": 16, "learning_rate": 8e-5, "steps": 2200, "repeats": 10, "batch_size": 1},
+            "style": {"rank": 12, "alpha": 12, "learning_rate": 6e-5, "steps": 1600, "repeats": 8, "batch_size": 1},
+        },
+    },
+    "Illustrious": {
+        "label": "Illustrious",
+        "base": "Illustrious XL",
+        "trainer": "kohya_ss",
+        "trainer_label": "kohya-ss sd-scripts",
+        "script": "sdxl_train_network.py",
+        "resolution": 1024,
+        "caption": "Use Danbooru-style tags with a stable trigger; keep quality tags out of captions when possible.",
+        "templates": {
+            "character": {"rank": 16, "alpha": 16, "learning_rate": 8e-5, "steps": 2200, "repeats": 10, "batch_size": 1},
+            "style": {"rank": 12, "alpha": 12, "learning_rate": 6e-5, "steps": 1600, "repeats": 8, "batch_size": 1},
+        },
+    },
+    "Pony": {
+        "label": "Pony",
+        "base": "Pony Diffusion XL",
+        "trainer": "kohya_ss",
+        "trainer_label": "kohya-ss sd-scripts",
+        "script": "sdxl_train_network.py",
+        "resolution": 1024,
+        "caption": "Use Pony score/source tags consistently and keep the trigger near the start.",
+        "templates": {
+            "character": {"rank": 16, "alpha": 16, "learning_rate": 8e-5, "steps": 2200, "repeats": 10, "batch_size": 1},
+            "style": {"rank": 12, "alpha": 12, "learning_rate": 6e-5, "steps": 1600, "repeats": 8, "batch_size": 1},
+        },
+    },
+    "Flux": {
+        "label": "FLUX",
+        "base": "FLUX.1",
+        "trainer": "ai_toolkit",
+        "trainer_label": "AI Toolkit",
+        "resolution": 1024,
+        "caption": "Use natural captions; keep trigger token rare and consistent.",
+        "templates": {
+            "character": {"rank": 16, "alpha": 16, "learning_rate": 1e-4, "steps": 1800, "repeats": 8, "batch_size": 1},
+            "style": {"rank": 8, "alpha": 8, "learning_rate": 8e-5, "steps": 1200, "repeats": 6, "batch_size": 1},
+        },
+    },
+    "Flux2": {
+        "label": "FLUX 2",
+        "base": "FLUX.2",
+        "trainer": "ai_toolkit",
+        "trainer_label": "AI Toolkit",
+        "resolution": 1024,
+        "caption": "Use natural language captions and a rare trigger token; keep batches small on consumer GPUs.",
+        "templates": {
+            "character": {"rank": 16, "alpha": 16, "learning_rate": 8e-5, "steps": 1800, "repeats": 8, "batch_size": 1},
+            "style": {"rank": 8, "alpha": 8, "learning_rate": 6e-5, "steps": 1200, "repeats": 6, "batch_size": 1},
+        },
+    },
+    "Flux2Klein": {
+        "label": "FLUX 2 Klein",
+        "base": "FLUX.2 Klein",
+        "trainer": "ai_toolkit",
+        "trainer_label": "AI Toolkit",
+        "resolution": 1024,
+        "caption": "Klein presets favor low rank and cached latents for fast iteration.",
+        "templates": {
+            "character": {"rank": 8, "alpha": 8, "learning_rate": 9e-5, "steps": 1400, "repeats": 8, "batch_size": 1},
+            "style": {"rank": 8, "alpha": 8, "learning_rate": 7e-5, "steps": 1000, "repeats": 6, "batch_size": 1},
+        },
+    },
+    "Qwen": {
+        "label": "QWEN",
+        "base": "Qwen Image/Edit",
+        "trainer": "ai_toolkit",
+        "trainer_label": "AI Toolkit",
+        "resolution": 1024,
+        "caption": "Caption edit intent, retained identity, and the visual delta from the source.",
+        "templates": {
+            "character": {"rank": 16, "alpha": 16, "learning_rate": 7e-5, "steps": 2000, "repeats": 8, "batch_size": 1},
+            "style": {"rank": 8, "alpha": 8, "learning_rate": 6e-5, "steps": 1400, "repeats": 6, "batch_size": 1},
+        },
+    },
+    "ZImageTurbo": {
+        "label": "Z-IMG",
+        "base": "Z-Image Turbo",
+        "trainer": "simpletuner",
+        "trainer_label": "SimpleTuner compatible",
+        "resolution": 1024,
+        "caption": "Use clean image captions and conservative learning rate for turbo checkpoints.",
+        "templates": {
+            "character": {"rank": 16, "alpha": 16, "learning_rate": 5e-5, "steps": 1800, "repeats": 8, "batch_size": 1},
+            "style": {"rank": 8, "alpha": 8, "learning_rate": 4e-5, "steps": 1200, "repeats": 6, "batch_size": 1},
+        },
+    },
+    "Lumina": {
+        "label": "LUMINA",
+        "base": "Lumina Image",
+        "trainer": "simpletuner",
+        "trainer_label": "SimpleTuner compatible",
+        "resolution": 1024,
+        "caption": "Prefer varied aesthetic captions and lower LR for style transfer.",
+        "templates": {
+            "character": {"rank": 16, "alpha": 16, "learning_rate": 6e-5, "steps": 1800, "repeats": 8, "batch_size": 1},
+            "style": {"rank": 8, "alpha": 8, "learning_rate": 5e-5, "steps": 1200, "repeats": 6, "batch_size": 1},
+        },
+    },
+    "Wan": {
+        "label": "WAN",
+        "base": "Wan 2.2 Video",
+        "trainer": "musubi_tuner",
+        "trainer_label": "musubi-tuner / Wan trainer",
+        "resolution": 832,
+        "frames": 81,
+        "caption": "Use short clips with motion captions; cache latents before long runs.",
+        "templates": {
+            "character": {"rank": 32, "alpha": 16, "learning_rate": 2e-5, "steps": 2400, "repeats": 4, "batch_size": 1},
+            "style": {"rank": 16, "alpha": 8, "learning_rate": 2e-5, "steps": 1800, "repeats": 4, "batch_size": 1},
+        },
+    },
+    "LTX": {
+        "label": "LTX 2.3",
+        "base": "LTX 2.3 Video",
+        "trainer": "ltx_trainer",
+        "trainer_label": "LTX-2 trainer",
+        "resolution": "960x544",
+        "frames": 49,
+        "caption": "Use scene clips/captions; LTX frames must satisfy (F - 1) % 8 == 0.",
+        "templates": {
+            "character": {"rank": 32, "alpha": 16, "learning_rate": 3e-5, "steps": 2600, "repeats": 4, "batch_size": 1},
+            "style": {"rank": 16, "alpha": 8, "learning_rate": 2e-5, "steps": 1800, "repeats": 4, "batch_size": 1},
+        },
+    },
+    "Anima": {
+        "label": "ANIMA",
+        "base": "Anima / anime SD family",
+        "trainer": "kohya_ss",
+        "trainer_label": "kohya-ss sd-scripts",
+        "script": "train_network.py",
+        "resolution": 768,
+        "caption": "Use tag-style captions for anime and keep character tags stable.",
+        "templates": {
+            "character": {"rank": 16, "alpha": 16, "learning_rate": 1e-4, "steps": 1800, "repeats": 12, "batch_size": 2},
+            "style": {"rank": 8, "alpha": 8, "learning_rate": 8e-5, "steps": 1200, "repeats": 8, "batch_size": 2},
+        },
+    },
+}
+
+
+DEVICE_PROFILES = {
+    "auto": {"label": "Auto", "description": "Uses detected VRAM and Nexus runtime policy."},
+    "low": {
+        "label": "Low VRAM 6-8GB",
+        "memory_policy": "shared",
+        "precision": "fp16",
+        "batch_size": 1,
+        "gradient_accumulation": 4,
+        "max_rank": 8,
+        "optimizer": "adamw8bit",
+        "cache_latents": True,
+        "gradient_checkpointing": True,
+    },
+    "balanced": {
+        "label": "Balanced 10-16GB",
+        "memory_policy": "shared",
+        "precision": "bf16",
+        "batch_size": 1,
+        "gradient_accumulation": 2,
+        "max_rank": 16,
+        "optimizer": "adamw8bit",
+        "cache_latents": True,
+        "gradient_checkpointing": True,
+    },
+    "high": {
+        "label": "High VRAM 20-24GB",
+        "memory_policy": "gpu_only",
+        "precision": "bf16",
+        "batch_size": 2,
+        "gradient_accumulation": 1,
+        "max_rank": 32,
+        "optimizer": "adamw",
+        "cache_latents": True,
+        "gradient_checkpointing": False,
+    },
+    "video": {
+        "label": "Video 32GB+",
+        "memory_policy": "gpu_only",
+        "precision": "bf16",
+        "batch_size": 1,
+        "gradient_accumulation": 1,
+        "max_rank": 32,
+        "optimizer": "adamw8bit",
+        "cache_latents": True,
+        "gradient_checkpointing": True,
+    },
+}
+
+
+def _safe_name(value: Any, fallback: str) -> str:
+    text = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(value or "").strip()).strip("._-")
+    return text[:80] or fallback
+
+
+def _number(value: Any, default: float, minimum: float, maximum: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
+def _int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    return int(round(_number(value, default, minimum, maximum)))
+
+
+def train_lora_root(settings: NexusSettings) -> Path:
+    root = settings.project_root / "training" / "lora"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def train_lora_job_root(settings: NexusSettings, job_id: str) -> Path:
+    job_root = train_lora_root(settings) / "jobs" / _safe_name(job_id, "job")
+    job_root.mkdir(parents=True, exist_ok=True)
+    return job_root
+
+
+def _detected_vram_gb(settings: NexusSettings, memory_snapshot: dict[str, Any] | None) -> float:
+    configured = settings.runtime.gpu_memory_gb
+    if configured:
+        return float(configured)
+    torch_info = ((memory_snapshot or {}).get("torch") or {})
+    total = torch_info.get("cuda_total_vram_bytes") or 0
+    try:
+        return float(total) / (1024**3)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def recommended_device_profile(settings: NexusSettings, memory_snapshot: dict[str, Any] | None = None) -> str:
+    vram = _detected_vram_gb(settings, memory_snapshot)
+    if vram >= 32:
+        return "video"
+    if vram >= 20:
+        return "high"
+    if vram >= 10:
+        return "balanced"
+    return "low"
+
+
+def build_train_lora_catalog(settings: NexusSettings, memory_snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+    recommended = recommended_device_profile(settings, memory_snapshot)
+    template_order = ["SD", "XL", "Illustrious", "Pony", "Flux", "Flux2", "Flux2Klein", "Qwen", "Wan", "LTX", "Anima", "ZImageTurbo", "Lumina"]
+    return {
+        "templates": TRAIN_LORA_PRESETS,
+        "template_order": [key for key in template_order if key in TRAIN_LORA_PRESETS],
+        "device_profiles": DEVICE_PROFILES,
+        "memory_policies": {
+            "auto": "Auto from selected device profile",
+            "shared": "Shared VRAM: CPU/RAM offload, safer for low VRAM, slower.",
+            "gpu_only": "GPU only: faster when the model fits in VRAM.",
+        },
+        "recommended_device": recommended,
+        "runtime_vram_policy": settings.runtime.vram_policy,
+        "detected_vram_gb": round(_detected_vram_gb(settings, memory_snapshot), 2),
+        "paths": {
+            "root": str(train_lora_root(settings)),
+            "jobs": str(train_lora_root(settings) / "jobs"),
+            "outputs": str(train_lora_root(settings) / "outputs"),
+        },
+        "sources": TRAIN_LORA_SOURCES,
+    }
+
+
+def _trainer_candidates(settings: NexusSettings, trainer: str, script: str | None) -> list[tuple[Path, list[str]]]:
+    python_bin = str(runtime_python(settings))
+    root = settings.project_root
+    runtime = settings.runtime_dir
+    candidates: list[tuple[Path, list[str]]] = []
+    if trainer == "kohya_ss":
+        script_name = script or "train_network.py"
+        for base in (runtime / "sd-scripts", runtime / "kohya_ss" / "sd-scripts", root / "sd-scripts"):
+            candidates.append((base, [python_bin, str(base / script_name)]))
+    elif trainer == "ai_toolkit":
+        for base in (runtime / "ai-toolkit", runtime / "ai_toolkit", root / "ai-toolkit"):
+            candidates.append((base, [python_bin, str(base / "run.py")]))
+    elif trainer == "ltx_trainer":
+        for base in (runtime / "LTX-2", root / "LTX-2"):
+            uv = shutil.which("uv") or "uv"
+            candidates.append((base, [uv, "run", "python", "packages/ltx-trainer/scripts/train.py"]))
+    elif trainer == "musubi_tuner":
+        for base in (runtime / "musubi-tuner", runtime / "musubi_tuner", root / "musubi-tuner"):
+            candidates.append((base, [python_bin, str(base / "wan_train_network.py")]))
+    elif trainer == "simpletuner":
+        for base in (runtime / "SimpleTuner", runtime / "simpletuner", root / "SimpleTuner"):
+            candidates.append((base, [python_bin, str(base / "train.py")]))
+    return candidates
+
+
+def resolve_trainer_runner(settings: NexusSettings, preset: dict[str, Any], config_path: Path) -> dict[str, Any]:
+    trainer = str(preset.get("trainer") or "")
+    script = str(preset.get("script") or "") or None
+    for cwd, command in _trainer_candidates(settings, trainer, script):
+        executable = Path(command[1]) if len(command) > 1 and command[1].endswith(".py") else cwd
+        if cwd.exists() and (not executable.suffix or executable.exists()):
+            final_command = [*command, "--config_file", str(config_path)]
+            return {"available": True, "cwd": str(cwd), "command": final_command}
+    return {
+        "available": False,
+        "cwd": "",
+        "command": [],
+        "install_hint": _install_hint(trainer),
+    }
+
+
+def _install_hint(trainer: str) -> str:
+    hints = {
+        "kohya_ss": "Clone kohya-ss/sd-scripts into runtime/sd-scripts and install its requirements.",
+        "ai_toolkit": "Clone ostris/ai-toolkit into runtime/ai-toolkit and install requirements.",
+        "ltx_trainer": "Clone Lightricks/LTX-2 into runtime/LTX-2 and run uv sync.",
+        "musubi_tuner": "Install musubi-tuner into runtime/musubi-tuner for Wan video LoRA jobs.",
+        "simpletuner": "Clone SimpleTuner into runtime/SimpleTuner and install requirements.",
+    }
+    return hints.get(trainer, "Install the selected trainer before launching.")
+
+
+def _toml_string(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return json.dumps(str(value))
+
+
+def write_kohya_dataset_toml(path: Path, dataset_dir: Path, config: dict[str, Any]) -> None:
+    lines = [
+        "[general]",
+        "shuffle_caption = true",
+        "caption_extension = \".txt\"",
+        "keep_tokens = 1",
+        "",
+        "[[datasets]]",
+        f"resolution = {_toml_string(config['resolution'])}",
+        "batch_size = 1",
+        "enable_bucket = true",
+        "bucket_no_upscale = false",
+        "",
+        "[[datasets.subsets]]",
+        f"image_dir = {_toml_string(str(dataset_dir))}",
+        f"num_repeats = {int(config['repeats'])}",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def build_train_lora_job(
+    settings: NexusSettings,
+    job_id: str,
+    plan: dict[str, Any],
+    saved_files: list[dict[str, Any]],
+    memory_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    preset_key = str(plan.get("preset") or "SD")
+    preset = TRAIN_LORA_PRESETS.get(preset_key) or TRAIN_LORA_PRESETS["SD"]
+    mode = str(plan.get("mode") or plan.get("type") or "character").lower()
+    if mode not in {"character", "style"}:
+        mode = "character"
+    base_defaults = dict((preset.get("templates") or {}).get(mode) or {})
+    requested_device = str(plan.get("device_profile") or "auto")
+    if requested_device == "auto" or requested_device not in DEVICE_PROFILES:
+        requested_device = recommended_device_profile(settings, memory_snapshot)
+    device = dict(DEVICE_PROFILES.get(requested_device) or DEVICE_PROFILES["low"])
+    training = dict(plan.get("training") or {})
+    rank_default = min(int(base_defaults.get("rank", 16)), int(device.get("max_rank", 16)))
+    memory_policy = str(training.get("memory_policy") or "").strip().lower()
+    if memory_policy not in {"shared", "gpu_only"}:
+        memory_policy = str(device.get("memory_policy") or settings.runtime.vram_policy or "shared").strip().lower()
+    if memory_policy not in {"shared", "gpu_only"}:
+        memory_policy = "shared"
+    config = {
+        "preset": preset_key,
+        "preset_label": preset["label"],
+        "mode": mode,
+        "base_model": preset["base"],
+        "trainer": preset["trainer"],
+        "trainer_label": preset["trainer_label"],
+        "base_model_path": str(plan.get("base_model_path") or ""),
+        "resume_from": str(plan.get("resume_from") or ""),
+        "trigger_word": _safe_name(plan.get("trigger_word"), f"nexus_{preset_key.lower()}_{mode}"),
+        "output_name": _safe_name(plan.get("output_name"), f"nexus_{preset_key.lower()}_{mode}_lora"),
+        "resolution": training.get("resolution") or preset.get("resolution") or 1024,
+        "frames": _int(training.get("frames"), int(preset.get("frames") or 1), 1, 257),
+        "rank": _int(training.get("rank"), rank_default, 1, int(device.get("max_rank", 32))),
+        "alpha": _int(training.get("alpha"), int(base_defaults.get("alpha", rank_default)), 1, 128),
+        "learning_rate": _number(training.get("learning_rate"), float(base_defaults.get("learning_rate", 1e-4)), 1e-7, 1e-3),
+        "steps": _int(training.get("steps"), int(base_defaults.get("steps", 1200)), 100, 200000),
+        "save_every_n_steps": _int(training.get("save_every_n_steps"), int(base_defaults.get("save_every_n_steps", 250)), 25, 50000),
+        "repeats": _int(training.get("repeats"), int(base_defaults.get("repeats", 8)), 1, 200),
+        "batch_size": _int(training.get("batch_size"), int(base_defaults.get("batch_size", device.get("batch_size", 1))), 1, 16),
+        "gradient_accumulation": _int(training.get("gradient_accumulation"), int(device.get("gradient_accumulation", 1)), 1, 64),
+        "precision": str(training.get("precision") or device.get("precision") or "fp16"),
+        "optimizer": str(training.get("optimizer") or device.get("optimizer") or "adamw8bit"),
+        "memory_policy": memory_policy,
+        "low_vram": memory_policy == "shared",
+        "cache_latents": bool(training.get("cache_latents", device.get("cache_latents", True))),
+        "gradient_checkpointing": bool(training.get("gradient_checkpointing", device.get("gradient_checkpointing", True))),
+        "caption": str(plan.get("caption") or preset.get("caption") or ""),
+        "source_dir": str(plan.get("source_dir") or ""),
+        "device_profile": requested_device,
+    }
+
+    job_root = train_lora_job_root(settings, job_id)
+    dataset_dir = job_root / "dataset"
+    output_dir = train_lora_root(settings) / "outputs" / config["output_name"]
+    custom_output_dir = str(plan.get("output_dir") or "").strip()
+    if custom_output_dir and not custom_output_dir.startswith("[browser-folder]"):
+        output_dir = Path(custom_output_dir).expanduser() / config["output_name"]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config["dataset_dir"] = str(dataset_dir)
+    config["output_dir"] = str(output_dir)
+    config["uploaded_files"] = saved_files
+    config_path = job_root / "train_lora_config.json"
+    config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+    dataset_toml = None
+    if config["trainer"] == "kohya_ss":
+        dataset_toml = job_root / "dataset.toml"
+        write_kohya_dataset_toml(dataset_toml, dataset_dir, config)
+    readme_path = job_root / "README.md"
+    readme_path.write_text(_job_readme(config, config_path, dataset_toml), encoding="utf-8")
+    runner = resolve_trainer_runner(settings, preset, config_path)
+    terminal_log_path = job_root / "train_lora_terminal.log"
+    terminal_log_path.write_text(_job_terminal_log(config, runner, saved_files), encoding="utf-8")
+    status = "prepared"
+    message = "Train LoRA job prepared. Enable launch after installing the selected trainer."
+    if plan.get("launch") and not runner.get("available"):
+        status = "blocked"
+        message = runner.get("install_hint") or message
+    elif plan.get("launch") and runner.get("available"):
+        status = "queued"
+        message = "Train LoRA job queued."
+    now = datetime.now().isoformat(timespec="seconds")
+    return {
+        "job_id": job_id,
+        "status": status,
+        "progress": 20 if status == "prepared" else 0,
+        "message": message,
+        "error": None,
+        "preset": preset_key,
+        "mode": mode,
+        "config": config,
+        "paths": {
+            "job": str(job_root),
+            "dataset": str(dataset_dir),
+            "config": str(config_path),
+            "dataset_toml": str(dataset_toml) if dataset_toml else "",
+            "readme": str(readme_path),
+            "output": str(output_dir),
+            "terminal_log": str(terminal_log_path),
+        },
+        "runner": runner,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def _job_readme(config: dict[str, Any], config_path: Path, dataset_toml: Path | None) -> str:
+    lines = [
+        f"# {config['output_name']}",
+        "",
+        f"Preset: {config['preset_label']} / {config['mode']}",
+        f"Trainer: {config['trainer_label']}",
+        f"Trigger: `{config['trigger_word']}`",
+        f"Config: `{config_path}`",
+    ]
+    if dataset_toml:
+        lines.append(f"Dataset TOML: `{dataset_toml}`")
+    lines.extend(
+        [
+            "",
+            "Install notes:",
+            "- SD/SDXL/Anima: kohya-ss sd-scripts.",
+            "- FLUX/Qwen: AI Toolkit.",
+            "- LTX: LTX-2 trainer with cached latents/embeddings.",
+            "- Wan: musubi-tuner compatible Wan LoRA trainer.",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _job_terminal_log(config: dict[str, Any], runner: dict[str, Any], saved_files: list[dict[str, Any]]) -> str:
+    lines = [
+        f"[{datetime.now().isoformat(timespec='seconds')}] Nexus Train LoRA prepared",
+        f"preset={config['preset_label']} mode={config['mode']} trainer={config['trainer_label']}",
+        f"trigger={config['trigger_word']} output={config['output_name']}",
+        f"base_model_path={config['base_model_path'] or '-'} resume_from={config['resume_from'] or '-'}",
+        f"steps={config['steps']} save_every_n_steps={config['save_every_n_steps']} rank={config['rank']} alpha={config['alpha']} lr={config['learning_rate']}",
+        f"batch={config['batch_size']} grad_accum={config['gradient_accumulation']} precision={config['precision']} optimizer={config['optimizer']} memory_policy={config['memory_policy']}",
+        f"dataset={config['dataset_dir']} uploaded_files={len(saved_files)} source_dir={config['source_dir'] or '-'}",
+    ]
+    if runner.get("available"):
+        lines.append("runner=available")
+        lines.append("command=" + " ".join(str(part) for part in runner.get("command") or []))
+    else:
+        lines.append("runner=missing")
+        lines.append(str(runner.get("install_hint") or "Install trainer before launch."))
+    return "\n".join(lines) + "\n"
+
+
+def public_train_lora_job(job: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in job.items() if not key.startswith("_")}
+
+
+def train_lora_command_text(job: dict[str, Any]) -> str:
+    command = ((job.get("runner") or {}).get("command") or [])
+    return " ".join(str(part) for part in command)

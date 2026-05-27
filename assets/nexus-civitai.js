@@ -11,6 +11,9 @@
   let mediaIndex = 0;
   let explorerScrollTop = 0;
   let suppressExplorerScrollCapture = false;
+  let activeSearchController = null;
+  let searchRunId = 0;
+  let searchDebounceTimer = null;
   const tokenStorageKey = "nexus_civitai_api_key";
   const downloadJobs = new Map();
 
@@ -35,6 +38,25 @@
   function status(text) {
     const node = el("civitaiStatusText");
     if (node) node.innerText = text;
+  }
+
+  function normalizedCivitaiQuery(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .replace(/^#+/, "")
+      .replace(/[,_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function queueSearch() {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      search(false).catch((error) => {
+        if (error?.name === "AbortError") return;
+        status("Search failed.");
+      });
+    }, 360);
   }
 
   function explorerScroller() {
@@ -99,6 +121,10 @@
       searchInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter") resolve().catch(() => status("Submit failed."));
       });
+      searchInput.addEventListener("input", () => {
+        if (isCivitaiUrl(searchInput.value)) return;
+        queueSearch();
+      });
     }
   }
 
@@ -119,11 +145,12 @@
     search(false).catch(() => status("Search failed."));
   }
 
-  async function post(path, body) {
+  async function post(path, body, signal = null) {
     const response = await fetch(api + path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal,
     });
     if (!response.ok) throw new Error(await response.text());
     return response.json();
@@ -198,9 +225,9 @@
     const url = typeof preview === "string" ? preview : preview?.url;
     if (!url) return `<div class="${className} flex items-center justify-center text-nexus-muted"><i class="fa-regular fa-image text-2xl"></i></div>`;
     if ((preview?.type || mediaType(url)) === "video") {
-      return `<video src="${html(url)}" muted loop autoplay playsinline class="${className} object-cover"></video>`;
+      return `<video src="${html(url)}" preload="metadata" muted loop playsinline class="${className} object-cover"></video>`;
     }
-    return `<img src="${html(url)}" loading="lazy" alt="${html(alt)}" class="${className} object-cover">`;
+    return `<img src="${html(url)}" loading="lazy" decoding="async" alt="${html(alt)}" class="${className} object-cover">`;
   }
 
   function mediaIsMature(preview, owner) {
@@ -534,12 +561,16 @@
   }
 
   async function search(append = false) {
-    if (loadingMore) return;
+    if (append && loadingMore) return;
+    if (!append && activeSearchController) activeSearchController.abort();
+    const runId = ++searchRunId;
+    activeSearchController = new AbortController();
     loadingMore = true;
     status(append ? "Loading more..." : "Searching Civitai...");
+    const rawInput = el("civitaiUrlInput")?.value?.trim() || "";
     const payload = {
       ...basePayload(),
-      query: isCivitaiUrl(el("civitaiUrlInput")?.value?.trim() || "") ? "" : el("civitaiUrlInput")?.value?.trim() || "",
+      query: isCivitaiUrl(rawInput) ? "" : normalizedCivitaiQuery(rawInput),
       types: el("civitaiTypeFilter")?.value || "",
       base_model: el("civitaiBaseModelFilter")?.value || "",
       sort: el("civitaiSortFilter")?.value || "Newest",
@@ -549,7 +580,8 @@
       cursor: append ? searchCursor : null,
     };
     try {
-      const result = await post("/civitai/search", payload);
+      const result = await post("/civitai/search", payload, activeSearchController.signal);
+      if (runId !== searchRunId) return;
       searchCursor = result.metadata?.nextCursor || null;
       renderSearch(result.items || [], append);
       if (!append) {
@@ -557,8 +589,14 @@
         scrollExplorerTo(0);
       }
       status(`${currentItems.length} model(s) loaded.`);
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      throw error;
     } finally {
-      loadingMore = false;
+      if (runId === searchRunId) {
+        loadingMore = false;
+        activeSearchController = null;
+      }
     }
   }
 
