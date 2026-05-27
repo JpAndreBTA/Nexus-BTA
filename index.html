@@ -839,6 +839,27 @@
         </div>
     </div>
 
+    <div id="extensionVersionModal" class="fixed inset-0 z-[120] hidden items-center justify-center bg-black/70 px-4">
+        <div class="w-full max-w-md bg-nexus-panel border border-nexus-border shadow-2xl rounded-sm">
+            <div class="h-11 border-b border-nexus-border flex items-center justify-between px-4">
+                <span class="text-xs font-bold text-white uppercase tracking-wider"><i class="fa-solid fa-cloud-arrow-down text-nexus-red mr-2"></i> Update Extension</span>
+                <button onclick="closeExtensionUpdateModal()" class="text-nexus-muted hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 space-y-3">
+                <p id="extensionUpdateName" class="text-sm font-bold text-white truncate">Extension</p>
+                <label class="space-y-1 block">
+                    <span class="mini-label">Version</span>
+                    <select id="extensionVersionSelect" class="flat-input"></select>
+                </label>
+                <p id="extensionUpdateCurrent" class="text-[10px] text-nexus-muted font-mono">current: -</p>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button onclick="closeExtensionUpdateModal()" class="flat-button px-3 py-2 text-xs font-bold uppercase">Cancel</button>
+                    <button onclick="confirmExtensionUpdate()" class="bg-nexus-red hover:bg-nexus-darkRed text-white px-4 py-2 rounded-sm text-xs font-bold uppercase">Update</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- LoRA Modal Gallery -->
     <div id="loraModal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/80 backdrop-blur-sm transition-all">
         <div class="bg-nexus-panel border border-nexus-border w-[92vw] max-w-6xl h-[88vh] max-h-[92vh] flex flex-col rounded-sm overflow-hidden">
@@ -1265,6 +1286,9 @@
             <button class="activity-btn w-9 h-9 rounded-sm text-nexus-muted hover:text-white hover:bg-nexus-hover flex items-center justify-center transition-colors" title="Extensions" onclick="switchActivity('extensions', this)">
                 <i class="fa-solid fa-puzzle-piece text-sm"></i>
             </button>
+            <button class="activity-btn w-9 h-9 rounded-sm text-nexus-muted hover:text-white hover:bg-nexus-hover flex items-center justify-center transition-colors" title="Plugins" onclick="switchActivity('plugins', this)">
+                <i class="fa-solid fa-plug text-sm"></i>
+            </button>
             <button class="activity-btn w-9 h-9 rounded-sm text-nexus-muted hover:text-white hover:bg-nexus-hover flex items-center justify-center transition-colors mt-auto" title="Settings" onclick="switchActivity('settings', this)">
                 <i class="fa-solid fa-gear text-sm"></i>
             </button>
@@ -1337,7 +1361,7 @@
                         </div>
                         <span id="referenceImageLoadedLabel" class="hidden text-[9px] font-mono text-nexus-muted truncate"></span>
                         <div id="referenceImageMultiList" class="hidden mt-2 grid grid-cols-2 gap-2"></div>
-                        <input id="referenceImageInput" type="file" accept="image/*" multiple class="hidden">
+                        <input id="referenceImageInput" type="file" accept="image/*,video/*" multiple class="hidden">
                         <input id="referenceImage2Input" type="file" accept="image/*" class="hidden">
                         <input id="referenceImage3Input" type="file" accept="image/*" class="hidden">
                     </div>
@@ -2666,39 +2690,35 @@
                         <span class="text-xs font-bold text-white uppercase tracking-wider">PNG Info / Metadata Recall</span>
                     </div>
                     <div class="flex gap-2">
-                        <button class="flat-button px-3 py-1.5 text-xs font-bold">Send to txt2img</button>
-                        <button class="flat-button px-3 py-1.5 text-xs font-bold">Send to <span data-img2img-label>img2img</span></button>
-                        <button class="flat-button px-3 py-1.5 text-xs font-bold">Open Workflow</button>
+                        <button onclick="sendPngInfoTo('txt2img')" class="flat-button px-3 py-1.5 text-xs font-bold">Send to txt2img</button>
+                        <button onclick="sendPngInfoTo('img2img')" class="flat-button px-3 py-1.5 text-xs font-bold">Send to <span data-img2img-label>img2img</span></button>
+                        <button onclick="openPngInfoWorkflow()" class="flat-button px-3 py-1.5 text-xs font-bold">Open Workflow</button>
                     </div>
                 </div>
                 <div class="flex-1 grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4 p-4 min-h-0">
                     <section class="data-card p-3 flex flex-col">
                         <span class="mini-label mb-3">Source</span>
-                        <div class="drop-zone border border-dashed border-nexus-border flex-1 min-h-[320px] flex items-center justify-center text-center">
+                        <input id="pngInfoFileInput" type="file" accept="image/png,image/webp,image/jpeg" class="hidden" onchange="loadPngInfoFiles(this.files)">
+                        <div id="pngInfoDropZone" onclick="document.getElementById('pngInfoFileInput')?.click()" class="drop-zone border border-dashed border-nexus-border flex-1 min-h-[320px] flex items-center justify-center text-center cursor-pointer">
                             <div>
                                 <i class="fa-solid fa-file-image text-4xl text-nexus-red"></i>
-                                <p class="text-sm font-bold text-white mt-3">Drop PNG / WebP / video sidecar</p>
-                                <p class="text-[11px] text-nexus-muted mt-1">Reads prompts, seed, scheduler, model hash and ComfyUI workflow JSON.</p>
+                                <p id="pngInfoFileName" class="text-sm font-bold text-white mt-3">Drop PNG / WebP or click</p>
+                                <p class="text-[11px] text-nexus-muted mt-1">Reads Nexus metadata, ComfyUI prompt/workflow chunks and A1111 parameters.</p>
                             </div>
                         </div>
                     </section>
                     <section class="data-card p-3 flex flex-col min-h-0">
                         <div class="flex justify-between items-center mb-3">
                             <span class="mini-label">Extracted Parameters</span>
-                            <span class="text-[10px] font-mono text-nexus-red">mock metadata</span>
+                            <span id="pngInfoStatus" class="text-[10px] font-mono text-nexus-red">waiting</span>
                         </div>
                         <div class="grid grid-cols-2 gap-2 text-[11px] mb-3">
-                            <div class="bg-nexus-bg border border-nexus-border p-2"><span class="block mini-label">Model</span><span class="text-white">Flux_Dev_v1</span></div>
-                            <div class="bg-nexus-bg border border-nexus-border p-2"><span class="block mini-label">Seed</span><span class="text-white font-mono">128371</span></div>
-                            <div class="bg-nexus-bg border border-nexus-border p-2"><span class="block mini-label">Steps</span><span class="text-white font-mono">25</span></div>
-                            <div class="bg-nexus-bg border border-nexus-border p-2"><span class="block mini-label">CFG</span><span class="text-white font-mono">7.0</span></div>
+                            <div class="bg-nexus-bg border border-nexus-border p-2"><span class="block mini-label">Model</span><span id="pngInfoModel" class="text-white truncate block">-</span></div>
+                            <div class="bg-nexus-bg border border-nexus-border p-2"><span class="block mini-label">Seed</span><span id="pngInfoSeed" class="text-white font-mono">-</span></div>
+                            <div class="bg-nexus-bg border border-nexus-border p-2"><span class="block mini-label">Steps</span><span id="pngInfoSteps" class="text-white font-mono">-</span></div>
+                            <div class="bg-nexus-bg border border-nexus-border p-2"><span class="block mini-label">CFG</span><span id="pngInfoCfg" class="text-white font-mono">-</span></div>
                         </div>
-                        <textarea class="flat-input flex-1 min-h-[220px] font-mono text-[11px] resize-none">Prompt: cinematic landscape, volumetric light, high detail
-Negative prompt: low quality, artifacts
-Workflow: ComfyUI JSON detected
-LoRA: DetailEnhancer:0.8
-VAE: automatic
-Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
+                        <textarea id="pngInfoRawText" class="flat-input flex-1 min-h-[220px] font-mono text-[11px] resize-none" placeholder="PNG metadata appears here after loading an image."></textarea>
                     </section>
                 </div>
             </div>
@@ -2752,6 +2772,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     </div>
                     <div class="flex gap-2">
                         <button onclick="installAllExtensionDependencies()" class="flat-button px-3 py-1.5 text-xs font-bold"><i class="fa-solid fa-download mr-1"></i> Install Deps</button>
+                        <button onclick="updateAllExtensions()" class="flat-button px-3 py-1.5 text-xs font-bold"><i class="fa-solid fa-cloud-arrow-down mr-1"></i> Update All</button>
                         <button onclick="refreshManagerPanel()" class="flat-button px-3 py-1.5 text-xs font-bold"><i class="fa-solid fa-rotate mr-1"></i> Refresh</button>
                     </div>
                 </div>
@@ -2804,6 +2825,45 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                         </div>
                         <div id="managerExtensionList" class="space-y-2">
                             <div class="text-[11px] text-nexus-muted">Syncing extensions...</div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Activity: Plugins -->
+            <div id="view-plugins" class="activity-panel flex-1 flex-col bg-nexus-bg overflow-y-auto">
+                <div class="h-12 border-b border-nexus-border flex items-center justify-between px-4 bg-nexus-panel shrink-0">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-plug text-nexus-red"></i>
+                        <span class="text-xs font-bold text-white uppercase tracking-wider">Plugins</span>
+                    </div>
+                    <button onclick="refreshPluginsPanel()" class="flat-button px-3 py-1.5 text-xs font-bold"><i class="fa-solid fa-rotate mr-1"></i> Refresh</button>
+                </div>
+                <div class="p-4 space-y-4">
+                    <section class="data-card p-3 space-y-3">
+                        <div>
+                            <span class="text-sm font-bold text-white">Install GitHub Plugin</span>
+                            <p class="text-[11px] text-nexus-muted">Clones compatible ComfyUI plugins into ./custom_nodes and can install requirements.</p>
+                        </div>
+                        <div class="grid grid-cols-[1fr_auto_auto] gap-2">
+                            <input id="pluginGithubUrl" class="flat-input" placeholder="https://github.com/user/ComfyUI-plugin">
+                            <label class="h-9 px-3 bg-nexus-bg border border-nexus-border rounded-sm flex items-center gap-2 text-xs text-white">
+                                <span class="mini-label">Deps</span>
+                                <span class="toggle-switch"><input id="pluginInstallDeps" type="checkbox" checked><span class="toggle-track"></span></span>
+                            </label>
+                            <button onclick="installPluginFromGithub()" class="bg-nexus-red hover:bg-nexus-darkRed text-white px-4 py-2 rounded-sm text-xs font-bold uppercase"><i class="fa-solid fa-download mr-1"></i> Install</button>
+                        </div>
+                    </section>
+                    <section class="data-card p-3">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <span class="text-sm font-bold text-white">Installed Plugins</span>
+                                <p class="text-[11px] text-nexus-muted">Same runtime path as Extensions for full ComfyUI compatibility.</p>
+                            </div>
+                            <span id="pluginCount" class="compat-chip">0</span>
+                        </div>
+                        <div id="pluginList" class="space-y-2">
+                            <div class="text-[11px] text-nexus-muted">Syncing plugins...</div>
                         </div>
                     </section>
                 </div>
@@ -3214,6 +3274,9 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let backendWorkflows = [];
         let backendCustomNodes = [];
         let backendDependencies = {};
+        let pngInfoState = null;
+        let extensionUpdateTarget = '';
+        let installedPlugins = [];
         let gallerySyncInFlight = false;
         let galleryLastSignature = '';
         let activeWorkflowId = null;
@@ -3234,6 +3297,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         let backendRetryTimer = null;
         let viewerZoom = 1;
         let referenceImageDataUrl = '';
+        let referenceBaseVideoDataUrl = '';
+        let referenceBaseVideoMeta = { src: '', label: '', width: 0, height: 0, duration: 0 };
         let referenceImageExtraDataUrls = [];
         let resizePercentBaseSnapshot = null;
         let resizePercentApplying = false;
@@ -3601,7 +3666,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         if (!modelProfiles[activePreset]) activePreset = 'Anima';
         if (!['director', 'viewer', 'canvas', 'workflow'].includes(activeWorkspace)) activeWorkspace = 'viewer';
-        if (!['txt2img', 'img2img', 'extras', 'pnginfo', 'merge', 'extensions', 'settings'].includes(currentActivity)) currentActivity = 'txt2img';
+        if (!['txt2img', 'img2img', 'extras', 'pnginfo', 'merge', 'extensions', 'plugins', 'settings'].includes(currentActivity)) currentActivity = 'txt2img';
 
         function escapeHtml(value) {
             return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -10598,24 +10663,27 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             const maskCanvas = document.getElementById('inpaintMaskCanvas');
             const empty = document.getElementById('inpaintEmptyState');
             const hasImage = !!referenceImageMeta.src;
+            const hasBaseVideo = !!referenceBaseVideoMeta.src;
             const startEndFrame = isStartEndFrameMode();
-            panel?.classList.toggle('has-reference', hasImage);
+            panel?.classList.toggle('has-reference', hasImage || hasBaseVideo);
             if (clearButton) {
-                clearButton.classList.toggle('hidden', !hasImage || startEndFrame);
-                clearButton.classList.toggle('flex', hasImage && !startEndFrame);
+                clearButton.classList.toggle('hidden', (!hasImage && !hasBaseVideo) || startEndFrame);
+                clearButton.classList.toggle('flex', (hasImage || hasBaseVideo) && !startEndFrame);
             }
             if (thumb) {
-                thumb.classList.toggle('hidden', !hasImage || startEndFrame);
+                thumb.classList.toggle('hidden', (!hasImage && !hasBaseVideo) || startEndFrame);
                 thumb.src = hasImage && !startEndFrame ? referenceImageMeta.src : '';
             }
             document.querySelector('#referenceImagePanel .reference-placeholder')?.classList.toggle('hidden', startEndFrame);
             if (loadedLabel) {
-                loadedLabel.classList.toggle('hidden', !hasImage || startEndFrame);
+                loadedLabel.classList.toggle('hidden', (!hasImage && !hasBaseVideo) || startEndFrame);
                 const extraCount = (referenceImageExtraDataUrls || []).filter(item => item?.src).length;
                 const extraLabel = startEndFrame
                     ? (extraCount ? ' + End Frame' : '')
                     : (extraCount ? ` + ${extraCount} Qwen ref` : '');
-                loadedLabel.innerText = hasImage
+                loadedLabel.innerText = hasBaseVideo
+                    ? `${referenceBaseVideoMeta.label || 'base video'}${referenceBaseVideoMeta.duration ? ` - ${referenceBaseVideoMeta.duration.toFixed(1)}s` : ''}${extraCount ? ' + Image Reference' : ''}`
+                    : hasImage
                     ? `${referenceImageMeta.label || referenceSlotLabel(1)}${referenceImageMeta.width && referenceImageMeta.height ? ` - ${referenceImageMeta.width}x${referenceImageMeta.height}` : ''}${extraLabel}`
                     : '';
             }
@@ -10630,7 +10698,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 multiList.innerHTML = showSlots ? slots.map(slot => {
                     const isStartSlot = startEndFrame && slot === 1;
                     const item = isStartSlot ? referenceImageMeta : (extraRefs[slot - 2] || {});
-                    const hasSlotImage = !!item.src;
+                    const hasSlotImage = !!item.src || (isStartSlot && hasBaseVideo);
                     const slotLabel = referenceSlotLabel(slot);
                     const pickerAttr = isStartSlot
                         ? 'data-reference-main-slot="1"'
@@ -10643,9 +10711,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                         : `clearReferenceImageExtraSlot(${slot});`;
                     return `
                         <button type="button" class="qwen-ref-slot relative aspect-square min-h-24 border border-dashed ${hasSlotImage ? 'border-nexus-border bg-black' : 'border-nexus-border bg-zinc-950'} rounded-sm overflow-hidden text-left hover:border-nexus-red transition-colors" ${pickerAttr} onclick="event.preventDefault();event.stopPropagation();${isStartSlot ? 'openReferenceImagePicker();' : `openReferenceImageSlotPicker(${slot});`}" title="${escapeHtml(hasSlotImage ? (item.label || slotLabel) : `Load ${slotLabel}`)}">
-                            ${hasSlotImage ? `<img src="${escapeHtml(item.src)}" class="absolute inset-0 w-full h-full object-cover" alt="${escapeHtml(slotLabel)}">` : ''}
+                            ${hasSlotImage && !(isStartSlot && hasBaseVideo) ? `<img src="${escapeHtml(item.src)}" class="absolute inset-0 w-full h-full object-cover" alt="${escapeHtml(slotLabel)}">` : ''}
+                            ${isStartSlot && hasBaseVideo ? '<span class="absolute inset-0 flex items-center justify-center text-xl text-nexus-red"><i class="fa-solid fa-film"></i></span>' : ''}
                             <span class="absolute left-1.5 bottom-1.5 bg-black/80 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white">${escapeHtml(slotLabel)}</span>
-                            ${hasSlotImage ? `<span class="absolute left-1.5 top-1.5 max-w-[calc(100%-2.5rem)] truncate bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-nexus-muted">${escapeHtml(item.label || slotLabel)}</span>` : '<span class="absolute inset-0 flex items-center justify-center text-[9px] font-mono text-nexus-muted">drop or click</span>'}
+                            ${hasSlotImage ? `<span class="absolute left-1.5 top-1.5 max-w-[calc(100%-2.5rem)] truncate bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-nexus-muted">${escapeHtml((isStartSlot && hasBaseVideo ? referenceBaseVideoMeta.label : item.label) || slotLabel)}</span>` : '<span class="absolute inset-0 flex items-center justify-center text-[9px] font-mono text-nexus-muted">drop or click</span>'}
                             ${hasSlotImage ? `<span class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm" ${removeAttr} onclick="event.preventDefault();event.stopPropagation();${removeAction}" title="Remove ${escapeHtml(slotLabel)}"><i class="fa-solid fa-xmark text-[9px]"></i></span>` : ''}
                         </button>
                     `;
@@ -10678,8 +10747,10 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
 
         function clearReferenceImage(options = {}) {
             referenceImageDataUrl = '';
+            referenceBaseVideoDataUrl = '';
             referenceImageExtraDataUrls = [];
             resizePercentBaseSnapshot = null;
+            referenceBaseVideoMeta = { src: '', label: '', width: 0, height: 0, duration: 0 };
             referenceImageMeta = { src: '', label: '', width: 0, height: 0 };
             const canvas = document.getElementById('inpaintMaskCanvas');
             const ctx = canvas?.getContext('2d');
@@ -10696,6 +10767,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         function setReferenceImageSource(src, label = 'reference image', options = {}) {
             if (!src) return;
             if (!options.keepExtraReferences) referenceImageExtraDataUrls = [];
+            referenceBaseVideoDataUrl = '';
+            referenceBaseVideoMeta = { src: '', label: '', width: 0, height: 0, duration: 0 };
             resizePercentBaseSnapshot = null;
             referenceImageDataUrl = src;
             referenceImageMeta = { src, label, width: 0, height: 0 };
@@ -10992,7 +11065,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 loadGalleryItemIntoImg2Img(galleryIndex, openCanvas, (slot === 2 || slot === 3) ? slot : 0);
                 return true;
             }
-            const files = [...event.dataTransfer?.files || []].filter(isImageFile);
+            const droppedFiles = [...event.dataTransfer?.files || []];
+            const files = droppedFiles.filter(file => isImageFile(file) || isVideoFile(file));
             if (files.length) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -11000,6 +11074,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     loadReferenceImageFile(files[0], { slot });
                 } else if (files.length > 1) {
                     loadReferenceImageFiles(files);
+                } else if (isVideoFile(files[0])) {
+                    loadReferenceVideoFile(files[0]);
                 } else {
                     loadReferenceImageFile(files[0]);
                 }
@@ -11150,6 +11226,47 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             return !!file && (file.type?.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(file.name || ''));
         }
 
+        function isVideoFile(file) {
+            return !!file && (file.type?.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi)$/i.test(file.name || ''));
+        }
+
+        function readVideoFileAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                if (!isVideoFile(file)) {
+                    reject(new Error("Not a video file."));
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error("Video read failed."));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function loadReferenceVideoFile(file) {
+            if (!isVideoFile(file)) return false;
+            if (!isMotionTemplateActive() && activePreset !== 'Wan' && activePreset !== 'LTX') {
+                showToast("Video Base Unsupported", "Select Wan 2.2 or LTX 2.3 for video base.");
+                return false;
+            }
+            const dataUrl = await readVideoFileAsDataUrl(file);
+            referenceBaseVideoDataUrl = dataUrl;
+            referenceBaseVideoMeta = { src: dataUrl, label: file.name || 'base video', width: 0, height: 0, duration: 0 };
+            const video = document.createElement('video');
+            video.preload = 'metadata';
+            video.onloadedmetadata = () => {
+                referenceBaseVideoMeta.width = video.videoWidth || 0;
+                referenceBaseVideoMeta.height = video.videoHeight || 0;
+                referenceBaseVideoMeta.duration = video.duration || 0;
+                if (referenceBaseVideoMeta.width && referenceBaseVideoMeta.height) setDimensions(referenceBaseVideoMeta.width, referenceBaseVideoMeta.height);
+                syncReferenceImageSurfaces();
+            };
+            video.src = dataUrl;
+            syncReferenceImageSurfaces();
+            showToast("Base Video Loaded", `${file.name || 'Video'} ready. Image 2 can be used as reference/end frame.`);
+            return true;
+        }
+
         async function loadReferenceImageFile(file, options = {}) {
             if (!isImageFile(file)) return;
             const dataUrl = await readImageFileAsDataUrl(file);
@@ -11163,8 +11280,19 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         async function loadReferenceImageFiles(files) {
-            const images = [...(files || [])].filter(isImageFile).slice(0, 3);
+            const allFiles = [...(files || [])];
+            const video = allFiles.find(isVideoFile);
+            if (video) {
+                await loadReferenceVideoFile(video);
+            }
+            const images = allFiles.filter(isImageFile).slice(0, video ? 2 : 3);
             if (!images.length) return;
+            if (video && referenceExtraSlotsEnabled()) {
+                await loadReferenceImageFile(images[0], { slot: 2 });
+                if (images[1]) await loadReferenceImageFile(images[1], { slot: 3, quiet: true });
+                showToast("Video + Reference Loaded", "Base video and Image 2 reference are ready.");
+                return;
+            }
             if (!referenceExtraSlotsEnabled()) {
                 await loadReferenceImageFile(images[0]);
                 if (images.length > 1) showToast("Single Reference Mode", `${presetButtonLabels[activePreset] || activePreset} uses one reference image; loaded the first file.`);
@@ -11885,7 +12013,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         }
 
         function hideAllMainViews() {
-            ['director', 'viewer', 'canvas', 'workflow', 'img2img', 'extras', 'pnginfo', 'merge', 'trainLora', 'extensions', 'settings'].forEach(id => {
+            ['director', 'viewer', 'canvas', 'workflow', 'img2img', 'extras', 'pnginfo', 'merge', 'trainLora', 'extensions', 'plugins', 'settings'].forEach(id => {
                 const view = document.getElementById('view-' + id);
                 if (!view) return;
                 view.classList.add('hidden');
@@ -12060,11 +12188,15 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 merge: 'checkpoint merge',
                 trainLora: 'Train LoRA',
                 extensions: 'extensions',
+                plugins: 'plugins',
                 settings: 'settings'
             };
 
             if (activity === 'extensions' && backendOnline) {
                 refreshManagerPanel();
+            }
+            if (activity === 'plugins' && backendOnline) {
+                refreshPluginsPanel();
             }
 
             syncGenerationActionUi();
@@ -13181,21 +13313,90 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 return;
             }
             list.innerHTML = items.slice(0, 80).map(node => {
-                const hasDeps = !!backendDependencies[node.name];
+                const depInfo = backendDependencies[node.name];
+                const depPath = typeof depInfo === 'string' ? depInfo : depInfo?.path;
+                const hasRequirements = !!depInfo;
+                const needsDeps = hasRequirements && depInfo?.installed === false;
                 const state = node.enabled ? 'ON' : 'OFF';
                 return `
-                    <div class="grid grid-cols-[1fr_90px_90px_110px] gap-3 items-center bg-nexus-bg border border-nexus-border p-2 rounded-sm">
+                    <div class="grid grid-cols-[1fr_82px_62px_92px_92px] gap-2 items-center bg-nexus-bg border border-nexus-border p-2 rounded-sm">
                         <div class="min-w-0">
                             <p class="text-xs font-bold text-white truncate">${escapeHtml(node.name)}</p>
                             <p class="text-[10px] text-nexus-muted font-mono truncate">${escapeHtml(node.path)}</p>
-                            ${hasDeps ? `<p class="text-[9px] text-nexus-muted font-mono truncate">requirements: ${escapeHtml(backendDependencies[node.name])}</p>` : ''}
+                            ${depPath ? `<p class="text-[9px] text-nexus-muted font-mono truncate">requirements: ${escapeHtml(depPath)}${needsDeps && depInfo?.missing?.length ? ` | missing: ${escapeHtml(depInfo.missing.slice(0, 3).join(', '))}` : ''}</p>` : ''}
                         </div>
-                        <span class="compat-chip justify-center">${hasDeps ? '<i class="fa-solid fa-download text-nexus-red"></i> DEPS' : '<i class="fa-solid fa-check text-nexus-muted"></i> CLEAN'}</span>
+                        <span class="compat-chip justify-center">${needsDeps ? '<i class="fa-solid fa-download text-nexus-red"></i> DEPS' : '<i class="fa-solid fa-check text-nexus-muted"></i> OK'}</span>
                         <span class="compat-chip justify-center">${state}</span>
-                        <button type="button" class="flat-button px-2 py-1 text-[10px] font-bold uppercase ${hasDeps ? '' : 'opacity-40 cursor-not-allowed'}" ${hasDeps ? `data-node-name="${escapeHtml(node.name)}" onclick="installExtensionDependency(this.dataset.nodeName)"` : 'disabled'}><i class="fa-solid fa-download mr-1"></i> Install</button>
+                        <button type="button" class="flat-button px-2 py-1 text-[10px] font-bold uppercase ${hasRequirements ? '' : 'opacity-40 cursor-not-allowed'}" ${hasRequirements ? `data-node-name="${escapeHtml(node.name)}" onclick="installExtensionDependency(this.dataset.nodeName)"` : 'disabled'}><i class="fa-solid fa-download mr-1"></i> ${needsDeps ? 'Deps' : 'Reinstall'}</button>
+                        <button type="button" class="flat-button px-2 py-1 text-[10px] font-bold uppercase" data-node-name="${escapeHtml(node.name)}" onclick="openExtensionUpdateModal(this.dataset.nodeName)"><i class="fa-solid fa-cloud-arrow-down mr-1"></i> Update</button>
                     </div>
                 `;
             }).join('');
+        }
+
+        function closeExtensionUpdateModal() {
+            const modal = document.getElementById('extensionVersionModal');
+            if (!modal) return;
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            extensionUpdateTarget = '';
+        }
+
+        async function openExtensionUpdateModal(nodeName) {
+            if (!backendOnline) {
+                initializeBackendBridge();
+                return;
+            }
+            extensionUpdateTarget = nodeName;
+            showToast("Checking Versions", `Fetching versions for ${nodeName}.`);
+            try {
+                const data = await nexusFetch(`/custom-nodes/${encodeURIComponent(nodeName)}/versions`);
+                const select = document.getElementById('extensionVersionSelect');
+                const name = document.getElementById('extensionUpdateName');
+                const current = document.getElementById('extensionUpdateCurrent');
+                if (name) name.innerText = data.name || nodeName;
+                if (current) current.innerText = data.git ? `current: ${data.current || '-'}` : 'not a git extension';
+                if (select) {
+                    const options = [{ value: '', label: 'Latest / default branch' }]
+                        .concat((data.tags || []).map(item => ({ value: item, label: `tag: ${item}` })))
+                        .concat((data.branches || []).map(item => ({ value: item, label: `branch: ${item}` })));
+                    select.innerHTML = options.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`).join('');
+                }
+                const modal = document.getElementById('extensionVersionModal');
+                modal?.classList.remove('hidden');
+                modal?.classList.add('flex');
+            } catch (error) {
+                showToast("Version Lookup Failed", error.message.slice(0, 180));
+            }
+        }
+
+        async function confirmExtensionUpdate() {
+            if (!extensionUpdateTarget) return;
+            const version = document.getElementById('extensionVersionSelect')?.value || '';
+            showToast("Updating Extension", `${extensionUpdateTarget} ${version || 'latest'}.`);
+            try {
+                const result = await nexusFetch(`/custom-nodes/${encodeURIComponent(extensionUpdateTarget)}/update`, {
+                    method: 'POST',
+                    body: JSON.stringify({ version })
+                });
+                closeExtensionUpdateModal();
+                await refreshManagerPanel();
+                showToast("Extension Updated", `${result.name || extensionUpdateTarget}: ${result.version || 'done'}.`);
+            } catch (error) {
+                showToast("Extension Update Failed", error.message.slice(0, 180));
+            }
+        }
+
+        async function updateAllExtensions() {
+            if (!backendOnline) return;
+            showToast("Updating Extensions", "Updating installed git extensions.");
+            try {
+                const result = await nexusFetch('/custom-nodes/update-all', { method: 'POST', body: JSON.stringify({}) });
+                await refreshManagerPanel();
+                showToast("Extensions Updated", `${result.updated?.length || 0} updated, ${Object.keys(result.errors || {}).length} errors.`);
+            } catch (error) {
+                showToast("Update All Failed", error.message.slice(0, 180));
+            }
         }
 
         async function installExtensionDependency(nodeName) {
@@ -13299,6 +13500,151 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
             } catch (error) {
                 showToast("Dependency Install Failed", error.message.slice(0, 160));
             }
+        }
+
+        function renderPluginsPanel() {
+            const list = document.getElementById('pluginList');
+            const count = document.getElementById('pluginCount');
+            if (count) count.innerText = String(installedPlugins.length || 0);
+            if (!list) return;
+            if (!installedPlugins.length) {
+                list.innerHTML = '<div class="border border-dashed border-nexus-border bg-nexus-bg p-3 text-[11px] text-nexus-muted">No plugins installed.</div>';
+                return;
+            }
+            list.innerHTML = installedPlugins.slice(0, 120).map(plugin => `
+                <div class="grid grid-cols-[1fr_76px_92px] gap-2 items-center bg-nexus-bg border border-nexus-border p-2 rounded-sm">
+                    <div class="min-w-0">
+                        <p class="text-xs font-bold text-white truncate">${escapeHtml(plugin.name)}</p>
+                        <p class="text-[10px] text-nexus-muted font-mono truncate">${escapeHtml(plugin.path)}</p>
+                    </div>
+                    <span class="compat-chip justify-center">${plugin.git ? 'GIT' : 'LOCAL'}</span>
+                    <button type="button" class="flat-button px-2 py-1 text-[10px] font-bold uppercase" data-node-name="${escapeHtml(plugin.name)}" onclick="openExtensionUpdateModal(this.dataset.nodeName)"><i class="fa-solid fa-cloud-arrow-down mr-1"></i> Update</button>
+                </div>
+            `).join('');
+        }
+
+        async function refreshPluginsPanel() {
+            if (!backendOnline) return;
+            try {
+                installedPlugins = await nexusFetch('/plugins');
+                renderPluginsPanel();
+                showToast("Plugins Synced", `${installedPlugins.length || 0} plugin(s) found.`);
+            } catch (error) {
+                showToast("Plugins Refresh Failed", error.message.slice(0, 160));
+            }
+        }
+
+        async function installPluginFromGithub() {
+            if (!backendOnline) {
+                initializeBackendBridge();
+                return;
+            }
+            const url = (document.getElementById('pluginGithubUrl')?.value || '').trim();
+            if (!url) {
+                showToast("Plugin URL Missing", "Paste a GitHub repository link first.");
+                return;
+            }
+            const installDependencies = !!document.getElementById('pluginInstallDeps')?.checked;
+            showToast("Installing Plugin", "Cloning plugin into custom_nodes.");
+            try {
+                const result = await nexusFetch('/plugins/install', {
+                    method: 'POST',
+                    body: JSON.stringify({ url, install_dependencies: installDependencies })
+                });
+                document.getElementById('pluginGithubUrl').value = '';
+                await Promise.all([refreshPluginsPanel(), refreshManagerPanel()]);
+                showToast("Plugin Installed", `${result.name} ready.`);
+            } catch (error) {
+                showToast("Plugin Install Failed", error.message.slice(0, 180));
+            }
+        }
+
+        function renderPngInfoResult(result) {
+            pngInfoState = result;
+            const summary = result?.summary || {};
+            const setText = (id, value) => {
+                const el = document.getElementById(id);
+                if (el) el.innerText = value ?? '-';
+            };
+            setText('pngInfoModel', summary.model || summary.model_name || '-');
+            setText('pngInfoSeed', summary.seed ?? '-');
+            setText('pngInfoSteps', summary.steps ?? '-');
+            setText('pngInfoCfg', summary.cfg ?? '-');
+            setText('pngInfoStatus', result?.source || 'loaded');
+            const raw = document.getElementById('pngInfoRawText');
+            if (raw) {
+                raw.value = [
+                    summary.prompt ? `Prompt: ${summary.prompt}` : '',
+                    summary.negative_prompt ? `Negative prompt: ${summary.negative_prompt}` : '',
+                    summary.width && summary.height ? `Size: ${summary.width}x${summary.height}` : '',
+                    summary.sampler ? `Sampler: ${summary.sampler}` : '',
+                    summary.scheduler ? `Scheduler: ${summary.scheduler}` : '',
+                    result?.workflow_json && Object.keys(result.workflow_json).length ? 'Workflow: ComfyUI workflow JSON detected' : '',
+                    result?.prompt_json && Object.keys(result.prompt_json).length ? 'Prompt JSON: ComfyUI API prompt detected' : '',
+                    '',
+                    JSON.stringify(result?.raw_text_chunks || {}, null, 2)
+                ].filter(Boolean).join('\n');
+            }
+        }
+
+        async function loadPngInfoFiles(files) {
+            const file = files?.[0];
+            if (!file) return;
+            const label = document.getElementById('pngInfoFileName');
+            if (label) label.innerText = file.name;
+            const form = new FormData();
+            form.append('file', file);
+            showToast("Reading PNG Info", "Extracting embedded metadata.");
+            try {
+                const result = await nexusFetchForm('/png-info', form);
+                renderPngInfoResult(result);
+                showToast("PNG Info Loaded", `${result.source || 'metadata'} detected.`);
+            } catch (error) {
+                showToast("PNG Info Failed", error.message.slice(0, 180));
+            }
+        }
+
+        function initPngInfoDropZone() {
+            const zone = document.getElementById('pngInfoDropZone');
+            if (!zone || zone.dataset.ready === 'true') return;
+            zone.dataset.ready = 'true';
+            ['dragenter', 'dragover'].forEach(eventName => zone.addEventListener(eventName, event => {
+                event.preventDefault();
+                zone.classList.add('border-nexus-red');
+            }));
+            ['dragleave', 'drop'].forEach(eventName => zone.addEventListener(eventName, event => {
+                event.preventDefault();
+                zone.classList.remove('border-nexus-red');
+            }));
+            zone.addEventListener('drop', event => loadPngInfoFiles(event.dataTransfer?.files));
+        }
+
+        function sendPngInfoTo(target) {
+            if (!pngInfoState?.summary) {
+                showToast("No PNG Info", "Load an image with metadata first.");
+                return;
+            }
+            const settings = { workflow_settings: pngInfoState.summary };
+            applyWorkflowSettings(settings);
+            switchActivity(target === 'img2img' ? 'img2img' : 'txt2img', getActivityButton(target === 'img2img' ? 'img2img' : 'txt2img'));
+            showToast("PNG Info Applied", `Sent metadata to ${target}.`);
+        }
+
+        function openPngInfoWorkflow() {
+            if (!pngInfoState?.workflow_json || !Object.keys(pngInfoState.workflow_json).length) {
+                showToast("No Workflow", "This image has no ComfyUI workflow chunk.");
+                return;
+            }
+            activeWorkflowAnalysis = {
+                workflow: { name: 'PNG Info Workflow', node_count: Array.isArray(pngInfoState.workflow_json.nodes) ? pngInfoState.workflow_json.nodes.length : 0 },
+                missing_nodes: [],
+                manager_suggestions: {},
+                workflow_settings: pngInfoState.summary || {},
+                visual_graph: pngInfoState.workflow_json
+            };
+            applyWorkflowSettings(activeWorkflowAnalysis);
+            switchView('workflow');
+            showToast("Workflow Metadata", "ComfyUI workflow metadata loaded for review.");
         }
 
         async function installWorkflowDependencies() {
@@ -14150,6 +14496,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                     reference_images: referenceExtraSlotsEnabled()
                         ? [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean)
                         : (referenceImageDataUrl ? [referenceImageDataUrl] : []),
+                    base_video: referenceBaseVideoDataUrl || null,
                     mask_image: exportInpaintMaskDataUrl()
                 },
                 controlnet: {
@@ -15143,6 +15490,8 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
                 loadReferenceImageFile(files[0], { slot });
             } else if (files.length > 1) {
                 loadReferenceImageFiles(files);
+            } else if (files[0] && isVideoFile(files[0])) {
+                loadReferenceVideoFile(files[0]);
             } else if (files[0]) {
                 loadReferenceImageFile(files[0]);
             }
@@ -15374,6 +15723,7 @@ Device flags: xformers=false, sdpa=true, lowvram=false</textarea>
         renderLtxDirector();
         initLinearViewerZoom();
         initTrainLoraDropZone();
+        initPngInfoDropZone();
         initPanZoomSurface('canvas');
         initPanZoomSurface('workflow');
         initWorkflowNodeDragging();

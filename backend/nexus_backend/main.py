@@ -12,9 +12,10 @@ import subprocess
 import time
 import uuid
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +26,7 @@ from .asset_resolver import resolve_generation_assets
 from .civitai import download_civitai_asset, resolve_civitai_asset, search_civitai_models
 from .comfy_client import ComfyClient, extract_outputs
 from .config import load_settings, save_settings
-from .dependencies import custom_node_requirements, install_custom_node_dependencies
+from .dependencies import custom_node_dependency_status, custom_node_requirements, install_custom_node_dependencies
 from .importer import import_resource
 from .lora_training import (
     build_train_lora_catalog,
@@ -36,13 +37,15 @@ from .lora_training import (
 )
 from .scanner import ensure_model_tree, scan_custom_nodes, scan_models
 from .schemas import (
-    DependencyInstallRequest,
     CivitaiDownloadRequest,
     CivitaiResolveRequest,
     CivitaiSearchRequest,
+    CustomNodeUpdateRequest,
+    DependencyInstallRequest,
     GenerateRequest,
     GenerateResponse,
     ImportRequest,
+    PluginInstallRequest,
     DistilledLoraSelection,
     RuntimeHealth,
     RuntimeOptions,
@@ -600,6 +603,55 @@ def _prepare_reference_value(value: str, prefix: str = "nexus_reference") -> str
     target = settings.input_dir / filename
     shutil.copy2(source, target)
     return filename
+
+
+def _prepare_video_value(value: str, prefix: str = "nexus_base_video") -> str:
+    value = (value or "").strip()
+    if not value:
+        raise ValueError("Base video could not be resolved.")
+    if value.startswith("data:video/"):
+        return _write_input_data_video(value, prefix)
+    source: Path | None = None
+    if value.startswith("/outputs/") or "/outputs/" in value:
+        relative = _output_relative_from_url(value)
+        source = (settings.output_dir / relative).resolve()
+    else:
+        candidate = Path(value)
+        if candidate.exists():
+            source = candidate.resolve()
+    if not source or not source.exists():
+        raise ValueError("Base video could not be resolved.")
+    suffix = source.suffix.lower() if source.suffix else ".mp4"
+    filename = f"{prefix}_{uuid.uuid4().hex[:10]}{suffix}"
+    target = settings.input_dir / filename
+    shutil.copy2(source, target)
+    return filename
+
+
+def _prepare_base_video(request: GenerateRequest) -> str | None:
+    value = (request.img2img.base_video or "").strip()
+    if request.activity != "img2img" or not value:
+        return None
+    return _prepare_video_value(value)
+
+
+def _extract_video_start_frame(video_name: str, start_frame: int = 0) -> str:
+    settings.input_dir.mkdir(parents=True, exist_ok=True)
+    source = (settings.input_dir / video_name).resolve()
+    if not source.exists() or not source.is_relative_to(settings.input_dir.resolve()):
+        raise ValueError("Base video file is not available.")
+    target_name = f"nexus_video_start_{uuid.uuid4().hex[:10]}.png"
+    target = settings.input_dir / target_name
+    frame_index = max(0, int(start_frame or 0))
+    if frame_index:
+        selector = f"select=eq(n\\,{frame_index})"
+        command = [_ffmpeg_binary(), "-y", "-i", str(source), "-vf", selector, "-frames:v", "1", str(target)]
+    else:
+        command = [_ffmpeg_binary(), "-y", "-i", str(source), "-frames:v", "1", str(target)]
+    _run_ffmpeg(command)
+    if not target.exists():
+        raise ValueError("Could not extract start frame from base video.")
+    return target_name
 
 
 def _reference_image_values(request: GenerateRequest) -> list[str]:
@@ -1796,8 +1848,207 @@ def _read_output_metadata(path: Path) -> dict[str, Any]:
     return {}
 
 
+def _json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return {}
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _coerce_number(value: Any, default: Any = None) -> Any:
+    if value in (None, ""):
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return int(parsed) if parsed.is_integer() else parsed
+
+
+def _parse_a1111_parameters(text: str) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    if not text:
+        return result
+    prompt_text = text
+    settings_line = ""
+    if "\nSteps:" in text:
+        prompt_text, settings_line = text.rsplit("\n", 1)
+    if "Negative prompt:" in prompt_text:
+        positive, negative = prompt_text.split("Negative prompt:", 1)
+        result["prompt"] = positive.strip()
+        result["negative_prompt"] = negative.strip()
+    else:
+        result["prompt"] = prompt_text.strip()
+    key_map = {
+        "Steps": "steps",
+        "Sampler": "sampler",
+        "Schedule type": "scheduler",
+        "CFG scale": "cfg",
+        "Seed": "seed",
+        "Model": "model",
+        "Size": "size",
+    }
+    for match in re.finditer(r"([^,:\n]+):\s*([^,]+)", settings_line):
+        key = key_map.get(match.group(1).strip())
+        if not key:
+            continue
+        value = match.group(2).strip()
+        result[key] = _coerce_number(value, value)
+    size = str(result.pop("size", "") or "")
+    size_match = re.match(r"(\d+)\s*x\s*(\d+)", size)
+    if size_match:
+        result["width"] = int(size_match.group(1))
+        result["height"] = int(size_match.group(2))
+    return result
+
+
+def _extract_comfy_prompt_settings(prompt: dict[str, Any]) -> dict[str, Any]:
+    settings_out: dict[str, Any] = {}
+    text_values: list[str] = []
+    for node in prompt.values():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type") or "").lower()
+        inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+        if "sampler" in class_type:
+            for source, target in (
+                ("seed", "seed"),
+                ("noise_seed", "seed"),
+                ("steps", "steps"),
+                ("cfg", "cfg"),
+                ("sampler_name", "sampler"),
+                ("scheduler", "scheduler"),
+            ):
+                if inputs.get(source) not in (None, ""):
+                    settings_out[target] = inputs.get(source)
+        if "checkpointloader" in class_type and inputs.get("ckpt_name"):
+            settings_out["model"] = inputs.get("ckpt_name")
+        if "unetloader" in class_type and inputs.get("unet_name"):
+            settings_out["model"] = inputs.get("unet_name")
+        if "emptylatent" in class_type or "emptyhunyuanlatent" in class_type:
+            if inputs.get("width"):
+                settings_out["width"] = inputs.get("width")
+            if inputs.get("height"):
+                settings_out["height"] = inputs.get("height")
+        text = inputs.get("text")
+        if isinstance(text, str) and text.strip():
+            text_values.append(text.strip())
+    if text_values:
+        settings_out.setdefault("prompt", text_values[0])
+    if len(text_values) > 1:
+        settings_out.setdefault("negative_prompt", text_values[1])
+    return settings_out
+
+
+def _normalize_png_info(raw_chunks: dict[str, str], width: int, height: int) -> dict[str, Any]:
+    nexus_meta = _json_dict(raw_chunks.get("nexus_bta"))
+    prompt_json = _json_dict(raw_chunks.get("prompt"))
+    workflow_json = _json_dict(raw_chunks.get("workflow"))
+    a1111_meta = _parse_a1111_parameters(raw_chunks.get("parameters", ""))
+    comfy_settings = _extract_comfy_prompt_settings(prompt_json)
+    summary = {
+        **a1111_meta,
+        **comfy_settings,
+        **nexus_meta,
+    }
+    summary.setdefault("width", width)
+    summary.setdefault("height", height)
+    source = "none"
+    if nexus_meta:
+        source = "nexus_bta"
+    elif prompt_json or workflow_json:
+        source = "comfyui"
+    elif a1111_meta:
+        source = "parameters"
+    return {
+        "source": source,
+        "summary": summary,
+        "metadata": nexus_meta,
+        "prompt_json": prompt_json,
+        "workflow_json": workflow_json,
+        "parameters": raw_chunks.get("parameters", ""),
+        "raw_text_chunks": raw_chunks,
+    }
+
+
+def _run_git(args: list[str], cwd: Path, timeout: int = 120) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=timeout)
+
+
+def _resolve_custom_node_path(node_name: str) -> Path:
+    requested = str(node_name or "").strip()
+    if not requested or any(char in requested for char in ("/", "\\")):
+        raise HTTPException(status_code=400, detail="Invalid custom node name.")
+    custom_root = settings.custom_nodes_dir.resolve()
+    for node in scan_custom_nodes(settings):
+        if node.name.lower() == requested.lower():
+            path = Path(node.path).resolve()
+            if path.exists() and path.is_relative_to(custom_root):
+                return path
+    raise HTTPException(status_code=404, detail="Custom node not found.")
+
+
+def _custom_node_git_versions(path: Path) -> dict[str, Any]:
+    if not (path / ".git").exists():
+        return {"git": False, "current": "", "tags": [], "branches": [], "default_version": ""}
+    try:
+        _run_git(["fetch", "--all", "--tags", "--prune"], path, timeout=90)
+    except Exception:
+        pass
+    current = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+    short = _run_git(["rev-parse", "--short", "HEAD"], path)
+    tags = _run_git(["tag", "--sort=-creatordate"], path)
+    branches = _run_git(["branch", "-r", "--format=%(refname:short)"], path)
+    branch_items = [
+        line.strip().replace("origin/", "", 1)
+        for line in branches.stdout.splitlines()
+        if line.strip() and "HEAD" not in line
+    ]
+    return {
+        "git": True,
+        "current": f"{current.stdout.strip()}@{short.stdout.strip()}".strip("@"),
+        "tags": [line.strip() for line in tags.stdout.splitlines() if line.strip()][:80],
+        "branches": sorted(set(branch_items))[:80],
+        "default_version": "",
+    }
+
+
+def _update_custom_node(path: Path, version: str = "") -> dict[str, Any]:
+    if not (path / ".git").exists():
+        raise HTTPException(status_code=400, detail=f"{path.name} is not a git extension.")
+    fetch = _run_git(["fetch", "--all", "--tags", "--prune"], path)
+    if fetch.returncode != 0:
+        raise HTTPException(status_code=500, detail=(fetch.stderr or fetch.stdout or "git fetch failed").strip()[-1200:])
+    target = str(version or "").strip()
+    if target:
+        checkout = _run_git(["checkout", target], path)
+        if checkout.returncode != 0:
+            raise HTTPException(status_code=500, detail=(checkout.stderr or checkout.stdout or "git checkout failed").strip()[-1200:])
+    pull = _run_git(["pull", "--ff-only"], path)
+    if pull.returncode != 0 and not target:
+        raise HTTPException(status_code=500, detail=(pull.stderr or pull.stdout or "git pull failed").strip()[-1200:])
+    versions = _custom_node_git_versions(path)
+    return {"name": path.name, "updated": True, "version": versions.get("current", ""), "output": (pull.stdout or checkout.stdout if target else pull.stdout)[-1200:]}
+
+
+def _plugin_repo_name(url: str) -> str:
+    parsed = urlparse(url.strip())
+    name = Path(parsed.path.rstrip("/")).name or "plugin"
+    if name.endswith(".git"):
+        name = name[:-4]
+    name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name).strip(".-_")
+    if not name:
+        raise HTTPException(status_code=400, detail="Invalid GitHub plugin URL.")
+    return name[:80]
+
+
 def _cleanup_generation_temp() -> None:
-    for pattern in ("nexus_reference_*", "nexus_mask_*", "nexus_controlnet_*", "nexus_director_audio_*"):
+    for pattern in ("nexus_reference_*", "nexus_base_video_*", "nexus_video_start_*", "nexus_mask_*", "nexus_controlnet_*", "nexus_director_audio_*"):
         for path in settings.input_dir.glob(pattern):
             if path.is_file():
                 path.unlink(missing_ok=True)
@@ -2231,8 +2482,8 @@ async def custom_nodes(include_references: bool = Query(False)) -> list[dict[str
 
 
 @app.get("/api/custom-nodes/dependencies")
-async def custom_node_dependencies() -> dict[str, str]:
-    return {name: str(path) for name, path in custom_node_requirements(settings).items()}
+async def custom_node_dependencies() -> dict[str, Any]:
+    return custom_node_dependency_status(settings)
 
 
 @app.post("/api/custom-nodes/install-dependencies")
@@ -2243,6 +2494,84 @@ async def install_dependencies(request: DependencyInstallRequest) -> dict[str, A
         all_enabled=request.all_enabled,
     )
     return {"installed": installed, "errors": errors}
+
+
+@app.post("/api/png-info")
+async def png_info(file: UploadFile = File(...)) -> dict[str, Any]:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file was uploaded.")
+    content = await file.read()
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(content)) as image:
+            raw_chunks = {str(key): str(value) for key, value in (getattr(image, "text", {}) or {}).items()}
+            width, height = image.size
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Unable to read image metadata: {exc}") from exc
+    return _normalize_png_info(raw_chunks, width, height)
+
+
+@app.get("/api/custom-nodes/{node_name}/versions")
+async def custom_node_versions(node_name: str) -> dict[str, Any]:
+    path = _resolve_custom_node_path(unquote(node_name))
+    return {"name": path.name, **_custom_node_git_versions(path)}
+
+
+@app.post("/api/custom-nodes/{node_name}/update")
+async def update_custom_node(node_name: str, request: CustomNodeUpdateRequest) -> dict[str, Any]:
+    path = _resolve_custom_node_path(unquote(node_name))
+    return _update_custom_node(path, request.version)
+
+
+@app.post("/api/custom-nodes/update-all")
+async def update_all_custom_nodes() -> dict[str, Any]:
+    updated: list[dict[str, Any]] = []
+    errors: dict[str, str] = {}
+    for node in scan_custom_nodes(settings):
+        path = Path(node.path)
+        if not (path / ".git").exists():
+            continue
+        try:
+            updated.append(_update_custom_node(path, ""))
+        except Exception as exc:
+            errors[node.name] = str(getattr(exc, "detail", exc))[-1200:]
+    return {"updated": updated, "errors": errors}
+
+
+@app.get("/api/plugins")
+async def plugins() -> list[dict[str, Any]]:
+    return [
+        {
+            **node.model_dump(mode="json"),
+            "plugin": True,
+            "git": (Path(node.path) / ".git").exists(),
+        }
+        for node in scan_custom_nodes(settings)
+    ]
+
+
+@app.post("/api/plugins/install")
+async def install_plugin(request: PluginInstallRequest) -> dict[str, Any]:
+    url = request.url.strip()
+    if not re.match(r"^https://github\.com/[^/\s]+/[^/\s]+/?(?:\.git)?$", url, re.I):
+        raise HTTPException(status_code=400, detail="Use a valid GitHub repository URL.")
+    name = _plugin_repo_name(url)
+    root = settings.custom_nodes_dir.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    target = (root / name).resolve()
+    if not target.is_relative_to(root):
+        raise HTTPException(status_code=400, detail="Invalid plugin target.")
+    if target.exists():
+        raise HTTPException(status_code=409, detail=f"{name} is already installed.")
+    clone = _run_git(["clone", url, str(target)], root, timeout=600)
+    if clone.returncode != 0:
+        raise HTTPException(status_code=500, detail=(clone.stderr or clone.stdout or "git clone failed").strip()[-1200:])
+    installed: list[str] = []
+    errors: dict[str, str] = {}
+    if request.install_dependencies:
+        installed, errors = install_custom_node_dependencies(settings, node_names=[name], all_enabled=False)
+    return {"name": name, "path": str(target), "installed_dependencies": installed, "errors": errors}
 
 
 @app.get("/api/workflows")
@@ -2732,11 +3061,16 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             if missing_zimage_assets:
                 raise ValueError("Z-Image Turbo missing required assets: " + ", ".join(missing_zimage_assets) + ".")
         reference_image_names = _prepare_reference_images(request)
-        reference_image_name = reference_image_names[0] if reference_image_names else None
+        base_video_name = _prepare_base_video(request)
+        extracted_base_start_image = _extract_video_start_frame(base_video_name, int(_coerce_number(request.video.get("base_start_frame"), 0) or 0)) if base_video_name else None
+        reference_image_name = extracted_base_start_image or (reference_image_names[0] if reference_image_names else None)
+        reference_end_image_name = reference_image_names[0] if extracted_base_start_image and reference_image_names else (reference_image_names[1] if len(reference_image_names) > 1 else None)
         mask_image_name = _prepare_mask_image(request)
         controlnet_image_name = _prepare_controlnet_image(request)
         if reference_image_name:
             assets["reference_image"] = reference_image_name
+        if base_video_name:
+            assets["base_video"] = base_video_name
         if reference_image_names:
             assets["reference_images"] = reference_image_names
         if mask_image_name:
@@ -2812,7 +3146,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     checkpoint_name,
                     text_encoder_name,
                     reference_image_name,
-                    reference_end_image_name=reference_image_names[1] if len(reference_image_names) > 1 else None,
+                    reference_end_image_name=reference_end_image_name,
                     text_projection_name=assets.get("text_projection"),
                     audio_vae_name=assets.get("audio_vae"),
                     video_vae_name=assets.get("video_vae") or assets.get("vae"),
@@ -2833,7 +3167,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 if not assets.get("clip_vision"):
                     raise ValueError("WAN 2.2 requires clip_vision_h.safetensors or a compatible CLIP Vision encoder in models/clip_vision.")
                 wan_first_last_node = None
-                if len(reference_image_names) > 1:
+                if reference_end_image_name:
                     wan_first_last_node = _available_comfy_node(
                         object_info,
                         "WanFirstLastFrameToVideo",
@@ -2846,7 +3180,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     text_encoder_name,
                     vae_name,
                     reference_image_name=reference_image_name,
-                    reference_end_image_name=reference_image_names[1] if len(reference_image_names) > 1 else None,
+                    reference_end_image_name=reference_end_image_name,
                     first_last_frame_node=wan_first_last_node,
                     clip_vision_name=assets.get("clip_vision"),
                 )

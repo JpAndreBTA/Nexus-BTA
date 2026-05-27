@@ -83,6 +83,7 @@ class Img2ImgSettings(BaseModel):
     mask_content: str = "Original"
     reference_image: str | None = None
     reference_images: list[str] = Field(default_factory=list)
+    base_video: str | None = None
     mask_image: str | None = None
 
 
@@ -164,6 +165,15 @@ class WorkflowSaveRequest(BaseModel):
 class DependencyInstallRequest(BaseModel):
     node_names: list[str] = Field(default_factory=list)
     all_enabled: bool = False
+
+
+class CustomNodeUpdateRequest(BaseModel):
+    version: str = ""
+
+
+class PluginInstallRequest(BaseModel):
+    url: str
+    install_dependencies: bool = True
 
 
 class CivitaiResolveRequest(BaseModel):

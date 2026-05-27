@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from importlib import metadata
 import re
 import subprocess
 from pathlib import Path
@@ -17,6 +18,47 @@ def custom_node_requirements(settings: NexusSettings) -> dict[str, Path]:
         if node.enabled and path.exists():
             requirements[node.name] = path
     return requirements
+
+
+def _requirement_package_name(line: str) -> str | None:
+    text = line.strip()
+    if not text or text.startswith(("#", "-", "--")):
+        return None
+    egg_match = re.search(r"[#&]egg=([A-Za-z0-9_.-]+)", text)
+    if egg_match:
+        return egg_match.group(1)
+    if text.lower().startswith(("git+", "http://", "https://")):
+        return None
+    match = re.match(r"([A-Za-z0-9_.-]+)", text)
+    return match.group(1) if match else None
+
+
+def custom_node_dependency_status(settings: NexusSettings) -> dict[str, dict[str, Any]]:
+    status: dict[str, dict[str, Any]] = {}
+    for name, path in custom_node_requirements(settings).items():
+        missing: list[str] = []
+        packages: list[str] = []
+        try:
+            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except Exception as exc:
+            status[name] = {"path": str(path), "installed": False, "packages": [], "missing": [str(exc)]}
+            continue
+        for line in lines:
+            package = _requirement_package_name(line)
+            if not package:
+                continue
+            packages.append(package)
+            try:
+                metadata.version(package)
+            except metadata.PackageNotFoundError:
+                missing.append(package)
+        status[name] = {
+            "path": str(path),
+            "installed": bool(packages) and not missing,
+            "packages": packages,
+            "missing": missing,
+        }
+    return status
 
 
 def install_custom_node_dependencies(

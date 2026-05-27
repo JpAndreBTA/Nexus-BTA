@@ -3174,6 +3174,12 @@ def patch_workflow(
         if "batch_size" in inputs:
             batch_size_value = 1 if preset == "qwen" and request.activity == "img2img" else max(1, request.batch_size)
             set_input_or_linked(inputs, "batch_size", batch_size_value)
+        if assets.get("base_video") and "video" in inputs and ("loadvideo" in class_lower or "video" in title):
+            inputs["video"] = assets["base_video"]
+        if assets.get("base_video") and "start_frame" in inputs:
+            set_input_or_linked(inputs, "start_frame", max(0, int(round(_number_or_none(video_options.get("base_start_frame")) or 0))))
+        if assets.get("base_video") and "end_frame" in inputs and frames_value is not None:
+            set_input_or_linked(inputs, "end_frame", max(1, int(round(frames_value))))
         for key in ["fps", "frame_rate", "framerate"]:
             if key in inputs and fps_value is not None:
                 set_input_or_linked(inputs, key, fps_value)
