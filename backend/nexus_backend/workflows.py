@@ -2220,6 +2220,214 @@ def build_basic_wan_i2video_workflow(
     return workflow
 
 
+def build_basic_wan_video_reference_workflow(
+    request: GenerateRequest,
+    high_model_name: str,
+    low_model_name: str,
+    text_encoder_name: str,
+    vae_name: str,
+    reference_image_name: str,
+    base_video_name: str,
+    clip_vision_name: str | None = None,
+) -> dict[str, Any]:
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    video_options = request.video or {}
+    fps = max(1, int(_number_or_none(video_options.get("fps")) or 16))
+    seconds = _number_or_none(video_options.get("seconds") or video_options.get("duration"))
+    requested_frames = _number_or_none(video_options.get("frames") or video_options.get("length"))
+    if requested_frames:
+        length = max(5, int(round(requested_frames)))
+    elif seconds:
+        length = max(5, int(round(seconds * fps)) + 1)
+    else:
+        length = 81
+    if (length - 1) % 4 != 0:
+        length = (((length - 1) // 4) + 1) * 4 + 1
+
+    width = max(64, int(request.width))
+    height = max(64, int(request.height))
+    width -= width % 16
+    height -= height % 16
+
+    steps = 4
+    cfg = float(request.cfg if request.cfg is not None else 1.0)
+    sampler = normalize_sampler(request.sampler or "euler")
+    scheduler = normalize_scheduler(request.scheduler or "simple")
+    split_step = max(1, min(steps - 1, steps // 2))
+    high_model_ref: list[Any] = ["1", 0]
+    low_model_ref: list[Any] = ["2", 0]
+    wan_lora_nodes: dict[str, Any] = {}
+    next_lora_id = 30
+
+    def wan_loader(model_name: str) -> dict[str, Any]:
+        if model_name.lower().endswith(".gguf"):
+            return {
+                "class_type": "UnetLoaderGGUF",
+                "inputs": {"unet_name": model_name},
+                "_meta": {"title": "Load WAN GGUF Model"},
+            }
+        return {
+            "class_type": "UNETLoader",
+            "inputs": {"unet_name": model_name, "weight_dtype": "default"},
+            "_meta": {"title": "Load WAN Model"},
+        }
+
+    clip_loader = (
+        {
+            "class_type": "CLIPLoaderGGUF",
+            "inputs": {"clip_name": text_encoder_name, "type": "wan"},
+            "_meta": {"title": "WAN UMT5 Encoder"},
+        }
+        if text_encoder_name.lower().endswith(".gguf")
+        else {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": text_encoder_name, "type": "wan", "device": "default"},
+            "_meta": {"title": "WAN UMT5 Encoder"},
+        }
+    )
+
+    for lora_name, strength_model, _strength_clip in _active_lora_selections(request):
+        safe_strength = max(-2.0, min(2.0, float(strength_model)))
+        lora_lower = lora_name.lower()
+        apply_high = "low" not in lora_lower or "high" in lora_lower
+        apply_low = "high" not in lora_lower or "low" in lora_lower
+        if apply_high:
+            node_id = str(next_lora_id)
+            wan_lora_nodes[node_id] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {"model": high_model_ref, "lora_name": lora_name, "strength_model": safe_strength},
+                "_meta": {"title": f"WAN high LoRA - {Path(lora_name).name}"},
+            }
+            high_model_ref = [node_id, 0]
+            next_lora_id += 1
+        if apply_low:
+            node_id = str(next_lora_id)
+            wan_lora_nodes[node_id] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {"model": low_model_ref, "lora_name": lora_name, "strength_model": safe_strength},
+                "_meta": {"title": f"WAN low LoRA - {Path(lora_name).name}"},
+            }
+            low_model_ref = [node_id, 0]
+            next_lora_id += 1
+
+    workflow = {
+        "1": wan_loader(high_model_name),
+        "2": wan_loader(low_model_name),
+        "3": {
+            "class_type": "ModelSamplingSD3",
+            "inputs": {"model": high_model_ref, "shift": float(video_options.get("shift") or 5.0)},
+            "_meta": {"title": "WAN High Noise Shift"},
+        },
+        "4": {
+            "class_type": "ModelSamplingSD3",
+            "inputs": {"model": low_model_ref, "shift": float(video_options.get("shift") or 5.0)},
+            "_meta": {"title": "WAN Low Noise Shift"},
+        },
+        "5": clip_loader,
+        "6": {"class_type": "VAELoader", "inputs": {"vae_name": vae_name}, "_meta": {"title": "WAN VAE"}},
+        "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": ["5", 0], "text": request.prompt},
+            "_meta": {"title": "Positive Prompt"},
+        },
+        "8": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": ["5", 0], "text": request.negative_prompt},
+            "_meta": {"title": "Negative Prompt"},
+        },
+        "9": {"class_type": "LoadImage", "inputs": {"image": reference_image_name}, "_meta": {"title": "Reference Character"}},
+        "10": {
+            "class_type": "VHS_LoadVideo",
+            "inputs": {
+                "video": base_video_name,
+                "force_rate": float(fps),
+                "custom_width": width,
+                "custom_height": height,
+                "frame_load_cap": length,
+                "skip_first_frames": 0,
+                "select_every_nth": 1,
+                "format": "Wan",
+            },
+            "_meta": {"title": "Base Motion Video"},
+        },
+        "11": {
+            "class_type": "WanAnimateToVideo",
+            "inputs": {
+                "positive": ["7", 0],
+                "negative": ["8", 0],
+                "vae": ["6", 0],
+                "width": width,
+                "height": height,
+                "length": length,
+                "batch_size": max(1, request.batch_size),
+                "continue_motion_max_frames": min(length, 5),
+                "video_frame_offset": 0,
+                "reference_image": ["9", 0],
+                "pose_video": ["10", 0],
+                "continue_motion": ["10", 0],
+            },
+            "_meta": {"title": "WAN Video Motion Reference"},
+        },
+        "12": {
+            "class_type": "KSamplerAdvanced",
+            "inputs": {
+                "model": ["3", 0],
+                "add_noise": "enable",
+                "noise_seed": seed,
+                "steps": steps,
+                "cfg": cfg,
+                "sampler_name": sampler,
+                "scheduler": scheduler,
+                "positive": ["11", 0],
+                "negative": ["11", 1],
+                "latent_image": ["11", 2],
+                "start_at_step": 0,
+                "end_at_step": split_step,
+                "return_with_leftover_noise": "enable",
+            },
+            "_meta": {"title": "WAN High Noise Sampler"},
+        },
+        "13": {
+            "class_type": "KSamplerAdvanced",
+            "inputs": {
+                "model": ["4", 0],
+                "add_noise": "disable",
+                "noise_seed": 0,
+                "steps": steps,
+                "cfg": cfg,
+                "sampler_name": sampler,
+                "scheduler": scheduler,
+                "positive": ["11", 0],
+                "negative": ["11", 1],
+                "latent_image": ["12", 0],
+                "start_at_step": split_step,
+                "end_at_step": steps,
+                "return_with_leftover_noise": "disable",
+            },
+            "_meta": {"title": "WAN Low Noise Sampler"},
+        },
+        "14": {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["6", 0]}, "_meta": {"title": "Decode Frames"}},
+        "15": {"class_type": "CreateVideo", "inputs": {"images": ["14", 0], "fps": float(fps)}, "_meta": {"title": "Create Video"}},
+        "16": {
+            "class_type": "SaveVideo",
+            "inputs": {"video": ["15", 0], "filename_prefix": "NEXUS_BTA_WAN22_V2V", "format": "mp4", "codec": "h264"},
+            "_meta": {"title": "Save Video"},
+        },
+    }
+
+    if clip_vision_name:
+        workflow["17"] = {"class_type": "CLIPVisionLoader", "inputs": {"clip_name": clip_vision_name}, "_meta": {"title": "WAN CLIP Vision"}}
+        workflow["18"] = {
+            "class_type": "CLIPVisionEncode",
+            "inputs": {"clip_vision": ["17", 0], "image": ["9", 0], "crop": "center"},
+            "_meta": {"title": "Encode Reference Character"},
+        }
+        workflow["11"]["inputs"]["clip_vision_output"] = ["18", 0]
+
+    workflow.update(wan_lora_nodes)
+    return workflow
+
+
 def _append_lora_chain(
     workflow: dict[str, Any],
     request: GenerateRequest,
@@ -2471,6 +2679,7 @@ def build_basic_ltx_img2video_workflow(
     text_encoder_name: str,
     reference_image_name: str,
     reference_end_image_name: str | None = None,
+    base_video_name: str | None = None,
     text_projection_name: str | None = None,
     audio_vae_name: str | None = None,
     video_vae_name: str | None = None,
@@ -2600,6 +2809,43 @@ def build_basic_ltx_img2video_workflow(
             ltx_negative_ref = ["37", 1]
             sampler_latent_ref = ["37", 2]
             scheduler_latent_ref = ["37", 2]
+        if (base_video_name or "").strip():
+            motion_strength = float(
+                _number_or_none(video_options.get("motion_strength") or video_options.get("video_strength"))
+                or request.img2img.denoise
+                or 0.72
+            )
+            preprocess_nodes["38"] = {
+                "class_type": "VHS_LoadVideo",
+                "inputs": {
+                    "video": base_video_name,
+                    "force_rate": float(fps),
+                    "custom_width": width,
+                    "custom_height": height,
+                    "frame_load_cap": length,
+                    "skip_first_frames": 0,
+                    "select_every_nth": 1,
+                    "format": "LTXV",
+                },
+                "_meta": {"title": "LTX Base Motion Video"},
+            }
+            preprocess_nodes["39"] = {
+                "class_type": "LTXVAddGuide",
+                "inputs": {
+                    "positive": ltx_positive_ref,
+                    "negative": ltx_negative_ref,
+                    "vae": video_vae_ref,
+                    "latent": sampler_latent_ref,
+                    "image": ["38", 0],
+                    "frame_idx": 0,
+                    "strength": max(0.0, min(1.0, motion_strength)),
+                },
+                "_meta": {"title": "Guide LTX Motion Video"},
+            }
+            ltx_positive_ref = ["39", 0]
+            ltx_negative_ref = ["39", 1]
+            sampler_latent_ref = ["39", 2]
+            scheduler_latent_ref = ["39", 2]
 
     audio_nodes: dict[str, Any] = {}
     if has_audio_context:

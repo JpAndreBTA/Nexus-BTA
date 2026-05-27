@@ -62,6 +62,7 @@ from .workflows import (
     build_basic_qwen_image_workflow,
     build_basic_sd_workflow,
     build_basic_wan_i2video_workflow,
+    build_basic_wan_video_reference_workflow,
     build_basic_zimage_turbo_workflow,
     convert_ui_to_api,
     detect_workflow_format,
@@ -3083,9 +3084,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if request.preset.lower() == "wan" and not request.workflow_id:
             workflow_path = None
         if base_video_name and not request.workflow_id and request.preset.lower() in {"wan", "ltx"}:
-            workflow_path = _find_video2video_workflow(request.preset)
-            if not workflow_path:
-                raise ValueError(f"{request.preset} video2video requires a compatible V2V workflow with LoadVideo/VHS_LoadVideo.")
+            workflow_path = None
         if request.preset.lower() == "qwen" and request.activity == "img2img" and reference_image_name:
             request.workflow_override = None
             workflow_path = None
@@ -3145,12 +3144,17 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     raise ValueError("LTX 2.3 requires the audio VAE in models/vae, even when audio output is disabled.")
                 if checkpoint_name.lower().endswith(".gguf"):
                     raise ValueError("LTX img2vid default requires an LTX checkpoint file. GGUF workflows can still be loaded explicitly.")
+                if base_video_name and not _available_comfy_node(object_info, "VHS_LoadVideo"):
+                    raise ValueError("LTX video2video requires comfyui-videohelpersuite (VHS_LoadVideo).")
+                if base_video_name and not _available_comfy_node(object_info, "LTXVAddGuide"):
+                    raise ValueError("LTX video2video requires the native LTXVAddGuide node.")
                 prompt = build_basic_ltx_img2video_workflow(
                     request,
                     checkpoint_name,
                     text_encoder_name,
                     reference_image_name,
                     reference_end_image_name=reference_end_image_name,
+                    base_video_name=base_video_name,
                     text_projection_name=assets.get("text_projection"),
                     audio_vae_name=assets.get("audio_vae"),
                     video_vae_name=assets.get("video_vae") or assets.get("vae"),
@@ -3171,23 +3175,41 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 if not assets.get("clip_vision"):
                     raise ValueError("WAN 2.2 requires clip_vision_h.safetensors or a compatible CLIP Vision encoder in models/clip_vision.")
                 wan_first_last_node = None
-                if reference_end_image_name:
+                if base_video_name:
+                    if not reference_image_name:
+                        raise ValueError("WAN video2video requires an image reference.")
+                    if not _available_comfy_node(object_info, "VHS_LoadVideo"):
+                        raise ValueError("WAN video2video requires comfyui-videohelpersuite (VHS_LoadVideo).")
+                    if not _available_comfy_node(object_info, "WanAnimateToVideo"):
+                        raise ValueError("WAN video2video requires the native WanAnimateToVideo node.")
+                    prompt = build_basic_wan_video_reference_workflow(
+                        request,
+                        high_model_name,
+                        low_model_name,
+                        text_encoder_name,
+                        vae_name,
+                        reference_image_name,
+                        base_video_name,
+                        clip_vision_name=assets.get("clip_vision"),
+                    )
+                elif reference_end_image_name:
                     wan_first_last_node = _available_comfy_node(
                         object_info,
                         "WanFirstLastFrameToVideo",
                         "WanFirstLastFrameToVideoFunModel",
                     )
-                prompt = build_basic_wan_i2video_workflow(
-                    request,
-                    high_model_name,
-                    low_model_name,
-                    text_encoder_name,
-                    vae_name,
-                    reference_image_name=reference_image_name,
-                    reference_end_image_name=reference_end_image_name,
-                    first_last_frame_node=wan_first_last_node,
-                    clip_vision_name=assets.get("clip_vision"),
-                )
+                if not base_video_name:
+                    prompt = build_basic_wan_i2video_workflow(
+                        request,
+                        high_model_name,
+                        low_model_name,
+                        text_encoder_name,
+                        vae_name,
+                        reference_image_name=reference_image_name,
+                        reference_end_image_name=reference_end_image_name,
+                        first_last_frame_node=wan_first_last_node,
+                        clip_vision_name=assets.get("clip_vision"),
+                    )
             elif request.preset.lower() == "qwen":
                 checkpoint_name = assets.get("primary_model") or ""
                 if not checkpoint_name:
