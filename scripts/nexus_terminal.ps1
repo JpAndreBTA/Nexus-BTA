@@ -46,7 +46,8 @@ function Write-NexusSection {
 function Invoke-NexusRepositoryUpdate {
     param(
         [string]$ProjectRoot,
-        [switch]$Strict
+        [switch]$Strict,
+        [switch]$PromptBeforePull
     )
 
     if (!(Test-Path -LiteralPath (Join-Path $ProjectRoot ".git"))) {
@@ -92,6 +93,19 @@ function Invoke-NexusRepositoryUpdate {
         if ($ahead -gt 0) {
             Write-NexusLine "Local commits are not pushed yet; automatic pull skipped." "Warn"
             return
+        }
+
+        $latest = (git -C $ProjectRoot log --oneline -1 "HEAD..$upstream" 2>$null)
+        if ($PromptBeforePull) {
+            Write-NexusLine "$behind GitHub update(s) available." "Warn"
+            if ($latest) {
+                Write-NexusLine "Newest commit: $latest" "Info"
+            }
+            $answer = Read-Host "Update Nexus BTA now? [Y/N]"
+            if ($answer -notmatch "^(y|yes|s|sim)$") {
+                Write-NexusLine "Update skipped by user." "Info"
+                return
+            }
         }
 
         Write-NexusLine "Applying $behind GitHub update(s)..." "Info"

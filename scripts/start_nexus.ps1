@@ -25,7 +25,7 @@ if (Test-Path -LiteralPath $terminalHelpers) {
     function Write-NexusLogo { Write-Host "[NEXUS BTA]" }
     function Write-NexusLine([string]$Message, [string]$Kind = "Info") { Write-Host "[NEXUS BTA] $Message" }
     function Write-NexusSection([string]$Title) { Write-Host ""; Write-NexusLine $Title "Step" }
-    function Invoke-NexusRepositoryUpdate([string]$ProjectRoot) { return }
+    function Invoke-NexusRepositoryUpdate([string]$ProjectRoot, [switch]$PromptBeforePull) { return }
 }
 
 function Test-NexusHealth {
@@ -98,7 +98,7 @@ if (!$NoOpen) {
 
 Write-NexusLogo
 Write-NexusSection "Updates"
-Invoke-NexusRepositoryUpdate -ProjectRoot $root
+Invoke-NexusRepositoryUpdate -ProjectRoot $root -PromptBeforePull
 
 if (!(Test-Path -LiteralPath $comfyMain) -or !(Test-Path -LiteralPath $python)) {
     if (!(Test-Path -LiteralPath $bootstrap)) {

@@ -71,6 +71,7 @@ $repos = @(
         Name = "WhatDreamsCost-ComfyUI"
         Url = "https://github.com/WhatDreamsCost/WhatDreamsCost-ComfyUI.git"
         Path = Join-Path $customNodesDir "WhatDreamsCost-ComfyUI"
+        Commit = "f0c8a322eaa607eb499ebd320f0d7d03f4caff80"
     },
     @{
         Name = "ComfyUI-MelBandRoFormer"
@@ -86,6 +87,20 @@ foreach ($repo in $repos) {
             git clone --depth 1 $repo.Url $repo.Path
         } else {
             Write-NexusLine "$($repo.Name) is present." "Ok"
+        }
+
+        if ($repo.Commit -and (Test-Path -LiteralPath (Join-Path $repo.Path ".git"))) {
+            Push-Location $repo.Path
+            try {
+                $currentCommit = (git rev-parse HEAD).Trim()
+                if ($currentCommit -ne $repo.Commit) {
+                    Write-NexusLine "Pinning $($repo.Name) to $($repo.Commit.Substring(0, 7))..." "Info"
+                    git fetch origin $repo.Commit --depth 1
+                    git checkout --detach $repo.Commit
+                }
+            } finally {
+                Pop-Location
+            }
         }
 
         $requirements = Join-Path $repo.Path "requirements.txt"

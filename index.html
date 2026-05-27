@@ -216,6 +216,45 @@
             opacity: 1;
         }
 
+        .ltx-director-segment.is-transition-on {
+            border-color: rgba(255, 59, 59, 0.82) !important;
+            box-shadow: inset 0 0 0 1px rgba(255, 59, 59, 0.45), 0 0 18px rgba(255, 59, 59, 0.14);
+        }
+
+        .ltx-transition-badge {
+            position: absolute;
+            right: 6px;
+            top: 6px;
+            z-index: 6;
+            border: 1px solid rgba(255, 59, 59, 0.8);
+            background: rgba(8, 9, 13, 0.9);
+            color: #fff;
+            font-size: 8px;
+            font-weight: 800;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            padding: 2px 5px;
+            opacity: .86;
+        }
+
+        .ltx-transition-badge::after {
+            content: "Transition ON";
+            position: absolute;
+            right: 0;
+            top: calc(100% + 6px);
+            white-space: nowrap;
+            background: #18181b;
+            border: 1px solid #ff3b3b;
+            color: #fff;
+            padding: 4px 6px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .ltx-director-segment:hover .ltx-transition-badge::after {
+            opacity: 1;
+        }
+
         .ltx-director-reference {
             position: absolute;
             top: 12px;
@@ -1304,6 +1343,10 @@
                     <i id="generateBtnIcon" class="fa-solid fa-play"></i>
                     <span id="generateBtnText">Generate</span>
                 </button>
+                <button id="globalQueueButton" type="button" onclick="queueGeneration()" class="h-12 w-12 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center justify-center transition-colors" title="Add generation to queue">
+                    <i class="fa-solid fa-plus text-xs"></i>
+                    <span class="sr-only">Add to queue</span>
+                </button>
                 <button id="globalCancelGenerationButton" type="button" onclick="cancelActiveGeneration()" class="hidden h-12 w-12 bg-zinc-950 border border-nexus-red text-nexus-red hover:bg-nexus-red hover:text-white rounded-sm items-center justify-center transition-colors" title="Cancel generation">
                     <i class="fa-solid fa-stop text-xs"></i>
                     <span class="sr-only">Cancel generation</span>
@@ -1723,7 +1766,11 @@
                                 <div id="ltxTransitionLoraWrapper" class="hidden bg-nexus-panel border border-nexus-border px-2 py-2 rounded-sm space-y-2">
                                     <label class="flex items-center justify-between gap-3 text-xs text-white">
                                         <span class="font-bold">Transition LoRA</span>
-                                        <span class="toggle-switch"><input id="ltxTransitionLoraToggle" type="checkbox" checked><span class="toggle-track"></span></span>
+                                        <span class="toggle-switch"><input id="ltxTransitionLoraToggle" type="checkbox"><span class="toggle-track"></span></span>
+                                    </label>
+                                    <label class="space-y-1 block">
+                                        <span class="mini-label">Transition Model</span>
+                                        <select id="ltxTransitionLoraSelect" class="flat-input appearance-none cursor-pointer"></select>
                                     </label>
                                     <label class="space-y-1 block">
                                         <span class="mini-label">Transition Strength</span>
@@ -2032,7 +2079,7 @@
                                 <button id="ltxDirectorReferenceModeBtn" type="button" onclick="toggleLtxDirectorReferenceMode()" aria-pressed="false" class="flat-button text-[10px] font-bold uppercase flex items-center gap-1.5 min-w-[166px] justify-center"><i class="fa-regular fa-images text-nexus-red"></i><span>Multi Image Load</span><span id="ltxDirectorReferenceModeState" class="font-mono text-nexus-red">OFF</span></button>
                             </div>
                             <div class="relative flex items-center gap-2">
-                                <button id="ltxDirectorCustomAudioBtn" type="button" onclick="toggleLtxDirectorCustomAudio()" class="flat-button text-[10px] font-mono uppercase">Custom Audio: <span id="ltxDirectorAudioStateLabel" class="text-nexus-red font-bold">OFF</span></button>
+                                <button id="ltxDirectorCustomAudioBtn" type="button" onclick="toggleLtxDirectorCustomAudio()" class="flat-button text-[10px] font-mono uppercase">Audio: <span id="ltxDirectorAudioStateLabel" class="text-nexus-red font-bold">OFF</span></button>
                                 <button type="button" onclick="toggleLtxDirectorSettings()" class="w-8 h-8 flex items-center justify-center bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Timeline settings"><i class="fa-solid fa-gear text-xs"></i></button>
                                 <div id="ltxDirectorSettingsPanel" class="hidden absolute right-0 top-10 z-30 w-72 bg-zinc-950 border border-nexus-border p-3 rounded-sm space-y-3">
                                     <div class="flex justify-between items-center">
@@ -3315,6 +3362,7 @@
         let controlNetImageDataUrl = '';
         let controlNetImageMeta = { src: '', label: '', width: 0, height: 0 };
         let activeGenerationJobId = null;
+        let queuedGenerationJobIds = [];
         let generationUiActive = false;
         let generationCancelRequested = false;
         let generationProgressState = { progress: 0, message: 'Preparing generation...', subtext: 'Backend queue is starting.' };
@@ -3995,6 +4043,13 @@
                     .sort((a, b) => a.name.localeCompare(b.name))
                     .map(asset => String(asset.relative_path || asset.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\'))
                 : [];
+            const ltxTransitionLoras = presetName === 'LTX'
+                ? (backendCatalog?.categories?.loras || [])
+                    .filter(asset => modelMatchesPreset(asset, presetName) || /ltx_transition|transition|zhuanchang/i.test([asset.name, asset.relative_path].join(' ')))
+                    .filter(asset => /transition|zhuanchang/i.test([asset.name, asset.relative_path, ...(asset.tags || [])].join(' ')))
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(asset => String(asset.relative_path || asset.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\'))
+                : [];
             if (vaes.length) profile.vae = uniqueOptions([preferredVaeForPreset(presetName, vaes), 'Automatic', ...vaes, 'None']);
             if (encoders.length) {
                 profile.encoder = uniqueOptions([preferredEncoderForPreset(presetName, encoders), 'Automatic', ...encoders]);
@@ -4020,6 +4075,7 @@
             if (presetName === 'LTX') {
                 profile.detailerLoras = uniqueOptions(['Automatic', ...ltxDetailers, 'None']);
                 profile.omnicineLoras = uniqueOptions(omnicine);
+                profile.transitionLoras = uniqueOptions(['Automatic', ...ltxTransitionLoras, 'None']);
             }
             if (distilled.length) {
                 profile.distilledLoras = uniqueOptions(['None', ...distilled]);
@@ -5600,17 +5656,21 @@
             setElementOptions('audioVaeSelect', profile.audioVae || ['Automatic', 'None']);
             setElementOptions('latentUpscaleSelect', profile.latentUpscaleModels || ['Automatic', 'None']);
             setElementOptions('ltxDetailerLoraSelect', profile.detailerLoras || ['Automatic', 'None']);
+            setElementOptions('ltxTransitionLoraSelect', profile.transitionLoras || ['Automatic', 'ltx_transition\\ltx2.3-transition.safetensors', 'None']);
             setElementOptions('omnicineSelect', ['Off', ...(profile.omnicineLoras || [])]);
             setSelectValue('videoVaeSelect', savedFields.videoVaeSelect || profile.videoVae?.[0] || 'Automatic');
             setSelectValue('audioVaeSelect', savedFields.audioVaeSelect || profile.audioVae?.[0] || 'Automatic');
             setSelectValue('latentUpscaleSelect', savedFields.latentUpscaleSelect || profile.latentUpscaleModels?.[0] || 'Automatic');
             setSelectValue('ltxDetailerLoraSelect', savedFields.ltxDetailerLoraSelect || profile.detailerLoras?.[0] || 'Automatic');
+            setSelectValue('ltxTransitionLoraSelect', savedFields.ltxTransitionLoraSelect || profile.transitionLoras?.[0] || 'Automatic');
             setSelectValue('omnicineSelect', savedFields.omnicineSelect || 'Off');
             if (presetName === 'LTX') {
                 const audioToggle = document.getElementById('activeAudioToggle');
                 if (audioToggle) audioToggle.checked = savedFields.activeAudioToggle !== undefined ? !!savedFields.activeAudioToggle : false;
                 const refineToggle = document.getElementById('ltxLatentUpscaleRefineToggle');
                 if (refineToggle) refineToggle.checked = savedFields.ltxLatentUpscaleRefineToggle !== undefined ? !!savedFields.ltxLatentUpscaleRefineToggle : true;
+                const transitionToggle = document.getElementById('ltxTransitionLoraToggle');
+                if (transitionToggle) transitionToggle.checked = savedFields.ltxTransitionLoraToggle !== undefined ? !!savedFields.ltxTransitionLoraToggle : false;
             }
             setElementOptions('distilledLoraOneSelect', profile.distilledLoras || ['None']);
             setElementOptions('distilledLoraTwoSelect', profile.distilledLoras || ['None']);
@@ -5637,7 +5697,7 @@
             }
 
             document.getElementById('stepsSlider').value = savedFields.stepsSlider || profile.steps;
-            document.getElementById('cfgSlider').value = savedFields.cfgSlider || profile.cfg;
+            document.getElementById('cfgSlider').value = savedFields.cfgSlider || (presetName === 'LTX' ? 1 : profile.cfg);
             updateRangeLabel('steps');
             updateRangeLabel('cfg');
 
@@ -5835,6 +5895,7 @@
 
         function syncGenerationActionUi() {
             const generateButton = document.getElementById('globalGenerateButton');
+            const queueButton = document.getElementById('globalQueueButton');
             const cancelButton = document.getElementById('globalCancelGenerationButton');
             const overlayCancelButton = document.getElementById('overlayCancelGenerationButton');
             const overlayCancelText = document.getElementById('overlayCancelGenerationText');
@@ -5855,6 +5916,11 @@
                 generateButton.classList.toggle('opacity-70', active);
                 generateButton.classList.toggle('cursor-not-allowed', active);
                 generateButton.title = active ? 'Generation is running' : idleGenerateLabel();
+            }
+            if (queueButton) {
+                queueButton.disabled = generationCancelRequested;
+                queueButton.classList.toggle('opacity-70', generationCancelRequested);
+                queueButton.title = active ? 'Add another generation to queue' : 'Add generation to queue';
             }
             if (cancelButton) {
                 cancelButton.classList.toggle('hidden', !active);
@@ -6365,6 +6431,7 @@
                     state.referenceImages = Array.isArray(state.referenceImages) ? state.referenceImages : [];
                     state.segments.forEach(segment => {
                         if (segment.negativePrompt === undefined) segment.negativePrompt = '';
+                        if (segment.transitionLoraEnabled === undefined) segment.transitionLoraEnabled = false;
                     });
                     state.referenceImages.forEach(reference => {
                         if (reference.negativePrompt === undefined) reference.negativePrompt = '';
@@ -6630,6 +6697,8 @@
                 ];
             }
             if (segment.speechAdditionalTime === undefined) segment.speechAdditionalTime = 0;
+            if (segment.transitionLoraEnabled === undefined) segment.transitionLoraEnabled = false;
+            if (segment.transitionPrompt === undefined) segment.transitionPrompt = 'continuous motion continuation into the next visual segment, transformation or angle change as described, no dissolve, no crossfade, zhuanchang';
             if (!segment.speechText && segment.type === 'text') segment.speechText = segment.prompt || '';
             return segment;
         }
@@ -6832,18 +6901,21 @@
                 const maxVisualWidth = Number.isFinite(nextLeft) ? Math.max(8, nextLeft - left - 2) : rawWidth;
                 const width = Math.max(8, Math.min(Math.max(48, rawWidth), maxVisualWidth));
                 const selected = segment.id === ltxDirectorState.selectedId && ltxDirectorState.selectedType === 'segment';
+                ltxDirectorEnsureSegmentMetadata(segment);
+                const transitionOn = !!segment.transitionLoraEnabled;
                 const media = segment.type === 'text'
                     ? `<div class="w-full h-full bg-[#06131a] flex items-center justify-center px-4 text-center text-[11px] font-bold text-white">${escapeHtml(ltxDirectorPromptSnippet(segment.prompt))}</div>`
                     : segment.type === 'video'
                         ? `<video src="${escapeHtml(segment.videoSrc || '')}" class="w-full h-full object-cover" muted playsinline></video>`
                         : `<img src="${escapeHtml(segment.imageSrc || segment.imageB64 || '')}" alt="LTX keyframe" class="w-full h-full object-cover">`;
                 return `
-                    <article class="ltx-director-segment ${selected ? 'is-selected' : ''} bg-zinc-950 border border-nexus-border rounded-sm overflow-hidden cursor-grab group" data-ltx-segment-id="${escapeHtml(segment.id)}" style="left:${left}px;width:${width}px;">
+                    <article class="ltx-director-segment ${selected ? 'is-selected' : ''} ${transitionOn ? 'is-transition-on' : ''} bg-zinc-950 border border-nexus-border rounded-sm overflow-hidden cursor-grab group" data-ltx-segment-id="${escapeHtml(segment.id)}" style="left:${left}px;width:${width}px;" title="${transitionOn ? 'Transition ON' : ''}">
                         <button type="button" class="ltx-director-remove" data-ltx-remove-type="segment" data-ltx-remove-id="${escapeHtml(segment.id)}" onclick="removeLtxDirectorItem(event)" onpointerdown="event.stopPropagation()" title="Remove segment"><i class="fa-solid fa-xmark"></i></button>
                         <span class="ltx-director-handle left" data-ltx-handle="left"></span>
                         <span class="ltx-director-handle right" data-ltx-handle="right"></span>
                         <div class="h-[70%] bg-black relative overflow-hidden">
                             ${media}
+                            ${transitionOn ? '<span class="ltx-transition-badge">TRN</span>' : ''}
                             <span class="absolute bottom-1 left-1 bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-white">${ltxDirectorDisplayTime(segment.start)} - ${ltxDirectorDisplayTime(ltxDirectorEnd(segment))}</span>
                         </div>
                         <div class="h-[30%] px-2 py-1 overflow-hidden">
@@ -7069,6 +7141,7 @@
                     prompt: cleanName.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ') || 'new image keyframe',
                     negativePrompt: '',
                     guideStrength: 0.85,
+                    transitionLoraEnabled: false,
                     title: `Segment #${ltxDirectorState.segments.length + 1}`,
                     imageSrc: dataUrl,
                     imageB64: dataUrl,
@@ -7196,6 +7269,7 @@
                     prompt: file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ') || 'loaded video motion source',
                     negativePrompt: '',
                     guideStrength: 0.85,
+                    transitionLoraEnabled: false,
                     title: `Video #${ltxDirectorState.segments.length + 1}`,
                     imageSrc: posterDataUrl,
                     imageB64: posterDataUrl,
@@ -7262,6 +7336,7 @@
                 prompt: 'new text-only motion beat',
                 negativePrompt: '',
                 guideStrength: 1,
+                transitionLoraEnabled: false,
                 title: `Segment #${ltxDirectorState.segments.length + 1}`,
                 imageSrc: '',
                 imageB64: '',
@@ -7291,6 +7366,13 @@
             ltxDirectorInsertMenu = open ? null : { start, end, type };
             renderLtxDirector();
         }
+
+        document.addEventListener('pointerdown', event => {
+            if (!ltxDirectorInsertMenu) return;
+            if (event.target.closest?.('.ltx-gap-menu, .ltx-gap-insert')) return;
+            ltxDirectorInsertMenu = null;
+            renderLtxDirector();
+        });
 
         function insertLtxDirectorImageAtGap(start, end) {
             ltxDirectorPendingImageInsert = { start, end, length: ltxDirectorGapInsertLength(start, end, 4) };
@@ -7508,7 +7590,21 @@
                 return;
             }
             const target = event.target.closest(type === 'audio' ? '[data-ltx-audio-id]' : '[data-ltx-segment-id]');
-            if (!target) return;
+            if (!target) {
+                const track = event.currentTarget || event.target.closest(type === 'audio' ? '#ltxDirectorAudioTrack' : '#ltxDirectorVideoTrack');
+                if (track && type === 'segment') {
+                    const rect = track.getBoundingClientRect();
+                    ltxDirectorState.currentTime = ltxDirectorSnap(Math.max(0, (event.clientX - rect.left) / LTX_DIRECTOR_PIXELS_PER_SECOND));
+                    const nearest = ltxDirectorSortedSegments().find(item => ltxDirectorState.currentTime >= item.start && ltxDirectorState.currentTime <= ltxDirectorEnd(item));
+                    if (nearest) {
+                        ltxDirectorState.selectedType = 'segment';
+                        ltxDirectorState.selectedId = nearest.id;
+                    }
+                    updateLtxDirectorPlayhead();
+                    renderLtxDirector();
+                }
+                return;
+            }
             event.preventDefault();
             const id = type === 'audio' ? target.dataset.ltxAudioId : target.dataset.ltxSegmentId;
             selectLtxDirectorItem(type, id);
@@ -7906,6 +8002,19 @@
                             ${ltxDirectorNumberField('Guide Strength', 'segment.guideStrength', Number(segment.guideStrength ?? 1).toFixed(2), 'min="0" max="2" step="0.05"')}
                             ${ltxDirectorNumberField('Insert Frame', 'segment.insertFrame', ltxDirectorSecondsToFrames(segment.start || 0), 'min="0" step="1"')}
                         </div>
+                        <label class="ltx-info-field flex items-center justify-between gap-3 cursor-pointer">
+                            <span>
+                                <span class="mini-label block">Transition LoRA To Next Visual</span>
+                                <span class="text-[10px] text-nexus-muted font-mono">ON uses this segment as transition source into the next image/video segment.</span>
+                            </span>
+                            <span class="toggle-switch"><input type="checkbox" data-ltx-info="segment.transitionLoraEnabled" onchange="updateLtxDirectorInfoField(this)" ${segment.transitionLoraEnabled ? 'checked' : ''}><span class="toggle-track"></span></span>
+                        </label>
+                        ${segment.transitionLoraEnabled ? `
+                            <div class="ltx-info-field space-y-2">
+                                <span class="mini-label">Transition Prompt Add-On</span>
+                                <textarea data-ltx-info="segment.transitionPrompt" rows="2" oninput="updateLtxDirectorInfoField(this)" class="w-full bg-zinc-950 border border-nexus-border p-2 text-xs text-white outline-none focus:border-nexus-red resize-none" placeholder="Describe motion continuation, transformation, angle change...">${escapeHtml(segment.transitionPrompt || '')}</textarea>
+                            </div>
+                        ` : ''}
                         ${segment.type === 'text' ? `
                             <div class="ltx-info-field space-y-2">
                                 <div class="flex items-center justify-between"><span class="mini-label">Speech Length Calculator</span><span class="text-[10px] font-mono text-nexus-red">${stats.words} words</span></div>
@@ -7993,6 +8102,13 @@
                     segment.prompt = segment.speechText;
                 } else if (key === 'negativePrompt') {
                     segment.negativePrompt = String(value || '');
+                } else if (key === 'transitionLoraEnabled') {
+                    segment.transitionLoraEnabled = !!element.checked;
+                    if (segment.transitionLoraEnabled && !segment.transitionPrompt) {
+                        segment.transitionPrompt = 'continuous motion continuation into the next visual segment, transformation or angle change as described, no dissolve, no crossfade, zhuanchang';
+                    }
+                } else if (key === 'transitionPrompt') {
+                    segment.transitionPrompt = String(value || '');
                 } else if (key === 'resizeMethod') {
                     segment.resizeMethod = String(value || 'maintain aspect ratio');
                     ltxDirectorState.resizeMethod = segment.resizeMethod;
@@ -8154,7 +8270,8 @@
                 imageB64: reference.imageB64 || reference.imageSrc || '',
                 imageFile: reference.fileName || '',
                 crop: reference.crop || { x: 0, y: 0, w: 1, h: 1 },
-                cameraKeyframes: []
+                cameraKeyframes: [],
+                transitionLoraEnabled: false
             });
             ltxDirectorState.referenceMode = false;
             ltxDirectorState.selectedType = 'segment';
@@ -8211,11 +8328,14 @@
                         ? 'image'
                         : (segment.type || 'image');
                     const frameIntent = ltxDirectorSegmentFrameIntent(segment);
+                    const transitionTarget = segment.transitionLoraEnabled
+                        ? directorSegments.find(next => next.id !== segment.id && ['image', 'video'].includes(next.type || 'image') && Number(next.start || 0) > Number(segment.start || 0))
+                        : null;
                     return {
                     id: segment.id,
                     start: Math.max(0, Math.round(Number(segment.start || 0) * fps)),
                     length: Math.max(1, Math.round(Number(segment.length || LTX_DIRECTOR_MIN_SECONDS) * fps)),
-                    prompt: String(segment.prompt || '').trim() || 'director timeline segment',
+                    prompt: `${String(segment.prompt || '').trim() || 'director timeline segment'}${segment.transitionLoraEnabled && segment.transitionPrompt ? `, ${String(segment.transitionPrompt).trim()}` : ''}`,
                     negativePrompt: String(segment.negativePrompt || '').trim(),
                     type: effectiveType,
                     sourceType: segment.type || 'image',
@@ -8224,6 +8344,10 @@
                     videoFile: segment.videoFile || '',
                     videoB64: segment.videoSrc || '',
                     guideStrength: Number(segment.guideStrength ?? 1),
+                    transitionLoraEnabled: !!segment.transitionLoraEnabled,
+                    transitionToNextVisual: !!transitionTarget,
+                    transitionTargetId: transitionTarget?.id || '',
+                    transitionTargetStart: transitionTarget ? Math.max(0, Math.round(Number(transitionTarget.start || 0) * fps)) : null,
                     speechText: segment.speechText || '',
                     speechAdditionalTime: Number(segment.speechAdditionalTime || 0),
                     crop: segment.crop || { x: 0, y: 0, w: 1, h: 1 },
@@ -8356,9 +8480,9 @@
             const omniLoras = payload?.video?.omnicine_enabled
                 ? [{ name: payload.video.omnicine_lora, relative_name: payload.video.omnicine_lora, strength: LTX_OMNICINE_DEFAULT_STRENGTH, strength_clip: 0 }]
                 : [];
-            const transitionEnabled = payload?.video?.transition_lora_enabled !== false;
-            const transitionLoras = transitionEnabled
-                ? [{ name: payload?.video?.transition_lora || LTX_TRANSITION_LORA_NAME, relative_name: payload?.video?.transition_lora || LTX_TRANSITION_LORA_NAME, strength: Number(payload?.video?.transition_lora_strength || LTX_TRANSITION_DEFAULT_STRENGTH), strength_clip: 0 }]
+            const transitionName = activeLtxTransitionLoraName(payload?.video || {});
+            const transitionLoras = transitionName
+                ? [{ name: transitionName, relative_name: transitionName, strength: Number(payload?.video?.transition_lora_strength || LTX_TRANSITION_DEFAULT_STRENGTH), strength_clip: 0 }]
                 : [];
             const seen = new Set();
             const ordered = [...distilledLoras, ...(sideMenuLoras || []), ...omniLoras, ...transitionLoras];
@@ -8433,6 +8557,14 @@
             return !!name && !/^(none|off|automatic|auto)$/i.test(name);
         }
 
+        function activeLtxTransitionLoraName(video = {}) {
+            if (video?.transition_lora_enabled === false) return '';
+            const selected = String(video?.transition_lora || document.getElementById('ltxTransitionLoraSelect')?.value || 'Automatic').trim();
+            if (/^(none|off|disabled)$/i.test(selected)) return '';
+            if (/^(automatic|auto)?$/i.test(selected)) return LTX_TRANSITION_LORA_NAME;
+            return selected;
+        }
+
         function ltxTransitionPrompt(text, video = {}) {
             if (video?.transition_lora_enabled === false) return text || '';
             const prompt = String(text || '').trim();
@@ -8479,7 +8611,7 @@
             const useCustomAudio = !!director.use_custom_audio;
             const minSteps = ltxMinimumSteps(checkpointName);
             const steps = Math.max(minSteps, parseInt(payload?.steps || document.getElementById('stepsSlider')?.value || minSteps, 10) || minSteps);
-            const cfg = Number(payload?.cfg || document.getElementById('cfgSlider')?.value || 1) || 1;
+            const cfg = Number(payload?.cfg ?? document.getElementById('cfgSlider')?.value ?? 1) || 1;
             const loraNodes = {};
             let directorModelRef = ['1', 0];
             ltxDirectorWorkflowLoras(payload).slice(0, 8).forEach((lora, index) => {
@@ -10825,6 +10957,10 @@
                 list.push({ src, label, width: 0, height: 0 });
             }
             referenceImageExtraDataUrls = list.slice(0, maxSlots);
+            if (activePreset === 'LTX' && isStartEndFrameMode()) {
+                const transitionToggle = document.getElementById('ltxTransitionLoraToggle');
+                if (transitionToggle) transitionToggle.checked = true;
+            }
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
         }
@@ -10837,6 +10973,10 @@
             const refs = [...(referenceImageExtraDataUrls || [])];
             refs[slotIndex] = { src, label, width: 0, height: 0 };
             referenceImageExtraDataUrls = refs.slice(0, slots.length);
+            if (activePreset === 'LTX' && isStartEndFrameMode()) {
+                const transitionToggle = document.getElementById('ltxTransitionLoraToggle');
+                if (transitionToggle) transitionToggle.checked = true;
+            }
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
         }
@@ -12576,7 +12716,7 @@
             'resizeModeSelect', 'denoiseSlider', 'batchCountInput', 'framesInput', 'fpsInput', 'secondsInput', 'motionSelect',
             'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'refinerSelect',
             'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
-            'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraStrength',
+            'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength',
             'controlNetEnabledToggle', 'controlNetTypeSelect', 'controlNetModelSelect', 'controlNetBalanceSelect',
             'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'
         ];
@@ -14476,6 +14616,10 @@
             const selectedImg2ImgMode = currentImg2ImgMode();
             const canvasInpaintActive = currentActivity === 'img2img' && activeWorkspace === 'canvas';
             const effectiveImg2ImgMode = selectedImg2ImgMode;
+            const hasLtxEndFrame = activePreset === 'LTX'
+                && referenceExtraSlotsEnabled()
+                && !!referenceImageDataUrl
+                && (referenceImageExtraDataUrls || []).some(item => !!item?.src);
             if (canvasInpaintActive) ensureInpaintWorkflowMode(false);
             const payload = {
                 activity: currentActivity,
@@ -14490,7 +14634,7 @@
                 width: parseInt(document.getElementById('widthInput')?.value || profile.width || 1024, 10),
                 height: parseInt(document.getElementById('heightInput')?.value || profile.height || 1024, 10),
                 steps: effectiveSteps,
-                cfg: parseFloat(document.getElementById('cfgSlider')?.value || profile.cfg || 7),
+                cfg: parseFloat(document.getElementById('cfgSlider')?.value || (activePreset === 'LTX' ? 1 : profile.cfg) || 7),
                 sampler: document.getElementById('samplingMethodSelect')?.value || profile.sampler || 'Euler Ancestral',
                 scheduler: document.getElementById('schedulerSelect')?.value || profile.scheduler || 'Karras',
                 seed: Number.isFinite(seed) ? seed : -1,
@@ -14569,7 +14713,8 @@
                     ltx_ic_tiled_encode: document.getElementById('ltxIcTiledEncodeSelect')?.value === 'true',
                     ltx_ic_tile_size: 256,
                     ltx_ic_tile_overlap: 64,
-                    transition_lora_enabled: activePreset === 'LTX' && !!document.getElementById('ltxTransitionLoraToggle')?.checked,
+                    transition_lora_enabled: activePreset === 'LTX' && (!!document.getElementById('ltxTransitionLoraToggle')?.checked || hasLtxEndFrame),
+                    transition_lora: document.getElementById('ltxTransitionLoraSelect')?.value || 'Automatic',
                     transition_lora_strength: parseFloat(document.getElementById('ltxTransitionLoraStrength')?.value || '1.0')
                 },
                 runtime: {
@@ -14831,18 +14976,66 @@
             return job;
         }
 
+        async function startGenerationJob(payload) {
+            const job = await nexusFetch('/generate/start', {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            queuedGenerationJobIds = [...new Set([...queuedGenerationJobIds, job.job_id].filter(Boolean))];
+            return job;
+        }
+
         function cancelActiveGeneration() {
             if (!generationUiActive) return;
             const cancellingJobId = activeGenerationJobId;
+            const queuedIds = queuedGenerationJobIds.filter(id => id && id !== cancellingJobId);
             generationCancelRequested = true;
             activeGenerationJobId = null;
+            queuedGenerationJobIds = [];
             setGenerationProgress(100, 'Cancelling generation...', cancellingJobId ? `Job ${cancellingJobId}` : 'Waiting for backend job id.');
             syncGenerationActionUi();
             if (cancellingJobId) {
                 requestGenerationCancel(cancellingJobId)
                     .catch(error => showToast("Cancel Failed", error.message.slice(0, 140)));
             }
+            queuedIds.forEach(jobId => requestGenerationCancel(jobId).catch(() => {}));
             showToast("Generation Cancelled", "Generation process was cancelled by user.");
+        }
+
+        async function queueGeneration() {
+            if (currentActivity === 'extras') {
+                showToast("Queue Unavailable", "Extras processing runs outside the generation queue.");
+                return;
+            }
+            if (!backendOnline) {
+                showToast("Backend Offline", "Queue requires the Nexus backend.");
+                initializeBackendBridge();
+                return;
+            }
+            const payload = collectGenerationPayload();
+            try {
+                const job = await startGenerationJob(payload);
+                showToast("Queued", `Job ${job.job_id} added to generation queue.`);
+                if (!generationUiActive) {
+                    generationCancelRequested = false;
+                    setGenerationUiActive(true);
+                    setGenerationProgress(job.progress || 1, job.message || 'Queued generation.', `Job ${job.job_id}`);
+                    pollGenerationJob(job.job_id, payload)
+                        .then(response => {
+                            showToast("Generation Complete", response.message || "Output generated by Nexus backend.");
+                        })
+                        .catch(error => {
+                            if (!/cancelled/i.test(error.message || '')) showToast("Generation Failed", error.message.slice(0, 180));
+                        })
+                        .finally(() => {
+                            activeGenerationJobId = null;
+                            queuedGenerationJobIds = queuedGenerationJobIds.filter(id => id !== job.job_id);
+                            setGenerationUiActive(false);
+                        });
+                }
+            } catch (error) {
+                showToast("Queue Failed", error.message.slice(0, 180));
+            }
         }
 
         // Generate through the embedded backend when available, with a UI-only fallback.
@@ -14888,10 +15081,7 @@
                     return;
                 }
                 try {
-                    const job = await nexusFetch('/generate/start', {
-                        method: 'POST',
-                        body: JSON.stringify(payload)
-                    });
+                    const job = await startGenerationJob(payload);
                     if (generationCancelRequested) {
                         await requestGenerationCancel(job.job_id);
                         throw new Error('Generation cancelled.');
@@ -14904,7 +15094,9 @@
                         showToast("Generation Failed", error.message.slice(0, 180));
                     }
                 } finally {
+                    const finishedJobId = activeGenerationJobId;
                     activeGenerationJobId = null;
+                    queuedGenerationJobIds = queuedGenerationJobIds.filter(id => id !== finishedJobId);
                     setGenerationUiActive(false);
                 }
             } else {
@@ -15413,7 +15605,7 @@
         applyModelProfile(activePreset, false);
         updateRangeLabel('steps');
         updateRangeLabel('cfg');
-        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraStrength', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
+        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
             const element = document.getElementById(id);
             if (element) element.addEventListener('input', updateWorkflowPreview);
             if (element) element.addEventListener('change', () => {

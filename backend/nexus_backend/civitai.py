@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,6 +19,7 @@ API_HOSTS = ("https://civitai.red", "https://civitai.com")
 
 
 def search_civitai_models(
+    settings: NexusSettings | None = None,
     query: str = "",
     token: str | None = None,
     types: str = "",
@@ -51,7 +54,7 @@ def search_civitai_models(
             data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(params)}", token)
             items = data.get("items") or []
     return {
-        "items": [_normalize_model_item(item) for item in items if isinstance(item, dict)],
+        "items": [_normalize_model_item(item, settings=settings) for item in items if isinstance(item, dict)],
         "metadata": data.get("metadata") or {},
     }
 
@@ -83,7 +86,7 @@ def resolve_civitai_asset(settings: NexusSettings, url: str, token: str | None =
     base_model = version.get("baseModel") or ""
     target_kind = _target_kind(model.get("type"), file_info.get("name", ""), target_kind)
     target_preset = _preset_from_base_model(base_model, preset)
-    return {
+    resolved = {
         "model_id": model.get("id") or version.get("modelId"),
         "model_name": model.get("name") or "Civitai model",
         "model_type": model.get("type") or "Unknown",
@@ -104,9 +107,10 @@ def resolve_civitai_asset(settings: NexusSettings, url: str, token: str | None =
         "creator": (model.get("creator") or {}).get("username") if isinstance(model.get("creator"), dict) else "",
         "stats": model.get("stats") or {},
     }
+    return _with_installed_state(resolved, settings)
 
 
-def _normalize_model_item(item: dict[str, Any]) -> dict[str, Any]:
+def _normalize_model_item(item: dict[str, Any], settings: NexusSettings | None = None) -> dict[str, Any]:
     versions = item.get("modelVersions") or []
     normalized_versions: list[dict[str, Any]] = []
     for version in versions[:6]:
@@ -114,8 +118,7 @@ def _normalize_model_item(item: dict[str, Any]) -> dict[str, Any]:
             continue
         primary = _primary_file(version)
         version_id = version.get("id")
-        normalized_versions.append(
-            {
+        version_data = {
                 "id": version_id,
                 "name": version.get("name") or "",
                 "base_model": version.get("baseModel") or "",
@@ -127,12 +130,16 @@ def _normalize_model_item(item: dict[str, Any]) -> dict[str, Any]:
                 "previews": _preview_media(version),
                 "description": version.get("description") or "",
                 "url": f"https://civitai.red/models/{item.get('id')}?modelVersionId={version_id}" if version_id else f"https://civitai.red/models/{item.get('id')}",
-            }
-        )
+        }
+        if settings:
+            kind = _target_kind(item.get("type"), str(version_data.get("file_name") or ""), "auto")
+            target_preset = _preset_from_base_model(version_data.get("base_model"))
+            version_data = _with_installed_state({**version_data, "model_type": item.get("type"), "target_folder": str(_target_dir(settings, kind, target_preset))}, settings)
+        normalized_versions.append(version_data)
     preview = ""
     if normalized_versions:
         preview = normalized_versions[0].get("preview", "")
-    return {
+    normalized = {
         "id": item.get("id"),
         "name": item.get("name") or "Civitai model",
         "type": item.get("type") or "Unknown",
@@ -146,6 +153,11 @@ def _normalize_model_item(item: dict[str, Any]) -> dict[str, Any]:
         "preview": preview,
         "url": f"https://civitai.red/models/{item.get('id')}",
     }
+    if normalized_versions and normalized_versions[0].get("installed"):
+        normalized["installed"] = True
+        normalized["relative_path"] = normalized_versions[0].get("relative_path", "")
+        normalized["path"] = normalized_versions[0].get("path", "")
+    return normalized
 
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -166,7 +178,9 @@ def download_civitai_asset(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     filename = _safe_filename(str(resolved["file_name"]))
-    target = _unique_path(target_dir / filename)
+    target = target_dir / filename
+    if target.exists() and target.stat().st_size > 0:
+        return _with_installed_state({**resolved, "target_kind": kind, "path": str(target), "relative_path": _safe_relative(target, settings.project_root)}, settings)
     download_url = str(resolved["download_url"])
     if progress_callback:
         progress_callback(
@@ -183,12 +197,17 @@ def download_civitai_asset(
 
     preview_path = None
     if save_preview and resolved.get("preview"):
-        suffix = Path(str(urllib.parse.urlparse(str(resolved["preview"])).path)).suffix or ".png"
-        preview_path = _unique_path(target.with_suffix(target.suffix + f".preview{suffix}"))
+        preview_url = str(resolved["preview"])
+        preview_is_video = any(item.get("type") == "video" and item.get("url") == preview_url for item in resolved.get("previews") or [])
+        suffix = ".jpg" if preview_is_video else (Path(str(urllib.parse.urlparse(preview_url).path)).suffix or ".png")
+        preview_path = target.with_suffix(target.suffix + f".preview{suffix}")
         try:
             if progress_callback:
                 progress_callback({"status": "saving_preview", "progress": 100, "message": "Saving preview"})
-            _download_file(str(resolved["preview"]), preview_path, token=None)
+            if preview_is_video and _save_video_first_frame(preview_url, preview_path):
+                pass
+            else:
+                _download_file(preview_url, preview_path, token=None)
         except Exception:
             preview_path = None
 
@@ -199,6 +218,8 @@ def download_civitai_asset(
         "relative_path": _safe_relative(target, settings.project_root),
         "preview_path": str(preview_path) if preview_path else "",
         "preview_relative_path": _safe_relative(preview_path, settings.project_root) if preview_path else "",
+        "installed": True,
+        "already_downloaded": True,
     }
 
 
@@ -374,7 +395,9 @@ def _primary_file(version: dict[str, Any]) -> dict[str, Any]:
 
 def _preview_url(version: dict[str, Any]) -> str:
     images = version.get("images") or []
-    return str(images[0].get("url") or "") if images else ""
+    preferred = next((item for item in images if isinstance(item, dict) and "video" not in str(item.get("mimeType") or item.get("type") or "").lower()), None)
+    source = preferred or (images[0] if images else {})
+    return str(source.get("url") or "") if isinstance(source, dict) else ""
 
 
 def _preview_media(version: dict[str, Any]) -> list[dict[str, Any]]:
@@ -392,6 +415,8 @@ def _preview_media(version: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "url": url,
                 "type": media_type,
+                "thumbnailUrl": image.get("thumbnailUrl") or image.get("thumbUrl") or image.get("url"),
+                "lowResUrl": image.get("lowResUrl") or image.get("url"),
                 "nsfw": image.get("nsfw") or image.get("needsReview"),
                 "width": image.get("width"),
                 "height": image.get("height"),
@@ -483,6 +508,53 @@ def _preset_folder(preset: str | None) -> str:
 def _safe_filename(value: str) -> str:
     name = Path(value).name
     return re.sub(r"[^a-zA-Z0-9._ -]+", "_", name).strip(" ._") or "civitai_asset.safetensors"
+
+
+def _with_installed_state(data: dict[str, Any], settings: NexusSettings) -> dict[str, Any]:
+    filename = _safe_filename(str(data.get("file_name") or ""))
+    target_folder = Path(str(data.get("target_folder") or ""))
+    if not filename or not target_folder:
+        return data
+    target = target_folder / filename
+    if target.exists() and target.is_file():
+        return {
+            **data,
+            "installed": True,
+            "downloaded": True,
+            "already_downloaded": True,
+            "exists": True,
+            "path": str(target),
+            "relative_path": _safe_relative(target, settings.project_root),
+            "installed_path": _safe_relative(target, settings.project_root),
+        }
+    return data
+
+
+def _save_video_first_frame(url: str, target: Path) -> bool:
+    if not shutil.which("ffmpeg"):
+        return False
+    urls = _download_candidates(url, None)
+    for candidate in urls:
+        tmp = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(urllib.parse.urlparse(candidate).path).suffix or ".mp4") as handle:
+                tmp = Path(handle.name)
+            _download_file(candidate, tmp, token=None)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(tmp), "-frames:v", "1", "-q:v", "3", str(target)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+            return target.exists() and target.stat().st_size > 0
+        except Exception:
+            if target.exists():
+                target.unlink(missing_ok=True)
+        finally:
+            if tmp and tmp.exists():
+                tmp.unlink(missing_ok=True)
+    return False
 
 
 def _unique_path(path: Path) -> Path:

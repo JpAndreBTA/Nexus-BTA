@@ -18,6 +18,7 @@
   const downloadJobs = new Map();
   const lazyPageSize = 10;
   let modalVideoObserver = null;
+  let tileVideoObserver = null;
 
   function el(id) {
     return document.getElementById(id);
@@ -238,8 +239,7 @@
       preview?.url,
     ].filter(Boolean);
     const videoCandidates = candidates.filter((candidate) => mediaType(candidate) === "video");
-    const url = String(videoCandidates[0] || preview?.url || "");
-    return url.replace(/\/width=\d+\//i, "/width=450/");
+    return String(videoCandidates[0] || preview?.url || "");
   }
 
   function mediaUrl(preview) {
@@ -252,7 +252,7 @@
     const url = mediaUrl(preview);
     if (!url) return `<div class="${className} flex items-center justify-center text-nexus-muted"><i class="fa-regular fa-image text-2xl"></i></div>`;
     if ((preview?.type || mediaType(url)) === "video") {
-      return `<video src="${html(url)}" preload="none" muted loop playsinline class="${className} object-cover"></video>`;
+      return `<video data-src="${html(url)}" preload="none" muted loop playsinline poster="${html(preview?.thumbnailUrl || preview?.thumbUrl || preview?.url || "")}" class="${className} object-cover"></video>`;
     }
     return `<img src="${html(url)}" loading="lazy" decoding="async" alt="${html(alt)}" class="${className} object-cover">`;
   }
@@ -282,6 +282,25 @@
       video.play().catch(() => {});
     }, { threshold: [0, 0.6, 1] });
     modalVideoObserver.observe(video);
+  }
+
+  function wireTileVideoLazyload() {
+    if (tileVideoObserver) tileVideoObserver.disconnect();
+    const root = explorerScroller();
+    const videos = [...document.querySelectorAll("#civitaiResultPanel video[data-src]")].slice(0, lazyPageSize);
+    tileVideoObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const video = entry.target;
+        const visible = entry.isIntersecting && entry.intersectionRatio >= 0.55;
+        if (visible) {
+          if (!video.src) video.src = video.dataset.src || "";
+          video.play().catch(() => {});
+        } else {
+          video.pause();
+        }
+      });
+    }, { root, threshold: [0, 0.55, 1] });
+    videos.forEach((video) => tileVideoObserver.observe(video));
   }
 
   function mediaIsMature(preview, owner) {
@@ -351,7 +370,7 @@
     stage.innerHTML = `
       <div class="relative max-w-full max-h-full overflow-hidden border border-nexus-border bg-black">
         ${isVideo
-          ? `<video src="${html(url)}" controls muted playsinline class="max-w-full max-h-[76vh] object-contain ${blurClass}"></video>`
+          ? `<video src="${html(url)}" controls muted playsinline preload="metadata" poster="${html(preview?.thumbnailUrl || preview?.thumbUrl || "")}" class="max-w-full max-h-[76vh] object-contain ${blurClass}"></video>`
           : `<img src="${html(url)}" alt="Civitai preview" class="max-w-full max-h-[76vh] object-contain ${blurClass}">`}
         ${mature && blurMature ? `<span class="absolute top-3 left-3 bg-yellow-400 text-black text-[9px] font-bold px-2 py-1 uppercase">Mature preview blurred</span>` : ""}
       </div>
@@ -592,6 +611,7 @@
       ${searchCursor ? `<div class="py-6 flex items-center justify-center gap-2 text-nexus-muted font-mono text-[10px]"><i class="fa-solid fa-spinner text-nexus-red"></i> Lazy loading more models as you scroll...</div>` : ""}
     `;
     if (append) scrollExplorerTo(scrollTopBeforeRender);
+    wireTileVideoLazyload();
   }
 
   async function resolve() {

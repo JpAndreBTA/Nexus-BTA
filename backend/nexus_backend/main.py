@@ -77,6 +77,7 @@ download_jobs: dict[str, dict[str, Any]] = {}
 train_lora_jobs: dict[str, dict[str, Any]] = {}
 generation_lock = asyncio.Lock()
 comfy_idle_task: asyncio.Task[None] | None = None
+last_generation_model_signature: tuple[str, str] | None = None
 _birefnet_cache: dict[str, Any] = {}
 _frame_interpolation_cache: dict[str, Any] = {}
 
@@ -2876,6 +2877,7 @@ async def civitai_resolve(request: CivitaiResolveRequest) -> dict[str, Any]:
 async def civitai_search(request: CivitaiSearchRequest) -> dict[str, Any]:
     try:
         return search_civitai_models(
+            settings=settings,
             query=request.query,
             token=request.token,
             types=request.types,
@@ -3130,6 +3132,7 @@ async def extras_status(job_id: str) -> dict[str, Any]:
 
 
 async def _run_generation_core(request: GenerateRequest, job_id: str | None = None) -> GenerateResponse:
+    global last_generation_model_signature
     if not settings.runtime.auto_start_comfy and not await comfy.is_running():
         raise HTTPException(status_code=503, detail="ComfyUI runtime is not running.")
 
@@ -3146,6 +3149,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if job_id:
             _update_generation_job(job_id, {"status": "preparing", "progress": 4, "message": "Resolving generation assets"})
         assets = resolve_generation_assets(settings, request)
+        if request.preset.lower() == "ltx" and float(request.cfg or 0) == 7.0:
+            request.cfg = 1.0
         _ensure_ltx_default_distilled_loras(request, assets)
         _ensure_wan_4step_loras(request, assets)
         _ensure_qwen_edit_lightning_lora(request, assets)
@@ -3191,6 +3196,15 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             assets["controlnet_image"] = controlnet_image_name
         if assets.get("primary_model") and not request.model_name:
             request.model_name = assets["primary_model"]
+        model_signature = (
+            request.preset.lower(),
+            str(assets.get("primary_model") or request.model_name or request.model_path or request.template or ""),
+        )
+        if last_generation_model_signature and model_signature != last_generation_model_signature and await comfy.is_running():
+            if job_id:
+                _update_generation_job(job_id, {"status": "preparing", "progress": 6, "message": "Clearing previous model from VRAM"}, force=True)
+            await comfy.free_memory(unload_models=True, free_memory=True)
+        last_generation_model_signature = model_signature
         workflow_path = workflow_registry.find(request.workflow_id, request.preset)
         if request.preset.lower() == "ltx" and not request.workflow_id:
             workflow_path = None

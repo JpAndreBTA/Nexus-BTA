@@ -2552,9 +2552,12 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
     )
     transition_auto = transition_enabled is True or (transition_enabled is None and has_end_frame)
     if request.preset.lower() == "ltx" and transition_auto:
-        raw_name = video_options.get("transition_lora") or LTX_TRANSITION_LORA_NAME
-        strength = _number_or_none(video_options.get("transition_lora_strength")) or LTX_TRANSITION_DEFAULT_STRENGTH
-        append_selection(str(raw_name), float(strength), 0.0)
+        raw_name = str(video_options.get("transition_lora") or "").strip()
+        if raw_name.lower() in {"", "automatic", "auto"}:
+            raw_name = LTX_TRANSITION_LORA_NAME
+        if raw_name.lower() not in {"none", "off", "disabled"}:
+            strength = _number_or_none(video_options.get("transition_lora_strength")) or LTX_TRANSITION_DEFAULT_STRENGTH
+            append_selection(raw_name, float(strength), 0.0)
     return selections
 
 
@@ -2739,7 +2742,7 @@ def build_basic_ltx_img2video_workflow(
         active_audio = active_audio.lower() not in {"false", "0", "off", "none", "no"}
     active_audio = bool(active_audio and audio_vae_name)
     has_end_reference = bool((reference_end_image_name or "").strip())
-    if transition_lora_name and not video_options.get("transition_lora"):
+    if transition_lora_name and str(video_options.get("transition_lora") or "").strip().lower() in {"", "automatic", "auto"}:
         video_options = dict(video_options)
         video_options["transition_lora"] = transition_lora_name
         request.video = video_options
