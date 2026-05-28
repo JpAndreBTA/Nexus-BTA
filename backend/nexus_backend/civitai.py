@@ -31,6 +31,7 @@ def search_civitai_models(
     cursor: str | None = None,
 ) -> dict[str, Any]:
     query = _normalize_search_query(query)
+    base_model = _civitai_base_model(base_model)
     params: dict[str, Any] = {
         "limit": max(1, min(int(limit or 24), 100)),
         "sort": sort or "Newest",
@@ -48,11 +49,17 @@ def search_civitai_models(
     data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(params)}", token)
     items = data.get("items") or []
     if query and not items:
-        fallback_query = _fallback_search_query(query)
-        if fallback_query and fallback_query != query:
-            params["query"] = fallback_query
-            data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(params)}", token)
+        for fallback_params in _fallback_search_params(query, params):
+            data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(fallback_params)}", token)
             items = data.get("items") or []
+            if items:
+                break
+    if not items and (types or base_model):
+        for relaxed_params in _relaxed_search_params(params):
+            data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(relaxed_params)}", token)
+            items = data.get("items") or []
+            if items:
+                break
     return {
         "items": [_normalize_model_item(item, settings=settings) for item in items if isinstance(item, dict)],
         "metadata": data.get("metadata") or {},
@@ -65,6 +72,51 @@ def _normalize_search_query(value: str) -> str:
 
 def _fallback_search_query(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[_#,;:]+", " ", value)).strip()
+
+
+def _fallback_search_params(query: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+    fallbacks: list[dict[str, Any]] = []
+    fallback_query = _fallback_search_query(query)
+    if fallback_query and fallback_query != query:
+        fallbacks.append({**params, "query": fallback_query})
+    tag = fallback_query or query
+    if tag:
+        normalized_tag = re.sub(r"\s+", "-", tag.strip().lstrip("#"))
+        for candidate in dict.fromkeys((tag, normalized_tag)):
+            if candidate:
+                fallback = {key: value for key, value in params.items() if key != "query"}
+                fallback["tag"] = candidate
+                fallbacks.append(fallback)
+    return fallbacks
+
+
+def _relaxed_search_params(params: dict[str, Any]) -> list[dict[str, Any]]:
+    fallbacks: list[dict[str, Any]] = []
+    if params.get("baseModels"):
+        fallbacks.append({key: value for key, value in params.items() if key != "baseModels"})
+    return fallbacks
+
+
+def _civitai_base_model(value: Any) -> str:
+    raw = str(value or "").strip()
+    normalized = re.sub(r"[^a-z0-9]+", "", raw.lower())
+    aliases = {
+        "sd": "SD 1.5",
+        "sd15": "SD 1.5",
+        "sdxl": "SDXL 1.0",
+        "flux": "Flux.1 D",
+        "qwen": "Qwen",
+        "qwenimage": "Qwen Image",
+        "zimageturbo": "ZImageTurbo",
+        "zimage": "ZImageBase",
+        "zimagebase": "ZImageBase",
+        "zimg": "ZImageTurbo",
+        "wan": "WAN 2.2",
+        "wan22": "WAN 2.2",
+        "ltx": "LTXV 2.3",
+        "ltx23": "LTXV 2.3",
+    }
+    return aliases.get(normalized, raw)
 
 
 def resolve_civitai_asset(settings: NexusSettings, url: str, token: str | None = None, target_kind: str = "auto", preset: str | None = None) -> dict[str, Any]:
@@ -403,7 +455,17 @@ def _preview_url(version: dict[str, Any]) -> str:
     images = version.get("images") or []
     preferred = next((item for item in images if isinstance(item, dict) and "video" not in str(item.get("mimeType") or item.get("type") or "").lower()), None)
     source = preferred or (images[0] if images else {})
-    return str(source.get("url") or "") if isinstance(source, dict) else ""
+    if not isinstance(source, dict):
+        return ""
+    return str(
+        source.get("thumbnailUrl")
+        or source.get("thumbUrl")
+        or source.get("imageUrl")
+        or source.get("lowResUrl")
+        or source.get("previewUrl")
+        or source.get("url")
+        or ""
+    )
 
 
 def _preview_media(version: dict[str, Any]) -> list[dict[str, Any]]:
@@ -418,10 +480,13 @@ def _preview_media(version: dict[str, Any]) -> list[dict[str, Any]]:
         lower_url = url.lower()
         video = image.get("video") if isinstance(image.get("video"), dict) else {}
         video_url = str(
-            image.get("videoUrl")
+            image.get("lowResVideoUrl")
+            or image.get("lowresVideoUrl")
+            or video.get("lowResUrl")
+            or video.get("lowresUrl")
+            or image.get("videoUrl")
             or image.get("video_url")
             or video.get("url")
-            or video.get("lowResUrl")
             or ""
         )
         media_type = "video" if video_url or "video" in mime or lower_url.endswith((".mp4", ".webm", ".mov")) else "image"
@@ -430,6 +495,7 @@ def _preview_media(version: dict[str, Any]) -> list[dict[str, Any]]:
             or image.get("thumbUrl")
             or image.get("imageUrl")
             or image.get("lowResUrl")
+            or image.get("previewUrl")
             or (url if not lower_url.endswith((".mp4", ".webm", ".mov")) else "")
         )
         previews.append(

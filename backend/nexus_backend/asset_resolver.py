@@ -66,19 +66,20 @@ def _resolve_controlnet(by_category: dict[str, list[ModelFile]], request: Genera
         if not model:
             return {}
         return {"controlnet_model": _comfy_name(model), "ic_lora": _comfy_name(model)}
-    if preset not in {"sd", "sd15", "xl", "sdxl"}:
+    if preset not in {"sd", "sd15", "xl", "sdxl", "flux", "qwen", "zimageturbo", "zimage"}:
         return {}
     selected = _selected_model_choice(by_category, control.model)
-    if selected and selected.category != "controlnet":
+    controlnet_categories = {"controlnet", "model_patches"}
+    if selected and selected.category not in controlnet_categories:
         selected = None
     control_type = str(control.type or "").lower()
-    candidates = by_category.get("controlnet", [])
+    candidates = [*by_category.get("controlnet", []), *by_category.get("model_patches", [])]
     model = selected
     if not model:
         model = _first_controlnet(candidates, preset, control_type)
     if not model:
         return {}
-    return {"controlnet_model": _comfy_name(model)}
+    return {"controlnet_model": _comfy_name(model), "controlnet_category": model.category}
 
 
 def _resolve_sd_family(
@@ -104,7 +105,16 @@ def _resolve_sd_family(
 
 
 def _first_controlnet(items: list[ModelFile], preset: str, control_type: str) -> ModelFile | None:
-    preset_tokens = ["sdxl", "xl"] if preset in {"xl", "sdxl"} else ["sd15", "sd1", "v11", "1.5"]
+    if preset in {"xl", "sdxl"}:
+        preset_tokens = ["sdxl", "xl"]
+    elif preset == "qwen":
+        preset_tokens = ["qwen", "qwen-image"]
+    elif preset in {"zimageturbo", "zimage"}:
+        preset_tokens = ["z-image", "zimage", "z_image"]
+    elif preset == "flux":
+        preset_tokens = ["flux", "flux.1", "flux1"]
+    else:
+        preset_tokens = ["sd15", "sd1", "v11", "1.5"]
     type_tokens = {
         "openpose": ["openpose", "pose"],
         "pose": ["openpose", "pose"],
@@ -112,13 +122,26 @@ def _first_controlnet(items: list[ModelFile], preset: str, control_type: str) ->
         "canny": ["canny"],
         "lineart": ["lineart", "line"],
         "tile": ["tile"],
+        "softedge": ["softedge", "soft", "hed"],
+        "normal": ["normal"],
     }.get(control_type, [control_type] if control_type else [])
     scored: list[tuple[int, str, ModelFile]] = []
     for item in items:
         haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
-        if not any(token in haystack for token in preset_tokens):
+        if preset == "qwen" and ("qwen" not in haystack and "instantx" not in haystack and "diffsynth" not in haystack):
             continue
-        if type_tokens and not any(token in haystack for token in type_tokens):
+        if preset in {"zimageturbo", "zimage"} and not any(token in haystack for token in preset_tokens + ["fun", "controlnet-union"]):
+            continue
+        if preset not in {"qwen", "zimageturbo", "zimage"} and not any(token in haystack for token in preset_tokens):
+            continue
+        union_model = (
+            preset == "qwen" and ("union" in haystack or "instantx" in haystack)
+        ) or (
+            preset in {"zimageturbo", "zimage"} and ("union" in haystack or "fun" in haystack)
+        ) or (
+            preset == "flux" and ("union" in haystack or "shakker" in haystack)
+        )
+        if type_tokens and not union_model and not any(token in haystack for token in type_tokens):
             continue
         scored.append((len(item.name), item.name.lower(), item))
     if not scored:
@@ -317,9 +340,12 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, re
         selected_control_lora
         if selected_control_lora and "ic" in " ".join([selected_control_lora.name, selected_control_lora.folder, selected_control_lora.relative_path]).lower()
         else None
-    ) or _first_ltx_lora(by_category, [["ic-lora", "union"], ["union", "control"], ["ltx_ic", "union"], ["ic-lora", "control"], ["ic-lora", "cameraman"], ["ic", "lora"]])
+    ) or _first_ltx_lora(by_category, [["ltx_ic", "union"], ["ic-lora", "union"], ["union", "control"], ["ltx_ic", "control"], ["ic-lora", "control"]])
     if ic_lora:
         assets["ic_lora"] = _comfy_name(ic_lora)
+    cameraman_lora = _first_ltx_lora(by_category, [["cameraman"], ["camera", "motion"]])
+    if cameraman_lora:
+        assets["cameraman_lora"] = _comfy_name(cameraman_lora)
     detailer_lora = _first_ltx_lora(by_category, [["detailer"], ["ic-lora", "detail"]])
     if detailer_lora:
         assets["detailer_lora"] = _comfy_name(detailer_lora)
@@ -610,12 +636,27 @@ def _find_name(by_category: dict[str, list[ModelFile]], name: str) -> ModelFile 
         return None
     lower = name.replace("/", "\\").lower()
     normalized_lower = _normalize_model_lookup(lower)
+    lookup_variants = {normalized_lower}
+    if "\\" not in normalized_lower and by_category.get("loras"):
+        lookup_variants.update(
+            {
+                f"loras\\{normalized_lower}",
+                f"loras\\ltx\\{normalized_lower}",
+                f"loras\\ltx_ic\\{normalized_lower}",
+            }
+        )
+    elif normalized_lower.startswith("ltx\\") or normalized_lower.startswith("ltx_ic\\"):
+        lookup_variants.add(f"loras\\{normalized_lower}")
+    elif normalized_lower.startswith("loras\\ltx\\"):
+        lookup_variants.add("loras\\ltx_ic\\" + normalized_lower.split("\\", 2)[2])
+    elif normalized_lower.startswith("loras\\ltx_ic\\"):
+        lookup_variants.add("loras\\ltx\\" + normalized_lower.split("\\", 2)[2])
     for items in by_category.values():
         for item in items:
             item_name = item.name.replace("/", "\\").lower()
             item_relative = item.relative_path.replace("/", "\\").lower()
             item_lookup = _normalize_model_lookup(item_relative)
-            if item_name == lower or item_relative == lower or item_lookup == normalized_lower:
+            if item_name == lower or item_relative == lower or item_lookup in lookup_variants:
                 return item
     return None
 
@@ -629,6 +670,14 @@ def _normalize_model_lookup(value: str) -> str:
         text = "loras\\ltx\\" + text.split("\\", 2)[2]
     if text.startswith("ltx2\\"):
         text = "ltx\\" + text.split("\\", 1)[1]
+    if text.startswith("loras\\") and text.count("\\") == 1:
+        filename = text.split("\\", 1)[1]
+        if any(token in filename for token in ("ic-lora", "ic_lora", "cameraman", "detailer", "union-control", "union_control")):
+            text = "loras\\ltx_ic\\" + filename
+    if text.startswith("ltx\\"):
+        filename = text.split("\\", 1)[1]
+        if any(token in filename for token in ("ic-lora", "ic_lora", "cameraman", "detailer", "union-control", "union_control")):
+            text = "ltx_ic\\" + filename
     return text
 
 

@@ -16,6 +16,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote, urlparse
+from urllib.request import Request, urlopen
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,6 +67,7 @@ from .workflows import (
     build_basic_zimage_turbo_workflow,
     convert_ui_to_api,
     detect_workflow_format,
+    ensure_inpaint_engine_route,
     patch_workflow,
 )
 
@@ -91,6 +93,45 @@ ANSI = {
     "magenta": "\033[95m",
     "cyan": "\033[96m",
     "white": "\033[97m",
+}
+
+LTX_HF_LORA_ARTIFACTS: dict[str, dict[str, str]] = {
+    "detailer": {
+        "label": "LTX IC-LoRA Detailer",
+        "filename": "ltx-2-19b-ic-lora-detailer.safetensors",
+        "url": "https://huggingface.co/Lightricks/LTX-2-19b-IC-LoRA-Detailer/resolve/main/ltx-2-19b-ic-lora-detailer.safetensors",
+    },
+    "cameraman": {
+        "label": "LTX 2.3 IC-LoRA Cameraman",
+        "filename": "LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors",
+        "url": "https://huggingface.co/Cseti/LTX2.3-22B_IC-LoRA-Cameraman_v1/resolve/main/LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors",
+    },
+    "denoise": {
+        "label": "FastDVDnet Video Denoise",
+        "filename": "fastdvdnet_model_clipped_noise.pth",
+        "url": "https://raw.githubusercontent.com/m-tassano/fastdvdnet/master/model_clipped_noise.pth",
+    },
+    "flashvsr": {
+        "label": "FlashVSR Video Upscale",
+        "filename": "Wan2_1-T2V-1_3B_FlashVSR_fp32.safetensors",
+        "url": "https://huggingface.co/1038lab/FlashVSR/resolve/main/Wan2_1-T2V-1_3B_FlashVSR_fp32.safetensors",
+    },
+    "seedvr2": {
+        "label": "SeedVR2 Video Restore",
+        "filename": "seedvr2_ema_3b_fp8_e4m3fn.safetensors",
+        "url": "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_3b_fp8_e4m3fn.safetensors",
+    },
+    "face_restore": {
+        "label": "GFPGAN Face Restoration",
+        "filename": "GFPGANv1.4.pth",
+        "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth",
+    },
+}
+
+EXTRAS_VIDEO_RESTORE_NODES: dict[str, tuple[str, ...]] = {
+    "flashvsr": ("ComfyUI-FlashVSR", "ComfyUI-FlashVSR_Ultra_Fast"),
+    "seedvr2": ("ComfyUI-SeedVR2_VideoUpscaler", "seedvr2_videoupscaler"),
+    "ltx_detailer": ("ComfyUI-LTXVideo",),
 }
 
 
@@ -658,7 +699,8 @@ def _prepare_ltx_motion_scaffold(reference_names: list[str], request: GenerateRe
     if request.preset.lower() != "ltx" or len(reference_names) < 2:
         return None
     video_options = request.video or {}
-    if str(video_options.get("ltx_start_end_mode") or "transition_lora").lower() in {"transition_lora", "flf_guides", "director_keyframe", "keyframe", "sequencer", "off"}:
+    start_end_mode = str(video_options.get("ltx_start_end_mode") or "flf_guides").lower()
+    if start_end_mode != "motion_scaffold":
         return None
     try:
         import cv2
@@ -784,12 +826,110 @@ def _prepare_ltx_director_frame_guides(request: GenerateRequest) -> list[dict[st
     return guides
 
 
+def _prepare_ltx_director_motion_transfer(request: GenerateRequest) -> str | None:
+    if request.preset.lower() != "ltx" or getattr(request, "workspace", "") != "director":
+        return None
+    director = request.director or {}
+    raw_timeline = director.get("timeline_data")
+    if not raw_timeline and director.get("timeline_data_json"):
+        try:
+            raw_timeline = json.loads(str(director.get("timeline_data_json") or "{}"))
+        except Exception:
+            raw_timeline = {}
+    if not isinstance(raw_timeline, dict):
+        return None
+    entries: list[dict[str, Any]] = []
+    for item in raw_timeline.get("motionTransfer") or []:
+        if isinstance(item, dict) and item.get("enabled"):
+            entries.append(item)
+    for segment in raw_timeline.get("segments") or []:
+        if not isinstance(segment, dict):
+            continue
+        motion = segment.get("motionTransfer")
+        if isinstance(motion, dict) and motion.get("enabled"):
+            merged = dict(motion)
+            merged.setdefault("start", segment.get("start", 0))
+            merged.setdefault("duration", segment.get("length") or segment.get("duration") or 0)
+            entries.append(merged)
+    if not entries:
+        return None
+    entry = next((item for item in entries if str(item.get("videoB64") or item.get("videoSrc") or "").strip()), entries[0])
+    video_value = str(entry.get("videoB64") or entry.get("videoSrc") or "").strip()
+    if not video_value:
+        return None
+    base_video = _prepare_video_value(video_value, "nexus_ltx_director_motion")
+    video_options = dict(request.video or {})
+    mode = str(entry.get("mode") or entry.get("control_mode") or video_options.get("motion_transfer_control_mode") or "pose").strip().lower()
+    video_options.update(
+        {
+            "motion_transfer_enabled": True,
+            "motion_transfer_mode": "ltx_ic_union",
+            "motion_transfer_control_mode": mode if mode in {"pose", "canny", "depth", "camera"} else "pose",
+            "motion_transfer_motion_strength": 1,
+            "motion_transfer_target_strength": float(entry.get("strength") or 1),
+            "ltx_ic_lora_strength": float(entry.get("strength") or 1),
+            "director_motion_transfer_segments": len(entries),
+            "director_motion_transfer_source": entry.get("video") or entry.get("videoFile") or "segment video reference",
+        }
+    )
+    if entry.get("sourceDuration") and not video_options.get("seconds"):
+        video_options["seconds"] = float(entry.get("sourceDuration") or 0)
+    request.video = video_options
+    request.img2img.base_video = str(settings.input_dir / base_video)
+    return base_video
+
+
 def _available_comfy_node(object_info: dict[str, Any], *names: str) -> str | None:
     available = set(object_info or {})
     for name in names:
         if name in available:
             return name
     return None
+
+
+def _inpaint_uses_lanpaint(request: GenerateRequest) -> bool:
+    if request.activity != "img2img" or "inpaint" not in request.img2img.mode.lower():
+        return False
+    return str(getattr(request.img2img, "inpaint_engine", "") or "").strip().lower() in {
+        "lanpaint",
+        "lan paint",
+        "lanpaint_ksampler",
+    }
+
+
+def _ensure_lanpaint_custom_node(request: GenerateRequest) -> bool:
+    if not _inpaint_uses_lanpaint(request):
+        return False
+    if (settings.custom_nodes_dir / "LanPaint").exists():
+        return False
+    installed, errors = install_custom_node_dependencies(
+        settings,
+        node_names=["https://github.com/scraed/LanPaint"],
+        all_enabled=False,
+    )
+    if errors:
+        detail = "; ".join(f"{name}: {error}" for name, error in errors.items())
+        raise ValueError(f"LanPaint custom node is required for LanPaint inpaint and could not be installed: {detail}")
+    if "LanPaint" not in installed and not (settings.custom_nodes_dir / "LanPaint").exists():
+        raise ValueError("LanPaint custom node is required for LanPaint inpaint and could not be installed.")
+    return True
+
+
+def _apply_inpaint_intent_prompt(request: GenerateRequest) -> None:
+    if request.activity != "img2img" or "inpaint" not in request.img2img.mode.lower():
+        return
+    intent = str(getattr(request.img2img, "inpaint_intent", "") or "").strip().lower()
+    if intent not in {"remove", "mixed"} and not getattr(request.img2img, "remove_mask_present", False):
+        return
+    guidance = (
+        "remove the green masked objects and reconstruct the background naturally, "
+        "no trace of the removed object, seamless clean inpainting"
+    )
+    negative = "remaining object, object silhouette, ghost object, duplicate object, mask outline, green marks"
+    if guidance.lower() not in (request.prompt or "").lower():
+        request.prompt = f"{request.prompt}, {guidance}" if request.prompt else guidance
+    if negative.lower() not in (request.negative_prompt or "").lower():
+        request.negative_prompt = f"{request.negative_prompt}, {negative}" if request.negative_prompt else negative
 
 
 def _prepare_reference_image(request: GenerateRequest) -> str | None:
@@ -1204,6 +1344,112 @@ def _apply_ltx_reference_frame_lock(
         if _lock_video_endpoint_frames(path, start_image, end_image):
             output.setdefault("metadata", {})
             output["ltx_frame_lock"] = True
+
+
+def _normalize_ltx_start_end_motion(
+    outputs: list[dict[str, Any]],
+    request: GenerateRequest,
+    reference_image_names: list[str],
+) -> None:
+    if request.preset.lower() != "ltx" or len(reference_image_names) < 2:
+        return
+    video_options = request.video or {}
+    if _truthy(video_options.get("motion_transfer_enabled")):
+        return
+    if str(video_options.get("ltx_start_end_mode") or "flf_guides").lower() == "motion_scaffold":
+        return
+    if str(video_options.get("ltx_temporal_normalize") or "true").lower() in {"false", "0", "off", "no", "disabled"}:
+        return
+    ffmpeg = _ffmpeg_binary()
+    if not ffmpeg:
+        return
+    try:
+        from PIL import Image
+        import numpy as np
+    except Exception:
+        return
+    fps = max(1.0, min(120.0, float(_number_or_none(video_options.get("fps")) or 24.0)))
+    target_frames = int(round(_number_or_none(video_options.get("frames")) or 0))
+    if target_frames <= 1:
+        seconds = max(0.25, float(_number_or_none(video_options.get("seconds") or video_options.get("duration")) or 1.0))
+        target_frames = int(round(seconds * fps)) + 1
+    duration = max(0.1, target_frames / fps)
+
+    for output in outputs:
+        path = _safe_output_media_path(output)
+        if not path or path.suffix.lower() not in {".mp4", ".webm", ".mkv", ".mov", ".avi"}:
+            continue
+        temp_root = settings.temp_dir / f"ltx_temporal_normalize_{uuid.uuid4().hex[:8]}"
+        frames_dir = temp_root / "frames"
+        active_dir = temp_root / "active"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        active_dir.mkdir(parents=True, exist_ok=True)
+        normalized_video = temp_root / "normalized.mp4"
+        try:
+            extract = [ffmpeg, "-y", "-v", "error", "-i", str(path), str(frames_dir / "frame_%06d.png")]
+            if subprocess.run(extract, capture_output=True, text=True).returncode != 0:
+                continue
+            frames = sorted(frames_dir.glob("frame_*.png"))
+            if len(frames) < 6:
+                continue
+            lumas = []
+            for frame in frames:
+                arr = np.asarray(Image.open(frame).convert("L").resize((128, 128)), dtype=np.float32)
+                lumas.append(arr)
+            stack = np.stack(lumas)
+            deltas = np.abs(np.diff(stack, axis=0)).mean(axis=(1, 2))
+            repeat_fraction = float((deltas < 0.65).mean())
+            if repeat_fraction < 0.20:
+                continue
+            from_start = np.abs(stack - stack[0]).mean(axis=(1, 2))
+            final_delta = max(float(from_start[-1]), 1.0)
+            active_end = len(frames) - 1
+            for index in range(2, len(frames)):
+                tail = deltas[index:]
+                if from_start[index] >= final_delta * 0.88 and len(tail) and float((tail < 1.0).mean()) >= 0.45:
+                    active_end = index
+                    break
+            if active_end < 3 or active_end >= len(frames) - 2:
+                continue
+            active_frames = frames[: active_end + 1]
+            for index, frame in enumerate(active_frames, start=1):
+                shutil.copy2(frame, active_dir / f"frame_{index:06d}.png")
+            source_rate = max(1.0, (len(active_frames) - 1) / duration)
+            filter_expr = (
+                f"minterpolate=fps={fps:.6f}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,"
+                f"fps={fps:.6f},"
+                f"tpad=stop_mode=clone:stop_duration={duration:.6f},"
+                f"trim=end_frame={target_frames},"
+                f"setpts=N/({fps:.6f}*TB)"
+            )
+            command = [
+                ffmpeg,
+                "-y",
+                "-v",
+                "error",
+                "-framerate",
+                f"{source_rate:.6f}",
+                "-i",
+                str(active_dir / "frame_%06d.png"),
+                "-vf",
+                filter_expr,
+                "-frames:v",
+                str(target_frames),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-crf",
+                "16",
+                str(normalized_video),
+            ]
+            if subprocess.run(command, capture_output=True, text=True).returncode != 0 or not normalized_video.exists():
+                continue
+            shutil.move(str(normalized_video), str(path))
+            output["ltx_temporal_normalized"] = True
+            output["ltx_temporal_active_frames"] = len(active_frames)
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
 
 
 def _output_slug(value: str, fallback: str = "generation") -> str:
@@ -1739,7 +1985,7 @@ def _remove_bg_image_model(image: Any, threshold: float = 0.45) -> tuple[Any, An
 
 
 def _process_extras_image(source: Path, plan: dict[str, Any], remove_bg: bool = False) -> list[dict[str, Any]]:
-    from PIL import Image
+    from PIL import Image, ImageEnhance, ImageFilter
 
     with Image.open(source) as image:
         working = image.convert("RGBA" if (plan.get("preserve_alpha") or remove_bg) else "RGB")
@@ -1752,6 +1998,13 @@ def _process_extras_image(source: Path, plan: dict[str, Any], remove_bg: bool = 
             if upscale_enabled:
                 target = _image_scale_size(working.width, working.height, plan)
                 working = working.resize(target, Image.Resampling.LANCZOS)
+            face_restore = plan.get("face_restore")
+            face_restore_enabled = bool(face_restore.get("enabled")) if isinstance(face_restore, dict) else bool(face_restore)
+            if face_restore_enabled:
+                if isinstance(face_restore, dict):
+                    face_restore["runtime"] = "pil_fallback"
+                working = ImageEnhance.Sharpness(working).enhance(1.08)
+                working = ImageEnhance.Contrast(working.filter(ImageFilter.UnsharpMask(radius=1.1, percent=55, threshold=4))).enhance(1.02)
 
         outputs: list[dict[str, Any]] = []
         if remove_bg and plan.get("remove_background", {}).get("output") == "mask" and mask is not None:
@@ -1803,6 +2056,28 @@ def _ffprobe_fps(source: Path) -> float:
         return value if value > 0 else 30.0
     except Exception:
         return 30.0
+
+
+def _ffprobe_duration(source: Path) -> float:
+    ffprobe = _ffprobe_binary()
+    if not ffprobe:
+        return 1.0
+    command = [
+        ffprobe,
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(source),
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        value = float((result.stdout or "").strip() or "0")
+        return value if value > 0 else 1.0
+    except Exception:
+        return 1.0
 
 
 def _prepare_sequence_input(files: list[Path]) -> tuple[Path, str]:
@@ -2112,11 +2387,46 @@ def _process_extras_video(source_files: list[Path], plan: dict[str, Any], remove
     filters: list[str] = []
     upscale = plan.get("upscale") or {}
     if upscale.get("enabled"):
+        engine = str(upscale.get("engine") or upscale.get("mode") or "standard").strip().lower()
+        if engine not in {"standard", "flashvsr", "seedvr2", "ltx_detailer"}:
+            engine = "standard"
         factor = 4 if str(upscale.get("scale") or "2x").startswith("4") else 2
+        if engine in {"flashvsr", "seedvr2", "ltx_detailer"}:
+            target = _ltx_hf_lora_installed_path(engine)
+            model_ready = target.exists() and target.stat().st_size > 1024 * 1024
+            custom_node_names = EXTRAS_VIDEO_RESTORE_NODES[engine]
+            node_ready = any((settings.custom_nodes_dir / name).exists() for name in custom_node_names)
+            upscale["runtime_engine"] = engine if model_ready and node_ready else "standard_fallback"
+            upscale["expected_nodes"] = list(custom_node_names)
+            upscale["node_ready"] = node_ready
+            if engine == "ltx_detailer":
+                upscale["detailer_lora"] = target.name if model_ready else "ltx-2-19b-ic-lora-detailer.safetensors"
+                upscale["controlnet"] = "Off"
+                upscale["image_bypass"] = True
+                upscale["workflow_reference"] = "LTX-2.3 Image + Audio + Video (IC-LoRA) to Video"
+            if not model_ready:
+                upscale["fallback_reason"] = "missing_model"
+            elif not node_ready:
+                upscale["fallback_reason"] = "missing_custom_node"
+        else:
+            upscale["runtime_engine"] = "standard"
         filters.append(f"scale=iw*{factor}:ih*{factor}:flags=lanczos")
     denoise = plan.get("denoise") or {}
     if denoise.get("enabled"):
-        filters.append("hqdn3d=1.5:1.5:6:6")
+        denoise_model = str(denoise.get("model") or "ffmpeg_hqdn3d").lower()
+        strength = max(0.0, min(1.0, float(_number_or_none(denoise.get("strength")) or 0.2)))
+        if "fastdvd" in denoise_model or "nlmeans" in denoise_model:
+            filters.append(f"nlmeans=s={max(1.0, 8.0 * strength):.3f}:p=7:r=15")
+        else:
+            spatial = max(0.1, 7.5 * strength)
+            temporal = max(0.1, 30.0 * strength)
+            filters.append(f"hqdn3d={spatial:.3f}:{spatial:.3f}:{temporal:.3f}:{temporal:.3f}")
+    face_restore = plan.get("face_restore") if isinstance(plan.get("face_restore"), dict) else {}
+    if face_restore.get("enabled"):
+        target = _ltx_hf_lora_installed_path("face_restore")
+        has_model = target.exists() and target.stat().st_size > 1024 * 1024
+        face_restore["runtime"] = "ffmpeg_fallback" if has_model else "ffmpeg_fallback_missing_model"
+        filters.append("unsharp=5:5:0.35:3:3:0.15")
     if plan.get("preserve_alpha"):
         filters.append("format=rgba")
 
@@ -3135,6 +3445,317 @@ async def runtime_capabilities() -> dict[str, Any]:
     return capabilities
 
 
+def _download_url_to_file(url: str, target: Path, job_id: str) -> dict[str, Any]:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_suffix(target.suffix + ".part")
+    downloaded = partial.stat().st_size if partial.exists() else 0
+    headers = {"User-Agent": "NexusBTA/1.0"}
+    if downloaded:
+        headers["Range"] = f"bytes={downloaded}-"
+    request = Request(url, headers=headers)
+    started = time.monotonic()
+    with urlopen(request, timeout=60) as response:
+        length_header = response.headers.get("Content-Length")
+        remaining = int(length_header) if length_header and str(length_header).isdigit() else 0
+        total = downloaded + remaining if remaining else 0
+        mode = "ab" if downloaded and response.status == 206 else "wb"
+        if mode == "wb":
+            downloaded = 0
+        last_emit = 0.0
+        with partial.open(mode + "") as handle:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                handle.write(chunk)
+                downloaded += len(chunk)
+                now = time.monotonic()
+                if now - last_emit >= 0.5:
+                    _update_download_job(
+                        job_id,
+                        {
+                            "status": "downloading",
+                            "bytes_downloaded": downloaded,
+                            "bytes_total": total,
+                            "progress": round((downloaded / total) * 100, 2) if total else None,
+                            "speed_bps": round(downloaded / max(0.001, now - started)),
+                            "message": f"Downloading {target.name}",
+                        },
+                    )
+                    last_emit = now
+    partial.replace(target)
+    return {
+        "status": "downloaded",
+        "filename": target.name,
+        "path": str(target),
+        "relative_path": str(target.relative_to(settings.project_root)),
+        "bytes_downloaded": target.stat().st_size,
+        "bytes_total": target.stat().st_size,
+        "progress": 100,
+    }
+
+
+def _ltx_hf_lora_artifact(kind: str) -> dict[str, str]:
+    normalized = kind.strip().lower()
+    if normalized == "ltx_detailer":
+        normalized = "detailer"
+    artifact = LTX_HF_LORA_ARTIFACTS.get(normalized)
+    if not artifact:
+        raise HTTPException(status_code=404, detail=f"Unknown LTX artifact: {kind}")
+    return artifact
+
+
+def _ltx_hf_lora_target(kind: str) -> Path:
+    artifact = _ltx_hf_lora_artifact(kind)
+    normalized = kind.strip().lower()
+    if normalized == "ltx_detailer":
+        normalized = "detailer"
+    if normalized == "denoise":
+        return settings.models_dir / "denoise_models" / artifact["filename"]
+    if normalized in {"flashvsr", "seedvr2"}:
+        folder = "FlashVSR" if normalized == "flashvsr" else "SeedVR2"
+        return settings.models_dir / "video_restore_models" / folder / artifact["filename"]
+    if normalized == "face_restore":
+        return settings.models_dir / "face_restore_models" / artifact["filename"]
+    return settings.models_dir / "loras" / "ltx_ic" / artifact["filename"]
+
+
+def _ltx_hf_lora_installed_path(kind: str) -> Path:
+    artifact = _ltx_hf_lora_artifact(kind)
+    filename = artifact["filename"]
+    normalized = kind.strip().lower()
+    if normalized == "ltx_detailer":
+        normalized = "detailer"
+    if normalized == "denoise":
+        candidates = (
+            settings.models_dir / "denoise_models" / filename,
+            settings.models_dir / "upscale_models" / filename,
+        )
+    elif normalized == "flashvsr":
+        candidates = (
+            settings.models_dir / "video_restore_models" / "FlashVSR" / filename,
+            settings.models_dir / "video_restore_models" / filename,
+            settings.models_dir / "FlashVSR" / filename,
+        )
+    elif normalized == "seedvr2":
+        candidates = (
+            settings.models_dir / "video_restore_models" / "SeedVR2" / filename,
+            settings.models_dir / "video_restore_models" / filename,
+            settings.models_dir / "SeedVR2" / filename,
+        )
+    elif normalized == "face_restore":
+        candidates = (
+            settings.models_dir / "face_restore_models" / filename,
+            settings.models_dir / "facerestore_models" / filename,
+            settings.models_dir / "GFPGAN" / filename,
+        )
+    else:
+        candidates = (
+            settings.models_dir / "loras" / "ltx_ic" / filename,
+            settings.models_dir / "loras" / "ltx" / filename,
+            settings.models_dir / "loras" / filename,
+        )
+    for candidate in candidates:
+        if candidate.exists() and candidate.stat().st_size > 1024 * 1024:
+            return candidate
+    return candidates[0]
+
+
+async def _run_ltx_hf_lora_download_job(job_id: str, kind: str) -> None:
+    try:
+        artifact = _ltx_hf_lora_artifact(kind)
+        target = _ltx_hf_lora_installed_path(kind)
+        if target.exists() and target.stat().st_size > 1024 * 1024:
+            result = {
+                "status": "downloaded",
+                "already_downloaded": True,
+                "filename": target.name,
+                "path": str(target),
+                "relative_path": str(target.relative_to(settings.project_root)),
+                "bytes_downloaded": target.stat().st_size,
+                "bytes_total": target.stat().st_size,
+                "progress": 100,
+            }
+        else:
+            _update_download_job(job_id, {"status": "downloading", "progress": 0, "message": f"Downloading {artifact['label']}"})
+            result = await asyncio.to_thread(_download_url_to_file, artifact["url"], target, job_id)
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {**result, "message": f"{artifact['label']} ready.", "completed_at": datetime.now().isoformat(timespec="seconds")})
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/ltx/detailer/status")
+async def ltx_detailer_status() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("detailer")
+    target = _ltx_hf_lora_installed_path("detailer")
+    installed = target.exists() and target.stat().st_size > 1024 * 1024
+    return {
+        "installed": installed,
+        "name": str(target.relative_to(settings.models_dir / "loras")).replace("/", "\\"),
+        "filename": artifact["filename"],
+        "path": str(target) if installed else "",
+        "url": artifact["url"],
+    }
+
+
+@app.post("/api/ltx/detailer/download/start")
+async def ltx_detailer_download_start() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("detailer")
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued LTX IC-LoRA Detailer download.",
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ltx_hf_lora_download_job(job_id, "detailer"))
+    return download_jobs[job_id]
+
+
+@app.get("/api/ltx/cameraman/status")
+async def ltx_cameraman_status() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("cameraman")
+    target = _ltx_hf_lora_installed_path("cameraman")
+    installed = target.exists() and target.stat().st_size > 1024 * 1024
+    return {
+        "installed": installed,
+        "name": str(target.relative_to(settings.models_dir / "loras")).replace("/", "\\"),
+        "filename": artifact["filename"],
+        "path": str(target) if installed else "",
+        "url": artifact["url"],
+    }
+
+
+@app.post("/api/ltx/cameraman/download/start")
+async def ltx_cameraman_download_start() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("cameraman")
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued LTX 2.3 IC-LoRA Cameraman download.",
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ltx_hf_lora_download_job(job_id, "cameraman"))
+    return download_jobs[job_id]
+
+
+@app.get("/api/extras/denoise/status")
+async def extras_denoise_status() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("denoise")
+    target = _ltx_hf_lora_installed_path("denoise")
+    installed = target.exists() and target.stat().st_size > 1024 * 1024
+    return {
+        "installed": installed,
+        "name": str(target.relative_to(settings.models_dir)).replace("/", "\\"),
+        "filename": artifact["filename"],
+        "path": str(target) if installed else "",
+        "url": artifact["url"],
+    }
+
+
+@app.post("/api/extras/denoise/download/start")
+async def extras_denoise_download_start() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("denoise")
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued FastDVDnet video denoise download.",
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ltx_hf_lora_download_job(job_id, "denoise"))
+    return download_jobs[job_id]
+
+
+@app.get("/api/extras/video-restore/{engine}/status")
+async def extras_video_restore_status(engine: str) -> dict[str, Any]:
+    normalized = engine.strip().lower()
+    if normalized not in {"flashvsr", "seedvr2", "ltx_detailer"}:
+        raise HTTPException(status_code=404, detail=f"Unknown video restore engine: {engine}")
+    artifact = _ltx_hf_lora_artifact(normalized)
+    target = _ltx_hf_lora_installed_path(normalized)
+    installed = target.exists() and target.stat().st_size > 1024 * 1024
+    expected_nodes = EXTRAS_VIDEO_RESTORE_NODES[normalized]
+    node_ready = any((settings.custom_nodes_dir / name).exists() for name in expected_nodes)
+    return {
+        "installed": installed,
+        "name": str(target.relative_to(settings.models_dir)).replace("/", "\\"),
+        "filename": artifact["filename"],
+        "path": str(target) if installed else "",
+        "url": artifact["url"],
+        "engine": normalized,
+        "node_ready": node_ready,
+        "expected_nodes": list(expected_nodes),
+    }
+
+
+@app.post("/api/extras/video-restore/{engine}/download/start")
+async def extras_video_restore_download_start(engine: str) -> dict[str, Any]:
+    normalized = engine.strip().lower()
+    if normalized not in {"flashvsr", "seedvr2", "ltx_detailer"}:
+        raise HTTPException(status_code=404, detail=f"Unknown video restore engine: {engine}")
+    artifact = _ltx_hf_lora_artifact(normalized)
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": f"Queued {artifact['label']} download.",
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ltx_hf_lora_download_job(job_id, normalized))
+    return download_jobs[job_id]
+
+
+@app.get("/api/extras/face-restore/status")
+async def extras_face_restore_status() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("face_restore")
+    target = _ltx_hf_lora_installed_path("face_restore")
+    installed = target.exists() and target.stat().st_size > 1024 * 1024
+    return {
+        "installed": installed,
+        "name": str(target.relative_to(settings.models_dir)).replace("/", "\\"),
+        "filename": artifact["filename"],
+        "path": str(target) if installed else "",
+        "url": artifact["url"],
+    }
+
+
+@app.post("/api/extras/face-restore/download/start")
+async def extras_face_restore_download_start() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("face_restore")
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued GFPGAN face restoration download.",
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ltx_hf_lora_download_job(job_id, "face_restore"))
+    return download_jobs[job_id]
+
+
 @app.post("/api/civitai/resolve")
 async def civitai_resolve(request: CivitaiResolveRequest) -> dict[str, Any]:
     try:
@@ -3446,6 +4067,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 missing_zimage_assets.append("ae.safetensors")
             if missing_zimage_assets:
                 raise ValueError("Z-Image Turbo missing required assets: " + ", ".join(missing_zimage_assets) + ".")
+        _apply_inpaint_intent_prompt(request)
         reference_image_names = _prepare_reference_images(request)
         ltx_director_frame_guides: list[dict[str, Any]] = []
         if request.preset.lower() == "ltx" and getattr(request, "workspace", "") == "director":
@@ -3455,7 +4077,12 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 request.activity = "img2img"
                 request.workflow_override = None
                 request.workflow_id = None
-        base_video_name = _prepare_base_video(request)
+        ltx_director_motion_video = _prepare_ltx_director_motion_transfer(request)
+        if ltx_director_motion_video:
+            request.activity = "img2img"
+            request.workflow_override = None
+            request.workflow_id = None
+        base_video_name = ltx_director_motion_video or _prepare_base_video(request)
         if not base_video_name and request.preset.lower() == "ltx" and len(reference_image_names) >= 2:
             base_video_name = _prepare_ltx_motion_scaffold(reference_image_names, request)
         reference_image_name = reference_image_names[0] if reference_image_names else None
@@ -3496,6 +4123,9 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
 
         if job_id:
             _update_generation_job(job_id, {"status": "starting", "progress": 6, "message": "Starting embedded ComfyUI"}, force=True)
+        lanpaint_installed = _ensure_lanpaint_custom_node(request)
+        if lanpaint_installed and await comfy.is_running():
+            await comfy.restart()
         await comfy.ensure_running()
         if job_id:
             _update_generation_job(job_id, {"status": "preparing", "progress": 7, "message": "Reading Comfy object registry"})
@@ -3549,9 +4179,37 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     raise ValueError("LTX 2.3 requires the audio VAE in models/vae, even when audio output is disabled.")
                 if checkpoint_name.lower().endswith(".gguf"):
                     raise ValueError("LTX img2vid default requires an LTX checkpoint file. GGUF workflows can still be loaded explicitly.")
-                if base_video_name and not _available_comfy_node(object_info, "VHS_LoadVideo"):
+                motion_transfer_requested = bool(base_video_name and _truthy((request.video or {}).get("motion_transfer_enabled")))
+                if base_video_name and not motion_transfer_requested and not _available_comfy_node(object_info, "VHS_LoadVideo"):
                     raise ValueError("LTX video2video requires comfyui-videohelpersuite (VHS_LoadVideo).")
-                if base_video_name and not _available_comfy_node(object_info, "LTXVAddGuide"):
+                motion_control_mode = str((request.video or {}).get("motion_transfer_control_mode") or "pose").strip().lower()
+                ltx_motion_ic_lora_name = assets.get("cameraman_lora") if motion_control_mode == "camera" else assets.get("ic_lora")
+                if motion_transfer_requested:
+                    if not ltx_motion_ic_lora_name:
+                        if motion_control_mode == "camera":
+                            raise ValueError("LTX Motion Transfer camera mode requires LTX 2.3 IC-LoRA Cameraman under models/loras/ltx.")
+                        raise ValueError("LTX Motion Transfer requires an LTX 2.3 IC-LoRA Union Control model under models/loras.")
+                    missing_motion_nodes = [
+                        node
+                        for node in (
+                            "LTXICLoRALoaderModelOnly",
+                            "LTXAddVideoICLoRAGuide",
+                            "LTXVImgToVideoConditionOnly",
+                            "LTXVEmptyLatentAudio",
+                            "LTXVConcatAVLatent",
+                            "LTXVSeparateAVLatent",
+                            "LTXVCropGuides",
+                            "LoadVideo",
+                            "GetVideoComponents",
+                            "ImageResizeKJv2",
+                            "ResizeImageMaskNode",
+                            "SimpleMath+",
+                        )
+                        if not _available_comfy_node(object_info, node)
+                    ]
+                    if missing_motion_nodes:
+                        raise ValueError("LTX Motion Transfer requires ComfyUI-LTXVideo IC-LoRA nodes: " + ", ".join(missing_motion_nodes) + ".")
+                elif base_video_name and not _available_comfy_node(object_info, "LTXVAddGuide"):
                     raise ValueError("LTX video2video requires the native LTXVAddGuide node.")
                 prompt = build_basic_ltx_img2video_workflow(
                     request,
@@ -3560,12 +4218,13 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     reference_image_name,
                     reference_end_image_name=reference_end_image_name,
                     base_video_name=base_video_name,
-                    ic_lora_name=assets.get("ic_lora"),
+                    ic_lora_name=ltx_motion_ic_lora_name,
                     text_projection_name=assets.get("text_projection"),
                     audio_vae_name=assets.get("audio_vae"),
                     video_vae_name=assets.get("video_vae") or assets.get("vae"),
                     latent_upscale_name=assets.get("latent_upscale"),
                     transition_lora_name=assets.get("transition_lora"),
+                    detailer_lora_name=assets.get("detailer_lora"),
                     frame_guides=ltx_director_frame_guides,
                     video_combine_node=_available_comfy_node(object_info, "VHS_VideoCombine"),
                     available_nodes=set(object_info or {}),
@@ -3640,6 +4299,9 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     reference_image_name=reference_image_name,
                     reference_image_names=reference_image_names,
                     mask_image_name=mask_image_name,
+                    controlnet_name=assets.get("controlnet_model"),
+                    controlnet_image_name=assets.get("controlnet_image"),
+                    controlnet_category=assets.get("controlnet_category"),
                 )
             elif request.preset.lower() in {"zimageturbo", "zimage"}:
                 checkpoint_name = assets.get("primary_model") or ""
@@ -3658,6 +4320,9 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     vae_name,
                     reference_image_name=reference_image_name,
                     mask_image_name=mask_image_name,
+                    controlnet_name=assets.get("controlnet_model"),
+                    controlnet_image_name=assets.get("controlnet_image"),
+                    controlnet_category=assets.get("controlnet_category"),
                 )
             elif request.preset.lower() == "flux":
                 clip_l_name = assets.get("flux_clip_l")
@@ -3688,6 +4353,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     reference_image_name=reference_image_name,
                     mask_image_name=mask_image_name,
                     flux_family=flux_family,
+                    controlnet_name=assets.get("controlnet_model"),
+                    controlnet_image_name=assets.get("controlnet_image"),
                 )
             else:
                 prompt = build_basic_sd_workflow(
@@ -3700,6 +4367,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     vae_name=assets.get("vae"),
                 )
 
+        ensure_inpaint_engine_route(prompt, request, available_nodes=set(object_info or {}))
         _materialize_ltx_director_audio(prompt)
         _apply_output_prefixes(prompt, request)
 
@@ -3717,6 +4385,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if not outputs:
             await asyncio.sleep(1.0)
             outputs = _cleanup_video_sidecar_images(_recent_output_files(generation_started_at - 300, limit=20), generation_started_at)
+        _normalize_ltx_start_end_motion(outputs, request, reference_image_names)
         _apply_ltx_reference_frame_lock(outputs, request, reference_image_names)
         _annotate_output_metadata(outputs, request, assets)
         _cleanup_generation_temp()
@@ -3814,6 +4483,156 @@ async def generate_start(request: GenerateRequest) -> dict[str, Any]:
     }
     _console_generation(generation_jobs[job_id], force=True)
     asyncio.create_task(_run_generation_job(job_id, request))
+    return _public_generation_job(generation_jobs[job_id])
+
+
+def _ltx_preprocess_length(request: GenerateRequest) -> tuple[int, int]:
+    video_options = request.video or {}
+    fps = max(1, int(_number_or_none(video_options.get("fps")) or 8))
+    requested_frames = _number_or_none(video_options.get("frames") or video_options.get("length"))
+    if requested_frames is not None:
+        length = max(2, int(round(requested_frames)))
+    else:
+        seconds = max(0.25, float(_number_or_none(video_options.get("seconds") or video_options.get("duration")) or 2.0))
+        length = max(2, int(round(seconds * fps)))
+    return fps, length
+
+
+def _build_ltx_motion_preprocess_workflow(request: GenerateRequest, base_video_name: str, object_info: dict[str, Any]) -> dict[str, Any]:
+    available = set(object_info or {})
+    video_options = request.video or {}
+    mode = str(video_options.get("motion_transfer_control_mode") or "pose").strip().lower()
+    if mode not in {"pose", "canny", "depth", "camera"}:
+        mode = "pose"
+    fps, length = _ltx_preprocess_length(request)
+    width = max(64, int(request.width or 512))
+    height = max(64, int(request.height or 512))
+    workflow: dict[str, Any] = {
+        "1": {
+            "class_type": "VHS_LoadVideo",
+            "inputs": {
+                "video": base_video_name,
+                "force_rate": float(fps),
+                "custom_width": width,
+                "custom_height": height,
+                "frame_load_cap": length,
+                "skip_first_frames": 0,
+                "select_every_nth": 1,
+                "format": "LTXV",
+            },
+            "_meta": {"title": "Load Motion Reference Video"},
+        }
+    }
+    image_ref: list[Any] = ["1", 0]
+    if mode == "pose" and ("DWPreprocessor" in available or "OpenposePreprocessor" in available):
+        pose_node = "DWPreprocessor" if "DWPreprocessor" in available else "OpenposePreprocessor"
+        inputs: dict[str, Any] = {
+            "image": ["1", 0],
+            "detect_hand": "enable",
+            "detect_body": "enable",
+            "detect_face": "enable",
+            "resolution": max(width, height),
+            "scale_stick_for_xinsr_cn": "disable",
+        }
+        if pose_node == "DWPreprocessor":
+            inputs["bbox_detector"] = "yolox_l.onnx"
+            inputs["pose_estimator"] = "dw-ll_ucoco_384_bs5.torchscript.pt"
+        workflow["2"] = {"class_type": pose_node, "inputs": inputs, "_meta": {"title": "Preprocess Motion Pose / DWPose"}}
+        image_ref = ["2", 0]
+    elif mode == "canny" and ("CannyEdgePreprocessor" in available or "Canny" in available):
+        canny_node = "CannyEdgePreprocessor" if "CannyEdgePreprocessor" in available else "Canny"
+        inputs = {"image": ["1", 0]}
+        if canny_node == "CannyEdgePreprocessor":
+            inputs.update({"low_threshold": 92, "high_threshold": 200, "resolution": max(width, height)})
+        else:
+            inputs.update({"low_threshold": 0.4, "high_threshold": 0.8})
+        workflow["2"] = {"class_type": canny_node, "inputs": inputs, "_meta": {"title": "Preprocess Motion Canny"}}
+        image_ref = ["2", 0]
+    elif mode == "depth" and {"LoadVideoDepthAnythingModel", "VideoDepthAnythingProcess", "VideoDepthAnythingOutput"}.issubset(available):
+        workflow["2"] = {"class_type": "LoadVideoDepthAnythingModel", "inputs": {"model": "video_depth_anything_vits.pth"}, "_meta": {"title": "Load Video Depth Anything"}}
+        workflow["3"] = {"class_type": "VideoDepthAnythingProcess", "inputs": {"vda_model": ["2", 0], "images": ["1", 0], "input_size": 518, "max_res": max(width, height), "precision": "fp32"}, "_meta": {"title": "Preprocess Motion Depth"}}
+        workflow["4"] = {"class_type": "VideoDepthAnythingOutput", "inputs": {"depths": ["3", 0], "colormap": "gray"}, "_meta": {"title": "Depth Preview Images"}}
+        image_ref = ["4", 0]
+    workflow["9"] = {
+        "class_type": "VHS_VideoCombine",
+        "inputs": {
+            "images": image_ref,
+            "frame_rate": float(fps),
+            "loop_count": 0,
+            "filename_prefix": f"Motion_Transfer/NEXUS_BTA_LTX23_MOTION_PREPROCESS_{mode}_{width}x{height}",
+            "format": "video/h264-mp4",
+            "pix_fmt": "yuv420p",
+            "crf": 16,
+            "save_metadata": True,
+            "trim_to_audio": False,
+            "pingpong": False,
+            "save_output": True,
+        },
+        "_meta": {"title": "Save LTX Motion Preprocess Preview"},
+    }
+    return workflow
+
+
+async def _run_ltx_motion_preprocess_job(job_id: str, request: GenerateRequest) -> None:
+    try:
+        async with generation_lock:
+            _update_generation_job(job_id, {"status": "preparing", "progress": 4, "message": "Preparing motion preprocess"}, force=True)
+            if request.preset.lower() != "ltx" or request.activity != "img2img":
+                raise ValueError("LTX Motion Preprocess requires LTX img2img.")
+            base_video_name = _prepare_base_video(request)
+            if not base_video_name:
+                raise ValueError("Load a motion video before preprocessing.")
+            await comfy.ensure_running()
+            object_info = await comfy.object_info()
+            workflow = _build_ltx_motion_preprocess_workflow(request, base_video_name, object_info)
+
+            def progress_callback(update: dict[str, Any]) -> None:
+                _update_generation_job(job_id, update)
+
+            prompt_id, outputs = await comfy.run_workflow(workflow, progress_callback=progress_callback)
+            if not outputs:
+                outputs = await _recover_outputs_from_history(prompt_id, datetime.now().timestamp() - 300)
+            outputs = _cleanup_video_sidecar_images(outputs, datetime.now().timestamp() - 300)
+            preprocess_request = request.model_copy(deep=True)
+            preprocess_request.video = dict(preprocess_request.video or {})
+            preprocess_request.video["motion_preprocess"] = True
+            _annotate_output_metadata(outputs, preprocess_request, {"primary_model": "LTX Motion Preprocess"})
+            _update_generation_job(
+                job_id,
+                {
+                    "prompt_id": prompt_id,
+                    "status": "completed",
+                    "progress": 100,
+                    "message": "Motion preprocess completed.",
+                    "outputs": outputs,
+                    "completed_at": datetime.now().isoformat(timespec="seconds"),
+                },
+                force=True,
+            )
+    except Exception as exc:
+        _update_generation_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)}, force=True)
+
+
+@app.post("/api/ltx/motion-preprocess/start")
+async def ltx_motion_preprocess_start(request: GenerateRequest) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex[:12]
+    generation_jobs[job_id] = {
+        "job_id": job_id,
+        "prompt_id": None,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued motion preprocess.",
+        "outputs": [],
+        "error": None,
+        "queue_position": len(_active_generation_jobs()) + 1,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "preset": request.preset,
+        "workflow_id": "ltx_motion_preprocess",
+        "_queued_monotonic": time.monotonic(),
+    }
+    _console_generation(generation_jobs[job_id], force=True)
+    asyncio.create_task(_run_ltx_motion_preprocess_job(job_id, request))
     return _public_generation_job(generation_jobs[job_id])
 
 

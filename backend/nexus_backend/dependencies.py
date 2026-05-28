@@ -268,6 +268,8 @@ def _heuristic_custom_node_name(class_type: str) -> str | None:
         return "ComfyUI-LTXVideo"
     if "video combine" in value or "vhs_" in value:
         return "comfyui-videohelpersuite"
+    if "lanpaint" in value:
+        return "LanPaint"
     return None
 
 
@@ -281,6 +283,8 @@ def _canonical_repo_for_missing_node(class_type: str) -> str | None:
         return "https://github.com/yolain/ComfyUI-Easy-Use"
     if "melbandroformer" in value or "roformer" in value:
         return "https://github.com/kijai/ComfyUI-MelBandRoFormer"
+    if "lanpaint" in value:
+        return "https://github.com/scraed/LanPaint"
     return None
 
 

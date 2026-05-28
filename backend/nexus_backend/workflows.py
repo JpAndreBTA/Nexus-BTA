@@ -1092,6 +1092,74 @@ def _append_inpaint_mask(
     return True
 
 
+def _inpaint_engine(request: GenerateRequest) -> str:
+    raw = str(getattr(request.img2img, "inpaint_engine", "") or "").strip().lower()
+    if raw in {"lanpaint", "lan paint", "lanpaint_ksampler"}:
+        return "lanpaint"
+    if raw in {"default", "standard", "vae", "vaeencode", "off", "none", "disabled"}:
+        return "default"
+    if raw in {"differential", "differential_diffusion", "differential diffusion", "diffdiff"}:
+        return "differential"
+    return "differential" if _bool_option(getattr(request.img2img, "differential_diffusion", True), True) else "default"
+
+
+def ensure_inpaint_engine_route(
+    api: dict[str, Any],
+    request: GenerateRequest,
+    *,
+    available_nodes: set[str] | None = None,
+) -> None:
+    if request.activity != "img2img" or "inpaint" not in request.img2img.mode.lower():
+        return
+    sampler_id = _find_sampler_node_id(api)
+    if not sampler_id:
+        return
+    sampler = api.get(sampler_id)
+    if not isinstance(sampler, dict):
+        return
+    inputs = sampler.setdefault("inputs", {})
+    if not isinstance(inputs, dict):
+        return
+    model_ref = inputs.get("model")
+    if not isinstance(model_ref, list) or not model_ref:
+        return
+
+    available_nodes = set(available_nodes or ())
+    engine = _inpaint_engine(request)
+    if engine == "lanpaint":
+        sampler_class = str(sampler.get("class_type", "") or "")
+        if sampler_class.lower() != "ksampler":
+            engine = "differential"
+        elif available_nodes and "LanPaint_KSampler" not in available_nodes:
+            engine = "differential"
+        else:
+            sampler["class_type"] = "LanPaint_KSampler"
+            sampler.setdefault("_meta", {})["title"] = "LanPaint KSampler"
+            inputs["LanPaint_NumSteps"] = max(0, min(100, int(getattr(request.img2img, "lanpaint_thinking_steps", 5) or 5)))
+            prompt_mode = str(getattr(request.img2img, "lanpaint_prompt_mode", "Image First") or "Image First")
+            inputs["LanPaint_PromptMode"] = "Prompt First" if prompt_mode.lower().startswith("prompt") else "Image First"
+            inputs["LanPaint_Info"] = "LanPaint KSampler"
+            inputs["Inpainting_mode"] = "🖼️ Image Inpainting"
+            return
+
+    if engine != "differential":
+        return
+    if available_nodes and "DifferentialDiffusion" not in available_nodes:
+        return
+    if any(str(node.get("class_type", "")).lower() == "differentialdiffusion" for node in api.values() if isinstance(node, dict)):
+        return
+    node_id = str(_next_api_node_id(api))
+    api[node_id] = {
+        "class_type": "DifferentialDiffusion",
+        "inputs": {
+            "model": model_ref,
+            "strength": max(0.0, min(1.0, float(getattr(request.img2img, "differential_strength", 1.0) or 1.0))),
+        },
+        "_meta": {"title": "Differential Diffusion Inpaint"},
+    }
+    inputs["model"] = [node_id, 0]
+
+
 def _image_scale_node(image_ref: list[Any], width: int | float, height: int | float, method: str = "lanczos") -> dict[str, Any]:
     return {
         "class_type": "ImageScale",
@@ -1120,7 +1188,7 @@ def _controlnet_can_apply(request: GenerateRequest, controlnet_name: str | None,
         request.controlnet.enabled
         and controlnet_name
         and controlnet_image_name
-        and preset in {"sd", "sd15", "xl", "sdxl"}
+        and preset in {"sd", "sd15", "xl", "sdxl", "flux", "qwen", "zimageturbo", "zimage"}
     )
 
 
@@ -1185,6 +1253,192 @@ def _append_controlnet_route(
         "_meta": {"title": f"Apply ControlNet {control_type or 'image'}"},
     }
     return [apply_id, 0], [apply_id, 1], next_id + 2
+
+
+def _append_zimage_fun_controlnet_route(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    *,
+    model_ref: list[Any],
+    controlnet_name: str | None,
+    controlnet_image_name: str | None,
+    vae_ref: list[Any],
+    start_id: int = 120,
+) -> tuple[list[Any], int]:
+    if not _controlnet_can_apply(request, controlnet_name, controlnet_image_name):
+        return model_ref, start_id
+    load_image_id = str(start_id)
+    image_ref: list[Any] = [load_image_id, 0]
+    next_id = start_id + 1
+    workflow[load_image_id] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": controlnet_image_name},
+        "_meta": {"title": "Z-Image Control Image"},
+    }
+    control_type = str(request.controlnet.type or "").lower()
+    preprocessor = str(request.controlnet.preprocessor or "auto").lower()
+    if control_type == "canny" and preprocessor not in {"none", "off", "disabled"}:
+        canny_id = str(next_id)
+        next_id += 1
+        workflow[canny_id] = {
+            "class_type": "Canny",
+            "inputs": {
+                "image": image_ref,
+                "low_threshold": max(0.01, min(0.99, float(request.controlnet.low_threshold or 0.4))),
+                "high_threshold": max(0.01, min(0.99, float(request.controlnet.high_threshold or 0.8))),
+            },
+            "_meta": {"title": "Z-Image Canny Preprocessor"},
+        }
+        image_ref = [canny_id, 0]
+
+    patch_loader_id = str(next_id)
+    apply_id = str(next_id + 1)
+    workflow[patch_loader_id] = {
+        "class_type": "ModelPatchLoader",
+        "inputs": {"name": controlnet_name},
+        "_meta": {"title": "Load Z-Image ControlNet Patch"},
+    }
+    workflow[apply_id] = {
+        "class_type": "ZImageFunControlnet",
+        "inputs": {
+            "model": model_ref,
+            "model_patch": [patch_loader_id, 0],
+            "vae": vae_ref,
+            "strength": max(0.0, min(10.0, float(request.controlnet.strength or 1.0))),
+            "image": image_ref,
+        },
+        "_meta": {"title": f"Apply Z-Image ControlNet {control_type or 'image'}"},
+    }
+    return [apply_id, 0], next_id + 2
+
+
+def _append_qwen_model_patch_controlnet_route(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    *,
+    model_ref: list[Any],
+    controlnet_name: str | None,
+    controlnet_image_name: str | None,
+    vae_ref: list[Any],
+    start_id: int = 120,
+) -> tuple[list[Any], int]:
+    if not _controlnet_can_apply(request, controlnet_name, controlnet_image_name):
+        return model_ref, start_id
+    load_image_id = str(start_id)
+    image_ref: list[Any] = [load_image_id, 0]
+    next_id = start_id + 1
+    workflow[load_image_id] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": controlnet_image_name},
+        "_meta": {"title": "Qwen Control Image"},
+    }
+    control_type = str(request.controlnet.type or "").lower()
+    preprocessor = str(request.controlnet.preprocessor or "auto").lower()
+    if control_type == "canny" and preprocessor not in {"none", "off", "disabled"}:
+        canny_id = str(next_id)
+        next_id += 1
+        workflow[canny_id] = {
+            "class_type": "Canny",
+            "inputs": {
+                "image": image_ref,
+                "low_threshold": max(0.01, min(0.99, float(request.controlnet.low_threshold or 0.4))),
+                "high_threshold": max(0.01, min(0.99, float(request.controlnet.high_threshold or 0.8))),
+            },
+            "_meta": {"title": "Qwen Canny Preprocessor"},
+        }
+        image_ref = [canny_id, 0]
+
+    patch_loader_id = str(next_id)
+    apply_id = str(next_id + 1)
+    workflow[patch_loader_id] = {
+        "class_type": "ModelPatchLoader",
+        "inputs": {"name": controlnet_name},
+        "_meta": {"title": "Load Qwen ControlNet Patch"},
+    }
+    workflow[apply_id] = {
+        "class_type": "QwenImageDiffsynthControlnet",
+        "inputs": {
+            "model": model_ref,
+            "model_patch": [patch_loader_id, 0],
+            "vae": vae_ref,
+            "image": image_ref,
+            "strength": max(0.0, min(10.0, float(request.controlnet.strength or 1.0))),
+        },
+        "_meta": {"title": f"Apply Qwen ControlNet {control_type or 'image'}"},
+    }
+    return [apply_id, 0], next_id + 2
+
+
+def _append_flux_union_controlnet_route(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    *,
+    positive_ref: list[Any],
+    negative_ref: list[Any],
+    controlnet_name: str | None,
+    controlnet_image_name: str | None,
+    vae_ref: list[Any],
+    start_id: int = 120,
+) -> tuple[list[Any], list[Any], int]:
+    if not _controlnet_can_apply(request, controlnet_name, controlnet_image_name):
+        return positive_ref, negative_ref, start_id
+    load_image_id = str(start_id)
+    image_ref: list[Any] = [load_image_id, 0]
+    next_id = start_id + 1
+    workflow[load_image_id] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": controlnet_image_name},
+        "_meta": {"title": "Flux Control Image"},
+    }
+    control_type = str(request.controlnet.type or "canny").lower()
+    preprocessor = str(request.controlnet.preprocessor or "auto").lower()
+    if control_type == "canny" and preprocessor not in {"none", "off", "disabled"}:
+        canny_id = str(next_id)
+        next_id += 1
+        workflow[canny_id] = {
+            "class_type": "Canny",
+            "inputs": {
+                "image": image_ref,
+                "low_threshold": max(0.01, min(0.99, float(request.controlnet.low_threshold or 0.4))),
+                "high_threshold": max(0.01, min(0.99, float(request.controlnet.high_threshold or 0.8))),
+            },
+            "_meta": {"title": "Flux Canny Preprocessor"},
+        }
+        image_ref = [canny_id, 0]
+    union_type = {
+        "openpose": "pose",
+        "pose": "pose",
+        "depth": "depth",
+        "tile": "tile",
+        "blur": "blur",
+        "gray": "gray",
+        "greyscale": "gray",
+        "low quality": "low quality",
+        "low_quality": "low quality",
+    }.get(control_type, "canny")
+
+    loader_id = str(next_id)
+    apply_id = str(next_id + 1)
+    workflow[loader_id] = {
+        "class_type": "ControlNetLoader",
+        "inputs": {"control_net_name": controlnet_name},
+        "_meta": {"title": "Load Flux ControlNet"},
+    }
+    workflow[apply_id] = {
+        "class_type": "FluxUnionControlNetApply",
+        "inputs": {
+            "conditioning": positive_ref,
+            "control_net": [loader_id, 0],
+            "image": image_ref,
+            "union_controlnet_type": union_type,
+            "strength": max(0.0, min(10.0, float(request.controlnet.strength or 0.75))),
+            "start_percent": max(0.0, min(1.0, float(request.controlnet.start_percent or 0.0))),
+            "end_percent": max(0.0, min(1.0, float(request.controlnet.end_percent or 1.0))),
+            "vae": vae_ref,
+        },
+        "_meta": {"title": f"Apply Flux ControlNet {union_type}"},
+    }
+    return [apply_id, 0], negative_ref, next_id + 2
 
 
 def build_basic_sd_workflow(
@@ -1408,6 +1662,9 @@ def build_basic_qwen_image_workflow(
     reference_image_name: str | None = None,
     reference_image_names: list[str] | None = None,
     mask_image_name: str | None = None,
+    controlnet_name: str | None = None,
+    controlnet_image_name: str | None = None,
+    controlnet_category: str | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     width = max(16, int(request.width))
@@ -1626,6 +1883,30 @@ def build_basic_qwen_image_workflow(
             sampler_node_id="10",
             mask_image_name=mask_image_name,
         )
+    if controlnet_category == "model_patches":
+        patched_model_ref, _ = _append_qwen_model_patch_controlnet_route(
+            workflow,
+            request,
+            model_ref=list(workflow["8"]["inputs"]["model"]),
+            controlnet_name=controlnet_name,
+            controlnet_image_name=controlnet_image_name,
+            vae_ref=["3", 0],
+            start_id=120,
+        )
+        workflow["8"]["inputs"]["model"] = patched_model_ref
+    else:
+        positive_ref, negative_ref, _ = _append_controlnet_route(
+            workflow,
+            request,
+            positive_ref=list(workflow["10"]["inputs"]["positive"]),
+            negative_ref=list(workflow["10"]["inputs"]["negative"]),
+            controlnet_name=controlnet_name,
+            controlnet_image_name=controlnet_image_name,
+            vae_ref=["3", 0],
+            start_id=120,
+        )
+        workflow["10"]["inputs"]["positive"] = positive_ref
+        workflow["10"]["inputs"]["negative"] = negative_ref
     return workflow
 
 
@@ -1636,6 +1917,9 @@ def build_basic_zimage_turbo_workflow(
     vae_name: str,
     reference_image_name: str | None = None,
     mask_image_name: str | None = None,
+    controlnet_name: str | None = None,
+    controlnet_image_name: str | None = None,
+    controlnet_category: str | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     width = max(16, int(request.width))
@@ -1773,6 +2057,30 @@ def build_basic_zimage_turbo_workflow(
             sampler_node_id="8",
             mask_image_name=mask_image_name,
         )
+    if controlnet_category == "model_patches":
+        patched_model_ref, _ = _append_zimage_fun_controlnet_route(
+            workflow,
+            request,
+            model_ref=list(workflow["8"]["inputs"]["model"]),
+            controlnet_name=controlnet_name,
+            controlnet_image_name=controlnet_image_name,
+            vae_ref=["3", 0],
+            start_id=120,
+        )
+        workflow["8"]["inputs"]["model"] = patched_model_ref
+    else:
+        positive_ref, negative_ref, _ = _append_controlnet_route(
+            workflow,
+            request,
+            positive_ref=list(workflow["8"]["inputs"]["positive"]),
+            negative_ref=list(workflow["8"]["inputs"]["negative"]),
+            controlnet_name=controlnet_name,
+            controlnet_image_name=controlnet_image_name,
+            vae_ref=["3", 0],
+            start_id=120,
+        )
+        workflow["8"]["inputs"]["positive"] = positive_ref
+        workflow["8"]["inputs"]["negative"] = negative_ref
     return workflow
 
 
@@ -1785,6 +2093,8 @@ def build_basic_flux_workflow(
     reference_image_name: str | None = None,
     mask_image_name: str | None = None,
     flux_family: str | None = None,
+    controlnet_name: str | None = None,
+    controlnet_image_name: str | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     width = max(16, int(request.width))
@@ -1907,6 +2217,17 @@ def build_basic_flux_workflow(
             }
             workflow["10"]["inputs"]["conditioning"] = ["18", 0]
             workflow["11"]["inputs"]["latent_image"] = ["17", 0]
+        positive_ref, _, _ = _append_flux_union_controlnet_route(
+            workflow,
+            request,
+            positive_ref=list(workflow["10"]["inputs"]["conditioning"]),
+            negative_ref=["5", 0],
+            controlnet_name=controlnet_name,
+            controlnet_image_name=controlnet_image_name,
+            vae_ref=["3", 0],
+            start_id=120,
+        )
+        workflow["10"]["inputs"]["conditioning"] = positive_ref
         return workflow
 
     workflow = {
@@ -1997,6 +2318,18 @@ def build_basic_flux_workflow(
             sampler_node_id="7",
             mask_image_name=mask_image_name,
         )
+    positive_ref, negative_ref, _ = _append_flux_union_controlnet_route(
+        workflow,
+        request,
+        positive_ref=list(workflow["7"]["inputs"]["positive"]),
+        negative_ref=list(workflow["7"]["inputs"]["negative"]),
+        controlnet_name=controlnet_name,
+        controlnet_image_name=controlnet_image_name,
+        vae_ref=["3", 0],
+        start_id=120,
+    )
+    workflow["7"]["inputs"]["positive"] = positive_ref
+    workflow["7"]["inputs"]["negative"] = negative_ref
     return workflow
 
 
@@ -2742,6 +3075,7 @@ def build_basic_ltx_img2video_workflow(
     video_vae_name: str | None = None,
     latent_upscale_name: str | None = None,
     transition_lora_name: str | None = None,
+    detailer_lora_name: str | None = None,
     frame_guides: list[dict[str, Any]] | None = None,
     video_combine_node: str | None = None,
     available_nodes: set[str] | None = None,
@@ -2761,8 +3095,10 @@ def build_basic_ltx_img2video_workflow(
         request.video = video_options
     fps = max(1, int(_number_or_none(video_options.get("fps")) or 8))
     seconds = max(0.25, float(_number_or_none(video_options.get("seconds") or video_options.get("duration")) or 4.0))
-    raw_frames = int(round(seconds * fps))
-    length = max(9, raw_frames + 1)
+    requested_frames = _number_or_none(video_options.get("frames") or video_options.get("length"))
+    force_timeline_frames = bool(has_end_reference or frame_guides)
+    raw_frames = int(round(requested_frames)) if requested_frames is not None and not force_timeline_frames else int(round(seconds * fps)) + 1
+    length = max(9, raw_frames)
     if (length - 1) % 8 != 0:
         length = (((length - 1) // 8) + 1) * 8 + 1
     final_width = max(64, int(request.width))
@@ -2787,9 +3123,29 @@ def build_basic_ltx_img2video_workflow(
         width = _ltx_base_dimension_for_upscale(final_width, latent_upscale_name)
         height = _ltx_base_dimension_for_upscale(final_height, latent_upscale_name)
     ltx_model_ref: list[Any] = ["1", 0]
-    video_vae_ref: list[Any] = ["21", 0] if video_vae_name else ["1", 2]
     ltx_lora_nodes: dict[str, Any] = {}
     next_lora_id = 40
+
+    def add_detailer_lora(model_ref: list[Any], title: str) -> list[Any]:
+        nonlocal next_lora_id
+        detailer_enabled = _bool_option(video_options.get("detailer_enabled"), False)
+        detailer_name = _selected_text(video_options.get("detailer_lora")) or _selected_text(detailer_lora_name)
+        if not detailer_enabled or not detailer_name:
+            return model_ref
+        node_id = str(next_lora_id)
+        strength = _number_or_none(video_options.get("detailer_strength"))
+        ltx_lora_nodes[node_id] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": model_ref,
+                "lora_name": detailer_name,
+                "strength_model": 1.0 if strength is None else max(-2.0, min(2.0, float(strength))),
+            },
+            "_meta": {"title": f"{title} - {Path(detailer_name).name}"},
+        }
+        next_lora_id += 1
+        return [node_id, 0]
+
     for lora_name, strength_model, _strength_clip in _active_lora_selections(request):
         if not lora_name.lower().startswith(("ltx", "ltx2", "ltx23", "ltxv")):
             continue
@@ -2824,10 +3180,18 @@ def build_basic_ltx_img2video_workflow(
         next_lora_id += 1
 
     text_to_video = request.activity == "txt2img" and not (reference_image_name or "").strip()
+    motion_transfer_route = bool(
+        (base_video_name or "").strip()
+        and _bool_option(video_options.get("motion_transfer_enabled"), False)
+        and not text_to_video
+    )
+    video_vae_ref: list[Any] = ["1", 2] if motion_transfer_route else (["21", 0] if video_vae_name else ["1", 2])
+    motion_scaffold_route = bool((base_video_name or "").strip() and video_options.get("ltx_motion_scaffold"))
     use_first_last_guides = bool(not text_to_video and (has_end_reference or len(frame_guides) > 1) and not (base_video_name or "").strip())
-    transition_route = bool(use_first_last_guides and _ltx_transition_lora_enabled(request, has_end_reference or len(frame_guides) > 1))
+    transition_route = bool((use_first_last_guides or motion_scaffold_route) and _ltx_transition_lora_enabled(request, has_end_reference or len(frame_guides) > 1))
 
     ic_lora_loader_ref: list[Any] | None = None
+    ic_lora_downscale_ref: list[Any] | float = 1.0
     if ((base_video_name or "").strip() or transition_route) and (ic_lora_name or "").strip():
         node_id = str(next_lora_id)
         ltx_lora_nodes[node_id] = {
@@ -2840,6 +3204,7 @@ def build_basic_ltx_img2video_workflow(
             "_meta": {"title": f"LTX IC-LoRA Motion - {Path(str(ic_lora_name)).name}"},
         }
         ic_lora_loader_ref = [node_id, 0]
+        ic_lora_downscale_ref = [node_id, 1]
         ltx_model_ref = ic_lora_loader_ref
         next_lora_id += 1
 
@@ -2847,10 +3212,13 @@ def build_basic_ltx_img2video_workflow(
     transition_model_ref: list[Any] = ltx_model_ref
     if transition_route:
         transition_model_ref = ["37", 0]
-    sampler_latent_ref: list[Any] = ["7", 2] if not text_to_video else ["7", 0]
+    main_model_ref: list[Any] = transition_model_ref
+    if not (use_latent_upscale and refine_latent_upscale):
+        main_model_ref = add_detailer_lora(main_model_ref, "LTX Detailer LoRA")
+    sampler_latent_ref: list[Any] = ["7", 0] if (text_to_video or motion_transfer_route) else ["7", 2]
     scheduler_latent_ref: list[Any] = sampler_latent_ref
-    ltx_positive_ref: list[Any] = ["6", 0] if text_to_video else ["7", 0]
-    ltx_negative_ref: list[Any] = ["6", 1] if text_to_video else ["7", 1]
+    ltx_positive_ref: list[Any] = ["6", 0] if (text_to_video or motion_transfer_route) else ["7", 0]
+    ltx_negative_ref: list[Any] = ["6", 1] if (text_to_video or motion_transfer_route) else ["7", 1]
     if use_first_last_guides:
         sampler_latent_ref = ["7", 0]
         scheduler_latent_ref = ["7", 0]
@@ -2859,7 +3227,7 @@ def build_basic_ltx_img2video_workflow(
     decode_latent_ref: list[Any] = ["12", 0]
     create_video_image_ref: list[Any] = ["13", 0]
     create_video_inputs: dict[str, Any] = {"images": create_video_image_ref, "fps": float(fps)}
-    has_audio_context = active_audio and bool(audio_vae_name)
+    has_audio_context = bool(audio_vae_name and (active_audio or motion_transfer_route))
     first_audio_latent_ref: list[Any] | None = None
 
     preprocess_nodes: dict[str, Any] = {}
@@ -2874,7 +3242,7 @@ def build_basic_ltx_img2video_workflow(
                     "width": width,
                     "height": height,
                     "upscale_method": "lanczos",
-                    "keep_proportion": "crop",
+                    "keep_proportion": "pad",
                     "pad_color": "0, 0, 0",
                     "crop_position": "center",
                     "divisible_by": 32,
@@ -2895,10 +3263,13 @@ def build_basic_ltx_img2video_workflow(
             guide_specs: list[dict[str, Any]] = []
             if frame_guides:
                 for guide in frame_guides[:8]:
+                    guide_index_value = int(_number_or_none(guide.get("index")) if _number_or_none(guide.get("index")) is not None else 0)
+                    if guide_index_value < 0:
+                        guide_index_value = max(0, length + guide_index_value)
                     guide_specs.append(
                         {
                             "image": str(guide.get("image") or "").strip(),
-                            "index": int(_number_or_none(guide.get("index")) if _number_or_none(guide.get("index")) is not None else 0),
+                            "index": guide_index_value,
                             "strength": max(0.0, min(1.0, float(_number_or_none(guide.get("strength")) or 1.0))),
                         }
                     )
@@ -2911,10 +3282,11 @@ def build_basic_ltx_img2video_workflow(
                     },
                     {
                         "image": str(reference_end_image_name or ""),
-                        "index": -1,
+                        "index": length - 1,
                         "strength": max(0.0, min(1.0, float(_number_or_none(video_options.get("end_frame_strength")) or 1.0))),
                     },
                 ]
+            use_ic_timeline_guides = _bool_option(video_options.get("ltx_ic_timeline_guides"), False)
             in_place_inputs: dict[str, Any] = {"vae": video_vae_ref, "latent": sampler_latent_ref, "num_images": str(len(guide_specs))}
             for guide_index, guide in enumerate(guide_specs, start=1):
                 load_id = "3" if guide_index == 1 and guide["image"] == reference_image_name else str(180 + guide_index)
@@ -2933,7 +3305,7 @@ def build_basic_ltx_img2video_workflow(
                         "width": width,
                         "height": height,
                         "upscale_method": "lanczos",
-                        "keep_proportion": "crop",
+                        "keep_proportion": "pad",
                         "pad_color": "0, 0, 0",
                         "crop_position": "center",
                         "divisible_by": 32,
@@ -2949,40 +3321,44 @@ def build_basic_ltx_img2video_workflow(
                 in_place_inputs[f"num_images.image_{guide_index}"] = [preprocess_id, 0]
                 in_place_inputs[f"num_images.strength_{guide_index}"] = guide["strength"]
                 in_place_inputs[f"num_images.index_{guide_index}"] = guide["index"]
-            preprocess_nodes["76"] = {
-                "class_type": "LTXVImgToVideoInplaceKJ",
-                "inputs": in_place_inputs,
-                "_meta": {"title": "LTX Official Inplace Timeline Frames"},
-            }
-            sampler_latent_ref = ["76", 0]
-            scheduler_latent_ref = ["76", 0]
-            if transition_route and ic_lora_loader_ref:
-                preprocess_nodes["77"] = {
-                    "class_type": "LTXAddVideoICLoRAGuide",
-                    "inputs": {
-                        "positive": ltx_positive_ref,
-                        "negative": ltx_negative_ref,
-                        "vae": video_vae_ref,
-                        "latent": sampler_latent_ref,
-                        "image": start_frame_image_ref,
-                        "frame_idx": 0,
-                        "strength": max(0.0, min(1.0, float(_number_or_none(video_options.get("ltx_identity_strength")) or 0.45))),
-                        "latent_downscale_factor": 1.0,
-                        "crop": str(video_options.get("ltx_ic_crop") or "disabled"),
-                        "use_tiled_encode": bool(video_options.get("ltx_ic_tiled_encode") or False),
-                        "tile_size": int(_number_or_none(video_options.get("ltx_ic_tile_size")) or 256),
-                        "tile_overlap": int(_number_or_none(video_options.get("ltx_ic_tile_overlap")) or 64),
-                    },
-                    "_meta": {"title": "LTX IC-LoRA Identity Guide"},
+            if use_ic_timeline_guides and transition_route and ic_lora_loader_ref:
+                for guide_index, guide in enumerate(guide_specs, start=1):
+                    guide_node_id = str(75 + guide_index)
+                    resize_id = str(200 + guide_index)
+                    preprocess_nodes[guide_node_id] = {
+                        "class_type": "LTXAddVideoICLoRAGuide",
+                        "inputs": {
+                            "positive": ltx_positive_ref,
+                            "negative": ltx_negative_ref,
+                            "vae": video_vae_ref,
+                            "latent": sampler_latent_ref,
+                            "image": [resize_id, 0],
+                            "frame_idx": int(guide["index"]),
+                            "strength": max(0.0, min(1.0, float(_number_or_none(guide.get("strength")) or 1.0))),
+                            "latent_downscale_factor": ic_lora_downscale_ref,
+                            "crop": str(video_options.get("ltx_ic_crop") or "disabled"),
+                            "use_tiled_encode": bool(video_options.get("ltx_ic_tiled_encode") or False),
+                            "tile_size": int(_number_or_none(video_options.get("ltx_ic_tile_size")) or 256),
+                            "tile_overlap": int(_number_or_none(video_options.get("ltx_ic_tile_overlap")) or 64),
+                        },
+                        "_meta": {"title": f"LTX IC-LoRA Timeline Guide {guide_index}"},
+                    }
+                    ltx_positive_ref = [guide_node_id, 0]
+                    ltx_negative_ref = [guide_node_id, 1]
+                    sampler_latent_ref = [guide_node_id, 2]
+                    scheduler_latent_ref = [guide_node_id, 2]
+            else:
+                preprocess_nodes["76"] = {
+                    "class_type": "LTXVImgToVideoInplaceKJ",
+                    "inputs": in_place_inputs,
+                    "_meta": {"title": "LTX Official Inplace Timeline Frames"},
                 }
-                ltx_positive_ref = ["77", 0]
-                ltx_negative_ref = ["77", 1]
-                sampler_latent_ref = ["77", 2]
-                scheduler_latent_ref = ["77", 2]
+                sampler_latent_ref = ["76", 0]
+                scheduler_latent_ref = ["76", 0]
         if (base_video_name or "").strip():
-            motion_transfer_enabled = _bool_option(video_options.get("motion_transfer_enabled"), False)
+            motion_transfer_enabled = motion_transfer_route
             motion_control_mode = str(video_options.get("motion_transfer_control_mode") or "pose").strip().lower()
-            if motion_control_mode not in {"pose", "canny", "depth", "raw"}:
+            if motion_control_mode not in {"pose", "canny", "depth", "camera", "raw"}:
                 motion_control_mode = "pose"
             motion_strength = float(
                 _number_or_none(video_options.get("motion_strength") or video_options.get("video_strength"))
@@ -2991,26 +3367,98 @@ def build_basic_ltx_img2video_workflow(
             )
             if motion_transfer_enabled:
                 motion_strength = float(_number_or_none(video_options.get("motion_transfer_motion_strength")) or 1.0)
+            if motion_scaffold_route:
+                motion_control_mode = str(video_options.get("ltx_start_end_control_mode") or "canny").strip().lower()
             preprocess_nodes["72"] = {
-                "class_type": "VHS_LoadVideo",
-                "inputs": {
-                    "video": base_video_name,
-                    "force_rate": float(fps),
-                    "custom_width": width,
-                    "custom_height": height,
-                    "frame_load_cap": length,
-                    "skip_first_frames": 0,
-                    "select_every_nth": 1,
-                    "format": "LTXV",
-                },
+                "class_type": "LoadVideo" if (motion_transfer_enabled or motion_scaffold_route) else "VHS_LoadVideo",
+                "inputs": (
+                    {"file": base_video_name}
+                    if (motion_transfer_enabled or motion_scaffold_route)
+                    else {
+                        "video": base_video_name,
+                        "force_rate": float(fps),
+                        "custom_width": width,
+                        "custom_height": height,
+                        "frame_load_cap": length,
+                        "skip_first_frames": 0,
+                        "select_every_nth": 1,
+                        "format": "LTXV",
+                    }
+                ),
                 "_meta": {"title": "LTX Base Motion Video"},
             }
-            motion_guide_image_ref: list[Any] = ["72", 0]
+            if motion_transfer_enabled or motion_scaffold_route:
+                preprocess_nodes["74"] = {
+                    "class_type": "GetVideoComponents",
+                    "inputs": {"video": ["72", 0]},
+                    "_meta": {"title": "LTX Motion Video Components"},
+                }
+                preprocess_nodes["75"] = {
+                    "class_type": "ImageResizeKJv2",
+                    "inputs": {
+                        "image": ["74", 0],
+                        "width": width,
+                        "height": height,
+                        "upscale_method": "lanczos",
+                        "keep_proportion": "crop",
+                        "pad_color": "0, 0, 0",
+                        "crop_position": "center",
+                        "divisible_by": 32,
+                        "device": "cpu",
+                    },
+                    "_meta": {"title": "Resize LTX Motion Frames Like Official Workflow" if motion_transfer_enabled else "Resize LTX Start/End Scaffold Frames"},
+                }
             if motion_transfer_enabled:
+                target_condition_image_ref: list[Any] = start_frame_image_ref
+                if "ResizeImageMaskNode" in available_nodes:
+                    preprocess_nodes["78"] = {
+                        "class_type": "ResizeImageMaskNode",
+                        "inputs": {
+                            "input": start_frame_image_ref,
+                            "resize_type": "scale longer dimension",
+                            "resize_type.longer_size": max(1536, max(width, height)),
+                            "scale_method": "lanczos",
+                        },
+                        "_meta": {"title": "Resize LTX Motion Target Like Official IC Workflow"},
+                    }
+                    target_condition_image_ref = ["78", 0]
+                elif "ImageResizeKJv2" in available_nodes:
+                    preprocess_nodes["78"] = {
+                        "class_type": "ImageResizeKJv2",
+                        "inputs": {
+                            "image": start_frame_image_ref,
+                            "width": width,
+                            "height": height,
+                            "upscale_method": "lanczos",
+                            "keep_proportion": "crop",
+                            "pad_color": "0, 0, 0",
+                            "crop_position": "center",
+                            "divisible_by": 32,
+                            "device": "cpu",
+                        },
+                        "_meta": {"title": "Resize LTX Motion Target Like IC Workflow"},
+                    }
+                    target_condition_image_ref = ["78", 0]
+                preprocess_nodes["79"] = {
+                    "class_type": "LTXVImgToVideoConditionOnly",
+                    "inputs": {
+                        "vae": video_vae_ref,
+                        "image": target_condition_image_ref,
+                        "latent": sampler_latent_ref,
+                        "strength": max(0.0, min(1.0, float(_number_or_none(video_options.get("motion_transfer_target_strength")) or 1.0))),
+                        "bypass": False,
+                    },
+                    "_meta": {"title": "LTX Motion Transfer Target Condition"},
+                }
+                sampler_latent_ref = ["79", 0]
+                scheduler_latent_ref = ["79", 0]
+            motion_guide_image_ref: list[Any] = ["72", 0]
+            if motion_transfer_enabled or motion_scaffold_route:
+                motion_guide_image_ref = ["75", 0]
                 if motion_control_mode == "pose" and ("DWPreprocessor" in available_nodes or "OpenposePreprocessor" in available_nodes):
                     pose_node = "DWPreprocessor" if "DWPreprocessor" in available_nodes else "OpenposePreprocessor"
                     pose_inputs: dict[str, Any] = {
-                        "image": ["72", 0],
+                        "image": ["75", 0],
                         "detect_hand": "enable",
                         "detect_body": "enable",
                         "detect_face": "enable",
@@ -3025,24 +3473,11 @@ def build_basic_ltx_img2video_workflow(
                         "inputs": pose_inputs,
                         "_meta": {"title": "LTX Motion Transfer Pose / DWPose"},
                     }
-                    if "RenderPeopleKps" in available_nodes:
-                        preprocess_nodes["272"] = {
-                            "class_type": "RenderPeopleKps",
-                            "inputs": {
-                                "kps": ["271", 1],
-                                "render_body": True,
-                                "render_hand": True,
-                                "render_face": True,
-                            },
-                            "_meta": {"title": "Draw LTX Motion Transfer Pose"},
-                        }
-                        motion_guide_image_ref = ["272", 0]
-                    else:
-                        motion_guide_image_ref = ["271", 0]
+                    motion_guide_image_ref = ["271", 0]
                 elif motion_control_mode == "canny" and ("CannyEdgePreprocessor" in available_nodes or "Canny" in available_nodes):
                     canny_node = "CannyEdgePreprocessor" if "CannyEdgePreprocessor" in available_nodes else "Canny"
                     canny_inputs: dict[str, Any] = {
-                        "image": ["72", 0],
+                        "image": ["75", 0],
                     }
                     if canny_node == "CannyEdgePreprocessor":
                         canny_inputs["low_threshold"] = int(_number_or_none(video_options.get("motion_transfer_canny_low")) or 92)
@@ -3054,7 +3489,7 @@ def build_basic_ltx_img2video_workflow(
                     preprocess_nodes["271"] = {
                         "class_type": canny_node,
                         "inputs": canny_inputs,
-                        "_meta": {"title": "LTX Motion Transfer Canny"},
+                        "_meta": {"title": "LTX Start/End Scaffold Canny IC Control" if motion_scaffold_route else "LTX Motion Transfer Canny"},
                     }
                     motion_guide_image_ref = ["271", 0]
                 elif motion_control_mode == "depth" and {"LoadVideoDepthAnythingModel", "VideoDepthAnythingProcess", "VideoDepthAnythingOutput"}.issubset(available_nodes):
@@ -3067,7 +3502,7 @@ def build_basic_ltx_img2video_workflow(
                         "class_type": "VideoDepthAnythingProcess",
                         "inputs": {
                             "vda_model": ["271", 0],
-                            "images": ["72", 0],
+                            "images": ["75", 0],
                             "input_size": int(_number_or_none(video_options.get("motion_transfer_depth_input_size")) or 518),
                             "max_res": max(width, height),
                             "precision": "fp32",
@@ -3080,7 +3515,64 @@ def build_basic_ltx_img2video_workflow(
                         "_meta": {"title": "LTX Motion Transfer Depth Images"},
                     }
                     motion_guide_image_ref = ["273", 0]
+                elif motion_scaffold_route and ("CannyEdgePreprocessor" in available_nodes or "Canny" in available_nodes):
+                    canny_node = "CannyEdgePreprocessor" if "CannyEdgePreprocessor" in available_nodes else "Canny"
+                    canny_inputs: dict[str, Any] = {"image": ["72", 0]}
+                    if canny_node == "CannyEdgePreprocessor":
+                        canny_inputs["low_threshold"] = int(_number_or_none(video_options.get("ltx_start_end_canny_low")) or 80)
+                        canny_inputs["high_threshold"] = int(_number_or_none(video_options.get("ltx_start_end_canny_high")) or 180)
+                        canny_inputs["resolution"] = max(width, height)
+                    else:
+                        canny_inputs["low_threshold"] = float(_number_or_none(video_options.get("ltx_start_end_canny_low")) or 0.35)
+                        canny_inputs["high_threshold"] = float(_number_or_none(video_options.get("ltx_start_end_canny_high")) or 0.75)
+                    preprocess_nodes["274"] = {
+                        "class_type": canny_node,
+                        "inputs": canny_inputs,
+                        "_meta": {"title": "LTX Start/End Scaffold Canny IC Control"},
+                    }
+                    motion_guide_image_ref = ["274", 0]
+            if (motion_transfer_enabled or motion_scaffold_route) and "ResizeImageMaskNode" in available_nodes:
+                preprocess_nodes["84"] = {
+                    "class_type": "SimpleMath+",
+                    "inputs": {
+                        "a": ic_lora_downscale_ref,
+                        "value": "a*32",
+                    },
+                    "_meta": {"title": "LTX IC-LoRA Resize Multiple"},
+                }
+                preprocess_nodes["83"] = {
+                    "class_type": "ResizeImageMaskNode",
+                    "inputs": {
+                        "input": motion_guide_image_ref,
+                        "resize_type": "scale to multiple",
+                        "resize_type.multiple": ["84", 0],
+                        "scale_method": "lanczos",
+                    },
+                    "_meta": {"title": "Resize LTX Motion Control Like Official IC Workflow"},
+                }
+                motion_guide_image_ref = ["83", 0]
             if ic_lora_loader_ref:
+                if motion_transfer_enabled:
+                    preprocess_nodes["82"] = {
+                        "class_type": "GetImageSize",
+                        "inputs": {"image": motion_guide_image_ref},
+                        "_meta": {"title": "Measure LTX Motion Guide Frames"},
+                    }
+                    preprocess_nodes["7"] = {
+                        "class_type": "EmptyLTXVLatentVideo",
+                        "inputs": {
+                            "width": ["82", 0],
+                            "height": ["82", 1],
+                            "length": ["82", 2],
+                            "batch_size": max(1, request.batch_size),
+                        },
+                        "_meta": {"title": "LTX Motion Transfer Latent From Guide Frames"},
+                    }
+                    sampler_latent_ref = ["7", 0]
+                    scheduler_latent_ref = ["7", 0]
+                    preprocess_nodes["79"]["inputs"]["latent"] = sampler_latent_ref
+                    sampler_latent_ref = ["79", 0]
+                    scheduler_latent_ref = ["79", 0]
                 preprocess_nodes["73"] = {
                     "class_type": "LTXAddVideoICLoRAGuide",
                     "inputs": {
@@ -3091,7 +3583,7 @@ def build_basic_ltx_img2video_workflow(
                         "image": motion_guide_image_ref,
                         "frame_idx": 0,
                         "strength": max(0.0, min(1.0, motion_strength)),
-                        "latent_downscale_factor": 1.0,
+                        "latent_downscale_factor": ic_lora_downscale_ref,
                         "crop": str(video_options.get("ltx_ic_crop") or "disabled"),
                         "use_tiled_encode": bool(video_options.get("ltx_ic_tiled_encode") or False),
                         "tile_size": int(_number_or_none(video_options.get("ltx_ic_tile_size")) or 256),
@@ -3117,50 +3609,6 @@ def build_basic_ltx_img2video_workflow(
             ltx_negative_ref = ["73", 1]
             sampler_latent_ref = ["73", 2]
             scheduler_latent_ref = ["73", 2]
-            motion_target_image_name = str(reference_end_image_name or reference_image_name or "").strip()
-            if motion_transfer_enabled and motion_target_image_name and ic_lora_loader_ref:
-                preprocess_nodes["78"] = {
-                    "class_type": "LoadImage",
-                    "inputs": {"image": motion_target_image_name},
-                    "_meta": {"title": "LTX Motion Transfer Target Image"},
-                }
-                preprocess_nodes["79"] = {
-                    "class_type": "ImageResizeKJv2",
-                    "inputs": {
-                        "image": ["78", 0],
-                        "width": width,
-                        "height": height,
-                        "upscale_method": "lanczos",
-                        "keep_proportion": "crop",
-                        "pad_color": "0, 0, 0",
-                        "crop_position": "center",
-                        "divisible_by": 32,
-                        "device": "cpu",
-                    },
-                    "_meta": {"title": "Resize LTX Motion Target Image"},
-                }
-                preprocess_nodes["80"] = {
-                    "class_type": "LTXAddVideoICLoRAGuide",
-                    "inputs": {
-                        "positive": ltx_positive_ref,
-                        "negative": ltx_negative_ref,
-                        "vae": video_vae_ref,
-                        "latent": sampler_latent_ref,
-                        "image": ["79", 0],
-                        "frame_idx": max(0, length - 1),
-                        "strength": max(0.0, min(1.0, float(_number_or_none(video_options.get("motion_transfer_target_strength") or video_options.get("end_frame_strength")) or 1.0))),
-                        "latent_downscale_factor": 1.0,
-                        "crop": str(video_options.get("ltx_ic_crop") or "disabled"),
-                        "use_tiled_encode": bool(video_options.get("ltx_ic_tiled_encode") or False),
-                        "tile_size": int(_number_or_none(video_options.get("ltx_ic_tile_size")) or 256),
-                        "tile_overlap": int(_number_or_none(video_options.get("ltx_ic_tile_overlap")) or 64),
-                    },
-                    "_meta": {"title": "LTX IC-LoRA Motion Transfer Target"},
-                }
-                ltx_positive_ref = ["80", 0]
-                ltx_negative_ref = ["80", 1]
-                sampler_latent_ref = ["80", 2]
-                scheduler_latent_ref = ["80", 2]
 
     audio_nodes: dict[str, Any] = {}
     if has_audio_context:
@@ -3197,7 +3645,7 @@ def build_basic_ltx_img2video_workflow(
         decode_latent_ref = ["19", 0]
 
     video_vae_nodes: dict[str, Any] = {}
-    if video_vae_name:
+    if video_vae_name and not motion_transfer_route:
         video_vae_nodes["21"] = {
             "class_type": "VAELoader",
             "inputs": {"vae_name": video_vae_name},
@@ -3219,20 +3667,53 @@ def build_basic_ltx_img2video_workflow(
         refiner_latent_ref: list[Any] = ["24", 0]
         if not text_to_video:
             if ((reference_end_image_name or "").strip() or len(frame_guides) > 1) and not use_motion_scaffold:
-                latent_upscale_nodes["25"] = {
-                    "class_type": "LTXVImgToVideoInplace",
-                    "inputs": {
-                        "vae": video_vae_ref,
-                        "image": reference_image_ref,
-                        "latent": ["24", 0],
-                        "strength": float(video_options.get("upscale_condition_strength") or 1.0),
-                        "bypass": False,
-                    },
-                    "_meta": {"title": "Official LTX Inplace Reference After Latent Upscale"},
-                }
                 refiner_positive_ref = ltx_positive_ref
                 refiner_negative_ref = ltx_negative_ref
-                refiner_latent_ref = ["25", 0]
+                if not (use_ic_timeline_guides and transition_route and ic_lora_loader_ref):
+                    upscale_in_place_inputs: dict[str, Any] = {
+                        "vae": video_vae_ref,
+                        "latent": ["24", 0],
+                        "num_images": str(len(guide_specs)),
+                    }
+                    for guide_index, guide in enumerate(guide_specs, start=1):
+                        load_id = "3" if guide_index == 1 and guide["image"] == reference_image_name else str(550 + guide_index)
+                        resize_id = str(560 + guide_index)
+                        preprocess_id = str(570 + guide_index)
+                        if load_id != "3":
+                            latent_upscale_nodes[load_id] = {
+                                "class_type": "LoadImage",
+                                "inputs": {"image": guide["image"]},
+                                "_meta": {"title": f"LTX Upscale Timeline Frame {guide_index}"},
+                            }
+                        latent_upscale_nodes[resize_id] = {
+                            "class_type": "ImageResizeKJv2",
+                            "inputs": {
+                                "image": [load_id, 0],
+                                "width": final_width,
+                                "height": final_height,
+                                "upscale_method": "lanczos",
+                                "keep_proportion": "pad",
+                                "pad_color": "0, 0, 0",
+                                "crop_position": "center",
+                                "divisible_by": 32,
+                                "device": "cpu",
+                            },
+                            "_meta": {"title": f"Resize LTX Upscale Timeline Frame {guide_index}"},
+                        }
+                        latent_upscale_nodes[preprocess_id] = {
+                            "class_type": "LTXVPreprocess",
+                            "inputs": {"image": [resize_id, 0], "img_compression": img_compression},
+                            "_meta": {"title": f"LTX Upscale Timeline Frame {guide_index} Preprocess"},
+                        }
+                        upscale_in_place_inputs[f"num_images.image_{guide_index}"] = [preprocess_id, 0]
+                        upscale_in_place_inputs[f"num_images.strength_{guide_index}"] = guide["strength"]
+                        upscale_in_place_inputs[f"num_images.index_{guide_index}"] = guide["index"]
+                    latent_upscale_nodes["25"] = {
+                        "class_type": "LTXVImgToVideoInplaceKJ",
+                        "inputs": upscale_in_place_inputs,
+                        "_meta": {"title": "Reapply LTX Start/End Frames After Latent Upscale"},
+                    }
+                    refiner_latent_ref = ["25", 0]
             else:
                 latent_upscale_nodes["25"] = {
                     "class_type": "LTXVImgToVideoConditionOnly",
@@ -3247,7 +3728,7 @@ def build_basic_ltx_img2video_workflow(
                 refiner_latent_ref = ["25", 0]
         if refine_latent_upscale:
             if not text_to_video and (not (reference_end_image_name or "").strip() or use_motion_scaffold):
-                latent_upscale_nodes["74"] = {
+                latent_upscale_nodes["540"] = {
                     "class_type": "LTXVCropGuides",
                     "inputs": {
                         "positive": ltx_positive_ref,
@@ -3256,9 +3737,9 @@ def build_basic_ltx_img2video_workflow(
                     },
                     "_meta": {"title": "Crop LTX Guides Before Upscale Refiner"},
                 }
-                refiner_positive_ref: list[Any] = ["74", 0]
-                refiner_negative_ref: list[Any] = ["74", 1]
-                refiner_latent_ref = ["74", 2]
+                refiner_positive_ref: list[Any] = ["540", 0]
+                refiner_negative_ref: list[Any] = ["540", 1]
+                refiner_latent_ref = ["540", 2]
             elif not text_to_video:
                 refiner_positive_ref = refiner_positive_ref
                 refiner_negative_ref = refiner_negative_ref
@@ -3282,10 +3763,11 @@ def build_basic_ltx_img2video_workflow(
             "inputs": {"sigmas": LTX_TRANSITION_REFINER_SIGMAS if transition_route else LTX_UPSCALE_REFINER_SIGMAS},
             "_meta": {"title": "Official LTX 2.3 Upscale Refiner Sigmas"},
             }
+            refiner_model_ref = add_detailer_lora(transition_model_ref, "LTX Refiner Detailer LoRA")
             latent_upscale_nodes["28"] = {
                 "class_type": "CFGGuider",
                 "inputs": {
-                    "model": transition_model_ref,
+                    "model": refiner_model_ref,
                     "positive": refiner_positive_ref,
                     "negative": refiner_negative_ref,
                     "cfg": request.cfg,
@@ -3334,6 +3816,19 @@ def build_basic_ltx_img2video_workflow(
         }
         create_video_inputs["audio"] = ["33", 0]
 
+    guide_crop_nodes: dict[str, Any] = {}
+    if motion_transfer_route:
+        guide_crop_nodes["81"] = {
+            "class_type": "LTXVCropGuides",
+            "inputs": {
+                "positive": ltx_positive_ref,
+                "negative": ltx_negative_ref,
+                "latent": decode_latent_ref,
+            },
+            "_meta": {"title": "Crop LTX Motion Transfer Guides Before Decode"},
+        }
+        decode_latent_ref = ["81", 2]
+
     final_scale_nodes: dict[str, Any] = {}
     if use_latent_upscale:
         factor = _ltx_latent_upscale_factor(latent_upscale_name)
@@ -3347,7 +3842,7 @@ def build_basic_ltx_img2video_workflow(
                     "upscale_method": "lanczos",
                     "width": final_width,
                     "height": final_height,
-                    "crop": "center",
+                    "crop": "disabled",
                 },
                 "_meta": {"title": "Match Requested LTX Output Size"},
             }
@@ -3465,7 +3960,7 @@ def build_basic_ltx_img2video_workflow(
             "_meta": {"title": "LTX Frame Rate Conditioning"},
         },
         "7": {
-            "class_type": "EmptyLTXVLatentVideo" if (text_to_video or use_first_last_guides) else "LTXVImgToVideo",
+            "class_type": "EmptyLTXVLatentVideo" if (text_to_video or use_first_last_guides or motion_transfer_route) else "LTXVImgToVideo",
             "inputs": (
                 {
                     "width": width,
@@ -3473,7 +3968,7 @@ def build_basic_ltx_img2video_workflow(
                     "length": length,
                     "batch_size": max(1, request.batch_size),
                 }
-                if (text_to_video or use_first_last_guides)
+                if (text_to_video or use_first_last_guides or motion_transfer_route)
                 else {
                     "positive": ["6", 0],
                     "negative": ["6", 1],
@@ -3506,7 +4001,7 @@ def build_basic_ltx_img2video_workflow(
         "11": {
             "class_type": "CFGGuider",
             "inputs": {
-                "model": transition_model_ref,
+                "model": main_model_ref,
                 "positive": ltx_positive_ref,
                 "negative": ltx_negative_ref,
                 "cfg": request.cfg,
@@ -3558,6 +4053,7 @@ def build_basic_ltx_img2video_workflow(
     workflow.update(video_vae_nodes)
     workflow.update(preprocess_nodes)
     workflow.update(audio_nodes)
+    workflow.update(guide_crop_nodes)
     workflow.update(latent_upscale_nodes)
     workflow.update(final_scale_nodes)
     workflow.update(trim_nodes)
@@ -3875,11 +4371,12 @@ def _ensure_ltx_director_frame_trim(api: dict[str, Any], request: GenerateReques
     if request.preset.lower() != "ltx" or str(request.workspace or "").lower() != "director":
         return
     director_options = request.director or {}
+    video_options = request.video or {}
     target_frames_value = _number_or_none(director_options.get("duration_frames"))
     if target_frames_value is not None:
-        target_frames = max(1, int(round(target_frames_value)))
+        target_frames = max(1, int(round(target_frames_value)) + 1)
     else:
-        target_frames = max(1, int(round(_number_or_none((request.video or {}).get("frames")) or 0)))
+        target_frames = max(1, int(round(_number_or_none(video_options.get("frames")) or 0)))
     if target_frames <= 1:
         return
     indexes = f"0:{target_frames}"
@@ -4678,6 +5175,11 @@ def _ensure_controlnet_route(api: dict[str, Any], request: GenerateRequest, asse
     controlnet_image_name = assets.get("controlnet_image")
     if not _controlnet_can_apply(request, controlnet_name, controlnet_image_name):
         return
+    if (
+        assets.get("controlnet_category") == "model_patches"
+        and request.preset.lower() in {"qwen", "zimageturbo", "zimage"}
+    ):
+        return
 
     loader_id = None
     for node_id, node in api.items():
@@ -4801,21 +5303,55 @@ def _ensure_ltx_detailer_lora(api: dict[str, Any], request: GenerateRequest, ass
             inputs["strength_model"] = strength_model
             return
 
-    target_refs = _model_input_refs(api)
-    if not target_refs:
+    target_model_inputs: list[tuple[dict[str, Any], list[Any]]] = []
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        inputs = node.get("inputs", {})
+        if (
+            class_lower == "cfgguider"
+            and isinstance(inputs, dict)
+            and isinstance(inputs.get("model"), list)
+            and any(token in title for token in ("refiner", "upscale", "detailer"))
+        ):
+            target_model_inputs.append((inputs, list(inputs["model"])))
+    if not target_model_inputs:
+        target_refs = _model_input_refs(api)
+        if not target_refs:
+            return
+        original_model_ref = target_refs[0]
+        node_id = str(_next_api_node_id(api))
+        api[node_id] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": list(original_model_ref),
+                "lora_name": detailer_name,
+                "strength_model": strength_model,
+            },
+            "_meta": {"title": f"LTX Detailer LoRA - {Path(detailer_name).name}"},
+        }
+        _replace_model_refs(api, original_model_ref, [node_id, 0])
         return
-    original_model_ref = target_refs[0]
-    node_id = str(_next_api_node_id(api))
-    api[node_id] = {
-        "class_type": "LoraLoaderModelOnly",
-        "inputs": {
-            "model": list(original_model_ref),
-            "lora_name": detailer_name,
-            "strength_model": strength_model,
-        },
-        "_meta": {"title": f"LTX Detailer LoRA - {Path(detailer_name).name}"},
-    }
-    _replace_model_refs(api, original_model_ref, [node_id, 0])
+    detailer_refs: dict[tuple[Any, ...], list[Any]] = {}
+    for inputs, original_model_ref in target_model_inputs:
+        key = tuple(original_model_ref)
+        detailer_ref = detailer_refs.get(key)
+        if detailer_ref is None:
+            node_id = str(_next_api_node_id(api))
+            api[node_id] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": list(original_model_ref),
+                    "lora_name": detailer_name,
+                    "strength_model": strength_model,
+                },
+                "_meta": {"title": f"LTX Refiner Detailer LoRA - {Path(detailer_name).name}"},
+            }
+            detailer_ref = [node_id, 0]
+            detailer_refs[key] = detailer_ref
+        inputs["model"] = list(detailer_ref)
 
 
 def _ensure_ltx_ic_lora_control_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, str]) -> None:

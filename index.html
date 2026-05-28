@@ -55,6 +55,19 @@
             background-color: #09090b;
             color: #d4d4d8;
             overflow: hidden;
+            top: 0 !important;
+        }
+
+        .goog-te-banner-frame,
+        .goog-te-balloon-frame,
+        iframe.skiptranslate {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+        }
+
+        body > .skiptranslate {
+            display: none !important;
         }
 
         /* Flat Scrollbars */
@@ -627,6 +640,14 @@
             z-index: 12;
         }
 
+        #inpaintBrushCursor.wand {
+            width: 24px !important;
+            height: 24px !important;
+            border-radius: 3px;
+            border-color: #facc15;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 12px rgba(250, 204, 21, 0.55);
+        }
+
         /* Draggable Lora Strength */
         .lora-strength-drag {
             cursor: ew-resize;
@@ -762,16 +783,101 @@
             height: 512px;
             max-width: min(78vw, 820px);
             max-height: 72vh;
+            background-color: #09090b;
+            background-image:
+                linear-gradient(45deg, rgba(255,255,255,0.045) 25%, transparent 25%),
+                linear-gradient(-45deg, rgba(255,255,255,0.045) 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.045) 75%),
+                linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.045) 75%);
+            background-size: 32px 32px;
+            background-position: 0 0, 0 16px, 16px -16px, -16px 0;
         }
 
-        #inpaintBaseImage,
-        #inpaintMaskCanvas {
-            width: 100%;
-            height: 100%;
+        #inpaintBaseImage {
+            position: absolute;
+            object-fit: contain;
         }
 
         #inpaintMaskCanvas {
+            position: absolute;
             touch-action: none;
+        }
+
+        #inpaintExtendHandles {
+            position: absolute;
+            pointer-events: none;
+        }
+
+        #inpaintExtendHandles.active {
+            pointer-events: auto;
+        }
+
+        .inpaint-extend-handle {
+            position: absolute;
+            border: 1px solid rgba(255, 59, 59, 0.95);
+            background: rgba(9, 9, 11, 0.82);
+            color: #ffffff;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 14;
+        }
+
+        #inpaintExtendHandles.active .inpaint-extend-handle {
+            display: flex;
+        }
+
+        #inpaintGenerativeFillPreview {
+            position: absolute;
+            display: none;
+            pointer-events: none;
+            z-index: 11;
+        }
+
+        #inpaintGenerativeFillPreview.active {
+            display: block;
+        }
+
+        .inpaint-fill-strip {
+            position: absolute;
+            display: none;
+            background:
+                repeating-linear-gradient(45deg, rgba(255, 59, 59, 0.30) 0 8px, rgba(255, 59, 59, 0.16) 8px 16px);
+            border: 1px dashed rgba(255, 255, 255, 0.82);
+        }
+
+        .inpaint-extend-handle[data-inpaint-extend-side="top"],
+        .inpaint-extend-handle[data-inpaint-extend-side="bottom"] {
+            left: 50%;
+            width: 64px;
+            height: 18px;
+            transform: translateX(-50%);
+            cursor: ns-resize;
+        }
+
+        .inpaint-extend-handle[data-inpaint-extend-side="top"] {
+            top: -9px;
+        }
+
+        .inpaint-extend-handle[data-inpaint-extend-side="bottom"] {
+            bottom: -9px;
+        }
+
+        .inpaint-extend-handle[data-inpaint-extend-side="left"],
+        .inpaint-extend-handle[data-inpaint-extend-side="right"] {
+            top: 50%;
+            width: 18px;
+            height: 64px;
+            transform: translateY(-50%);
+            cursor: ew-resize;
+        }
+
+        .inpaint-extend-handle[data-inpaint-extend-side="left"] {
+            left: -9px;
+        }
+
+        .inpaint-extend-handle[data-inpaint-extend-side="right"] {
+            right: -9px;
         }
 
         .flat-button {
@@ -1160,6 +1266,9 @@
                             <option value="Qwen">Qwen</option>
                             <option value="Qwen Image">Qwen Image</option>
                             <option value="Qwen Image Edit">Qwen Image Edit</option>
+                            <option value="ZImageTurbo">Z-Image Turbo</option>
+                            <option value="ZImageBase">Z-Image Base</option>
+                            <option value="Z-Image">Z-Image Any</option>
                             <option value="Flux.1 D">Flux</option>
                             <option value="Flux.1 S">Flux Schnell</option>
                             <option value="LTXV 2.3">LTX 2.3</option>
@@ -1605,11 +1714,30 @@
                     <select id="img2imgModeSelect" class="hidden">
                         <option>Image to Image</option>
                         <option>Inpaint masked area</option>
+                        <option>Remove mask</option>
                         <option>Inpaint sketch</option>
-                        <option>Outpaint expand canvas</option>
+                        <option value="Outpaint expand canvas">Generative Fill</option>
                         <option>Sketch to image</option>
                         <option>Reference-only adapter</option>
                     </select>
+                    <div id="inpaintEngineControls" class="hidden grid grid-cols-[1fr_82px] gap-2 items-end">
+                        <label class="space-y-1">
+                            <span class="mini-label">Inpaint engine</span>
+                            <select id="inpaintEngineSelect" class="flat-input appearance-none cursor-pointer">
+                                <option value="lanpaint">LanPaint</option>
+                                <option value="differential">Differential Diffusion</option>
+                                <option value="default">Default VAE Inpaint</option>
+                            </select>
+                        </label>
+                        <label class="space-y-1">
+                            <span class="mini-label">Strength</span>
+                            <input id="differentialStrengthInput" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.01" value="1">
+                        </label>
+                        <label id="lanpaintStepsControl" class="hidden col-span-2 space-y-1">
+                            <span class="mini-label">LanPaint thinking</span>
+                            <input id="lanpaintThinkingStepsInput" class="flat-input font-mono text-center" type="number" min="0" max="100" step="1" value="5">
+                        </label>
+                    </div>
                     <input id="maskBlurSlider" class="hidden" type="range" min="0" max="64" value="8">
                     <select id="maskContentSelect" class="hidden"><option>Original</option></select>
                     <input id="controlDepthToggle" class="hidden" type="checkbox" checked>
@@ -1785,6 +1913,7 @@
                                             <option value="pose" selected>Pose / DWPose</option>
                                             <option value="canny">Canny / Edges</option>
                                             <option value="depth">Depth / Geometry</option>
+                                            <option value="camera">Camera / Cameraman</option>
                                         </select>
                                     </label>
                                 </div>
@@ -2023,6 +2152,7 @@
                 <input id="ltxDirectorImageInput" type="file" accept="image/*,video/*" multiple class="hidden">
                 <input id="ltxDirectorMultiImageInput" type="file" accept="image/*" multiple class="hidden">
                 <input id="ltxDirectorAudioInput" type="file" accept="audio/*" multiple class="hidden">
+                <input id="ltxDirectorMotionVideoInput" type="file" accept="video/*" class="hidden">
                 <div class="flex-1 min-w-0 flex flex-col xl:flex-row overflow-hidden">
                     <section class="flex-1 min-w-0 flex flex-col border-r border-nexus-border bg-nexus-bg">
                         <div class="px-4 py-2 border-b border-nexus-border bg-zinc-950 flex items-center justify-between gap-4 text-[10px] font-mono shrink-0">
@@ -2222,6 +2352,12 @@
                         <button id="clearLinearOutputBtn" type="button" onclick="clearLinearOutput()" class="hidden absolute top-3 right-3 z-20 w-8 h-8 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm backdrop-blur" title="Clear Linear View">
                             <i class="fa-solid fa-xmark text-xs"></i>
                         </button>
+                        <div id="ltxMotionPreprocessBar" class="hidden absolute left-3 top-3 z-20 items-center gap-2 bg-nexus-panel/95 border border-purple-500 px-2 py-1 rounded-sm backdrop-blur">
+                            <span class="text-[9px] font-bold uppercase text-purple-300"><i class="fa-solid fa-person-running mr-1"></i>Motion Preprocess</span>
+                            <button type="button" onclick="generateWithLtxMotionPreprocess()" class="h-6 px-2 bg-nexus-red text-white text-[9px] font-bold uppercase rounded-sm">Generate</button>
+                            <button type="button" onclick="saveLtxMotionPreprocess()" class="h-6 px-2 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white text-[9px] font-bold uppercase rounded-sm">Save</button>
+                            <button type="button" onclick="clearLtxMotionPreprocess()" class="h-6 w-6 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-nexus-red rounded-sm"><i class="fa-solid fa-xmark text-[9px]"></i></button>
+                        </div>
                         <img id="mainImageDisplay" src="" alt="Generated Output" class="hidden max-w-full max-h-[75vh] object-contain border border-nexus-border shadow-xl">
                         <video id="mainVideoDisplay" src="" controls loop class="hidden max-w-full max-h-[75vh] object-contain border border-nexus-border shadow-xl"></video>
 
@@ -2246,13 +2382,15 @@
                 <div class="absolute top-4 left-4 flex flex-col gap-1 bg-nexus-panel border border-nexus-border p-1 rounded-sm shadow-xl z-20">
                     <button class="canvas-tool-btn w-8 h-8 flex items-center justify-center text-black bg-white hover:bg-gray-200 rounded-sm" title="Move Tool" onclick="setInpaintMode('Move')"><i class="fa-solid fa-hand"></i></button>
                     <button class="canvas-tool-btn w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm" title="Brush Mask" onclick="setInpaintMode('Inpaint masked area')"><i class="fa-solid fa-paintbrush"></i></button>
+                    <button class="canvas-tool-btn w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm" title="Remove Mask" onclick="setInpaintMode('Remove mask')"><i class="fa-solid fa-scissors"></i></button>
+                    <button class="canvas-tool-btn w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm" title="Magic Wand" onclick="setInpaintMode('Magic Wand')"><i class="fa-solid fa-wand-magic-sparkles"></i></button>
+                    <button class="canvas-tool-btn w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm" title="Select Object" onclick="setInpaintMode('Select Object')"><i class="fa-solid fa-object-group"></i></button>
                     <button class="canvas-tool-btn w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm" title="Inpaint Sketch" onclick="setInpaintMode('Inpaint sketch')"><i class="fa-solid fa-pen-nib"></i></button>
                     <button class="canvas-tool-btn w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm" title="Eraser" onclick="setInpaintMode('Erase mask')"><i class="fa-solid fa-eraser"></i></button>
                     <button id="inpaintUndoBtn" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm opacity-40" title="Undo mask stroke" onclick="undoInpaintMask()"><i class="fa-solid fa-rotate-left"></i></button>
                     <button id="inpaintRedoBtn" class="w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm opacity-40" title="Redo mask stroke" onclick="redoInpaintMask()"><i class="fa-solid fa-rotate-right"></i></button>
                     <div class="w-full h-px bg-nexus-border my-1"></div>
-                    <button class="canvas-tool-btn w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm" title="Bounding Box" onclick="setInpaintMode('Outpaint expand canvas')"><i class="fa-solid fa-vector-square"></i></button>
-                    <button id="extendCanvasBtn" class="canvas-tool-btn w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm" title="Extend canvas" onclick="extendCanvasArea()"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
+                    <button class="canvas-tool-btn w-8 h-8 flex items-center justify-center text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm" title="Generative Fill" onclick="setInpaintMode('Outpaint expand canvas')"><i class="fa-solid fa-vector-square"></i></button>
                 </div>
 
                 <div class="absolute bottom-4 right-4 flex gap-2 bg-nexus-panel border border-nexus-border p-1 rounded-sm z-20">
@@ -2267,6 +2405,25 @@
                         <span class="mini-label w-16">Brush</span>
                         <input id="inpaintBrushSizeSlider" type="range" min="4" max="128" value="28" step="1" class="flex-1">
                         <span id="inpaintBrushSizeValue" class="text-[10px] font-mono text-white w-10 text-right">28px</span>
+                    </div>
+                </div>
+
+                <div id="inpaintWandControls" class="hidden absolute bottom-20 left-4 z-20 bg-nexus-panel border border-nexus-border p-2 rounded-sm w-[280px] space-y-2">
+                    <div class="flex items-center gap-3">
+                        <span class="mini-label w-16">Tolerance</span>
+                        <input id="inpaintWandToleranceSlider" type="range" min="4" max="96" value="34" step="1" class="flex-1">
+                        <span id="inpaintWandToleranceValue" class="text-[10px] font-mono text-white w-10 text-right">34</span>
+                    </div>
+                    <div class="grid grid-cols-[1fr_92px] gap-2">
+                        <label class="flex items-center gap-2 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted">
+                            <input id="inpaintWandContiguousToggle" type="checkbox" class="accent-nexus-red" checked>
+                            <span>Contiguous</span>
+                        </label>
+                        <select id="inpaintWandPaintMode" class="flat-input text-[10px] py-1.5">
+                            <option value="fill">Fill</option>
+                            <option value="remove">Remove</option>
+                            <option value="erase">Erase</option>
+                        </select>
                     </div>
                 </div>
 
@@ -2292,7 +2449,19 @@
                         <canvas id="inpaintMaskCanvas" class="absolute inset-0 hidden"></canvas>
                         <div id="inpaintBrushCursor" aria-hidden="true"></div>
                         <div id="inpaintEmptyState" class="absolute inset-0 flex items-center justify-center text-[10px] text-nexus-muted font-mono bg-nexus-bg">No source image</div>
-                        <div class="absolute inset-0 canvas-crop-box pointer-events-none"></div>
+                        <div id="inpaintCanvasBounds" class="absolute inset-0 canvas-crop-box pointer-events-none"></div>
+                        <div id="inpaintGenerativeFillPreview" aria-hidden="true">
+                            <span class="inpaint-fill-strip" data-inpaint-fill-strip="top"></span>
+                            <span class="inpaint-fill-strip" data-inpaint-fill-strip="right"></span>
+                            <span class="inpaint-fill-strip" data-inpaint-fill-strip="bottom"></span>
+                            <span class="inpaint-fill-strip" data-inpaint-fill-strip="left"></span>
+                        </div>
+                        <div id="inpaintExtendHandles" aria-hidden="true">
+                            <button type="button" class="inpaint-extend-handle" data-inpaint-extend-side="top" title="Drag to extend top edge" onpointerdown="beginInpaintExtendDrag(event)"><i class="fa-solid fa-arrow-up text-[9px]"></i></button>
+                            <button type="button" class="inpaint-extend-handle" data-inpaint-extend-side="right" title="Drag to extend right edge" onpointerdown="beginInpaintExtendDrag(event)"><i class="fa-solid fa-arrow-right text-[9px]"></i></button>
+                            <button type="button" class="inpaint-extend-handle" data-inpaint-extend-side="bottom" title="Drag to extend bottom edge" onpointerdown="beginInpaintExtendDrag(event)"><i class="fa-solid fa-arrow-down text-[9px]"></i></button>
+                            <button type="button" class="inpaint-extend-handle" data-inpaint-extend-side="left" title="Drag to extend left edge" onpointerdown="beginInpaintExtendDrag(event)"><i class="fa-solid fa-arrow-left text-[9px]"></i></button>
+                        </div>
                         <span id="inpaintAreaLabel" class="bg-nexus-panel text-white text-[10px] font-mono px-2 py-1 absolute border border-nexus-red">Inpaint Area (512x512)</span>
                     </div>
                 </div>
@@ -2449,7 +2618,7 @@
                 <div class="flex-1 grid grid-cols-1 xl:grid-cols-[minmax(410px,48%)_1fr] overflow-hidden">
                     <aside class="border-b xl:border-b-0 xl:border-r border-nexus-border bg-zinc-950 overflow-y-auto">
                         <div class="p-4 space-y-4">
-                            <input id="extrasFileInput" type="file" accept="image/*" multiple class="hidden" onchange="handleExtrasFileInput(event)">
+                            <input id="extrasFileInput" type="file" accept="image/*,video/*" multiple class="hidden" onchange="handleExtrasFileInput(event)">
                             <div id="extrasDropzone" onclick="triggerExtrasFilePicker()" ondragover="event.preventDefault(); this.classList.add('border-nexus-red')" ondragleave="this.classList.remove('border-nexus-red')" ondrop="handleExtrasDrop(event)" class="extras-drop-zone border border-dashed border-[#1d2434] min-h-36 flex items-center justify-center text-center cursor-pointer transition-colors hover:border-nexus-red rounded-sm">
                                 <div id="extrasDropEmpty" class="flex flex-col items-center px-5">
                                     <i id="extrasDropIcon" class="fa-solid fa-cloud-arrow-up text-2xl text-nexus-red"></i>
@@ -2518,8 +2687,14 @@
                                     </div>
                                     <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
                                         <span><span class="font-bold block">Face restoration</span><span class="text-[9px] text-nexus-muted font-mono">GFPGAN style pass</span></span>
-                                        <span class="toggle-switch"><input id="extrasFaceRestore" type="checkbox"><span class="toggle-track"></span></span>
+                                        <span class="toggle-switch"><input id="extrasFaceRestore" type="checkbox" onchange="syncExtrasFaceRestoreUi('image')"><span class="toggle-track"></span></span>
                                     </label>
+                                    <div id="extrasImageFaceRestoreControls" class="hidden space-y-1.5">
+                                        <label class="mini-label">Face model</label>
+                                        <select id="extrasImageFaceRestoreModel" class="flat-input appearance-none cursor-pointer">
+                                            <option value="GFPGANv1.4.pth">GFPGAN v1.4</option>
+                                        </select>
+                                    </div>
                                     <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
                                         <span><span class="font-bold block">Color match</span><span class="text-[9px] text-nexus-muted font-mono">Preserve source palette</span></span>
                                         <span class="toggle-switch"><input id="extrasColorMatch" type="checkbox" checked><span class="toggle-track"></span></span>
@@ -2549,9 +2724,24 @@
                                         <span class="toggle-switch"><input id="extrasVideoUpscaleToggle" type="checkbox" onchange="syncExtrasVideoUpscaleUi()"><span class="toggle-track"></span></span>
                                     </label>
                                     <div class="space-y-1.5">
-                                        <label class="mini-label">Upscale model</label>
+                                        <label class="mini-label">Upscale engine</label>
+                                        <select id="extrasVideoUpscaleEngine" class="flat-input appearance-none cursor-pointer" disabled onchange="syncExtrasVideoUpscaleUi()">
+                                            <option value="standard">Standard / Upscale model</option>
+                                            <option value="flashvsr">FlashVSR / light VSR</option>
+                                            <option value="seedvr2">SeedVR2 / quality restore</option>
+                                            <option value="ltx_detailer">LTX IC Detailer / refine upscale</option>
+                                        </select>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="mini-label">Standard fallback model</label>
                                         <select id="extrasVideoUpscaleModel" class="flat-input appearance-none cursor-pointer" disabled>
                                             <option value="None">No compatible models detected</option>
+                                        </select>
+                                    </div>
+                                    <div id="extrasVideoRestoreModelWrap" class="hidden space-y-1.5">
+                                        <label class="mini-label">Restore / detailer model</label>
+                                        <select id="extrasVideoRestoreModel" class="flat-input appearance-none cursor-pointer" disabled>
+                                            <option value="None">No compatible restore models detected</option>
                                         </select>
                                     </div>
                                     <div class="grid grid-cols-2 gap-2">
@@ -2566,7 +2756,7 @@
                                     </div>
                                     <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">
                                         <span><span class="font-bold block">Preserve alpha</span><span class="text-[9px] text-nexus-muted font-mono">Routes alpha-safe video formats</span></span>
-                                        <span class="toggle-switch"><input id="extrasVideoAlphaToggle" type="checkbox" checked onchange="syncExtrasAlphaUi()"><span class="toggle-track"></span></span>
+                                        <span class="toggle-switch"><input id="extrasVideoAlphaToggle" type="checkbox" onchange="syncExtrasAlphaUi()"><span class="toggle-track"></span></span>
                                     </label>
                                 </section>
 
@@ -2612,9 +2802,24 @@
                                         <i class="fa-solid fa-wave-square text-nexus-red text-[10px]"></i>
                                     </div>
                                     <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">Video denoise<span class="toggle-switch"><input id="extrasVideoDenoiseToggle" type="checkbox" onchange="syncExtrasVideoDenoiseUi()"><span class="toggle-track"></span></span></label>
-                                    <div id="extrasVideoDenoiseControls" class="hidden space-y-1">
+                                    <div id="extrasVideoDenoiseControls" class="hidden space-y-2">
+                                        <div class="space-y-1.5">
+                                            <label class="mini-label">Denoise model</label>
+                                            <select id="extrasVideoDenoiseModel" class="flat-input appearance-none cursor-pointer">
+                                                <option value="ffmpeg_hqdn3d">FFmpeg hqdn3d (built-in)</option>
+                                            </select>
+                                        </div>
                                         <div class="flex justify-between text-[10px] font-mono text-nexus-text"><span>Denoise strength</span><span id="extrasVideoDenoiseValue" class="text-nexus-red font-bold">0.20</span></div>
                                         <input id="extrasVideoDenoiseSlider" type="range" min="0" max="1" value="0.20" step="0.01" oninput="document.getElementById('extrasVideoDenoiseValue').innerText = Number(this.value).toFixed(2); renderExtrasSource();">
+                                    </div>
+                                    <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2.5 rounded-sm text-xs text-white">Face restoration<span class="toggle-switch"><input id="extrasVideoFaceRestoreToggle" type="checkbox" onchange="syncExtrasFaceRestoreUi('video')"><span class="toggle-track"></span></span></label>
+                                    <div id="extrasVideoFaceRestoreControls" class="hidden space-y-2">
+                                        <div class="space-y-1.5">
+                                            <label class="mini-label">Face model</label>
+                                            <select id="extrasVideoFaceRestoreModel" class="flat-input appearance-none cursor-pointer">
+                                                <option value="GFPGANv1.4.pth">GFPGAN v1.4</option>
+                                            </select>
+                                        </div>
                                     </div>
                                     <div class="space-y-1">
                                         <div class="flex justify-between text-[10px] font-mono text-nexus-text"><span>Deflicker</span><span id="extrasDeflickerValue" class="text-nexus-red font-bold">0.35</span></div>
@@ -3335,6 +3540,7 @@
         let workflowClipboardNode = null;
         let workflowContextNodeId = null;
         let workflowContextPoint = { x: 80, y: 80 };
+        let ltxMotionPreprocessReady = null;
         const NEXUS_API = 'http://127.0.0.1:7861/api';
         let backendOnline = false;
         let runtimeCapabilities = null;
@@ -3382,11 +3588,14 @@
         let inpaintMaskDirty = false;
         let inpaintStroke = null;
         let inpaintBrushSize = 28;
+        let inpaintWandTolerance = 34;
         let inpaintUndoStack = [];
         let inpaintRedoStack = [];
         let draggingGalleryItemIndex = -1;
         let isPickingSketchColor = false;
         let lastInpaintCursorPoint = null;
+        let inpaintExtendEdge = 'all';
+        let inpaintExtendDrag = null;
         const viewportState = {
             canvas: { x: 0, y: 0, scale: 1 },
             workflow: { x: 0, y: 0, scale: 1 }
@@ -3419,6 +3628,7 @@
         let ltxDirectorInsertMenu = null;
         let ltxDirectorPendingImageInsert = null;
         let ltxDirectorPendingAudioInsert = null;
+        let ltxDirectorPendingMotionSegmentId = '';
         let ltxDirectorRenderTimer = null;
         let ltxDirectorActivationFrame = null;
         let ltxDirectorInspectorTab = nexusSafeStorage.get('nexus_ltx_director_inspector_tab', 'preview');
@@ -3550,7 +3760,7 @@
                 precision: ['Auto', 'bf16', 'fp16', 'fp8'],
                 refiners: ['Off', 'Flux Detail Pass', 'Latent upscale pass'],
                 supportsExtend: true,
-                supportsControlNet: false,
+                supportsControlNet: true,
                 distilledLoras: ['None', 'flux_schnell_distill_lora.safetensors', 'flux_dev_hyper_lora.safetensors', 'Flux_2-Turbo-LoRA_comfyui.safetensors'],
                 distilledRoute: 'Flux LoRA slots are filtered by selected family: Flux.1, Flux.2 Dev or Flux.2 Klein.',
                 summary: 'Flux template with automatic Flux.1/Flux.2 routing, matching text encoder, VAE, scheduler and LoRA loader.',
@@ -3579,7 +3789,7 @@
                 precision: ['Auto', 'bf16', 'fp16', 'fp8'],
                 refiners: ['Off', 'Qwen Edit Refinement'],
                 supportsExtend: true,
-                supportsControlNet: false,
+                supportsControlNet: true,
                 distilledLoras: ['None', 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-fp32.safetensors', 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors'],
                 distilledRoute: 'Qwen image edit uses the Edit 2511 Lightning LoRA for the 4-step route.',
                 summary: 'Qwen image/edit template uses the local 4-step CFG 1 Lightning route for 512px smoke checks.',
@@ -3606,7 +3816,7 @@
                 precision: ['Auto', 'bf16', 'fp16', 'fp8'],
                 refiners: ['Off', 'Latent upscale pass'],
                 supportsExtend: true,
-                supportsControlNet: false,
+                supportsControlNet: true,
                 distilledLoras: ['None'],
                 distilledRoute: 'Z-Image Turbo uses the ComfyUI split model route with Qwen3 text encoder and AE VAE. Optional compatible LoRAs are applied model-only.',
                 summary: 'Z-Image Turbo template for fast text/image generation with Qwen3 encoder, AE VAE and LoRA-capable UNET routing.',
@@ -3962,20 +4172,40 @@
                     .sort((a, b) => a.name.localeCompare(b.name))
                     .map(model => ({ name: String(model.relative_path || model.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\'), value: model.path, relative: model.relative_path }));
             }
-            if (!backendCatalog?.categories?.controlnet) return [];
-            const presetTokens = presetName === 'XL' ? ['sdxl', 'xl'] : ['sd15', 'sd1', 'v11', '1.5'];
+            const controlCategories = [
+                ...(backendCatalog?.categories?.controlnet || []),
+                ...(backendCatalog?.categories?.model_patches || [])
+            ];
+            if (!controlCategories.length) return [];
+            const presetTokens = presetName === 'XL'
+                ? ['sdxl', 'xl']
+                    : presetName === 'Flux'
+                        ? ['flux', 'flux.1', 'flux1', 'shakker']
+                        : presetName === 'Qwen'
+                    ? ['qwen', 'qwen-image', 'instantx', 'diffsynth']
+                    : presetName === 'ZImageTurbo'
+                        ? ['z-image', 'zimage', 'z_image', 'fun', 'controlnet-union']
+                        : ['sd15', 'sd1', 'v11', '1.5'];
             const typeTokens = {
                 canny: ['canny'],
                 depth: ['depth'],
                 openpose: ['openpose', 'pose'],
                 lineart: ['lineart', 'line'],
-                tile: ['tile']
+                tile: ['tile'],
+                softedge: ['softedge', 'soft', 'hed'],
+                normal: ['normal']
             }[selectedType] || [selectedType];
-            return backendCatalog.categories.controlnet
+            return controlCategories
                 .filter(model => {
                     const haystack = [model.name, model.folder, model.relative_path, ...(model.tags || [])].join(' ').toLowerCase();
                     const presetOk = presetTokens.some(token => haystack.includes(token));
-                    const typeOk = typeTokens.some(token => haystack.includes(token));
+                    const typeOk = presetName === 'Flux' && /union|shakker|controlnet/i.test(haystack)
+                        ? true
+                        : presetName === 'Qwen' && /union|instantx|diffsynth/.test(haystack)
+                        ? true
+                        : presetName === 'ZImageTurbo' && /union|fun/.test(haystack)
+                            ? true
+                            : typeTokens.some(token => haystack.includes(token));
                     return presetOk && typeOk;
                 })
                 .sort((a, b) => a.name.localeCompare(b.name))
@@ -4012,7 +4242,11 @@
                 } else if (!models.length) {
                     status.innerText = activePreset === 'LTX'
                         ? 'No LTX IC-LoRA control model detected. Add one under ./models/loras/ltx before enabling LTX control guides.'
-                        : 'No compatible ControlNet model detected for this preset/type. Add one under ./models/controlnet or use Civitai download.';
+                        : activePreset === 'Qwen'
+                            ? 'No Qwen ControlNet detected. Add Qwen-Image-InstantX-ControlNet-Union.safetensors under ./models/controlnet, or Qwen DiffSynth patches under model_patches for external workflows.'
+                            : activePreset === 'ZImageTurbo'
+                                ? 'No Z-Image Turbo ControlNet detected. Add Z-Image-Turbo-Fun-Controlnet-Union.safetensors under ./models/controlnet or model_patches.'
+                                : 'No compatible ControlNet model detected for this preset/type. Add one under ./models/controlnet or use Civitai download.';
                 } else {
                     status.innerText = activePreset === 'LTX'
                         ? `${models.length} LTX IC-LoRA control model(s) detected. The backend inserts LTXICLoRALoaderModelOnly + LTXAddVideoICLoRAGuide.`
@@ -4084,7 +4318,7 @@
                 }
             }
             if (presetName === 'LTX') {
-                profile.detailerLoras = uniqueOptions(['Automatic', ...ltxDetailers, 'None']);
+                profile.detailerLoras = uniqueOptions(['None', ...ltxDetailers, 'Automatic']);
                 profile.omnicineLoras = uniqueOptions(omnicine);
                 profile.transitionLoras = uniqueOptions(['Automatic', ...ltxTransitionLoras, 'None']);
             }
@@ -4652,17 +4886,25 @@
         function populateExtrasModelControls() {
             const rasterUpscalers = extrasCatalogNames(['upscale_models']);
             const latentUpscalers = extrasCatalogNames(['latent_upscale_models']);
+            const videoRestoreModels = extrasCatalogNames(['video_restore_models', 'upscale_models', 'loras', 'ltx_ic'], name => /flashvsr|seedvr|video.*restore|vsr|detailer|ic[-_ ]?lora/i.test(name));
             const interpolators = extrasCatalogNames(['frame_interpolation']);
+            const denoiseModels = extrasCatalogNames(['denoise_models', 'upscale_models'], name => /denoise|fastdvd|dvdnet|noise|restore|scunet|swinir|vrt|basicvsr/i.test(name));
+            const faceRestoreModels = extrasCatalogNames(['face_restore_models', 'facerestore_models', 'GFPGAN'], name => /gfpgan|codeformer|restoreformer|face/i.test(name));
             const removeBgModels = extrasCatalogNames(['background_removal', 'RMBG'], name => /biref|rmbg|bria|inspy|isnet|ben|rembg|background/i.test(name));
             const imageOptions = setSelectOptions('extrasImageUpscaler', rasterUpscalers, ['Lanczos']);
             const videoOptions = setSelectOptions('extrasVideoUpscaleModel', [...rasterUpscalers, ...latentUpscalers], ['Lanczos']);
+            const videoRestoreOptions = setSelectOptions('extrasVideoRestoreModel', videoRestoreModels, ['Wan2_1-T2V-1_3B_FlashVSR_fp32.safetensors', 'seedvr2_ema_3b_fp8_e4m3fn.safetensors', 'ltx-2-19b-ic-lora-detailer.safetensors']);
             const interpolationOptions = setSelectOptions('extrasVideoInterpolator', interpolators, ['frame_interpolation/rife_v4.26.safetensors']);
+            const denoiseOptions = setSelectOptions('extrasVideoDenoiseModel', denoiseModels, ['ffmpeg_hqdn3d']);
+            const faceRestoreOptions = setSelectOptions('extrasImageFaceRestoreModel', faceRestoreModels, ['GFPGANv1.4.pth']);
+            setSelectOptions('extrasVideoFaceRestoreModel', faceRestoreModels, ['GFPGANv1.4.pth']);
             const removeOptions = setSelectOptions('extrasRemoveBgModel', removeBgModels, ['BiRefNet', 'RMBG-2.0', 'InSPyReNet', 'BEN2']);
             const upscaleStatus = document.getElementById('extrasVideoUpscaleStatus');
             if (upscaleStatus) {
                 const latentLabel = latentUpscalers.length ? `${latentUpscalers.length} latent` : 'no latent';
                 const rasterLabel = rasterUpscalers.length ? `${rasterUpscalers.length} raster` : 'no raster';
-                upscaleStatus.innerText = `${latentLabel}, ${rasterLabel}`;
+                const restoreLabel = videoRestoreModels.length ? `${videoRestoreModels.length} VSR` : 'VSR fallback';
+                upscaleStatus.innerText = `${latentLabel}, ${rasterLabel}, ${restoreLabel}`;
             }
             const imageSelect = document.getElementById('extrasImageUpscaler');
             if (imageSelect) {
@@ -4671,11 +4913,33 @@
             }
             const interpolateSelect = document.getElementById('extrasVideoInterpolator');
             if (interpolateSelect) interpolateSelect.dataset.hasModel = interpolators.length ? '1' : '0';
+            const denoiseSelect = document.getElementById('extrasVideoDenoiseModel');
+            if (denoiseSelect) {
+                denoiseSelect.dataset.hasModel = denoiseModels.length ? '1' : '0';
+                if (denoiseModels.length && (!denoiseSelect.value || denoiseSelect.value === 'ffmpeg_hqdn3d')) denoiseSelect.value = denoiseModels[0];
+            }
             const videoSelect = document.getElementById('extrasVideoUpscaleModel');
             if (videoSelect) {
                 videoSelect.dataset.hasModel = videoOptions.length ? '1' : '0';
                 const realVideoOptions = [...rasterUpscalers, ...latentUpscalers];
                 if (realVideoOptions.length && (!videoSelect.value || videoSelect.value === 'Lanczos')) videoSelect.value = realVideoOptions[0];
+            }
+            const restoreSelect = document.getElementById('extrasVideoRestoreModel');
+            if (restoreSelect) {
+                restoreSelect.dataset.hasModel = videoRestoreModels.length ? '1' : '0';
+                if (videoRestoreModels.length && (!restoreSelect.value || restoreSelect.value === 'None')) restoreSelect.value = videoRestoreModels[0];
+            }
+            ['extrasImageFaceRestoreModel', 'extrasVideoFaceRestoreModel'].forEach(selectId => {
+                const select = document.getElementById(selectId);
+                if (!select) return;
+                select.dataset.hasModel = faceRestoreModels.length ? '1' : '0';
+                if (faceRestoreModels.length && (!select.value || select.value === 'GFPGANv1.4.pth')) select.value = faceRestoreModels[0];
+            });
+            if (!faceRestoreOptions.length) {
+                const imageFace = document.getElementById('extrasImageFaceRestoreModel');
+                const videoFace = document.getElementById('extrasVideoFaceRestoreModel');
+                if (imageFace) imageFace.dataset.hasModel = '0';
+                if (videoFace) videoFace.dataset.hasModel = '0';
             }
             const removeSelect = document.getElementById('extrasRemoveBgModel');
             if (removeSelect) {
@@ -4691,6 +4955,8 @@
             syncExtrasInterpolateUi();
             syncExtrasVideoUpscaleUi();
             syncExtrasVideoDenoiseUi();
+            syncExtrasFaceRestoreUi('image', { promptDownload: false });
+            syncExtrasFaceRestoreUi('video', { promptDownload: false });
             syncExtrasAlphaUi();
             renderExtrasSource();
         }
@@ -4710,21 +4976,139 @@
             renderExtrasSource();
         }
 
+        async function maybeDownloadExtrasVideoRestoreModel(engine) {
+            if (!['flashvsr', 'seedvr2', 'ltx_detailer'].includes(engine)) return true;
+            const select = document.getElementById('extrasVideoRestoreModel');
+            const hasMatchingModel = optionListHasConcreteModel(
+                'extrasVideoRestoreModel',
+                engine === 'flashvsr' ? /flashvsr/i : (engine === 'seedvr2' ? /seedvr/i : /detailer|ic[-_ ]?lora/i)
+            );
+            if (select?.dataset.hasModel !== '0' && hasMatchingModel) return true;
+            const labels = {
+                flashvsr: 'FlashVSR Video Upscale',
+                seedvr2: 'SeedVR2 Video Restore',
+                ltx_detailer: 'LTX IC-LoRA Detailer'
+            };
+            const prompts = {
+                flashvsr: 'No local FlashVSR model was detected. Download FlashVSR into ./models/video_restore_models/FlashVSR?',
+                seedvr2: 'No local SeedVR2 model was detected. Download SeedVR2 into ./models/video_restore_models/SeedVR2?',
+                ltx_detailer: 'No local LTX IC-LoRA Detailer was detected. Download ltx-2-19b-ic-lora-detailer.safetensors into ./models/loras/ltx_ic?'
+            };
+            const installed = await ensureLtxHfLoraInstalled(engine, {
+                label: labels[engine],
+                statusPath: `/extras/video-restore/${engine}/status`,
+                startPath: `/extras/video-restore/${engine}/download/start`,
+                selectId: 'extrasVideoRestoreModel',
+                pattern: engine === 'flashvsr' ? /flashvsr/i : (engine === 'seedvr2' ? /seedvr/i : /detailer|ic[-_ ]?lora/i),
+                prompt: prompts[engine],
+                fetchingMessage: engine === 'ltx_detailer' ? "Fetching detailer into ./models/loras/ltx_ic." : "Fetching model into ./models/video_restore_models.",
+                readyMessage: engine === 'ltx_detailer' ? "Detailer installed under ./models/loras/ltx_ic." : "Model installed under ./models/video_restore_models."
+            });
+            return installed;
+        }
+
+        function setExtrasVideoUpscaleFallback() {
+            const engine = document.getElementById('extrasVideoUpscaleEngine');
+            if (engine) engine.value = 'standard';
+            showToast("Video Upscale Fallback", "Using Standard upscale model for this Extras run.");
+        }
+
         function syncExtrasVideoUpscaleUi() {
             const toggle = document.getElementById('extrasVideoUpscaleToggle');
+            const engine = document.getElementById('extrasVideoUpscaleEngine');
             const model = document.getElementById('extrasVideoUpscaleModel');
+            const restoreModel = document.getElementById('extrasVideoRestoreModel');
+            const restoreWrap = document.getElementById('extrasVideoRestoreModelWrap');
             const factor = document.getElementById('extrasVideoUpscaleFactor');
             const tile = document.getElementById('extrasVideoUpscaleTileInput');
             const enabled = !!toggle?.checked;
+            const selectedEngine = engine?.value || 'standard';
+            const usesRestoreEngine = ['flashvsr', 'seedvr2', 'ltx_detailer'].includes(selectedEngine);
             const hasModel = model?.dataset.hasModel !== '0';
+            if (engine) engine.disabled = !enabled;
             [model, factor, tile].forEach(element => {
                 if (element) element.disabled = !enabled || !hasModel;
             });
+            if (restoreWrap) restoreWrap.classList.toggle('hidden', !usesRestoreEngine);
+            if (restoreModel) restoreModel.disabled = !enabled || !usesRestoreEngine;
+            if (enabled && usesRestoreEngine) {
+                maybeDownloadExtrasVideoRestoreModel(selectedEngine).then(installed => {
+                    if (!installed) setExtrasVideoUpscaleFallback();
+                    renderExtrasSource();
+                }).catch(error => {
+                    setExtrasVideoUpscaleFallback();
+                    showToast("Video Restore Model Download Failed", error.message.slice(0, 180));
+                    renderExtrasSource();
+                });
+            }
             renderExtrasSource();
         }
 
-        function syncExtrasVideoDenoiseUi() {
+        async function maybeDownloadExtrasDenoiseModel() {
+            const select = document.getElementById('extrasVideoDenoiseModel');
+            if (select?.dataset.hasModel !== '0') return true;
+            const installed = await ensureLtxHfLoraInstalled('denoise', {
+                label: 'FastDVDnet Video Denoise',
+                statusPath: '/extras/denoise/status',
+                startPath: '/extras/denoise/download/start',
+                selectId: 'extrasVideoDenoiseModel',
+                pattern: /fastdvd|denoise|noise/i,
+                prompt: 'No local video denoise model was detected. Download FastDVDnet into ./models/denoise_models?',
+                fetchingMessage: "Fetching model into ./models/denoise_models.",
+                readyMessage: "Model installed under ./models/denoise_models."
+            });
+            return installed;
+        }
+
+        async function maybeDownloadExtrasFaceRestoreModel(selectId) {
+            const select = document.getElementById(selectId);
+            if (select?.dataset.hasModel !== '0') return true;
+            return ensureLtxHfLoraInstalled('face_restore', {
+                label: 'GFPGAN Face Restoration',
+                statusPath: '/extras/face-restore/status',
+                startPath: '/extras/face-restore/download/start',
+                selectId,
+                pattern: /gfpgan|face/i,
+                prompt: 'No local face restoration model was detected. Download GFPGAN v1.4 into ./models/face_restore_models?',
+                fetchingMessage: "Fetching model into ./models/face_restore_models.",
+                readyMessage: "Model installed under ./models/face_restore_models."
+            });
+        }
+
+        async function syncExtrasFaceRestoreUi(scope = 'video', options = {}) {
+            const isImage = scope === 'image';
+            const toggle = document.getElementById(isImage ? 'extrasFaceRestore' : 'extrasVideoFaceRestoreToggle');
+            const select = document.getElementById(isImage ? 'extrasImageFaceRestoreModel' : 'extrasVideoFaceRestoreModel');
+            const controls = document.getElementById(isImage ? 'extrasImageFaceRestoreControls' : 'extrasVideoFaceRestoreControls');
+            const enabled = !!toggle?.checked;
+            if (enabled && options.promptDownload !== false) {
+                maybeDownloadExtrasFaceRestoreModel(select?.id || '').then(installed => {
+                    if (!installed && toggle) toggle.checked = false;
+                    if (select) select.disabled = !installed || !toggle?.checked;
+                    if (controls) controls.classList.toggle('hidden', !toggle?.checked);
+                    renderExtrasSource();
+                }).catch(error => {
+                    if (toggle) toggle.checked = false;
+                    if (controls) controls.classList.add('hidden');
+                    showToast("Face Restore Model Download Failed", error.message.slice(0, 180));
+                    renderExtrasSource();
+                });
+            }
+            if (controls) controls.classList.toggle('hidden', !enabled);
+            if (select) select.disabled = !enabled;
+            renderExtrasSource();
+        }
+
+        async function syncExtrasVideoDenoiseUi() {
             const enabled = !!document.getElementById('extrasVideoDenoiseToggle')?.checked;
+            if (enabled) {
+                maybeDownloadExtrasDenoiseModel().catch(error => {
+                    const toggle = document.getElementById('extrasVideoDenoiseToggle');
+                    if (toggle) toggle.checked = false;
+                    showToast("Denoise Model Download Failed", error.message.slice(0, 180));
+                    renderExtrasSource();
+                });
+            }
             document.getElementById('extrasVideoDenoiseControls')?.classList.toggle('hidden', !enabled);
             renderExtrasSource();
         }
@@ -4853,7 +5237,12 @@
                     upscaler: document.getElementById('extrasImageUpscaler')?.value || 'Lanczos',
                     scale,
                     custom_resolution: custom,
-                    face_restore: !!document.getElementById('extrasFaceRestore')?.checked,
+                    face_restore: {
+                        enabled: !!document.getElementById('extrasFaceRestore')?.checked,
+                        model: document.getElementById('extrasFaceRestore')?.checked
+                            ? (document.getElementById('extrasImageFaceRestoreModel')?.value || 'GFPGANv1.4.pth')
+                            : 'Off'
+                    },
                     color_match: !!document.getElementById('extrasColorMatch')?.checked,
                     preserve_alpha: !!document.getElementById('extrasImageAlphaToggle')?.checked,
                     export_format: document.getElementById('extrasImageExportSelect')?.value || 'png',
@@ -4865,7 +5254,9 @@
             const interpolateEnabled = !!document.getElementById('extrasVideoInterpolateToggle')?.checked;
             const upscaleEnabled = !!document.getElementById('extrasVideoUpscaleToggle')?.checked;
             const denoiseEnabled = !!document.getElementById('extrasVideoDenoiseToggle')?.checked;
+            const faceRestoreEnabled = !!document.getElementById('extrasVideoFaceRestoreToggle')?.checked;
             const encodeEnabled = !!document.getElementById('extrasVideoEncodeToggle')?.checked;
+            const upscaleEngine = document.getElementById('extrasVideoUpscaleEngine')?.value || 'standard';
             return {
                 mediaType: 'video',
                 mode: 'video',
@@ -4882,13 +5273,32 @@
                 },
                 upscale: {
                     enabled: upscaleEnabled,
+                    engine: upscaleEnabled ? upscaleEngine : 'off',
                     model: upscaleEnabled ? (document.getElementById('extrasVideoUpscaleModel')?.value || 'Automatic') : 'Off',
+                    restore_model: upscaleEnabled && upscaleEngine !== 'standard'
+                        ? (document.getElementById('extrasVideoRestoreModel')?.value || 'Automatic')
+                        : 'Off',
+                    detailer_enabled: upscaleEnabled && upscaleEngine === 'ltx_detailer',
+                    detailer_lora: upscaleEnabled && upscaleEngine === 'ltx_detailer'
+                        ? (document.getElementById('extrasVideoRestoreModel')?.value || 'ltx-2-19b-ic-lora-detailer.safetensors')
+                        : 'Off',
+                    detailer_strength: 1,
+                    controlnet: upscaleEngine === 'ltx_detailer' ? 'Off' : 'Auto',
+                    image_bypass: upscaleEngine === 'ltx_detailer',
+                    fallback_model: document.getElementById('extrasVideoUpscaleModel')?.value || 'Lanczos',
+                    fallback_engine: 'standard',
+                    compatible_with_interpolate: true,
                     scale: document.getElementById('extrasVideoUpscaleFactor')?.value || '2x',
                     tile: Math.max(128, Number(document.getElementById('extrasVideoUpscaleTileInput')?.value) || 512)
                 },
                 denoise: {
                     enabled: denoiseEnabled,
+                    model: denoiseEnabled ? (document.getElementById('extrasVideoDenoiseModel')?.value || 'ffmpeg_hqdn3d') : 'Off',
                     strength: denoiseEnabled ? Number(document.getElementById('extrasVideoDenoiseSlider')?.value || 0.2) : 0
+                },
+                face_restore: {
+                    enabled: faceRestoreEnabled,
+                    model: faceRestoreEnabled ? (document.getElementById('extrasVideoFaceRestoreModel')?.value || 'GFPGANv1.4.pth') : 'Off'
                 },
                 preserve_alpha: !!document.getElementById('extrasVideoAlphaToggle')?.checked,
                 output_dir: encodeEnabled && /image_sequence/i.test(document.getElementById('extrasVideoEncoder')?.value || '')
@@ -4914,8 +5324,9 @@
             if (plan.mode === 'remove_bg') return `remove bg / ${plan.remove_background?.model || 'BiRefNet'} / ${plan.remove_background?.output || 'rgba'}`;
             const stages = [];
             stages.push(plan.interpolate?.enabled ? `interp ${plan.interpolate.fps} FPS` : 'interp off');
-            if (plan.upscale?.enabled) stages.push(`upscale ${plan.upscale.scale}`);
+            if (plan.upscale?.enabled) stages.push(`${plan.upscale.engine || 'standard'} ${plan.upscale.scale}`);
             if (plan.denoise?.enabled) stages.push(`denoise ${plan.denoise.strength.toFixed(2)}`);
+            if (plan.face_restore?.enabled) stages.push('face restore');
             if (plan.preserve_alpha) stages.push('alpha');
             stages.push(plan.encode_enabled === false ? 'encode off' : plan.encoder);
             return stages.join(' / ');
@@ -5192,8 +5603,144 @@
 
         function clearLinearOutput() {
             setLinearOutput(null);
+            clearLtxMotionPreprocess({ quiet: true });
             resetLinearViewerZoom();
             showToast("Linear View Cleared", "Current preview was removed from the viewer.");
+        }
+
+        function setLtxMotionPreprocessReady(item) {
+            if (!item) return;
+            ltxMotionPreprocessReady = item;
+            setLinearOutput({ ...item, mediaType: 'video', activity: 'ltx_motion_preprocess' });
+            document.getElementById('ltxMotionPreprocessBar')?.classList.remove('hidden');
+            document.getElementById('ltxMotionPreprocessBar')?.classList.add('flex');
+        }
+
+        function clearLtxMotionPreprocess(options = {}) {
+            ltxMotionPreprocessReady = null;
+            const bar = document.getElementById('ltxMotionPreprocessBar');
+            bar?.classList.add('hidden');
+            bar?.classList.remove('flex');
+            if (!options.quiet) showToast("Motion Preprocess Cleared", "Preprocessed motion preview was removed.");
+        }
+
+        async function saveLtxMotionPreprocess() {
+            if (!ltxMotionPreprocessReady) return;
+            addGeneratedOutputsToGallery({ outputs: [ltxMotionPreprocessReady], message: 'Motion preprocess saved.' }, { preset: 'LTX', activity: 'img2img' });
+            await syncGalleryFromBackend({ force: true, preferNewest: true });
+            showToast("Motion Preprocess Saved", "Preprocessed video is available in the gallery.");
+        }
+
+        async function generateWithLtxMotionPreprocess() {
+            if (!ltxMotionPreprocessReady?.url && !ltxMotionPreprocessReady?.image) {
+                showToast("Preprocess Missing", "Run Motion Transfer preprocess first.");
+                return;
+            }
+            if (!referenceBaseVideoDataUrl) {
+                showToast("Source Video Missing", "Reload the original motion video before generating.");
+                return;
+            }
+            syncLtxMotionTransferToggle(true);
+            await simulateGeneration({ forceGenerate: true });
+        }
+
+        function optionListHasConcreteModel(selectId, pattern) {
+            const select = document.getElementById(selectId);
+            if (!select) return false;
+            return Array.from(select.options || []).some(option => {
+                const value = String(option.value || option.text || '').trim();
+                return value && !/^(none|off|disabled|automatic|auto)$/i.test(value) && (!pattern || pattern.test(value));
+            });
+        }
+
+        function setSelectToFirstMatchingModel(selectId, pattern, fallbackValue = '') {
+            const select = document.getElementById(selectId);
+            if (!select) return false;
+            const option = Array.from(select.options || []).find(item => {
+                const value = String(item.value || item.text || '').trim();
+                return value && !/^(none|off|disabled|automatic|auto)$/i.test(value) && (!pattern || pattern.test(value));
+            });
+            if (option) {
+                select.value = option.value;
+                return true;
+            }
+            if (fallbackValue) {
+                setElementOptions(selectId, uniqueOptions([fallbackValue, ...Array.from(select.options || []).map(item => item.value || item.text)]));
+                select.value = fallbackValue;
+                return true;
+            }
+            return false;
+        }
+
+        async function pollDownloadJob(jobId, label) {
+            let lastProgress = -1;
+            for (let index = 0; index < 1800; index += 1) {
+                const job = await nexusFetch(`/civitai/download/${jobId}`);
+                const status = String(job?.status || '').toLowerCase();
+                const progress = Number(job?.progress ?? -1);
+                if (progress >= 0 && Math.floor(progress) !== lastProgress && Math.floor(progress) % 10 === 0) {
+                    lastProgress = Math.floor(progress);
+                    showToast(label, `${lastProgress}%`);
+                }
+                if (status === 'downloaded' || status === 'completed') return job;
+                if (status === 'failed') throw new Error(job?.error || job?.message || `${label} failed`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            throw new Error(`${label} download timed out`);
+        }
+
+        async function ensureLtxHfLoraInstalled(kind, options = {}) {
+            const {
+                label = kind,
+                statusPath = `/ltx/${kind}/status`,
+                startPath = `/ltx/${kind}/download/start`,
+                selectId = '',
+                pattern = null,
+                prompt = `Download ${label}?`,
+                fetchingMessage = "Fetching model into the configured models folder.",
+                readyMessage = "Model installed."
+            } = options;
+            const status = await nexusFetch(statusPath);
+            if (status?.installed) {
+                if (selectId) setSelectToFirstMatchingModel(selectId, pattern, status.name);
+                return true;
+            }
+            const ok = window.confirm(prompt);
+            if (!ok) return false;
+            showToast(`${label} Download`, fetchingMessage);
+            const started = await nexusFetch(startPath, { method: 'POST' });
+            await pollDownloadJob(started.job_id, `${label} Download`);
+            await refreshModelCatalog();
+            if (selectId) setSelectToFirstMatchingModel(selectId, pattern, status.name);
+            showToast(`${label} Ready`, readyMessage);
+            return true;
+        }
+
+        async function maybeDownloadLtxDetailer() {
+            const toggle = document.getElementById('ltxDetailerToggle');
+            if (activePreset !== 'LTX' || !toggle?.checked) return true;
+            if (optionListHasConcreteModel('ltxDetailerLoraSelect', /detailer|ic[-_ ]?lora[-_ ]?detail/i)) return true;
+            const installed = await ensureLtxHfLoraInstalled('detailer', {
+                label: 'LTX IC-LoRA Detailer',
+                selectId: 'ltxDetailerLoraSelect',
+                pattern: /detailer|ic[-_ ]?lora[-_ ]?detail/i,
+                prompt: 'No local LTX IC-LoRA Detailer model was detected. Download it from HuggingFace into ./models/loras/ltx?'
+            });
+            if (!installed) {
+                toggle.checked = false;
+                setSelectValue('ltxDetailerLoraSelect', 'None');
+            }
+            updateWorkflowPreview();
+            syncGenerationActionUi();
+            return installed;
+        }
+
+        async function ensureLtxCameramanAvailable() {
+            return ensureLtxHfLoraInstalled('cameraman', {
+                label: 'LTX 2.3 IC-LoRA Cameraman',
+                pattern: /cameraman/i,
+                prompt: 'No local LTX 2.3 IC-LoRA Cameraman model was detected. Download it from HuggingFace into ./models/loras/ltx?'
+            });
         }
 
         function galleryItemKey(item) {
@@ -5490,6 +6037,7 @@
             syncSlider('height');
             updateResizePercentGuide();
             updateInpaintAreaLabel();
+            syncInpaintOverlayBounds();
         }
 
         function alignDimension(value) {
@@ -5585,6 +6133,7 @@
             const fpsInput = document.getElementById('fpsInput');
             const secondsInput = document.getElementById('secondsInput');
             if (!fpsInput || !secondsInput) return;
+            if (syncLtxLinearMotionTransferTimeLock()) return;
             const fps = Math.max(1, Number(fpsInput.value || profile.videoSettings?.fps || 24));
             const seconds = Math.max(0.25, Number(secondsInput.value || profile.videoSettings?.seconds || 1));
             if (isDirectorWorkspaceActive()) {
@@ -5667,13 +6216,13 @@
             setElementOptions('videoVaeSelect', profile.videoVae || ['Automatic', 'None']);
             setElementOptions('audioVaeSelect', profile.audioVae || ['Automatic', 'None']);
             setElementOptions('latentUpscaleSelect', profile.latentUpscaleModels || ['Automatic', 'None']);
-            setElementOptions('ltxDetailerLoraSelect', profile.detailerLoras || ['Automatic', 'None']);
+            setElementOptions('ltxDetailerLoraSelect', profile.detailerLoras || ['None', 'Automatic']);
             setElementOptions('ltxTransitionLoraSelect', profile.transitionLoras || ['Automatic', 'ltx_transition\\ltx2.3-transition.safetensors', 'None']);
             setElementOptions('omnicineSelect', ['Off', ...(profile.omnicineLoras || [])]);
             setSelectValue('videoVaeSelect', savedFields.videoVaeSelect || profile.videoVae?.[0] || 'Automatic');
             setSelectValue('audioVaeSelect', savedFields.audioVaeSelect || profile.audioVae?.[0] || 'Automatic');
             setSelectValue('latentUpscaleSelect', savedFields.latentUpscaleSelect || profile.latentUpscaleModels?.[0] || 'Automatic');
-            setSelectValue('ltxDetailerLoraSelect', savedFields.ltxDetailerLoraSelect || profile.detailerLoras?.[0] || 'Automatic');
+            setSelectValue('ltxDetailerLoraSelect', savedFields.ltxDetailerLoraSelect || profile.detailerLoras?.[0] || 'None');
             setSelectValue('ltxTransitionLoraSelect', savedFields.ltxTransitionLoraSelect || profile.transitionLoras?.[0] || 'Automatic');
             setSelectValue('omnicineSelect', savedFields.omnicineSelect || 'Off');
             if (presetName === 'LTX') {
@@ -5792,7 +6341,6 @@
             const isVideo = profile?.type === 'video';
             const videoPanel = document.getElementById('videoSettingsPanel');
             const dimensionsTitle = document.getElementById('dimensionsTitle');
-            const extendBtn = document.getElementById('extendCanvasBtn');
             const ltxOnly = activePreset === 'LTX';
             const framesWrapper = document.getElementById('framesFieldWrapper');
             const ltxVaePanel = document.getElementById('ltxVaePanel');
@@ -5815,18 +6363,10 @@
             if (ltxUpscaleControls) ltxUpscaleControls.classList.toggle('hidden', !ltxOnly);
             if (ltxDetailerControls) ltxDetailerControls.classList.toggle('hidden', !ltxOnly);
             if (ltxTransitionLoraWrapper) ltxTransitionLoraWrapper.classList.toggle('hidden', !ltxOnly);
-            if (ltxMotionTransferWrapper) ltxMotionTransferWrapper.classList.add('hidden');
+            if (ltxMotionTransferWrapper) ltxMotionTransferWrapper.classList.toggle('hidden', !(ltxOnly && currentActivity === 'img2img'));
             updateExtrasModeUi();
             updateEmbeddingButtonState();
             if (dimensionsTitle) dimensionsTitle.innerText = isVideo ? 'Frame Dimensions' : 'Image Dimensions';
-            if (extendBtn) {
-                const canExtend = !!profile?.supportsExtend;
-                extendBtn.disabled = !canExtend;
-                extendBtn.classList.toggle('opacity-40', !canExtend);
-                extendBtn.classList.toggle('cursor-not-allowed', !canExtend);
-                extendBtn.title = canExtend ? 'Extend canvas' : 'No compatible extend model for this template';
-            }
-
             updateControlNetUi();
             updateOmnicineStatus();
             arrangeSidePanelsForPreset();
@@ -5907,7 +6447,20 @@
         function idleGenerateLabel(activity = currentActivity) {
             if (activity === 'extras') return 'Process';
             if (activity === 'merge') return 'Merge';
+            if (shouldPreprocessLtxMotionTransfer()) return 'Preprocess';
             return 'Generate';
+        }
+
+        function hasLtxMotionTransferInputs() {
+            return activePreset === 'LTX'
+                && currentActivity === 'img2img'
+                && !!document.getElementById('ltxMotionTransferToggle')?.checked
+                && !!referenceBaseVideoDataUrl
+                && (!!referenceImageDataUrl || (referenceImageExtraDataUrls || []).some(item => !!item?.src));
+        }
+
+        function shouldPreprocessLtxMotionTransfer() {
+            return hasLtxMotionTransferInputs() && !ltxMotionPreprocessReady;
         }
 
         function syncGenerationActionUi() {
@@ -6028,6 +6581,8 @@
             document.getElementById('globalPromptPanel')?.classList.toggle('hidden', directorWorkspace);
             document.getElementById('referenceImagePanel')?.classList.toggle('hidden', !isImg2Img || directorWorkspace);
             document.getElementById('img2imgControls')?.classList.toggle('hidden', !isImg2Img || directorWorkspace);
+            document.getElementById('ltxMotionTransferWrapper')?.classList.toggle('hidden', !(activePreset === 'LTX' && isImg2Img && !directorWorkspace));
+            syncInpaintEngineControls();
             document.getElementById('promptPanelTitle').innerText = isImg2Img ? (isMotionTemplateActive() ? 'Prompt / Video Reference' : 'Prompt / Reference') : 'Prompt';
 
             syncGenerationActionUi();
@@ -6374,6 +6929,7 @@
             if (denoiseLabel) denoiseLabel.innerText = Number(document.getElementById('denoiseSlider')?.value || 0.75).toFixed(2);
             const blurLabel = document.getElementById('maskBlurValue');
             if (blurLabel) blurLabel.innerText = `${document.getElementById('maskBlurSlider')?.value || 8} px`;
+            syncInpaintEngineControls();
             persistActiveWorkflowGraphSnapshot();
         }
 
@@ -6449,6 +7005,7 @@
                     state.segments.forEach(segment => {
                         if (segment.negativePrompt === undefined) segment.negativePrompt = '';
                         if (segment.transitionLoraEnabled === undefined) segment.transitionLoraEnabled = false;
+                        ltxDirectorEnsureSegmentMetadata(segment);
                     });
                     state.referenceImages.forEach(reference => {
                         if (reference.negativePrompt === undefined) reference.negativePrompt = '';
@@ -6556,6 +7113,7 @@
                 ? Math.min(Number(segment.start || 0), Math.max(bounds.minStart, maxStart))
                 : Number(segment.start || 0);
             segment.start = ltxDirectorSnap(Math.max(bounds.minStart, clampedStart));
+            if (segment.motionTransfer?.enabled) ltxDirectorSyncMotionTransferSegment(segment, { keepTimelineDuration: true });
             if (options.syncLoadVideo || segment.loadVideo || segment.type === 'audio') ltxDirectorSyncTimedItem(segment);
         }
 
@@ -6716,6 +7274,10 @@
             if (segment.speechAdditionalTime === undefined) segment.speechAdditionalTime = 0;
             if (segment.transitionLoraEnabled === undefined) segment.transitionLoraEnabled = false;
             if (segment.transitionPrompt === undefined) segment.transitionPrompt = 'continuous motion continuation into the next visual segment, transformation or angle change as described, no dissolve, no crossfade';
+            if (!segment.motionTransfer) segment.motionTransfer = {};
+            if (segment.motionTransfer.enabled === undefined) segment.motionTransfer.enabled = false;
+            if (!['pose', 'canny', 'depth', 'camera'].includes(String(segment.motionTransfer.mode || '').toLowerCase())) segment.motionTransfer.mode = 'pose';
+            if (segment.motionTransfer.strength === undefined) segment.motionTransfer.strength = 1;
             if (!segment.speechText && segment.type === 'text') segment.speechText = segment.prompt || '';
             return segment;
         }
@@ -6920,19 +7482,21 @@
                 const selected = segment.id === ltxDirectorState.selectedId && ltxDirectorState.selectedType === 'segment';
                 ltxDirectorEnsureSegmentMetadata(segment);
                 const transitionOn = !!segment.transitionLoraEnabled;
+                const motionTransferOn = !!segment.motionTransfer?.enabled;
                 const media = segment.type === 'text'
                     ? `<div class="w-full h-full bg-[#06131a] flex items-center justify-center px-4 text-center text-[11px] font-bold text-white">${escapeHtml(ltxDirectorPromptSnippet(segment.prompt))}</div>`
                     : segment.type === 'video'
                         ? `<video src="${escapeHtml(segment.videoSrc || '')}" class="w-full h-full object-cover" muted playsinline></video>`
                         : `<img src="${escapeHtml(segment.imageSrc || segment.imageB64 || '')}" alt="LTX keyframe" class="w-full h-full object-cover">`;
                 return `
-                    <article class="ltx-director-segment ${selected ? 'is-selected' : ''} ${transitionOn ? 'is-transition-on' : ''} bg-zinc-950 border border-nexus-border rounded-sm overflow-hidden cursor-grab group" data-ltx-segment-id="${escapeHtml(segment.id)}" style="left:${left}px;width:${width}px;">
+                    <article class="ltx-director-segment ${selected ? 'is-selected' : ''} ${transitionOn ? 'is-transition-on' : ''} ${motionTransferOn ? 'is-motion-transfer-on' : ''} bg-zinc-950 border ${motionTransferOn ? 'border-nexus-red' : 'border-nexus-border'} rounded-sm overflow-hidden cursor-grab group" data-ltx-segment-id="${escapeHtml(segment.id)}" style="left:${left}px;width:${width}px;">
                         <button type="button" class="ltx-director-remove" data-ltx-remove-type="segment" data-ltx-remove-id="${escapeHtml(segment.id)}" onclick="removeLtxDirectorItem(event)" onpointerdown="event.stopPropagation()" title="Remove segment"><i class="fa-solid fa-xmark"></i></button>
                         <span class="ltx-director-handle left" data-ltx-handle="left"></span>
                         <span class="ltx-director-handle right" data-ltx-handle="right"></span>
                         <div class="h-[70%] bg-black relative overflow-hidden">
                             ${media}
                             <span class="absolute bottom-1 left-1 bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-white">${ltxDirectorDisplayTime(segment.start)} - ${ltxDirectorDisplayTime(ltxDirectorEnd(segment))}</span>
+                            ${motionTransferOn ? `<span class="absolute top-1 right-1 bg-nexus-red text-white px-1.5 py-0.5 text-[8px] font-bold uppercase"><i class="fa-solid fa-arrows-spin mr-1"></i>${escapeHtml(segment.motionTransfer?.mode || 'pose')}</span>` : ''}
                         </div>
                         <div class="h-[30%] px-2 py-1 overflow-hidden">
                             <p class="text-[10px] font-bold text-white truncate">${escapeHtml(segment.title || `Segment #${index + 1}`)}</p>
@@ -7121,6 +7685,76 @@
             document.getElementById('ltxDirectorMultiImageInput')?.click();
         }
 
+        function openLtxDirectorMotionVideoPicker(segmentId = '') {
+            const segment = segmentId
+                ? ltxDirectorState.segments.find(item => item.id === segmentId)
+                : ltxDirectorSelectedSegment();
+            if (!segment) return;
+            ltxDirectorPendingMotionSegmentId = segment.id;
+            document.getElementById('ltxDirectorMotionVideoInput')?.click();
+        }
+
+        function ltxDirectorMotionVideoDuration(segment) {
+            return Number(segment?.motionTransfer?.sourceDuration || segment?.motionTransfer?.duration || 0);
+        }
+
+        function ltxDirectorSyncMotionTransferSegment(segment, options = {}) {
+            if (!segment?.motionTransfer?.enabled) return;
+            const duration = ltxDirectorMotionVideoDuration(segment);
+            if (duration > 0) {
+                segment.length = ltxDirectorSnap(Math.max(LTX_DIRECTOR_MIN_SECONDS, duration));
+                segment.motionTransfer.duration = segment.length;
+                segment.motionTransfer.durationFrames = ltxDirectorSecondsToFrames(segment.length);
+                segment.motionTransfer.startFrame = ltxDirectorSecondsToFrames(segment.start || 0);
+                segment.motionTransfer.endFrame = ltxDirectorSecondsToFrames(ltxDirectorEnd(segment));
+                if (!options.keepTimelineDuration) {
+                    ltxDirectorState.duration = ltxDirectorSnap(Math.max(Number(ltxDirectorState.duration || 0), ltxDirectorEnd(segment)));
+                }
+            }
+        }
+
+        async function addLtxDirectorMotionVideoFile(file) {
+            if (!file || !isVideoFile(file)) return false;
+            const segment = (ltxDirectorState.segments || []).find(item => item.id === ltxDirectorPendingMotionSegmentId) || ltxDirectorSelectedSegment();
+            if (!segment) return false;
+            ltxDirectorEnsureSegmentMetadata(segment);
+            const dataUrl = await ltxDirectorReadFileAsDataUrl(file);
+            const posterDataUrl = await ltxDirectorVideoPosterDataUrl(dataUrl);
+            const sourceDuration = await ltxDirectorVideoMetadataDuration(dataUrl);
+            segment.motionTransfer = {
+                ...(segment.motionTransfer || {}),
+                enabled: true,
+                mode: segment.motionTransfer?.mode || 'pose',
+                strength: 1,
+                videoSrc: dataUrl,
+                videoFile: file.name || 'motion-reference.mp4',
+                posterSrc: posterDataUrl,
+                sourceDuration,
+                duration: sourceDuration || Number(segment.length || 0),
+                durationFrames: ltxDirectorSecondsToFrames(sourceDuration || segment.length || 0)
+            };
+            ltxDirectorSyncMotionTransferSegment(segment);
+            ltxDirectorConstrainSegment(segment, { syncLoadVideo: true });
+            ltxDirectorState.selectedType = 'segment';
+            ltxDirectorState.selectedId = segment.id;
+            fitLtxDirectorTimeline({ quiet: true });
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+            showToast('Motion Transfer Video Loaded', `${file.name || 'Video'} synced to ${Number(segment.length || 0).toFixed(2)}s.`);
+            return true;
+        }
+
+        function setLtxDirectorMotionTransferMode(mode, segmentId = '') {
+            const segment = (ltxDirectorState.segments || []).find(item => item.id === segmentId) || ltxDirectorSelectedSegment();
+            if (!segment) return;
+            ltxDirectorEnsureSegmentMetadata(segment);
+            segment.motionTransfer.mode = ['pose', 'canny', 'depth', 'camera'].includes(String(mode).toLowerCase()) ? String(mode).toLowerCase() : 'pose';
+            segment.motionTransfer.enabled = true;
+            ltxDirectorSyncMotionTransferSegment(segment);
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+        }
+
         function addLtxDirectorImageDataUrl(dataUrl, fileName = 'director-image.png', options = {}) {
             if (!dataUrl) return null;
             const mode = options.mode || (ltxDirectorState.referenceMode ? 'reference' : 'segment');
@@ -7158,6 +7792,7 @@
                     negativePrompt: '',
                     guideStrength: 0.85,
                     transitionLoraEnabled: false,
+                    motionTransfer: { enabled: false, mode: 'pose', strength: 1 },
                     title: `Segment #${ltxDirectorState.segments.length + 1}`,
                     imageSrc: dataUrl,
                     imageB64: dataUrl,
@@ -7300,6 +7935,7 @@
                     negativePrompt: '',
                     guideStrength: 0.85,
                     transitionLoraEnabled: false,
+                    motionTransfer: { enabled: false, mode: 'pose', strength: 1 },
                     title: `Video #${ltxDirectorState.segments.length + 1}`,
                     imageSrc: posterDataUrl,
                     imageB64: posterDataUrl,
@@ -7385,6 +8021,7 @@
                 negativePrompt: '',
                 guideStrength: 1,
                 transitionLoraEnabled: false,
+                motionTransfer: { enabled: false, mode: 'pose', strength: 1 },
                 title: `Segment #${ltxDirectorState.segments.length + 1}`,
                 imageSrc: '',
                 imageB64: '',
@@ -8078,6 +8715,35 @@
                             ${ltxDirectorNumberField('Guide Strength', 'segment.guideStrength', Number(segment.guideStrength ?? 1).toFixed(2), 'min="0" max="2" step="0.05"')}
                             ${ltxDirectorNumberField('Insert Frame', 'segment.insertFrame', ltxDirectorSecondsToFrames(segment.start || 0), 'min="0" step="1"')}
                         </div>
+                        <div class="ltx-info-field space-y-2">
+                            <label class="flex items-center justify-between gap-3 cursor-pointer">
+                                <span>
+                                    <span class="mini-label block">Motion Transfer</span>
+                                    <span class="text-[10px] text-nexus-muted font-mono">Sync this segment duration and timeline to a reference video.</span>
+                                </span>
+                                <span class="toggle-switch"><input type="checkbox" data-ltx-info="segment.motionTransferEnabled" onchange="updateLtxDirectorInfoField(this)" ${segment.motionTransfer?.enabled ? 'checked' : ''}><span class="toggle-track"></span></span>
+                            </label>
+                            <div class="grid grid-cols-4 gap-1">
+                                ${[
+                                    ['pose', 'fa-person-running', 'Pose'],
+                                    ['canny', 'fa-wave-square', 'Canny'],
+                                    ['depth', 'fa-layer-group', 'Depth'],
+                                    ['camera', 'fa-video', 'Camera']
+                                ].map(([mode, icon, label]) => `
+                                    <button type="button" class="border ${segment.motionTransfer?.enabled && segment.motionTransfer?.mode === mode ? 'border-nexus-red bg-nexus-red text-white' : 'border-nexus-border bg-zinc-950 text-nexus-muted'} px-2 py-2 text-[9px] font-bold uppercase hover:border-nexus-red hover:text-white" onclick="setLtxDirectorMotionTransferMode('${mode}', '${escapeHtml(segment.id)}')" title="Motion Transfer ${label}">
+                                        <i class="fa-solid ${icon} mr-1"></i>${label}
+                                    </button>
+                                `).join('')}
+                            </div>
+                            ${segment.motionTransfer?.enabled ? `
+                                <button type="button" onclick="openLtxDirectorMotionVideoPicker('${escapeHtml(segment.id)}')" class="relative w-full min-h-[92px] border border-dashed border-nexus-border bg-nexus-bg text-left overflow-hidden hover:border-nexus-red transition-colors">
+                                    ${segment.motionTransfer?.posterSrc ? `<img src="${escapeHtml(segment.motionTransfer.posterSrc)}" class="absolute inset-0 w-full h-full object-cover" alt="motion video reference">` : ''}
+                                    <span class="absolute inset-0 flex items-center justify-center text-[10px] font-mono text-nexus-muted">${segment.motionTransfer?.videoFile ? escapeHtml(segment.motionTransfer.videoFile) : 'drop or click'}</span>
+                                    <span class="absolute left-2 bottom-2 bg-black/85 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase">Video Reference</span>
+                                    ${segment.motionTransfer?.sourceDuration ? `<span class="absolute right-2 bottom-2 bg-black/85 text-nexus-red text-[8px] font-mono px-1.5 py-0.5">${Number(segment.motionTransfer.sourceDuration || 0).toFixed(2)}s</span>` : ''}
+                                </button>
+                            ` : ''}
+                        </div>
                         <label class="ltx-info-field flex items-center justify-between gap-3 cursor-pointer">
                             <span>
                                 <span class="mini-label block">Transition LoRA To Next Visual</span>
@@ -8194,6 +8860,11 @@
                     }
                 } else if (key === 'transitionPrompt') {
                     segment.transitionPrompt = String(value || '');
+                } else if (key === 'motionTransferEnabled') {
+                    segment.motionTransfer = segment.motionTransfer || { mode: 'pose', strength: 1 };
+                    segment.motionTransfer.enabled = !!element.checked;
+                    segment.motionTransfer.strength = 1;
+                    ltxDirectorSyncMotionTransferSegment(segment);
                 } else if (key === 'resizeMethod') {
                     segment.resizeMethod = String(value || 'maintain aspect ratio');
                     ltxDirectorState.resizeMethod = segment.resizeMethod;
@@ -8356,7 +9027,8 @@
                 imageFile: reference.fileName || '',
                 crop: reference.crop || { x: 0, y: 0, w: 1, h: 1 },
                 cameraKeyframes: [],
-                transitionLoraEnabled: false
+                transitionLoraEnabled: false,
+                motionTransfer: { enabled: false, mode: 'pose', strength: 1 }
             });
             ltxDirectorState.referenceMode = false;
             ltxDirectorState.selectedType = 'segment';
@@ -8428,6 +9100,17 @@
                     imageB64: segment.imageB64 || '',
                     videoFile: segment.videoFile || '',
                     videoB64: segment.videoSrc || '',
+                    motionTransfer: {
+                        enabled: !!segment.motionTransfer?.enabled,
+                        mode: segment.motionTransfer?.mode || 'pose',
+                        strength: Number(segment.motionTransfer?.strength ?? 1),
+                        videoFile: segment.motionTransfer?.videoFile || '',
+                        videoB64: segment.motionTransfer?.videoSrc || '',
+                        sourceDuration: Number(segment.motionTransfer?.sourceDuration || 0),
+                        durationFrames: Math.max(1, Math.round(Number(segment.motionTransfer?.durationFrames || ltxDirectorSecondsToFrames(segment.length)))),
+                        startFrame: Math.max(0, Math.round(Number(segment.motionTransfer?.startFrame || ltxDirectorSecondsToFrames(segment.start)))),
+                        endFrame: Math.max(0, Math.round(Number(segment.motionTransfer?.endFrame || ltxDirectorSecondsToFrames(ltxDirectorEnd(segment)))))
+                    },
                     guideStrength: Number(segment.transitionLoraEnabled ? Math.max(1, Number(segment.guideStrength ?? 1)) : (segment.guideStrength ?? 1)),
                     transitionLoraEnabled: !!segment.transitionLoraEnabled,
                     transitionToNextVisual: !!transitionTarget,
@@ -8492,7 +9175,20 @@
                     .map(segment => ({ id: segment.id, text: segment.speechText || segment.prompt || '', additional_time: Number(segment.speechAdditionalTime || 0), stats: ltxDirectorSpeechStats(segment.speechText || segment.prompt || '', segment.speechAdditionalTime || 0) })),
                 loadVideo: directorSegments
                     .filter(segment => segment.type === 'video')
-                    .map(segment => ({ id: segment.id, video: segment.videoFile || '', ...(segment.loadVideo || {}) }))
+                    .map(segment => ({ id: segment.id, video: segment.videoFile || '', ...(segment.loadVideo || {}) })),
+                motionTransfer: directorSegments
+                    .filter(segment => !!segment.motionTransfer?.enabled)
+                    .map(segment => ({
+                        id: segment.id,
+                        mode: segment.motionTransfer?.mode || 'pose',
+                        strength: Number(segment.motionTransfer?.strength ?? 1),
+                        video: segment.motionTransfer?.videoFile || '',
+                        videoB64: segment.motionTransfer?.videoSrc || '',
+                        start: Math.max(0, Math.round(Number(segment.start || 0) * fps)),
+                        length: Math.max(1, Math.round(Number(segment.length || LTX_DIRECTOR_MIN_SECONDS) * fps)),
+                        duration: Number(segment.length || 0),
+                        sourceDuration: Number(segment.motionTransfer?.sourceDuration || 0)
+                    }))
             };
             return {
                 duration_seconds: Number(durationSeconds.toFixed(2)),
@@ -8946,7 +9642,7 @@
             if (latentUpscale && (latentOutputWidth !== directorFinalWidth || latentOutputHeight !== directorFinalHeight)) {
                 finalScaleNodes['39'] = {
                     class_type: 'ImageScale',
-                    inputs: { image: ['15', 0], upscale_method: 'lanczos', width: directorFinalWidth, height: directorFinalHeight, crop: 'center' },
+                    inputs: { image: ['15', 0], upscale_method: 'lanczos', width: directorFinalWidth, height: directorFinalHeight, crop: 'disabled' },
                     _meta: { title: 'Match Requested LTX Output Size' }
                 };
                 decodedFramesRef = ['39', 0];
@@ -9221,6 +9917,13 @@
                         { name: 'crop_w', value: director.timeline_data.loadVideo[0]?.crop_w ?? 1 },
                         { name: 'crop_h', value: director.timeline_data.loadVideo[0]?.crop_h ?? 1 }
                     ], color: '#5a4320' },
+                    { id: 'ltx_motion_transfer', class_type: 'LTXMotionTransferSegment', title: 'Motion Transfer Segment Guides', x: 1230, y: 735, width: 330, height: 170, inputs: ['video_reference', 'target_segment'], outputs: ['guide_video', 'motion_mode', 'strength'], widgets: [
+                        { name: 'segments', value: director.timeline_data.motionTransfer?.length || 0 },
+                        { name: 'mode', value: director.timeline_data.motionTransfer?.[0]?.mode || 'pose' },
+                        { name: 'video', value: director.timeline_data.motionTransfer?.[0]?.video || '' },
+                        { name: 'duration', value: director.timeline_data.motionTransfer?.[0]?.duration || 0 },
+                        { name: 'strength', value: director.timeline_data.motionTransfer?.[0]?.strength || 1 }
+                    ], color: '#7f1d1d' },
                     { id: 'ltx_conditioning', class_type: 'LTXVConditioning', title: 'Frame Rate Conditioning', x: 860, y: 110, width: 260, height: 118, inputs: ['positive', 'negative', 'frame_rate'], outputs: ['positive', 'negative'], widgets: [{ name: 'frame_rate', value: director.frame_rate }], color: '#1f5f3a' },
                     { id: 'ltx_guide', class_type: 'LTXDirectorGuide', title: 'Apply Director Guides', x: 860, y: 290, width: 270, height: 150, inputs: ['positive', 'negative', 'vae', 'latent', 'guide_data'], outputs: ['positive', 'negative', 'latent'], widgets: [{ name: 'scale_by', value: '1.00' }, { name: 'upscale_method', value: 'bicubic' }], color: '#5a4320' },
                     ...(useCustomAudio ? [
@@ -9246,7 +9949,11 @@
                     { from_node: 'ltx_conditioning', from_slot: 1, to_node: 'ltx_guide', to_slot: 1, type: 'CONDITIONING' },
                     { from_node: 'ltx_video_vae', from_slot: 0, to_node: 'ltx_guide', to_slot: 2, type: 'VAE' },
                     { from_node: 'ltx_director', from_slot: 2, to_node: 'ltx_guide', to_slot: 3, type: 'LATENT' },
-                    { from_node: 'ltx_director', from_slot: 4, to_node: 'ltx_guide', to_slot: 4, type: 'GUIDE_DATA' },
+                        { from_node: 'ltx_director', from_slot: 4, to_node: 'ltx_guide', to_slot: 4, type: 'GUIDE_DATA' },
+                    ...(director.timeline_data.motionTransfer?.length ? [
+                        { from_node: 'ltx_load_video_ui', from_slot: 0, to_node: 'ltx_motion_transfer', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'ltx_director', from_slot: 2, to_node: 'ltx_motion_transfer', to_slot: 1, type: 'LATENT' }
+                    ] : []),
                     ...(useCustomAudio ? [
                         { from_node: 'ltx_guide', from_slot: 2, to_node: 'ltx_audio_merge', to_slot: 0, type: 'LATENT' },
                         { from_node: 'ltx_director', from_slot: 3, to_node: 'ltx_audio_merge', to_slot: 1, type: 'LATENT' },
@@ -9366,6 +10073,11 @@
             });
             document.getElementById('ltxDirectorAudioInput')?.addEventListener('change', event => {
                 addLtxDirectorAudioFiles(event.target.files);
+                event.target.value = '';
+            });
+            document.getElementById('ltxDirectorMotionVideoInput')?.addEventListener('change', event => {
+                const file = [...(event.target.files || [])].find(isVideoFile);
+                if (file) addLtxDirectorMotionVideoFile(file);
                 event.target.value = '';
             });
             ['ltxDirectorDuration', 'ltxDirectorFps', 'ltxDirectorWidth', 'ltxDirectorHeight', 'ltxDirectorResizeMethod', 'ltxDirectorDisplayMode', 'ltxDirectorEpsilon', 'ltxDirectorDivisibleBy', 'ltxDirectorImgCompression'].forEach(id => {
@@ -10728,6 +11440,10 @@
 
             const label = document.getElementById(type === 'canvas' ? 'canvasZoomLabel' : 'workflowZoomLabel');
             if (label) label.innerText = `${Math.round(state.scale * 100)}%`;
+            if (type === 'canvas') {
+                syncInpaintOverlayBounds();
+                updateInpaintBrushCursor();
+            }
         }
 
         function zoomViewport(type, delta, originEvent = null) {
@@ -10764,7 +11480,124 @@
             label.innerText = `Inpaint Area (${width}x${height})`;
         }
 
-        function resizeInpaintSurface(width, height) {
+        function inpaintContentRectCss() {
+            const frame = document.getElementById('inpaintCanvasFrame');
+            const canvas = document.getElementById('inpaintMaskCanvas');
+            if (!frame || !canvas) return null;
+            const frameWidth = Math.max(1, frame.clientWidth || frame.getBoundingClientRect().width || 1);
+            const frameHeight = Math.max(1, frame.clientHeight || frame.getBoundingClientRect().height || 1);
+            const previewPad = inpaintExtendDrag?.pad || null;
+            const sourceWidth = Math.max(1, canvas.width || referenceImageMeta.width || Number(document.getElementById('widthInput')?.value || 512));
+            const sourceHeight = Math.max(1, canvas.height || referenceImageMeta.height || Number(document.getElementById('heightInput')?.value || 512));
+            const canvasWidth = sourceWidth + Math.max(0, previewPad?.left || 0) + Math.max(0, previewPad?.right || 0);
+            const canvasHeight = sourceHeight + Math.max(0, previewPad?.top || 0) + Math.max(0, previewPad?.bottom || 0);
+            const fit = Math.min(frameWidth / canvasWidth, frameHeight / canvasHeight);
+            const width = Math.max(1, canvasWidth * fit);
+            const height = Math.max(1, canvasHeight * fit);
+            return {
+                left: (frameWidth - width) / 2,
+                top: (frameHeight - height) / 2,
+                width,
+                height,
+                scale: fit,
+                canvasWidth,
+                canvasHeight,
+                sourceLeft: Math.max(0, previewPad?.left || 0),
+                sourceTop: Math.max(0, previewPad?.top || 0),
+                sourceWidth,
+                sourceHeight,
+                previewPad
+            };
+        }
+
+        function syncInpaintOverlayBounds() {
+            const rect = inpaintContentRectCss();
+            const canvas = document.getElementById('inpaintMaskCanvas');
+            const bounds = document.getElementById('inpaintCanvasBounds');
+            const handles = document.getElementById('inpaintExtendHandles');
+            const baseImage = document.getElementById('inpaintBaseImage');
+            const fillPreview = document.getElementById('inpaintGenerativeFillPreview');
+            if (!rect || !canvas) return null;
+            [bounds, handles, fillPreview].forEach(element => {
+                if (!element) return;
+                element.style.left = `${rect.left}px`;
+                element.style.top = `${rect.top}px`;
+                element.style.width = `${rect.width}px`;
+                element.style.height = `${rect.height}px`;
+            });
+            const previewActive = !!rect.previewPad && inpaintPadHasArea(rect.previewPad);
+            const canvasLeft = previewActive ? rect.left + rect.sourceLeft * rect.scale : rect.left;
+            const canvasTop = previewActive ? rect.top + rect.sourceTop * rect.scale : rect.top;
+            const canvasWidth = previewActive ? rect.sourceWidth * rect.scale : rect.width;
+            const canvasHeight = previewActive ? rect.sourceHeight * rect.scale : rect.height;
+            canvas.style.left = `${canvasLeft}px`;
+            canvas.style.top = `${canvasTop}px`;
+            canvas.style.width = `${canvasWidth}px`;
+            canvas.style.height = `${canvasHeight}px`;
+            if (baseImage) {
+                const imageLeft = rect.left + rect.sourceLeft * rect.scale;
+                const imageTop = rect.top + rect.sourceTop * rect.scale;
+                const imageWidth = rect.sourceWidth * rect.scale;
+                const imageHeight = rect.sourceHeight * rect.scale;
+                baseImage.style.left = `${imageLeft}px`;
+                baseImage.style.top = `${imageTop}px`;
+                baseImage.style.width = `${imageWidth}px`;
+                baseImage.style.height = `${imageHeight}px`;
+            }
+            if (fillPreview) {
+                fillPreview.classList.toggle('active', previewActive);
+                const pad = rect.previewPad || {};
+                const strips = {
+                    top: { left: 0, top: 0, width: rect.width, height: Math.max(0, pad.top || 0) * rect.scale },
+                    bottom: { left: 0, top: rect.height - Math.max(0, pad.bottom || 0) * rect.scale, width: rect.width, height: Math.max(0, pad.bottom || 0) * rect.scale },
+                    left: { left: 0, top: Math.max(0, pad.top || 0) * rect.scale, width: Math.max(0, pad.left || 0) * rect.scale, height: rect.sourceHeight * rect.scale },
+                    right: { left: rect.width - Math.max(0, pad.right || 0) * rect.scale, top: Math.max(0, pad.top || 0) * rect.scale, width: Math.max(0, pad.right || 0) * rect.scale, height: rect.sourceHeight * rect.scale }
+                };
+                Object.entries(strips).forEach(([side, box]) => {
+                    const strip = fillPreview.querySelector(`[data-inpaint-fill-strip="${side}"]`);
+                    if (!strip) return;
+                    const show = box.width > 0 && box.height > 0;
+                    strip.style.display = show ? 'block' : 'none';
+                    strip.style.left = `${box.left}px`;
+                    strip.style.top = `${box.top}px`;
+                    strip.style.width = `${box.width}px`;
+                    strip.style.height = `${box.height}px`;
+                });
+            }
+            return rect;
+        }
+
+        function inpaintPointerState(event) {
+            const canvas = document.getElementById('inpaintMaskCanvas');
+            const frame = document.getElementById('inpaintCanvasFrame');
+            if (!event || !canvas || !frame || !canvas.width || !canvas.height) return null;
+            syncInpaintOverlayBounds();
+            const frameRect = frame.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+            const frameScaleX = frame.clientWidth ? frameRect.width / frame.clientWidth : 1;
+            const frameScaleY = frame.clientHeight ? frameRect.height / frame.clientHeight : 1;
+            const canvasScaleX = canvas.clientWidth ? canvasRect.width / canvas.clientWidth : frameScaleX;
+            const canvasScaleY = canvas.clientHeight ? canvasRect.height / canvas.clientHeight : frameScaleY;
+            const cssX = (event.clientX - canvasRect.left) / Math.max(0.0001, canvasScaleX || 1);
+            const cssY = (event.clientY - canvasRect.top) / Math.max(0.0001, canvasScaleY || 1);
+            const canvasCssWidth = Math.max(1, canvas.clientWidth || parseFloat(canvas.style.width) || canvasRect.width);
+            const canvasCssHeight = Math.max(1, canvas.clientHeight || parseFloat(canvas.style.height) || canvasRect.height);
+            const clampedCssX = Math.max(0, Math.min(canvasCssWidth, cssX));
+            const clampedCssY = Math.max(0, Math.min(canvasCssHeight, cssY));
+            const canvasX = clampedCssX * (canvas.width / canvasCssWidth);
+            const canvasY = clampedCssY * (canvas.height / canvasCssHeight);
+            return {
+                point: { x: canvasX, y: canvasY },
+                cssX: clampedCssX,
+                cssY: clampedCssY,
+                canvasLeft: canvas.offsetLeft || parseFloat(canvas.style.left) || 0,
+                canvasTop: canvas.offsetTop || parseFloat(canvas.style.top) || 0,
+                canvasCssWidth,
+                canvasCssHeight
+            };
+        }
+
+        function resizeInpaintSurface(width, height, options = {}) {
             const frame = document.getElementById('inpaintCanvasFrame');
             const canvas = document.getElementById('inpaintMaskCanvas');
             if (!frame || !canvas) return;
@@ -10779,10 +11612,13 @@
             canvas.height = safeHeight;
             canvas.getContext('2d')?.clearRect(0, 0, safeWidth, safeHeight);
             inpaintMaskDirty = false;
-            inpaintUndoStack = [];
-            inpaintRedoStack = [];
+            if (!options.preserveHistory) {
+                inpaintUndoStack = [];
+                inpaintRedoStack = [];
+            }
             updateInpaintHistoryButtons();
             updateInpaintAreaLabel();
+            syncInpaintOverlayBounds();
         }
 
         function canvasHasPaint(canvas) {
@@ -10810,10 +11646,24 @@
             }
         }
 
-        function saveInpaintUndoState() {
+        function captureInpaintHistoryState() {
             const canvas = document.getElementById('inpaintMaskCanvas');
-            if (!canvas || !canvas.width || !canvas.height) return;
-            inpaintUndoStack.push(canvas.toDataURL('image/png'));
+            if (!canvas || !canvas.width || !canvas.height) return null;
+            return {
+                mask: canvas.toDataURL('image/png'),
+                reference_image: referenceImageDataUrl || '',
+                reference_meta: { ...referenceImageMeta },
+                width: Number(document.getElementById('widthInput')?.value || canvas.width),
+                height: Number(document.getElementById('heightInput')?.value || canvas.height),
+                canvas_width: canvas.width,
+                canvas_height: canvas.height
+            };
+        }
+
+        function saveInpaintUndoState() {
+            const snapshot = captureInpaintHistoryState();
+            if (!snapshot) return;
+            inpaintUndoStack.push(snapshot);
             if (inpaintUndoStack.length > 40) inpaintUndoStack.shift();
             inpaintRedoStack = [];
             updateInpaintHistoryButtons();
@@ -10821,8 +11671,20 @@
 
         function restoreInpaintMaskSnapshot(snapshot) {
             const canvas = document.getElementById('inpaintMaskCanvas');
-            const ctx = canvas?.getContext('2d');
-            if (!canvas || !ctx || !snapshot) return;
+            if (!canvas || !snapshot) return;
+            const fullSnapshot = typeof snapshot === 'object';
+            if (fullSnapshot) {
+                referenceImageDataUrl = snapshot.reference_image || referenceImageDataUrl;
+                referenceImageMeta = {
+                    ...(snapshot.reference_meta || referenceImageMeta),
+                    src: snapshot.reference_image || snapshot.reference_meta?.src || referenceImageDataUrl
+                };
+                setDimensions(snapshot.width || snapshot.canvas_width || canvas.width, snapshot.height || snapshot.canvas_height || canvas.height);
+                resizeInpaintSurface(snapshot.canvas_width || snapshot.width || canvas.width, snapshot.canvas_height || snapshot.height || canvas.height, { preserveHistory: true });
+                syncReferenceImageSurfaces();
+            }
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
             const image = new Image();
             image.onload = () => {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -10831,20 +11693,22 @@
                 updateWorkflowPreview();
                 updateInpaintHistoryButtons();
             };
-            image.src = snapshot;
+            image.src = fullSnapshot ? snapshot.mask : snapshot;
         }
 
         function undoInpaintMask() {
             const canvas = document.getElementById('inpaintMaskCanvas');
             if (!canvas || !inpaintUndoStack.length) return;
-            inpaintRedoStack.push(canvas.toDataURL('image/png'));
+            const current = captureInpaintHistoryState();
+            if (current) inpaintRedoStack.push(current);
             restoreInpaintMaskSnapshot(inpaintUndoStack.pop());
         }
 
         function redoInpaintMask() {
             const canvas = document.getElementById('inpaintMaskCanvas');
             if (!canvas || !inpaintRedoStack.length) return;
-            inpaintUndoStack.push(canvas.toDataURL('image/png'));
+            const current = captureInpaintHistoryState();
+            if (current) inpaintUndoStack.push(current);
             restoreInpaintMaskSnapshot(inpaintRedoStack.pop());
         }
 
@@ -10857,8 +11721,20 @@
             updateInpaintBrushCursor();
         }
 
+        function syncInpaintWandTolerance(value) {
+            inpaintWandTolerance = Math.max(4, Math.min(96, Number(value) || 34));
+            const slider = document.getElementById('inpaintWandToleranceSlider');
+            const label = document.getElementById('inpaintWandToleranceValue');
+            if (slider && document.activeElement !== slider) slider.value = String(inpaintWandTolerance);
+            if (label) label.innerText = String(Math.round(inpaintWandTolerance));
+        }
+
         function inpaintBrushToolActive() {
-            return ['Inpaint masked area', 'Inpaint sketch', 'Erase mask'].includes(activeCanvasTool);
+            return ['Inpaint masked area', 'Remove mask', 'Inpaint sketch', 'Erase mask'].includes(activeCanvasTool);
+        }
+
+        function inpaintSelectionToolActive() {
+            return ['Magic Wand', 'Select Object'].includes(activeCanvasTool);
         }
 
         function hideInpaintBrushCursor() {
@@ -10872,7 +11748,7 @@
             if (!canvas) return;
             if (isPickingSketchColor) {
                 canvas.style.cursor = 'crosshair';
-            } else if (inpaintBrushToolActive()) {
+            } else if (inpaintBrushToolActive() || inpaintSelectionToolActive()) {
                 canvas.style.cursor = 'none';
             } else if (activeCanvasTool === 'Move') {
                 canvas.style.cursor = 'grab';
@@ -10885,37 +11761,40 @@
             const cursor = document.getElementById('inpaintBrushCursor');
             const canvas = document.getElementById('inpaintMaskCanvas');
             updateInpaintCanvasCursorMode();
-            if (!cursor || !canvas || !referenceImageMeta.src || !inpaintBrushToolActive() || isPickingSketchColor) {
+            const selectionTool = inpaintSelectionToolActive();
+            if (!cursor || !canvas || !referenceImageMeta.src || (!inpaintBrushToolActive() && !selectionTool) || isPickingSketchColor) {
                 if (cursor) cursor.style.display = 'none';
                 return;
             }
+            cursor.classList.toggle('wand', selectionTool);
 
-            const rect = canvas.getBoundingClientRect();
-            if (!rect.width || !rect.height) {
+            const overlayRect = syncInpaintOverlayBounds();
+            if (!overlayRect?.width || !overlayRect?.height) {
                 cursor.style.display = 'none';
                 return;
             }
 
             if (event) {
-                lastInpaintCursorPoint = {
-                    x: event.clientX - rect.left,
-                    y: event.clientY - rect.top
-                };
+                lastInpaintCursorPoint = inpaintPointerState(event);
             }
             if (!lastInpaintCursorPoint) {
                 cursor.style.display = 'none';
                 return;
             }
 
-            const displaySize = Math.max(4, inpaintBrushSize * (rect.width / Math.max(1, canvas.width)));
+            const displaySize = selectionTool ? 24 : Math.max(4, inpaintBrushSize * (lastInpaintCursorPoint.canvasCssWidth / Math.max(1, canvas.width)));
             cursor.style.width = `${displaySize}px`;
             cursor.style.height = `${displaySize}px`;
-            cursor.style.left = `${lastInpaintCursorPoint.x - displaySize / 2}px`;
-            cursor.style.top = `${lastInpaintCursorPoint.y - displaySize / 2}px`;
+            cursor.style.left = `${lastInpaintCursorPoint.canvasLeft + lastInpaintCursorPoint.cssX - displaySize / 2}px`;
+            cursor.style.top = `${lastInpaintCursorPoint.canvasTop + lastInpaintCursorPoint.cssY - displaySize / 2}px`;
             cursor.style.display = 'block';
             cursor.style.borderStyle = activeCanvasTool === 'Erase mask' ? 'dashed' : 'solid';
             cursor.style.borderColor = activeCanvasTool === 'Inpaint sketch'
                 ? (document.getElementById('inpaintSketchColorPicker')?.value || '#ff3b3b')
+                : activeCanvasTool === 'Remove mask'
+                ? '#22c55e'
+                : selectionTool
+                ? '#facc15'
                 : '#ffffff';
             updateInpaintCanvasCursorMode();
         }
@@ -11007,14 +11886,15 @@
                     const motionTransferModes = [
                         ['pose', 'fa-person-running', 'Pose'],
                         ['canny', 'fa-wave-square', 'Canny'],
-                        ['depth', 'fa-layer-group', 'Depth']
+                        ['depth', 'fa-layer-group', 'Depth'],
+                        ['camera', 'fa-video', 'Camera']
                     ];
                     multiList.innerHTML += `
                         <label class="col-span-2 flex items-center justify-between gap-3 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted" onclick="event.preventDefault();event.stopPropagation();syncLtxMotionTransferToggle(!document.getElementById('ltxMotionTransferToggle')?.checked);">
                             <span><i class="fa-solid fa-arrows-spin text-nexus-red mr-1"></i>Motion Transfer</span>
                             <span class="toggle-switch"><input id="ltxMotionTransferInlineToggle" type="checkbox" ${motionTransferOn ? 'checked' : ''} onclick="event.stopPropagation();" onchange="event.stopPropagation();syncLtxMotionTransferToggle(this.checked)"><span class="toggle-track"></span></span>
                         </label>
-                        <div class="col-span-2 grid grid-cols-3 gap-1">
+                        <div class="col-span-2 grid grid-cols-4 gap-1">
                             ${motionTransferModes.map(([value, icon, label]) => `
                                 <button type="button" class="border ${motionTransferOn && motionTransferMode === value ? 'border-nexus-red bg-nexus-red text-white' : 'border-nexus-border bg-zinc-950 text-nexus-muted'} px-2 py-1 text-[9px] font-bold uppercase ${motionTransferOn ? 'hover:border-nexus-red hover:text-white' : 'hover:border-nexus-border'}" onclick="event.preventDefault();event.stopPropagation();setLtxMotionTransferMode('${value}');" title="IC-LoRA ${label}">
                                     <i class="fa-solid ${icon} mr-1"></i>${label}
@@ -11030,7 +11910,9 @@
                 baseImage.src = hasImage ? referenceImageMeta.src : '';
             }
             maskCanvas?.classList.toggle('hidden', !hasImage);
+            document.getElementById('inpaintExtendHandles')?.classList.toggle('active', hasImage && activeCanvasTool === 'Outpaint expand canvas');
             empty?.classList.toggle('hidden', hasImage);
+            syncInpaintOverlayBounds();
             updateInpaintBrushCursor();
         }
 
@@ -11040,6 +11922,7 @@
             referenceImageExtraDataUrls = [];
             resizePercentBaseSnapshot = null;
             referenceBaseVideoMeta = { src: '', label: '', width: 0, height: 0, duration: 0 };
+            clearLtxMotionPreprocess({ quiet: true });
             referenceImageMeta = { src: '', label: '', width: 0, height: 0 };
             const canvas = document.getElementById('inpaintMaskCanvas');
             const ctx = canvas?.getContext('2d');
@@ -11048,6 +11931,7 @@
             inpaintUndoStack = [];
             inpaintRedoStack = [];
             updateInpaintHistoryButtons();
+            syncLtxLinearMotionTransferTimeLock();
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
             if (!options.quiet) showToast("Reference Cleared", `${img2imgActivityLabel()}/inpaint source image was removed.`);
@@ -11058,15 +11942,51 @@
             const inlineToggle = document.getElementById('ltxMotionTransferInlineToggle');
             if (sideToggle) sideToggle.checked = !!value;
             if (inlineToggle) inlineToggle.checked = !!value;
+            syncLtxLinearMotionTransferTimeLock();
             syncReferenceImageSurfaces();
+            syncGenerationActionUi();
             updateWorkflowPreview();
         }
 
-        function setLtxMotionTransferMode(value) {
-            const mode = ['pose', 'canny', 'depth'].includes(String(value).toLowerCase()) ? String(value).toLowerCase() : 'pose';
+        function syncLtxLinearMotionTransferTimeLock() {
+            const secondsInput = document.getElementById('secondsInput');
+            const framesInput = document.getElementById('framesInput');
+            const fpsInput = document.getElementById('fpsInput');
+            if (!secondsInput || !framesInput || !fpsInput) return false;
+            const locked = activePreset === 'LTX'
+                && currentActivity === 'img2img'
+                && !isDirectorWorkspaceActive()
+                && !!document.getElementById('ltxMotionTransferToggle')?.checked
+                && !!referenceBaseVideoDataUrl
+                && Number(referenceBaseVideoMeta.duration || 0) > 0;
+            secondsInput.readOnly = locked;
+            framesInput.readOnly = locked;
+            secondsInput.classList.toggle('opacity-70', locked);
+            framesInput.classList.toggle('opacity-70', locked);
+            secondsInput.title = locked ? 'Locked to Motion Transfer reference video duration' : '';
+            framesInput.title = locked ? 'Locked to Motion Transfer reference video duration' : '';
+            if (!locked) return false;
+            const fps = Math.max(1, Number(fpsInput.value || 24));
+            const duration = Math.max(0.25, Number(referenceBaseVideoMeta.duration || 1));
+            secondsInput.value = duration.toFixed(2).replace(/\.00$/, '');
+            framesInput.value = String(alignedVideoFrames('LTX', duration, fps));
+            return true;
+        }
+
+        async function setLtxMotionTransferMode(value) {
+            const mode = ['pose', 'canny', 'depth', 'camera'].includes(String(value).toLowerCase()) ? String(value).toLowerCase() : 'pose';
+            if (mode === 'camera') {
+                const ready = await ensureLtxCameramanAvailable();
+                if (!ready) {
+                    setSelectValue('ltxMotionTransferModeSelect', 'pose');
+                    return;
+                }
+            }
             const select = document.getElementById('ltxMotionTransferModeSelect');
             if (select) select.value = mode;
+            clearLtxMotionPreprocess({ quiet: true });
             syncReferenceImageSurfaces();
+            syncGenerationActionUi();
             updateWorkflowPreview();
         }
 
@@ -11075,9 +11995,11 @@
             if (!options.keepExtraReferences) referenceImageExtraDataUrls = [];
             referenceBaseVideoDataUrl = '';
             referenceBaseVideoMeta = { src: '', label: '', width: 0, height: 0, duration: 0 };
+            clearLtxMotionPreprocess({ quiet: true });
             resizePercentBaseSnapshot = null;
             referenceImageDataUrl = src;
             referenceImageMeta = { src, label, width: 0, height: 0 };
+            syncLtxLinearMotionTransferTimeLock();
             syncReferenceImageSurfaces();
             const image = new Image();
             image.onload = () => {
@@ -11107,9 +12029,11 @@
             referenceImageExtraDataUrls = list.slice(0, maxSlots);
             if (activePreset === 'LTX' && isStartEndFrameMode()) {
                 const transitionToggle = document.getElementById('ltxTransitionLoraToggle');
-                if (transitionToggle) transitionToggle.checked = true;
+                if (transitionToggle && !document.getElementById('ltxMotionTransferToggle')?.checked) transitionToggle.checked = true;
             }
+            clearLtxMotionPreprocess({ quiet: true });
             syncReferenceImageSurfaces();
+            syncGenerationActionUi();
             updateWorkflowPreview();
         }
 
@@ -11199,13 +12123,7 @@
         }
 
         function canvasPoint(event) {
-            const canvas = document.getElementById('inpaintMaskCanvas');
-            const rect = canvas?.getBoundingClientRect();
-            if (!canvas || !rect) return null;
-            return {
-                x: (event.clientX - rect.left) * (canvas.width / Math.max(1, rect.width)),
-                y: (event.clientY - rect.top) * (canvas.height / Math.max(1, rect.height))
-            };
+            return inpaintPointerState(event)?.point || null;
         }
 
         function drawInpaintStroke(from, to, erase = false) {
@@ -11219,6 +12137,8 @@
             ctx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
             ctx.strokeStyle = activeCanvasTool === 'Inpaint sketch'
                 ? (document.getElementById('inpaintSketchColorPicker')?.value || '#ff3b3b')
+                : activeCanvasTool === 'Remove mask'
+                ? 'rgba(34, 197, 94, 0.86)'
                 : 'rgba(255, 59, 59, 0.82)';
             ctx.beginPath();
             ctx.moveTo(from.x, from.y);
@@ -11233,6 +12153,200 @@
             inpaintMaskDirty = true;
         }
 
+        function colorDistanceSq(data, index, seed, alphaWeight = 0.35) {
+            const dr = data[index] - seed.r;
+            const dg = data[index + 1] - seed.g;
+            const db = data[index + 2] - seed.b;
+            const da = (data[index + 3] - seed.a) * alphaWeight;
+            return dr * dr + dg * dg + db * db + da * da;
+        }
+
+        function imageGradientMagnitude(data, x, y, width, height) {
+            if (x <= 0 || y <= 0 || x >= width - 1 || y >= height - 1) return 0;
+            const left = (y * width + x - 1) * 4;
+            const right = (y * width + x + 1) * 4;
+            const top = ((y - 1) * width + x) * 4;
+            const bottom = ((y + 1) * width + x) * 4;
+            const dx = Math.abs(data[right] - data[left]) + Math.abs(data[right + 1] - data[left + 1]) + Math.abs(data[right + 2] - data[left + 2]);
+            const dy = Math.abs(data[bottom] - data[top]) + Math.abs(data[bottom + 1] - data[top + 1]) + Math.abs(data[bottom + 2] - data[top + 2]);
+            return (dx + dy) / 6;
+        }
+
+        function localColorVarianceTolerance(data, seedX, seedY, width, height) {
+            const radius = 5;
+            let count = 0;
+            let sum = 0;
+            let sumSq = 0;
+            for (let y = Math.max(0, seedY - radius); y <= Math.min(height - 1, seedY + radius); y += 1) {
+                for (let x = Math.max(0, seedX - radius); x <= Math.min(width - 1, seedX + radius); x += 1) {
+                    const i = (y * width + x) * 4;
+                    const lum = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                    sum += lum;
+                    sumSq += lum * lum;
+                    count += 1;
+                }
+            }
+            const mean = count ? sum / count : 0;
+            const variance = count ? Math.max(0, sumSq / count - mean * mean) : 0;
+            return Math.sqrt(variance);
+        }
+
+        function dilateSelectionMask(mask, width, height, iterations = 1) {
+            let current = mask;
+            for (let iteration = 0; iteration < iterations; iteration += 1) {
+                const next = new Uint8Array(current);
+                for (let y = 1; y < height - 1; y += 1) {
+                    for (let x = 1; x < width - 1; x += 1) {
+                        const index = y * width + x;
+                        if (current[index]) continue;
+                        if (current[index - 1] || current[index + 1] || current[index - width] || current[index + width]) {
+                            next[index] = 1;
+                        }
+                    }
+                }
+                current = next;
+            }
+            return current;
+        }
+
+        function erodeSelectionMask(mask, width, height, iterations = 1) {
+            let current = mask;
+            for (let iteration = 0; iteration < iterations; iteration += 1) {
+                const next = new Uint8Array(current);
+                for (let y = 1; y < height - 1; y += 1) {
+                    for (let x = 1; x < width - 1; x += 1) {
+                        const index = y * width + x;
+                        if (!current[index]) continue;
+                        if (!current[index - 1] || !current[index + 1] || !current[index - width] || !current[index + width]) {
+                            next[index] = 0;
+                        }
+                    }
+                }
+                current = next;
+            }
+            return current;
+        }
+
+        function buildInpaintSelectionMask(imageData, point, options = {}) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const x0 = Math.max(0, Math.min(width - 1, Math.round(point.x)));
+            const y0 = Math.max(0, Math.min(height - 1, Math.round(point.y)));
+            const data = imageData.data;
+            const seedIndex = (y0 * width + x0) * 4;
+            const seed = { r: data[seedIndex], g: data[seedIndex + 1], b: data[seedIndex + 2], a: data[seedIndex + 3] };
+            if (seed.a < 4) return new Uint8Array(width * height);
+            const adaptive = !!options.adaptive;
+            const contiguous = options.contiguous !== false || adaptive;
+            const localStdDev = adaptive ? localColorVarianceTolerance(data, x0, y0, width, height) : 0;
+            const tolerance = Math.max(4, Number(options.tolerance || inpaintWandTolerance)) + (adaptive ? Math.min(38, localStdDev * 1.8) : 0);
+            const thresholdSq = tolerance * tolerance * (adaptive ? 5.4 : 3.2);
+            const edgeLimit = adaptive ? Math.max(30, tolerance * 1.45) : 999;
+            const selected = new Uint8Array(width * height);
+            const visited = new Uint8Array(width * height);
+            const matches = (x, y) => {
+                const index = (y * width + x) * 4;
+                if (data[index + 3] < 4) return false;
+                if (colorDistanceSq(data, index, seed) > thresholdSq) return false;
+                if (adaptive && imageGradientMagnitude(data, x, y, width, height) > edgeLimit) return false;
+                return true;
+            };
+
+            if (!contiguous) {
+                for (let y = 0; y < height; y += 1) {
+                    for (let x = 0; x < width; x += 1) {
+                        if (matches(x, y)) selected[y * width + x] = 1;
+                    }
+                }
+                return selected;
+            }
+
+            const queue = new Int32Array(width * height);
+            let head = 0;
+            let tail = 0;
+            queue[tail++] = y0 * width + x0;
+            visited[y0 * width + x0] = 1;
+            while (head < tail) {
+                const index = queue[head++];
+                const x = index % width;
+                const y = Math.floor(index / width);
+                if (!matches(x, y)) continue;
+                selected[index] = 1;
+                const neighbors = [index - 1, index + 1, index - width, index + width];
+                for (const next of neighbors) {
+                    if (next < 0 || next >= visited.length || visited[next]) continue;
+                    const nx = next % width;
+                    const ny = Math.floor(next / width);
+                    if (Math.abs(nx - x) + Math.abs(ny - y) !== 1) continue;
+                    visited[next] = 1;
+                    queue[tail++] = next;
+                }
+            }
+            if (!adaptive) return selected;
+            return erodeSelectionMask(dilateSelectionMask(selected, width, height, 2), width, height, 1);
+        }
+
+        function paintInpaintSelectionMask(selection, width, height, mode = 'fill') {
+            const canvas = document.getElementById('inpaintMaskCanvas');
+            const ctx = canvas?.getContext('2d');
+            if (!canvas || !ctx || !selection?.length) return 0;
+            const image = ctx.getImageData(0, 0, width, height);
+            const color = mode === 'remove'
+                ? [34, 197, 94, 220]
+                : [255, 59, 59, 210];
+            let count = 0;
+            for (let i = 0; i < selection.length; i += 1) {
+                if (!selection[i]) continue;
+                const offset = i * 4;
+                if (mode === 'erase') {
+                    image.data[offset + 3] = 0;
+                } else {
+                    image.data[offset] = color[0];
+                    image.data[offset + 1] = color[1];
+                    image.data[offset + 2] = color[2];
+                    image.data[offset + 3] = color[3];
+                }
+                count += 1;
+            }
+            if (count) {
+                ctx.putImageData(image, 0, 0);
+                inpaintMaskDirty = canvasHasPaint(canvas);
+                updateWorkflowPreview();
+            }
+            return count;
+        }
+
+        async function applyInpaintAutoSelection(point, event = null) {
+            const image = document.getElementById('inpaintBaseImage');
+            const canvas = document.getElementById('inpaintMaskCanvas');
+            if (!image || !canvas || !image.complete || !image.naturalWidth || !image.naturalHeight || !point) {
+                showToast("Selection Failed", "Load an image into the inpaint canvas first.");
+                return;
+            }
+            const temp = document.createElement('canvas');
+            temp.width = canvas.width;
+            temp.height = canvas.height;
+            const tempCtx = temp.getContext('2d', { willReadFrequently: true });
+            tempCtx.drawImage(image, 0, 0, temp.width, temp.height);
+            const imageData = tempCtx.getImageData(0, 0, temp.width, temp.height);
+            const modeSelect = document.getElementById('inpaintWandPaintMode');
+            const selectionMode = event?.altKey ? 'erase' : (modeSelect?.value || 'fill');
+            const selection = buildInpaintSelectionMask(imageData, point, {
+                adaptive: activeCanvasTool === 'Select Object',
+                contiguous: document.getElementById('inpaintWandContiguousToggle')?.checked !== false,
+                tolerance: inpaintWandTolerance
+            });
+            const count = selection.reduce((sum, value) => sum + (value ? 1 : 0), 0);
+            if (!count) {
+                showToast("Selection Empty", "No object region was detected at that point.");
+                return;
+            }
+            saveInpaintUndoState();
+            const painted = paintInpaintSelectionMask(selection, temp.width, temp.height, selectionMode);
+            updateInpaintHistoryButtons();
+            showToast(activeCanvasTool, `${painted.toLocaleString()} pixels selected as ${selectionMode}.`);
+        }
+
         function beginInpaintStroke(event) {
             if (event.button !== 0) return;
             if (!referenceImageMeta.src || activeCanvasTool === 'Move') return;
@@ -11242,6 +12356,10 @@
             updateInpaintBrushCursor(event);
             if (isPickingSketchColor) {
                 pickSketchColorFromCanvas(point);
+                return;
+            }
+            if (inpaintSelectionToolActive()) {
+                applyInpaintAutoSelection(point, event);
                 return;
             }
             saveInpaintUndoState();
@@ -11323,6 +12441,35 @@
             if (!painted) return null;
             exportCtx.putImageData(output, 0, 0);
             return exportCanvas.toDataURL('image/png');
+        }
+
+        function inpaintMaskIntentSummary() {
+            const canvas = document.getElementById('inpaintMaskCanvas');
+            const ctx = canvas?.getContext('2d');
+            if (!canvas || !ctx || !canvas.width || !canvas.height) {
+                return { intent: 'fill', fill: false, remove: false };
+            }
+            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let fillPixels = 0;
+            let removePixels = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                if (data[i + 3] <= 3) continue;
+                const red = data[i];
+                const green = data[i + 1];
+                const blue = data[i + 2];
+                if (green > red + 24 && green > blue + 24) {
+                    removePixels += 1;
+                } else {
+                    fillPixels += 1;
+                }
+            }
+            return {
+                intent: removePixels && fillPixels ? 'mixed' : removePixels ? 'remove' : 'fill',
+                fill: fillPixels > 0,
+                remove: removePixels > 0,
+                fill_pixels: fillPixels,
+                remove_pixels: removePixels
+            };
         }
 
         function handleGalleryDragStart(event, index) {
@@ -11441,6 +12588,10 @@
                 updateWorkflowPreview();
             } else if (mode === 'Erase mask' && select && !String(select.value).toLowerCase().includes('inpaint')) {
                 select.value = 'Inpaint masked area';
+            } else if (mode === 'Remove mask' && select) {
+                select.value = 'Remove mask';
+            } else if (['Magic Wand', 'Select Object'].includes(mode) && select && !String(select.value).toLowerCase().includes('inpaint') && select.value !== 'Remove mask') {
+                select.value = 'Inpaint masked area';
             }
 
             document.querySelectorAll('.canvas-tool-btn').forEach(btn => {
@@ -11451,8 +12602,21 @@
             });
 
             document.getElementById('inpaintSketchControls')?.classList.toggle('hidden', mode !== 'Inpaint sketch');
+            document.getElementById('inpaintWandControls')?.classList.toggle('hidden', !['Magic Wand', 'Select Object'].includes(mode));
+            document.getElementById('inpaintExtendHandles')?.classList.toggle('active', mode === 'Outpaint expand canvas');
+            syncInpaintOverlayBounds();
             updateInpaintBrushCursor();
-            showToast("Inpaint Mode", mode === 'Move' ? "Middle mouse pans the canvas; wheel zooms." : `${mode} selected.`);
+            showToast("Inpaint Mode", mode === 'Move'
+                ? "Middle mouse pans the canvas; wheel zooms."
+                : mode === 'Outpaint expand canvas'
+                ? "Drag an edge to use Generative Fill."
+                : mode === 'Magic Wand'
+                ? "Click a color region to auto-mask it."
+                : mode === 'Select Object'
+                ? "Click inside an object to auto-mask its region."
+                : mode === 'Remove mask'
+                ? "Remove mask selected. Paint objects in green to remove them."
+                : `${mode} selected.`);
         }
 
         function currentImg2ImgMode() {
@@ -11464,6 +12628,15 @@
                 return img2imgWorkflowModeLabel();
             }
             return selectedMode;
+        }
+
+        function syncInpaintEngineControls() {
+            const mode = currentImg2ImgMode().toLowerCase();
+            const inpaintActive = currentActivity === 'img2img' && mode.includes('inpaint');
+            const engine = String(document.getElementById('inpaintEngineSelect')?.value || 'differential').toLowerCase();
+            document.getElementById('inpaintEngineControls')?.classList.toggle('hidden', !inpaintActive);
+            document.getElementById('lanpaintStepsControl')?.classList.toggle('hidden', !inpaintActive || engine !== 'lanpaint');
+            document.getElementById('differentialStrengthInput')?.closest('label')?.classList.toggle('hidden', !inpaintActive || engine === 'default' || engine === 'lanpaint');
         }
 
         function refreshDefaultWorkflowForWorkspace() {
@@ -11484,6 +12657,7 @@
                 select.value = 'Inpaint masked area';
                 if (updatePreview) updateWorkflowPreview();
             }
+            syncInpaintEngineControls();
             refreshDefaultWorkflowForWorkspace();
         }
 
@@ -11566,6 +12740,7 @@
             const dataUrl = await readVideoFileAsDataUrl(file);
             referenceBaseVideoDataUrl = dataUrl;
             referenceBaseVideoMeta = { src: dataUrl, label: file.name || 'base video', width: 0, height: 0, duration: 0 };
+            clearLtxMotionPreprocess({ quiet: true });
             if (activePreset === 'LTX' && currentActivity === 'img2img') {
                 const toggle = document.getElementById('ltxMotionTransferToggle');
                 if (toggle) toggle.checked = true;
@@ -11579,10 +12754,13 @@
                 referenceBaseVideoMeta.height = video.videoHeight || 0;
                 referenceBaseVideoMeta.duration = video.duration || 0;
                 if (referenceBaseVideoMeta.width && referenceBaseVideoMeta.height) setDimensions(referenceBaseVideoMeta.width, referenceBaseVideoMeta.height);
+                syncLtxLinearMotionTransferTimeLock();
                 syncReferenceImageSurfaces();
             };
             video.src = dataUrl;
+            syncLtxLinearMotionTransferTimeLock();
             syncReferenceImageSurfaces();
+            syncGenerationActionUi();
             showToast("Base Video Loaded", `${file.name || 'Video'} ready. Image 2 can be used as reference/end frame.`);
             return true;
         }
@@ -11946,21 +13124,254 @@
             showToast("Pick Sketch Color", "Click a pixel on the inpaint image to sample its color.");
         }
 
-        function extendCanvasArea() {
+        function imageElementFromSource(src) {
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => resolve(image);
+                image.onerror = () => reject(new Error("Image read failed."));
+                image.src = src;
+            });
+        }
+
+        function paintInpaintExtendedMaskAreas(ctx, width, height, pad) {
+            if (!ctx || !pad) return false;
+            ctx.save();
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = 'rgba(255, 59, 59, 0.82)';
+            if (pad.left > 0) ctx.fillRect(0, 0, pad.left, height);
+            if (pad.right > 0) ctx.fillRect(width - pad.right, 0, pad.right, height);
+            if (pad.top > 0) ctx.fillRect(0, 0, width, pad.top);
+            if (pad.bottom > 0) ctx.fillRect(0, height - pad.bottom, width, pad.bottom);
+            ctx.restore();
+            return pad.left > 0 || pad.right > 0 || pad.top > 0 || pad.bottom > 0;
+        }
+
+        function normalizeInpaintPad(pad, width, height) {
+            const safe = {
+                left: Math.max(0, Math.round(Number(pad?.left || 0) / 8) * 8),
+                top: Math.max(0, Math.round(Number(pad?.top || 0) / 8) * 8),
+                right: Math.max(0, Math.round(Number(pad?.right || 0) / 8) * 8),
+                bottom: Math.max(0, Math.round(Number(pad?.bottom || 0) / 8) * 8)
+            };
+            const maxSize = 4096;
+            const totalX = safe.left + safe.right;
+            const totalY = safe.top + safe.bottom;
+            if (width + totalX > maxSize) {
+                const allowed = Math.max(0, maxSize - width);
+                if (safe.left && safe.right) {
+                    safe.left = Math.floor(allowed / 16) * 8;
+                    safe.right = Math.max(0, allowed - safe.left);
+                } else if (safe.left) {
+                    safe.left = allowed;
+                } else {
+                    safe.right = allowed;
+                }
+            }
+            if (height + totalY > maxSize) {
+                const allowed = Math.max(0, maxSize - height);
+                if (safe.top && safe.bottom) {
+                    safe.top = Math.floor(allowed / 16) * 8;
+                    safe.bottom = Math.max(0, allowed - safe.top);
+                } else if (safe.top) {
+                    safe.top = allowed;
+                } else {
+                    safe.bottom = allowed;
+                }
+            }
+            return safe;
+        }
+
+        function inpaintPadHasArea(pad) {
+            return !!pad && (pad.left > 0 || pad.right > 0 || pad.top > 0 || pad.bottom > 0);
+        }
+
+        function setInpaintDimensionPreview(width, height) {
+            const w = document.getElementById('widthInput');
+            const h = document.getElementById('heightInput');
+            if (w) w.value = Math.max(1, Math.round(width));
+            if (h) h.value = Math.max(1, Math.round(height));
+            const wSlider = document.getElementById('widthSlider');
+            const hSlider = document.getElementById('heightSlider');
+            if (wSlider) wSlider.value = String(w?.value || width);
+            if (hSlider) hSlider.value = String(h?.value || height);
+            updateResizePercentGuide();
+            updateInpaintAreaLabel();
+            captureLtxLinearSideState();
+            updateWorkflowPreview();
+        }
+
+        function padFromInpaintExtendDrag(event) {
+            const drag = inpaintExtendDrag;
+            const canvas = document.getElementById('inpaintMaskCanvas');
+            if (!drag || !canvas) return null;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = drag.width / Math.max(1, rect.width);
+            const scaleY = drag.height / Math.max(1, rect.height);
+            const deltaX = (event.clientX - drag.startClientX) * scaleX;
+            const deltaY = (event.clientY - drag.startClientY) * scaleY;
+            const pad = { left: 0, top: 0, right: 0, bottom: 0 };
+            if (drag.side === 'right') pad.right = deltaX;
+            if (drag.side === 'left') pad.left = -deltaX;
+            if (drag.side === 'bottom') pad.bottom = deltaY;
+            if (drag.side === 'top') pad.top = -deltaY;
+            return normalizeInpaintPad(pad, drag.width, drag.height);
+        }
+
+        function moveInpaintExtendDrag(event) {
+            if (!inpaintExtendDrag) return;
+            event.preventDefault();
+            const pad = padFromInpaintExtendDrag(event);
+            if (!pad) return;
+            inpaintExtendDrag.pad = pad;
+            setInpaintDimensionPreview(
+                inpaintExtendDrag.width + pad.left + pad.right,
+                inpaintExtendDrag.height + pad.top + pad.bottom
+            );
+        }
+
+        async function endInpaintExtendDrag(event, commit = true) {
+            const drag = inpaintExtendDrag;
+            if (!drag) return;
+            event?.preventDefault?.();
+            event?.currentTarget?.releasePointerCapture?.(event.pointerId);
+            const pad = commit ? (drag.pad || padFromInpaintExtendDrag(event || drag)) : null;
+            inpaintExtendDrag = null;
+            document.removeEventListener('pointermove', moveInpaintExtendDrag);
+            document.removeEventListener('pointerup', endInpaintExtendDrag);
+            document.removeEventListener('pointercancel', cancelInpaintExtendDrag);
+            if (commit && inpaintPadHasArea(pad)) {
+                await extendCanvasArea(drag.side, pad);
+            } else {
+                setInpaintDimensionPreview(drag.width, drag.height);
+                syncInpaintOverlayBounds();
+            }
+        }
+
+        function cancelInpaintExtendDrag(event) {
+            endInpaintExtendDrag(event, false);
+        }
+
+        function beginInpaintExtendDrag(event) {
+            const side = String(event.currentTarget?.dataset?.inpaintExtendSide || '').toLowerCase();
+            const canvas = document.getElementById('inpaintMaskCanvas');
+            if (!['top', 'right', 'bottom', 'left'].includes(side) || !canvas || !referenceImageDataUrl) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setInpaintMode('Outpaint expand canvas');
+            inpaintExtendEdge = side;
+            inpaintExtendDrag = {
+                side,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                width: Math.max(1, canvas.width || referenceImageMeta.width || Number(document.getElementById('widthInput')?.value || 512)),
+                height: Math.max(1, canvas.height || referenceImageMeta.height || Number(document.getElementById('heightInput')?.value || 512)),
+                pad: { left: 0, top: 0, right: 0, bottom: 0 }
+            };
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            document.addEventListener('pointermove', moveInpaintExtendDrag);
+            document.addEventListener('pointerup', endInpaintExtendDrag);
+            document.addEventListener('pointercancel', cancelInpaintExtendDrag);
+        }
+
+        async function extendCanvasArea(side = null, padOverride = null) {
             const profile = modelProfiles[activePreset];
             if (!profile?.supportsExtend) {
                 showToast("Extend Unavailable", "Selected template has no compatible extend/outpaint model.");
                 return;
             }
+            if (!referenceImageDataUrl) {
+                showToast("Extend Unavailable", "Load a source image before extending the canvas.");
+                return;
+            }
 
             setInpaintMode('Outpaint expand canvas');
+            saveInpaintUndoState();
+            inpaintExtendEdge = ['top', 'right', 'bottom', 'left', 'all'].includes(String(side || '').toLowerCase())
+                ? String(side || '').toLowerCase()
+                : (inpaintExtendEdge || 'all');
+            const edge = inpaintExtendEdge;
             const w = document.getElementById('widthInput');
             const h = document.getElementById('heightInput');
-            w.value = Math.min(4096, Number(w.value || 1024) + 128);
-            h.value = Math.min(4096, Number(h.value || 1024) + 128);
-            syncSlider('width');
-            syncSlider('height');
-            showToast("Canvas Extended", "Extended the outpaint area by 128 px on each axis.");
+            const maskCanvas = document.getElementById('inpaintMaskCanvas');
+            const oldMask = document.createElement('canvas');
+            if (maskCanvas?.width && maskCanvas?.height) {
+                oldMask.width = maskCanvas.width;
+                oldMask.height = maskCanvas.height;
+                oldMask.getContext('2d')?.drawImage(maskCanvas, 0, 0);
+            }
+
+            let sourceImage;
+            try {
+                sourceImage = await imageElementFromSource(referenceImageDataUrl);
+            } catch (error) {
+                showToast("Extend Failed", error?.message || "The source image could not be extended.");
+                return;
+            }
+
+            const sourceWidth = Math.max(1, sourceImage.naturalWidth || referenceImageMeta.width || Number(w?.value || 512));
+            const sourceHeight = Math.max(1, sourceImage.naturalHeight || referenceImageMeta.height || Number(h?.value || 512));
+            const step = 128;
+            let pad = padOverride ? normalizeInpaintPad(padOverride, sourceWidth, sourceHeight) : { left: 0, top: 0, right: 0, bottom: 0 };
+            if (!inpaintPadHasArea(pad)) {
+                if (edge === 'all') {
+                    pad = normalizeInpaintPad({ left: step, top: step, right: step, bottom: step }, sourceWidth, sourceHeight);
+                } else if (edge === 'left' || edge === 'right') {
+                    pad = normalizeInpaintPad({ [edge]: step }, sourceWidth, sourceHeight);
+                } else if (edge === 'top' || edge === 'bottom') {
+                    pad = normalizeInpaintPad({ [edge]: step }, sourceWidth, sourceHeight);
+                }
+            }
+
+            const nextWidth = sourceWidth + pad.left + pad.right;
+            const nextHeight = sourceHeight + pad.top + pad.bottom;
+            if (nextWidth === sourceWidth && nextHeight === sourceHeight) {
+                if (inpaintUndoStack.length) inpaintUndoStack.pop();
+                updateInpaintHistoryButtons();
+                showToast("Extend Limit", "The inpaint canvas is already at the 4096px extend limit for that direction.");
+                return;
+            }
+
+            const expanded = document.createElement('canvas');
+            expanded.width = nextWidth;
+            expanded.height = nextHeight;
+            const expandedCtx = expanded.getContext('2d');
+            expandedCtx.clearRect(0, 0, nextWidth, nextHeight);
+            expandedCtx.drawImage(sourceImage, pad.left, pad.top, sourceWidth, sourceHeight);
+
+            let expandedSrc;
+            try {
+                expandedSrc = expanded.toDataURL('image/png');
+            } catch (error) {
+                if (inpaintUndoStack.length) inpaintUndoStack.pop();
+                updateInpaintHistoryButtons();
+                showToast("Extend Failed", "The image could not be exported into the extended canvas.");
+                return;
+            }
+
+            referenceImageDataUrl = expandedSrc;
+            referenceImageMeta = {
+                src: expandedSrc,
+                label: `${referenceImageMeta.label || 'reference image'} extended`,
+                width: nextWidth,
+                height: nextHeight
+            };
+            resizePercentBaseSnapshot = null;
+            setDimensions(nextWidth, nextHeight);
+            resizeInpaintSurface(nextWidth, nextHeight, { preserveHistory: true });
+
+            const nextMask = document.getElementById('inpaintMaskCanvas');
+            const nextCtx = nextMask?.getContext('2d');
+            if (nextMask && nextCtx) {
+                if (oldMask.width && oldMask.height) nextCtx.drawImage(oldMask, pad.left, pad.top);
+                const marked = paintInpaintExtendedMaskAreas(nextCtx, nextWidth, nextHeight, pad);
+                inpaintMaskDirty = marked || canvasHasPaint(nextMask);
+            }
+            syncReferenceImageSurfaces();
+            updateInpaintHistoryButtons();
+            updateWorkflowPreview();
+            showToast("Canvas Extended", edge === 'all'
+                ? `Extended all borders to ${nextWidth}x${nextHeight}.`
+                : `Extended ${edge} border to ${nextWidth}x${nextHeight}.`);
         }
 
         function initPanZoomSurface(type) {
@@ -14872,6 +16283,7 @@
             const requestedFpsRaw = parseFloat(document.getElementById('fpsInput')?.value || '16');
             const requestedFps = ltxTransitionRoute ? Math.max(24, requestedFpsRaw) : requestedFpsRaw;
             if (canvasInpaintActive) ensureInpaintWorkflowMode(false);
+            const inpaintIntent = canvasInpaintActive ? inpaintMaskIntentSummary() : { intent: 'fill', fill: false, remove: false };
             const payload = {
                 activity: currentActivity,
                 workspace: activeWorkspace,
@@ -14913,6 +16325,14 @@
                     batch_count: parseInt(document.getElementById('batchCountInput')?.value || '1', 10),
                     mask_blur: parseInt(document.getElementById('maskBlurSlider')?.value || '4', 10),
                     mask_content: document.getElementById('maskContentSelect')?.value || 'Original',
+                    inpaint_engine: document.getElementById('inpaintEngineSelect')?.value || 'lanpaint',
+                    differential_diffusion: (document.getElementById('inpaintEngineSelect')?.value || 'lanpaint') === 'differential',
+                    differential_strength: parseFloat(document.getElementById('differentialStrengthInput')?.value || '1'),
+                    lanpaint_thinking_steps: parseInt(document.getElementById('lanpaintThinkingStepsInput')?.value || '5', 10),
+                    lanpaint_prompt_mode: 'Image First',
+                    inpaint_intent: inpaintIntent.intent,
+                    remove_mask_present: !!inpaintIntent.remove,
+                    fill_mask_present: !!inpaintIntent.fill,
                     reference_image: referenceImageDataUrl || null,
                     reference_images: ltxMotionTransferRoute
                         ? [(referenceImageExtraDataUrls || []).find(item => item?.src)?.src || referenceImageDataUrl].filter(Boolean)
@@ -14941,7 +16361,7 @@
                     frames: alignedVideoFrames(
                         activePreset,
                         effectiveVideoSeconds,
-                        parseFloat(document.getElementById('fpsInput')?.value || '24'),
+                        requestedFps,
                         activePreset === 'LTX' ? null : document.getElementById('framesInput')?.value
                     ),
                     fps: requestedFps,
@@ -14971,12 +16391,15 @@
                     motion_transfer_enabled: ltxMotionTransferRoute,
                     motion_transfer_mode: ltxMotionTransferRoute ? 'ltx_ic_union' : 'off',
                     motion_transfer_control_mode: ltxMotionTransferRoute ? (document.getElementById('ltxMotionTransferModeSelect')?.value || 'pose') : 'off',
+                    motion_transfer_motion_strength: ltxMotionTransferRoute ? 1.0 : undefined,
+                    motion_transfer_target_strength: ltxMotionTransferRoute ? 1.0 : undefined,
                     ltx_ic_lora_strength: ltxMotionTransferRoute ? 1.0 : undefined,
                     transition_lora_enabled: activePreset === 'LTX' && !ltxMotionTransferRoute && (!!document.getElementById('ltxTransitionLoraToggle')?.checked || hasLtxEndFrame),
                     transition_lora: document.getElementById('ltxTransitionLoraSelect')?.value || 'Automatic',
                     transition_lora_strength: parseFloat(document.getElementById('ltxTransitionLoraStrength')?.value || String(LTX_TRANSITION_DEFAULT_STRENGTH)),
                     start_frame_strength: ltxTransitionRoute ? 1.0 : undefined,
                     end_frame_strength: ltxTransitionRoute ? 1.0 : undefined,
+                    ltx_start_end_mode: ltxTransitionRoute ? 'flf_guides' : undefined,
                     ltx_endpoint_frame_lock: false
                 },
                 runtime: {
@@ -14998,6 +16421,18 @@
                     ? `${payload.negative_prompt}, different person, changed face, changed ethnicity, asian facial features, east asian face, kpop face, identity drift, double face, ghost face, smear, crossfade, dissolve`
                     : 'different person, changed face, changed ethnicity, asian facial features, east asian face, kpop face, identity drift, double face, ghost face, smear, crossfade, dissolve';
             }
+            payload.distilled_loras = payload.distilled_loras.filter(item => {
+                const name = String(item?.name || '').trim();
+                return name && !/^(none|off|disabled|automatic|auto)$/i.test(name);
+            });
+            if (ltxMotionTransferRoute) {
+                payload.distilled_loras = [
+                    {
+                        name: 'ltx\\ltx-2.3-22b-distilled-lora-384-1.1.safetensors',
+                        strength: LTX_DISTILLED_384_DEFAULT_STRENGTH
+                    }
+                ];
+            }
             if (activePreset === 'Qwen' && currentActivity === 'img2img') {
                 payload.batch_size = 1;
                 payload.img2img.batch_count = 1;
@@ -15017,8 +16452,9 @@
             if (generatingDirectorWorkflow) {
                 const director = serializeLtxDirectorState();
                 const directorHasTransition = !!director.timeline_data?.segments?.some(segment => segment.transitionLoraEnabled);
+                const directorHasMotionTransfer = !!director.timeline_data?.segments?.some(segment => segment.motionTransfer?.enabled);
                 const directorSeconds = director.duration_seconds;
-                const directorFps = directorHasTransition ? Math.max(24, Number(director.frame_rate || 0)) : director.frame_rate;
+                const directorFps = (directorHasTransition || directorHasMotionTransfer) ? Math.max(24, Number(director.frame_rate || 0)) : director.frame_rate;
                 payload.activity = 'txt2img';
                 payload.workspace = 'director';
                 payload.preset = 'LTX';
@@ -15034,6 +16470,12 @@
                     seconds: directorSeconds,
                     duration: directorSeconds,
                     active_audio: director.use_custom_audio,
+                    motion_transfer_enabled: directorHasMotionTransfer,
+                    motion_transfer_mode: directorHasMotionTransfer ? 'ltx_ic_union' : 'off',
+                    motion_transfer_control_mode: director.timeline_data?.motionTransfer?.[0]?.mode || 'pose',
+                    motion_transfer_motion_strength: 1.0,
+                    motion_transfer_target_strength: 1.0,
+                    ltx_ic_lora_strength: 1.0,
                     transition_lora_enabled: payload.video.transition_lora_enabled || director.timeline_data.segments.some(segment => segment.transitionLoraEnabled),
                     transition_lora: document.getElementById('ltxTransitionLoraSelect')?.value || payload.video.transition_lora || 'Automatic',
                     omnicine_enabled: !!activeOmnicineSelection(),
@@ -15041,10 +16483,10 @@
                     latent_upscale_refine: !!document.getElementById('ltxLatentUpscaleRefineToggle')?.checked,
                     director_timeline: true
                 };
-                if (directorHasTransition) {
+                if (directorHasTransition || directorHasMotionTransfer) {
                     payload.cfg = Number(payload.cfg || 1);
                     payload.sampler = 'euler_cfg_pp';
-                    payload.video.motion_strength = 0.78;
+                    payload.video.motion_strength = directorHasMotionTransfer ? 1.0 : 0.78;
                     payload.video.start_frame_strength = 1.0;
                     payload.video.end_frame_strength = 1.0;
                     const directorIdentityPrompt = 'preserve the exact subject identity and original non-Asian facial appearance from the reference frames, same face, same facial proportions, same outfit and lighting, continuous motion instead of crossfade';
@@ -15176,15 +16618,15 @@
             return parts.join(' · ');
         }
 
-        async function pollGenerationJob(jobId, payload) {
+        async function pollGenerationJob(jobId, payload, options = {}) {
             activeGenerationJobId = jobId;
             while (activeGenerationJobId === jobId) {
                 const job = await nexusFetch(`/generate/${encodeURIComponent(jobId)}`);
                 setGenerationProgress(job.progress || 0, job.message || job.status || 'Generating', generationJobSubtext(job));
                 if (job.status === 'completed') {
-                    addGeneratedOutputsToGallery({ outputs: job.outputs || [], message: job.message }, payload);
+                    if (!options.skipGallery) addGeneratedOutputsToGallery({ outputs: job.outputs || [], message: job.message }, payload);
                     await sleep(250);
-                    await refreshNewestGalleryPreview();
+                    if (!options.skipGallery) await refreshNewestGalleryPreview();
                     return job;
                 }
                 if (job.status === 'cancelled') {
@@ -15279,6 +16721,49 @@
             return job;
         }
 
+        async function startLtxMotionPreprocessJob(payload) {
+            return await nexusFetch('/ltx/motion-preprocess/start', {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+        }
+
+        async function runLtxMotionPreprocess() {
+            if (!backendOnline) {
+                showToast("Backend Offline", "Motion preprocess requires the Nexus backend.");
+                initializeBackendBridge();
+                return;
+            }
+            const payload = collectGenerationPayload();
+            if (!payload.img2img?.base_video || !payload.img2img?.reference_images?.length) {
+                showToast("Motion Inputs Missing", "Load a video and target image first.");
+                return;
+            }
+            generationCancelRequested = false;
+            setGenerationUiActive(true);
+            setGenerationProgress(0, 'Preparing motion preprocess...', 'Building IC control preview.');
+            try {
+                const job = await startLtxMotionPreprocessJob(payload);
+                const response = await pollGenerationJob(job.job_id, payload, { skipGallery: true });
+                const output = (response.outputs || []).find(item => isVideoOutput(item)) || (response.outputs || [])[0];
+                if (!output) throw new Error('Preprocess did not return a preview video.');
+                setLtxMotionPreprocessReady(normalizeGalleryItem({
+                    ...output,
+                    title: output.filename || 'LTX Motion Preprocess',
+                    activity: 'ltx_motion_preprocess',
+                    preset: 'LTX',
+                    mediaType: 'video',
+                    modified: Date.now() / 1000
+                }));
+                showToast("Motion Preprocess Ready", "Preview video loaded. Click Generate to use it.");
+            } catch (error) {
+                if (!/cancelled/i.test(error.message || '')) showToast("Preprocess Failed", error.message.slice(0, 180));
+            } finally {
+                activeGenerationJobId = null;
+                setGenerationUiActive(false);
+            }
+        }
+
         function cancelActiveGeneration() {
             if (!generationUiActive) return;
             const cancellingJobId = activeGenerationJobId;
@@ -15333,13 +16818,18 @@
         }
 
         // Generate through the embedded backend when available, with a UI-only fallback.
-        async function simulateGeneration() {
+        async function simulateGeneration(options = {}) {
             if (currentActivity === 'extras') {
                 startExtrasProcessing();
                 return;
             }
             if (generationUiActive) {
                 cancelActiveGeneration();
+                return;
+            }
+
+            if (!options.forceGenerate && shouldPreprocessLtxMotionTransfer()) {
+                await runLtxMotionPreprocess();
                 return;
             }
 
@@ -15899,7 +17389,7 @@
         applyModelProfile(activePreset, false);
         updateRangeLabel('steps');
         updateRangeLabel('cfg');
-        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
+        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'inpaintEngineSelect', 'differentialStrengthInput', 'lanpaintThinkingStepsInput', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
             const element = document.getElementById(id);
             if (element) element.addEventListener('input', updateWorkflowPreview);
             if (element) element.addEventListener('change', () => {
@@ -15911,6 +17401,21 @@
         document.getElementById('ltxDetailerStrengthSlider')?.addEventListener('input', event => {
             const label = document.getElementById('ltxDetailerStrengthValue');
             if (label) label.innerText = Number(event.target.value || 1).toFixed(2);
+        });
+        document.getElementById('ltxDetailerToggle')?.addEventListener('change', () => {
+            maybeDownloadLtxDetailer().catch(error => {
+                const toggle = document.getElementById('ltxDetailerToggle');
+                if (toggle) toggle.checked = false;
+                showToast("LTX Detailer Download Failed", error.message.slice(0, 180));
+                updateWorkflowPreview();
+            });
+        });
+        document.getElementById('ltxMotionTransferModeSelect')?.addEventListener('change', event => {
+            setLtxMotionTransferMode(event.target.value).catch(error => {
+                setSelectValue('ltxMotionTransferModeSelect', 'pose');
+                showToast("LTX Cameraman Download Failed", error.message.slice(0, 180));
+                updateWorkflowPreview();
+            });
         });
         document.getElementById('controlNetTypeSelect')?.addEventListener('change', () => handleControlNetUiChange({ refreshModels: true }));
         document.getElementById('controlNetEnabledToggle')?.addEventListener('change', handleControlNetUiChange);
@@ -15935,6 +17440,7 @@
         document.getElementById('inpaintSketchColorPicker')?.addEventListener('input', event => syncSketchColor(event.target.value));
         document.getElementById('inpaintSketchColorText')?.addEventListener('change', event => syncSketchColor(event.target.value));
         document.getElementById('inpaintBrushSizeSlider')?.addEventListener('input', event => syncInpaintBrushSize(event.target.value));
+        document.getElementById('inpaintWandToleranceSlider')?.addEventListener('input', event => syncInpaintWandTolerance(event.target.value));
         document.addEventListener('dragend', handleGalleryDragEnd);
         document.getElementById('workflowPromptTextarea')?.addEventListener('input', event => {
             document.getElementById('posPrompt').value = event.target.value;
@@ -16208,9 +17714,14 @@
             'extrasSourceFps',
             'extrasTargetFps',
             'extrasVideoSpeed',
+            'extrasVideoUpscaleEngine',
             'extrasVideoUpscaleModel',
+            'extrasVideoRestoreModel',
             'extrasVideoUpscaleFactor',
             'extrasVideoUpscaleTileInput',
+            'extrasVideoDenoiseModel',
+            'extrasImageFaceRestoreModel',
+            'extrasVideoFaceRestoreModel',
             'extrasDeflickerSlider',
             'extrasMotionSmooth',
             'extrasImageExportSelect',
@@ -16246,6 +17757,7 @@
         updateWorkflowWires();
         syncSketchColor('#ff3b3b');
         syncInpaintBrushSize(inpaintBrushSize);
+        syncInpaintWandTolerance(inpaintWandTolerance);
         updateInpaintHistoryButtons();
         populateExtrasModelControls();
         selectExtrasScale(extrasScaleFactor());

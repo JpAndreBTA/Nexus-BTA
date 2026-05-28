@@ -233,14 +233,15 @@
   function previewCandidates(preview) {
     if (typeof preview === "string") return [preview];
     return [
-      preview?.videoUrl,
-      preview?.video_url,
       preview?.lowResVideoUrl,
       preview?.lowresVideoUrl,
-      preview?.originalVideoUrl,
       preview?.video?.lowResUrl,
+      preview?.video?.lowresUrl,
+      preview?.videoUrl,
+      preview?.video_url,
       preview?.video?.url,
       preview?.video?.src,
+      preview?.originalVideoUrl,
       ...(Array.isArray(preview?.sources) ? preview.sources.map((source) => source?.url || source?.src) : []),
       ...(Array.isArray(preview?.variants) ? preview.variants.map((variant) => variant?.url || variant?.src) : []),
       preview?.lowResUrl,
@@ -290,7 +291,8 @@
     if (!url) return `<div class="${className} flex items-center justify-center text-nexus-muted"><i class="fa-regular fa-image text-2xl"></i></div>`;
     if (previewKind(preview) === "video") {
       const poster = posterUrl(preview);
-      return `<div class="${className} relative bg-black"><video data-src="${html(videoUrl(preview))}" preload="none" muted loop playsinline poster="${html(poster)}" class="w-full h-full object-cover"></video>${poster ? `<img src="${html(poster)}" loading="lazy" decoding="async" alt="${html(alt)}" class="absolute inset-0 w-full h-full object-cover pointer-events-none" data-civitai-poster>` : ""}<span class="absolute bottom-2 left-2 bg-black/80 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-play mr-1"></i>Video</span></div>`;
+      const fallback = poster || url;
+      return `<div class="${className} relative bg-black">${fallback ? `<img src="${html(fallback)}" loading="lazy" decoding="async" alt="${html(alt)}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-nexus-muted"><i class="fa-solid fa-play text-2xl"></i></div>`}<span class="absolute bottom-2 left-2 bg-black/80 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-play mr-1"></i>Video</span></div>`;
     }
     return `<img src="${html(url)}" loading="lazy" decoding="async" alt="${html(alt)}" class="${className} object-cover">`;
   }
@@ -333,37 +335,18 @@
     const modal = el("civitaiMediaModal");
     const video = el("civitaiMediaStage")?.querySelector("video");
     if (!modal || !video) return;
+    if (!video.src) video.src = video.dataset.src || "";
     modalVideoObserver = new IntersectionObserver((entries) => {
       const visible = entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.6);
       if (!visible || modal.classList.contains("hidden")) {
         video.pause();
-        return;
       }
-      if (!video.src) video.src = video.dataset.src || "";
-      video.addEventListener("playing", () => video.parentElement?.querySelector("[data-civitai-poster]")?.remove(), { once: true });
-      video.play().catch(() => {});
     }, { threshold: [0, 0.6, 1] });
     modalVideoObserver.observe(video);
   }
 
   function wireTileVideoLazyload() {
     if (tileVideoObserver) tileVideoObserver.disconnect();
-    const root = explorerScroller();
-    const videos = [...document.querySelectorAll("#civitaiResultPanel video[data-src]")].slice(0, lazyPageSize);
-    tileVideoObserver = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        const video = entry.target;
-        const visible = entry.isIntersecting && entry.intersectionRatio >= 0.55;
-        if (visible) {
-          if (!video.src) video.src = video.dataset.src || "";
-          video.addEventListener("playing", () => video.parentElement?.querySelector("[data-civitai-poster]")?.remove(), { once: true });
-          video.play().catch(() => {});
-        } else {
-          video.pause();
-        }
-      });
-    }, { root, threshold: [0, 0.55, 1] });
-    videos.forEach((video) => tileVideoObserver.observe(video));
   }
 
   function mediaIsMature(preview, owner) {
@@ -434,7 +417,7 @@
     stage.innerHTML = `
       <div class="relative max-w-full max-h-full overflow-hidden border border-nexus-border bg-black">
         ${isVideo
-          ? `<div class="relative max-w-full max-h-[76vh]"><video data-src="${html(videoUrl(preview))}" controls muted playsinline preload="none" poster="${html(poster)}" class="max-w-full max-h-[76vh] object-contain ${blurClass}"></video>${poster ? `<img src="${html(poster)}" loading="eager" decoding="async" alt="Civitai video poster" class="absolute inset-0 w-full h-full object-contain pointer-events-none ${blurClass}" data-civitai-poster>` : ""}</div>`
+          ? `<div class="relative max-w-full max-h-[76vh]"><video data-src="${html(videoUrl(preview))}" controls muted playsinline preload="none" poster="${html(poster)}" class="max-w-full max-h-[76vh] object-contain ${blurClass}"></video></div>`
           : `<img src="${html(url)}" alt="Civitai preview" class="max-w-full max-h-[76vh] object-contain ${blurClass}">`}
         ${mature && blurMature ? `<span class="absolute top-3 left-3 bg-yellow-400 text-black text-[9px] font-bold px-2 py-1 uppercase">Mature preview blurred</span>` : ""}
       </div>

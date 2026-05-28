@@ -61,6 +61,7 @@ onnxruntime>=1.18
 # - https://github.com/Fannovel16/comfyui_controlnet_aux.git
 # - https://github.com/yuvraj108c/ComfyUI-Video-Depth-Anything.git
 # - https://github.com/Lightricks/ComfyUI-LTXVideo.git
+# - https://github.com/scraed/LanPaint.git
 
 # Optional attention/runtime packages, install only when compatible with the GPU and PyTorch build:
 # xformers

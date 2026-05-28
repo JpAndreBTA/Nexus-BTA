@@ -81,6 +81,14 @@ class Img2ImgSettings(BaseModel):
     batch_count: int = 1
     mask_blur: int = 4
     mask_content: str = "Original"
+    inpaint_engine: str = "lanpaint"
+    differential_diffusion: bool = False
+    differential_strength: float = 1.0
+    lanpaint_thinking_steps: int = 5
+    lanpaint_prompt_mode: str = "Image First"
+    inpaint_intent: str = "fill"
+    remove_mask_present: bool = False
+    fill_mask_present: bool = False
     reference_image: str | None = None
     reference_images: list[str] = Field(default_factory=list)
     base_video: str | None = None
