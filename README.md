@@ -104,7 +104,7 @@ Linux with an NVIDIA GPU and CUDA is the best non-Windows target for LTX 2.3 loc
 
 ### macOS
 
-macOS support is partial. The legacy Nexus UI and backend can run, and ComfyUI officially supports Apple Silicon through PyTorch MPS, but the local LTX 2.3 video and LTX-2 trainer stack is CUDA/NVIDIA-focused. On Mac, expect SD/SDXL-style Comfy workflows to be the practical target; use LTX API/LTX Desktop API mode or a remote CUDA machine for heavy LTX 2.3 generation/training.
+macOS support is partial. The legacy Nexus UI and backend can run, and ComfyUI officially supports Apple Silicon through PyTorch MPS, but the supported LTX 2.3 local video path is still CUDA/NVIDIA-focused. This is true even when you only want LTX 2.3 inference and do not need the LTX Trainer: LTX Desktop supports Apple Silicon Macs, but its current macOS generation path runs through the LTX API rather than local GPU inference. On Mac, expect SD/SDXL-style Comfy workflows to be the practical local target; use LTX API/LTX Desktop API mode or a remote CUDA machine for reliable LTX 2.3 video generation/training.
 
 Apple Silicon setup:
 
@@ -128,8 +128,11 @@ Mac compatibility notes:
 
 - Apple Silicon/MPS can run many image workflows, but performance and custom-node coverage vary.
 - Intel Mac is not a realistic target for local video generation.
-- LTX 2.3 local generation, LTX IC-LoRA workflows and LTX Trainer jobs should be treated as unsupported locally on macOS unless upstream LTX/Comfy dependencies add MPS support for the exact route.
+- LTX 2.3 local generation without CUDA is not an officially supported Nexus target on macOS right now, even if you are not using the trainer. Experimental community MPS routes may appear, but expect broken custom nodes, black frames, missing kernels or CPU fallback until upstream LTX/Comfy dependencies support the exact route.
+- LTX IC-LoRA workflows and LTX Trainer jobs should be treated as CUDA/NVIDIA-only locally.
 - If `runtime/.venv/bin/python` is not picked up by your local settings, set `comfy_python` in `config/nexus_settings.json` to that path.
+
+Reference notes checked while documenting macOS: ComfyUI Desktop for macOS supports Apple Silicon and recommends MPS; LTX's ComfyUI guide lists a CUDA-compatible GPU with 32GB+ VRAM for LTX-2 workflows; LTX Desktop's macOS generation currently runs through the LTX API instead of local GPU inference.
 
 ## Model Folders
 
