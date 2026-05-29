@@ -2,7 +2,7 @@
 
 Nexus BTA is a local AI image and video studio built around an embedded ComfyUI runtime. It gives you one focused interface for SD 1.5, SDXL, Flux, Qwen, Lumina, WAN 2.2, LTX 2.3, Anima, LoRAs, ControlNet, inpaint, img2img, txt2img, and short video workflows.
 
-New here? Start with `run.bat`, open the UI, pick a model tab, write a simple prompt, and generate. Nexus is designed to keep the heavy ComfyUI wiring available when you need it, while keeping the everyday controls close at hand.
+New here on Windows? Start with `run.bat`, open the UI, pick a model tab, write a simple prompt, and generate. Linux and macOS can run the backend/UI manually, but the bundled one-click launcher and dependency installers are Windows PowerShell scripts today. Nexus is designed to keep the heavy ComfyUI wiring available when you need it, while keeping the everyday controls close at hand.
 
 ## First Look
 
@@ -36,7 +36,7 @@ The Civitai modal helps browse models, download assets, and route them into the 
 
 ## Why It Feels Fast
 
-- One launcher: `run.bat` starts Nexus and the embedded ComfyUI runtime.
+- One launcher on Windows: `run.bat` starts Nexus and the embedded ComfyUI runtime.
 - Smart model folders: checkpoints, UNET/diffusion models, VAEs, text encoders, LoRAs, ControlNet, and video assets are discovered automatically.
 - Template-aware side menu: preset changes keep workflow nodes, CFG, steps, resolution, video motion, LoRA stacks, and ControlNet in sync.
 - LTX 2.3 Motion Transfer: Pose, Canny, Depth and Camera/Cameraman modes use IC-LoRA-compatible workflows with target identity conditioning, latent upscale x2, optional IC Detailer and Director segment rendering.
@@ -48,18 +48,15 @@ The Civitai modal helps browse models, download assets, and route them into the 
 - Organized outputs: image saves land under `output/image/`, normal video saves land under `output/video/`, Director joined videos land under `output/videos/`, and Director segment renders remain archived under `output/director/<date_time>/segments/`.
 - Visual workflow view: inspect, link, multi-select, move and tune nodes without leaving the app; edited graphs are sent through the backend as Comfy workflow overrides.
 - Civitai and Concept LoRA modals: browse, download, preview, multi-select, and route assets into the right local folders.
+- Train LoRA workspace: prepare SD/SDXL/Flux/Qwen/WAN/LTX/Anima LoRA jobs, including LTX 2.3 Motion LoRA, Audio-Video LoRA and IC-LoRA plans with backend/Comfy route metadata.
 
-## Start
+## Install
 
-```bat
-run.bat
-```
+Nexus BTA is developed and smoke-tested primarily on Windows with an NVIDIA/CUDA runtime. Linux and macOS notes are included so the repo can be evaluated or adapted on those systems, but not every generation or training route has the same hardware support.
 
-Then open:
+### Windows
 
-```text
-http://127.0.0.1:7861/ui
-```
+Windows is the recommended path for this repo today.
 
 If this is a fresh machine, bootstrap the runtime first:
 
@@ -67,7 +64,72 @@ If this is a fresh machine, bootstrap the runtime first:
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap_nexus_runtime.ps1 -CopyPythonEnv
 ```
 
+Then launch:
+
+```bat
+run.bat
+```
+
+Open:
+
+```text
+http://127.0.0.1:7861/ui
+```
+
 `run.bat`, `update.bat`, and the bootstrap script also check LTX Director dependencies. They install the WhatDreamsCost Director node, Kijai's Mel-Band RoFormer node, its Python requirements, the `MelBandRoformer_fp16.safetensors` model, and `ltx2.3-transition.safetensors` for LTX start/end transitions into the expected local folders when they are missing.
+
+For the full LTX 2.3 video stack, use an NVIDIA GPU with CUDA. LTX's own open-source requirements list CUDA/NVIDIA-class hardware for local LTX 2.3 generation and training; the new Train LoRA UI can prepare LTX trainer jobs, but actual LTX LoRA/IC-LoRA training depends on the upstream LTX-2 trainer environment.
+
+### Linux
+
+Linux can run the backend and static UI manually. The bundled `.bat` and `.ps1` launchers are not portable yet, so create the runtime yourself:
+
+```bash
+python3.11 -m venv runtime/.venv
+source runtime/.venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+git clone https://github.com/comfyanonymous/ComfyUI.git runtime/ComfyUI
+pip install -r runtime/ComfyUI/requirements.txt
+python backend/run_backend.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:7861/ui
+```
+
+Linux with an NVIDIA GPU and CUDA is the best non-Windows target for LTX 2.3 local generation, ComfyUI-LTXVideo routes and LTX-2 trainer jobs. Some Windows helper scripts for installing custom nodes still need to be translated to shell commands or handled through ComfyUI Manager.
+
+### macOS
+
+macOS support is partial. The legacy Nexus UI and backend can run, and ComfyUI officially supports Apple Silicon through PyTorch MPS, but the local LTX 2.3 video and LTX-2 trainer stack is CUDA/NVIDIA-focused. On Mac, expect SD/SDXL-style Comfy workflows to be the practical target; use LTX API/LTX Desktop API mode or a remote CUDA machine for heavy LTX 2.3 generation/training.
+
+Apple Silicon setup:
+
+```bash
+python3.11 -m venv runtime/.venv
+source runtime/.venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+git clone https://github.com/comfyanonymous/ComfyUI.git runtime/ComfyUI
+pip install -r runtime/ComfyUI/requirements.txt
+PYTORCH_ENABLE_MPS_FALLBACK=1 python backend/run_backend.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:7861/ui
+```
+
+Mac compatibility notes:
+
+- Apple Silicon/MPS can run many image workflows, but performance and custom-node coverage vary.
+- Intel Mac is not a realistic target for local video generation.
+- LTX 2.3 local generation, LTX IC-LoRA workflows and LTX Trainer jobs should be treated as unsupported locally on macOS unless upstream LTX/Comfy dependencies add MPS support for the exact route.
+- If `runtime/.venv/bin/python` is not picked up by your local settings, set `comfy_python` in `config/nexus_settings.json` to that path.
 
 ## Model Folders
 
@@ -100,6 +162,7 @@ Use [requirements/model_assets.md](requirements/model_assets.md) as the friendly
 - LTX 2.3 latent upscale is part of the normal route. For a `512x512` output, Nexus samples the base latent at `256x256`, applies `LatentUpscaleModelLoader` + `LTXVLatentUpsampler` with `ltx-2.3-spatial-upscaler-x2-1.1.safetensors`, refines it, and then decodes the final video.
 - LTX 2.3 start/end frame and transition-style txt2video/img2video use [joyfox/LTX-2.3-Transition-LORA](https://huggingface.co/joyfox/LTX-2.3-Transition-LORA) with trigger `zhuanchang`, installed under `models/loras/ltx_transition`.
 - LTX 2.3 Motion Transfer uses IC-LoRA Union Control for Pose/Canny/Depth and the CameraMan IC-LoRA for camera motion transfer under `models/loras/ltx_ic`.
+- LTX 2.3 Train LoRA uses the upstream [LTX-2 Trainer](https://github.com/Lightricks/LTX-2/tree/main/packages/ltx-trainer) for actual training. Nexus prepares local job configs for standard LTX LoRA, Motion LoRA, Audio-Video LoRA and IC-LoRA; running those jobs requires the upstream trainer environment and CUDA/NVIDIA hardware.
 - Extras uses `models/upscale_models` for image/video raster upscalers, `models/video_restore_models` for FlashVSR/SeedVR2-style video restoration engines, `models/frame_interpolation` for RIFE/FILM frame interpolation, and `models/background_removal` for 2026 background-removal routes such as ComfyUI native BiRefNet. Alpha-aware video export is exposed as PNG sequence or MOV ProRes 4444.
 - Remove BG expects `models/background_removal/birefnet.safetensors` for the native ComfyUI BiRefNet workflow. RMBG-2.0, InSPyReNet and BEN/BEN2 remain selectable compatibility routes when matching ComfyUI custom nodes are installed.
 
@@ -135,6 +198,7 @@ Last verified on May 29, 2026:
 - Extras Remove BG frontend plan sync with `models/background_removal/birefnet.safetensors`, recommended `Remove BG Image` and `Remove BG Video` presets, video PNG sequence or MOV ProRes 4444 alpha export, RGBA/mask output options and folder-aware Gallery navigation.
 - Inpaint with LanPaint default workflow, Differential Diffusion option, paint/remove masks, generative outpaint canvas expansion, magic wand/select object and undo/redo.
 - LTX 2.3 Director Suite with custom background audio, generated speech/ambience segments, per-segment negative prompts and non-black video output.
+- Legacy Train LoRA front end across SD, SDXL, Illustrious, Pony, Flux, Flux 2, Flux 2 Klein, Qwen, WAN, LTX 2.3, Anima, Z-Image Turbo and Lumina templates, including LTX character/style/motion/audio-video/IC-LoRA job preparation with Launch disabled.
 - Anima with Concept LoRA selection and gallery metadata.
 - Node Workflow editor smoke: menu search, categorized add-node menu, visual multi-selection, grouped drag behavior, port connection/unlink affordances, and workflow override routing from the active graph.
 
