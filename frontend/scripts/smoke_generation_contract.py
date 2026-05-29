@@ -140,6 +140,10 @@ def main() -> None:
         raise AssertionError(f"Expected inpaint mode, got {img2img!r}.")
     if not str(img2img.get("mask_image") or "").startswith("data:image/png"):
         raise AssertionError("Expected mask_image to be a PNG data URL.")
+    if img2img.get("inpaint_engine") != "lanpaint" or img2img.get("differential_diffusion"):
+        raise AssertionError(f"Expected LanPaint default inpaint engine, got {img2img!r}.")
+    if int(img2img.get("lanpaint_thinking_steps") or 0) != 5:
+        raise AssertionError(f"Expected default LanPaint thinking steps 5, got {img2img!r}.")
 
     controlnet = payload.get("controlnet")
     if not isinstance(controlnet, dict) or not controlnet.get("enabled"):

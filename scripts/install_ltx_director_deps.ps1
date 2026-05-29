@@ -70,6 +70,21 @@ $repos = @(
         Path = Join-Path $customNodesDir "comfyui-kjnodes"
     },
     @{
+        Name = "rgthree-comfy"
+        Url = "https://github.com/rgthree/rgthree-comfy.git"
+        Path = Join-Path $customNodesDir "rgthree-comfy"
+    },
+    @{
+        Name = "comfyui-int-and-float"
+        Url = "https://github.com/danTheMonk/comfyui-int-and-float.git"
+        Path = Join-Path $customNodesDir "comfyui-int-and-float"
+    },
+    @{
+        Name = "RES4LYF"
+        Url = "https://github.com/ClownsharkBatwing/RES4LYF.git"
+        Path = Join-Path $customNodesDir "RES4LYF"
+    },
+    @{
         Name = "WhatDreamsCost-ComfyUI"
         Url = "https://github.com/WhatDreamsCost/WhatDreamsCost-ComfyUI.git"
         Path = Join-Path $customNodesDir "WhatDreamsCost-ComfyUI"
@@ -94,6 +109,10 @@ $repos = @(
 
 foreach ($repo in $repos) {
     Invoke-NexusStep -Label "Installing $($repo.Name)" -Step {
+        if ($repo.SkipClone -and !(Test-Path -LiteralPath $repo.Path)) {
+            Write-NexusWarn "$($repo.Name) is not present; install it through ComfyUI Manager or place it under $customNodesDir if the workflow requires it."
+            return
+        }
         if (!(Test-Path -LiteralPath $repo.Path)) {
             Write-NexusLine "Installing $($repo.Name)..." "Info"
             git clone --depth 1 $repo.Url $repo.Path

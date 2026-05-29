@@ -1397,6 +1397,26 @@
                     <div id="languageMenuList" class="max-h-72 overflow-y-auto p-1"></div>
                 </div>
             </div>
+            <div class="relative" id="donateSelector">
+                <button onclick="toggleDonateMenu(event)" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Support Nexus BTA">
+                    <i class="fa-solid fa-heart text-nexus-red"></i>
+                    <span class="hidden 2xl:inline text-[10px]">Donate</span>
+                    <i class="fa-solid fa-chevron-down text-[8px]"></i>
+                </button>
+                <div id="donateMenu" class="hidden absolute right-0 top-full mt-2 w-[430px] max-w-[calc(100vw-1rem)] z-50 border border-nexus-border bg-nexus-panel shadow-2xl">
+                    <div class="px-3 py-2 border-b border-nexus-border">
+                        <p class="text-[10px] font-bold uppercase text-white">Support Nexus BTA</p>
+                        <p class="text-[9px] font-mono text-nexus-muted">Help keep local AI tools moving.</p>
+                    </div>
+                    <div class="p-2 space-y-2">
+                        <iframe id="donateKofiFrame" title="Donate with Ko-fi" class="block w-full h-[720px] max-h-[calc(100vh-120px)] border border-nexus-border bg-white rounded-sm" loading="lazy" scrolling="yes" src="https://ko-fi.com/jpandre/?hidefeed=true&widget=true&embed=true&preview=true"></iframe>
+                        <a href="https://ko-fi.com/jpandre" target="_blank" rel="noopener noreferrer" class="w-full h-9 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-[10px] uppercase rounded-sm flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-mug-hot"></i>
+                            <span>Open Ko-fi</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
     </header>
     <div id="google_translate_element" class="hidden"></div>
@@ -2153,6 +2173,7 @@
                 <input id="ltxDirectorMultiImageInput" type="file" accept="image/*" multiple class="hidden">
                 <input id="ltxDirectorAudioInput" type="file" accept="audio/*" multiple class="hidden">
                 <input id="ltxDirectorMotionVideoInput" type="file" accept="video/*" class="hidden">
+                <input id="ltxDirectorTransitionImageInput" type="file" accept="image/*" class="hidden">
                 <div class="flex-1 min-w-0 flex flex-col xl:flex-row overflow-hidden">
                     <section class="flex-1 min-w-0 flex flex-col border-r border-nexus-border bg-nexus-bg">
                         <div class="px-4 py-2 border-b border-nexus-border bg-zinc-950 flex items-center justify-between gap-4 text-[10px] font-mono shrink-0">
@@ -3629,6 +3650,7 @@
         let ltxDirectorPendingImageInsert = null;
         let ltxDirectorPendingAudioInsert = null;
         let ltxDirectorPendingMotionSegmentId = '';
+        let ltxDirectorPendingTransitionSegmentId = '';
         let ltxDirectorRenderTimer = null;
         let ltxDirectorActivationFrame = null;
         let ltxDirectorInspectorTab = nexusSafeStorage.get('nexus_ltx_director_inspector_tab', 'preview');
@@ -3905,7 +3927,7 @@
                 motionAdapters: ['LTX latent video', 'LTX image-to-video', 'None'],
                 videoVae: ['LTX23_video_vae_bf16.safetensors', 'Automatic', 'None'],
                 audioVae: ['LTX23_audio_vae_bf16.safetensors', 'Automatic', 'None'],
-                latentUpscaleModels: ['ltx-2.3-spatial-upscaler-x2-1.1.safetensors', 'Automatic', 'None'],
+                latentUpscaleModels: ['ltx-2.3-spatial-upscaler-x2-1.1.safetensors', 'None', 'Automatic'],
                 supportsExtend: false,
                 supportsControlNet: true,
                 distilledLoras: ['None', 'ltx\\ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors', 'ltx\\ltx-2.3-22b-distilled-lora-384-1.1.safetensors', 'ltx\\LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors'],
@@ -4310,7 +4332,7 @@
                     : uniqueOptions(['Automatic', ...audioVaes, 'None']);
                 if (latentUpscale.length) {
                     if (presetName === 'LTX') {
-                        const ltxSpatialX2 = latentUpscale.find(name => /ltx|spatial|x\s*2|x2/i.test(name)) || latentUpscale[0];
+                        const ltxSpatialX2 = latentUpscale.find(name => /ltx-?2\.3.*spatial.*x\s*2|spatial.*x\s*2|x2-?1\.1|x2/i.test(name)) || latentUpscale[0];
                         profile.latentUpscaleModels = uniqueOptions([ltxSpatialX2, 'None', 'Automatic', ...latentUpscale]);
                     } else {
                         profile.latentUpscaleModels = uniqueOptions(['Automatic', ...latentUpscale, 'None']);
@@ -5947,6 +5969,9 @@
             if (!select) return;
             if (id === 'samplingMethodSelect') value = samplerLabel(value);
             if (id === 'schedulerSelect') value = schedulerLabel(value);
+            if (id === 'latentUpscaleSelect' && /x\s*1\.5|x1\.5/i.test(String(value || ''))) {
+                value = 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors';
+            }
             if (!('options' in select)) {
                 select.value = value;
                 return;
@@ -6040,9 +6065,22 @@
             syncInpaintOverlayBounds();
         }
 
-        function alignDimension(value) {
-            const aligned = Math.round(Number(value || 0) / 8) * 8;
+        function alignDimension(value, presetName = activePreset) {
+            const step = presetName === 'LTX' ? 32 : 8;
+            const aligned = Math.round(Number(value || 0) / step) * step;
             return Math.max(64, Math.min(4096, aligned || 512));
+        }
+
+        function syncActivePresetCompatibleDimensions() {
+            const widthInput = document.getElementById('widthInput');
+            const heightInput = document.getElementById('heightInput');
+            if (!widthInput || !heightInput) return { width: 512, height: 512 };
+            const width = alignDimension(widthInput.value);
+            const height = alignDimension(heightInput.value);
+            if (String(widthInput.value) !== String(width) || String(heightInput.value) !== String(height)) {
+                setDimensions(width, height);
+            }
+            return { width, height };
         }
 
         function setAspectRatio(ratioWidth, ratioHeight) {
@@ -6124,6 +6162,17 @@
                 return (length - 1) % 8 === 0 ? length : (Math.floor((length - 1) / 8) + 1) * 8 + 1;
             }
             return Math.max(1, Math.round(length));
+        }
+
+        function ltxReferenceFramesFromDuration(duration, fps) {
+            const safeFps = Math.max(1, Number(fps) || 24);
+            const rawFrames = Math.max(1, Math.round(Math.max(0.001, Number(duration) || 0) * safeFps));
+            if (rawFrames >= 9 && (rawFrames - 1) % 8 === 0) return rawFrames;
+            return alignedVideoFrames('LTX', duration, safeFps);
+        }
+
+        function ltxReferenceDurationFromFrames(frames, fps) {
+            return Math.max(0.25, (Math.max(1, Number(frames) || 1) - 1) / Math.max(1, Number(fps) || 24));
         }
 
         function syncVideoMotionFields(source = 'auto') {
@@ -6430,13 +6479,28 @@
 
         function referenceExtraSlotNumbers() {
             if (isQwenImageEditTemplateActive()) return [2, 3];
-            if (isStartEndFrameMode()) return [2];
+            if (isStartEndFrameMode()) return isLtxCameraMotionTransferMode() ? [2, 3] : [2];
             return [];
+        }
+
+        function isLtxCameraMotionTransferMode() {
+            return activePreset === 'LTX'
+                && currentActivity === 'img2img'
+                && !isDirectorWorkspaceActive()
+                && !!document.getElementById('ltxMotionTransferToggle')?.checked
+                && String(document.getElementById('ltxMotionTransferModeSelect')?.value || '').toLowerCase() === 'camera';
         }
 
         function referenceSlotLabel(slot) {
             const motionTransferOn = activePreset === 'LTX' && !!document.getElementById('ltxMotionTransferToggle')?.checked;
-            if (isStartEndFrameMode()) return motionTransferOn ? (slot === 1 ? 'Video' : 'Target') : (slot === 1 ? 'Start Frame' : 'End Frame');
+            if (isStartEndFrameMode()) {
+                if (motionTransferOn) {
+                    if (slot === 1) return 'Video';
+                    if (slot === 3 && isLtxCameraMotionTransferMode()) return 'End Frame';
+                    return 'Target';
+                }
+                return slot === 1 ? 'Start Frame' : 'End Frame';
+            }
             return slot === 1 ? 'Picture 1' : `Image ${slot}`;
         }
 
@@ -6460,7 +6524,7 @@
         }
 
         function shouldPreprocessLtxMotionTransfer() {
-            return hasLtxMotionTransferInputs() && !ltxMotionPreprocessReady;
+            return hasLtxMotionTransferInputs() && !isLtxCameraMotionTransferMode() && !ltxMotionPreprocessReady;
         }
 
         function syncGenerationActionUi() {
@@ -7274,6 +7338,9 @@
             if (segment.speechAdditionalTime === undefined) segment.speechAdditionalTime = 0;
             if (segment.transitionLoraEnabled === undefined) segment.transitionLoraEnabled = false;
             if (segment.transitionPrompt === undefined) segment.transitionPrompt = 'continuous motion continuation into the next visual segment, transformation or angle change as described, no dissolve, no crossfade';
+            if (segment.transitionImageB64 === undefined) segment.transitionImageB64 = '';
+            if (segment.transitionImageFile === undefined) segment.transitionImageFile = '';
+            if (segment.transitionImageSrc === undefined) segment.transitionImageSrc = '';
             if (!segment.motionTransfer) segment.motionTransfer = {};
             if (segment.motionTransfer.enabled === undefined) segment.motionTransfer.enabled = false;
             if (!['pose', 'canny', 'depth', 'camera'].includes(String(segment.motionTransfer.mode || '').toLowerCase())) segment.motionTransfer.mode = 'pose';
@@ -7694,6 +7761,15 @@
             document.getElementById('ltxDirectorMotionVideoInput')?.click();
         }
 
+        function openLtxDirectorTransitionImagePicker(segmentId = '') {
+            const segment = segmentId
+                ? ltxDirectorState.segments.find(item => item.id === segmentId)
+                : ltxDirectorSelectedSegment();
+            if (!segment) return;
+            ltxDirectorPendingTransitionSegmentId = segment.id;
+            document.getElementById('ltxDirectorTransitionImageInput')?.click();
+        }
+
         function ltxDirectorMotionVideoDuration(segment) {
             return Number(segment?.motionTransfer?.sourceDuration || segment?.motionTransfer?.duration || 0);
         }
@@ -7701,12 +7777,16 @@
         function ltxDirectorSyncMotionTransferSegment(segment, options = {}) {
             if (!segment?.motionTransfer?.enabled) return;
             const duration = ltxDirectorMotionVideoDuration(segment);
-            if (duration > 0) {
+            const sourceFrames = Math.max(0, Math.round(Number(segment.motionTransfer.sourceFrames || segment.motionTransfer.durationFrames || 0)));
+            if (duration > 0 && options.allowSpeed !== true) {
                 segment.length = ltxDirectorSnap(Math.max(LTX_DIRECTOR_MIN_SECONDS, duration));
+            }
+            if (duration > 0) {
                 segment.motionTransfer.duration = segment.length;
-                segment.motionTransfer.durationFrames = ltxDirectorSecondsToFrames(segment.length);
+                segment.motionTransfer.durationFrames = sourceFrames || ltxDirectorSecondsToFrames(segment.length);
                 segment.motionTransfer.startFrame = ltxDirectorSecondsToFrames(segment.start || 0);
                 segment.motionTransfer.endFrame = ltxDirectorSecondsToFrames(ltxDirectorEnd(segment));
+                segment.motionTransfer.speedRatio = Number((duration / Math.max(LTX_DIRECTOR_MIN_SECONDS, Number(segment.length || duration))).toFixed(4));
                 if (!options.keepTimelineDuration) {
                     ltxDirectorState.duration = ltxDirectorSnap(Math.max(Number(ltxDirectorState.duration || 0), ltxDirectorEnd(segment)));
                 }
@@ -7720,7 +7800,9 @@
             ltxDirectorEnsureSegmentMetadata(segment);
             const dataUrl = await ltxDirectorReadFileAsDataUrl(file);
             const posterDataUrl = await ltxDirectorVideoPosterDataUrl(dataUrl);
-            const sourceDuration = await ltxDirectorVideoMetadataDuration(dataUrl);
+            const containerDuration = await ltxDirectorVideoMetadataDuration(dataUrl);
+            const sourceFrames = ltxReferenceFramesFromDuration(containerDuration, ltxDirectorState.fps || 24);
+            const sourceDuration = ltxReferenceDurationFromFrames(sourceFrames, ltxDirectorState.fps || 24);
             segment.motionTransfer = {
                 ...(segment.motionTransfer || {}),
                 enabled: true,
@@ -7729,11 +7811,13 @@
                 videoSrc: dataUrl,
                 videoFile: file.name || 'motion-reference.mp4',
                 posterSrc: posterDataUrl,
+                sourceContainerDuration: containerDuration,
                 sourceDuration,
+                sourceFrames,
                 duration: sourceDuration || Number(segment.length || 0),
-                durationFrames: ltxDirectorSecondsToFrames(sourceDuration || segment.length || 0)
+                durationFrames: sourceFrames || ltxDirectorSecondsToFrames(sourceDuration || segment.length || 0)
             };
-            ltxDirectorSyncMotionTransferSegment(segment);
+            ltxDirectorSyncMotionTransferSegment(segment, { lockToSource: true });
             ltxDirectorConstrainSegment(segment, { syncLoadVideo: true });
             ltxDirectorState.selectedType = 'segment';
             ltxDirectorState.selectedId = segment.id;
@@ -7744,13 +7828,34 @@
             return true;
         }
 
+        async function addLtxDirectorTransitionImageFile(file) {
+            if (!file || !isImageFile(file)) return false;
+            const segment = (ltxDirectorState.segments || []).find(item => item.id === ltxDirectorPendingTransitionSegmentId) || ltxDirectorSelectedSegment();
+            if (!segment) return false;
+            ltxDirectorEnsureSegmentMetadata(segment);
+            const dataUrl = await ltxDirectorReadFileAsDataUrl(file);
+            segment.transitionLoraEnabled = true;
+            segment.transitionImageB64 = dataUrl;
+            segment.transitionImageSrc = dataUrl;
+            segment.transitionImageFile = file.name || 'transition-end-frame.png';
+            if (!segment.transitionPrompt) {
+                segment.transitionPrompt = 'continuous motion into the reference image, preserve identity, natural transition, no dissolve, no crossfade';
+            }
+            ltxDirectorState.selectedType = 'segment';
+            ltxDirectorState.selectedId = segment.id;
+            renderLtxDirector();
+            syncLtxDirectorWorkflowGraph(false);
+            showToast('Transition End Frame Loaded', `${file.name || 'Image'} set as this segment end frame.`);
+            return true;
+        }
+
         function setLtxDirectorMotionTransferMode(mode, segmentId = '') {
             const segment = (ltxDirectorState.segments || []).find(item => item.id === segmentId) || ltxDirectorSelectedSegment();
             if (!segment) return;
             ltxDirectorEnsureSegmentMetadata(segment);
             segment.motionTransfer.mode = ['pose', 'canny', 'depth', 'camera'].includes(String(mode).toLowerCase()) ? String(mode).toLowerCase() : 'pose';
             segment.motionTransfer.enabled = true;
-            ltxDirectorSyncMotionTransferSegment(segment);
+            ltxDirectorSyncMotionTransferSegment(segment, { keepTimelineDuration: true });
             renderLtxDirector();
             syncLtxDirectorWorkflowGraph(false);
         }
@@ -8536,7 +8641,10 @@
             const method = ltxDirectorState.resizeMethod || 'maintain aspect ratio';
             if (method !== 'maintain aspect ratio') return method;
             const hasActiveCrop = (segments || []).some(segment => ltxDirectorCropIsActive(segment.crop));
-            return hasActiveCrop ? 'crop' : method;
+            if (hasActiveCrop) return 'crop';
+            const width = Math.max(0, Math.round(Number(ltxDirectorState.width || 0)));
+            const height = Math.max(0, Math.round(Number(ltxDirectorState.height || 0)));
+            return width > 0 && height > 0 ? 'pad' : method;
         }
 
         function ltxDirectorAudioSourceDuration(audio) {
@@ -8703,6 +8811,8 @@
                 } : (segment.crop || { x: 0, y: 0, w: 1, h: 1 });
                 const cameraStart = segment.cameraKeyframes?.[0] || { zoom: 1, panX: 0, panY: 0 };
                 const cameraEnd = segment.cameraKeyframes?.[1] || { zoom: 1, panX: 0, panY: 0 };
+                const motionDurationLocked = !!segment.motionTransfer?.enabled && ltxDirectorMotionVideoDuration(segment) > 0;
+                const motionLockAttrs = motionDurationLocked ? 'readonly disabled aria-disabled="true" title="Locked to Motion Transfer reference video duration"' : '';
                 html = `
                     <section class="space-y-3">
                         <div class="flex items-center justify-between">
@@ -8711,7 +8821,7 @@
                         </div>
                         <div class="grid grid-cols-2 gap-2">
                             ${ltxDirectorNumberField('Start', 'segment.start', Number(segment.start || 0).toFixed(2), 'min="0" step="0.05"')}
-                            ${ltxDirectorNumberField('Duration', 'segment.length', Number(segment.length || 1).toFixed(2), 'min="0.25" step="0.05"')}
+                            ${ltxDirectorNumberField('Duration', 'segment.length', Number(segment.length || 1).toFixed(2), `min="0.25" step="0.05" ${motionLockAttrs}`)}
                             ${ltxDirectorNumberField('Guide Strength', 'segment.guideStrength', Number(segment.guideStrength ?? 1).toFixed(2), 'min="0" max="2" step="0.05"')}
                             ${ltxDirectorNumberField('Insert Frame', 'segment.insertFrame', ltxDirectorSecondsToFrames(segment.start || 0), 'min="0" step="1"')}
                         </div>
@@ -8746,13 +8856,18 @@
                         </div>
                         <label class="ltx-info-field flex items-center justify-between gap-3 cursor-pointer">
                             <span>
-                                <span class="mini-label block">Transition LoRA To Next Visual</span>
-                                <span class="text-[10px] text-nexus-muted font-mono">ON uses this segment as transition source into the next image/video segment.</span>
+                                <span class="mini-label block">Transition LoRA</span>
+                                <span class="text-[10px] text-nexus-muted font-mono">ON renders this segment toward an explicit end frame/reference image.</span>
                             </span>
                             <span class="toggle-switch"><input type="checkbox" data-ltx-info="segment.transitionLoraEnabled" onchange="updateLtxDirectorInfoField(this)" ${segment.transitionLoraEnabled ? 'checked' : ''}><span class="toggle-track"></span></span>
                         </label>
                         ${segment.transitionLoraEnabled ? `
                             <div class="ltx-info-field space-y-2">
+                                <button type="button" onclick="openLtxDirectorTransitionImagePicker('${escapeHtml(segment.id)}')" class="relative w-full min-h-[92px] border border-dashed border-nexus-border bg-nexus-bg text-left overflow-hidden hover:border-nexus-red transition-colors">
+                                    ${segment.transitionImageSrc || segment.transitionImageB64 ? `<img src="${escapeHtml(segment.transitionImageSrc || segment.transitionImageB64)}" class="absolute inset-0 w-full h-full object-cover" alt="transition end frame">` : ''}
+                                    <span class="absolute inset-0 flex items-center justify-center text-[10px] font-mono text-nexus-muted">${segment.transitionImageFile ? escapeHtml(segment.transitionImageFile) : 'drop or click'}</span>
+                                    <span class="absolute left-2 bottom-2 bg-black/85 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase">End Frame / Reference Image</span>
+                                </button>
                                 <div class="flex items-center justify-between gap-2">
                                     <span class="mini-label">Transition Prompt Add-On</span>
                                     <div class="flex gap-1">
@@ -8782,10 +8897,10 @@
                             <div class="ltx-info-field space-y-2">
                                 <span class="mini-label">Load Video UI Trim</span>
                                 <div class="grid grid-cols-2 gap-2">
-                                    ${ltxDirectorNumberField('Start Time', 'video.start_time', Number(segment.loadVideo?.start_time || 0).toFixed(2), 'min="0" step="0.01"')}
-                                    ${ltxDirectorNumberField('End Time', 'video.end_time', Number(segment.loadVideo?.end_time || segment.length || 0).toFixed(2), 'min="0" step="0.01"')}
-                                    ${ltxDirectorNumberField('Start Frame', 'video.start_frame', Math.round(segment.loadVideo?.start_frame || 0), 'min="0" step="1"')}
-                                    ${ltxDirectorNumberField('Duration Frames', 'video.duration_frames', Math.max(1, Math.round(segment.loadVideo?.duration_frames || ltxDirectorSecondsToFrames(segment.length))), 'min="1" step="1"')}
+                                    ${ltxDirectorNumberField('Start Time', 'video.start_time', Number(segment.loadVideo?.start_time || 0).toFixed(2), `min="0" step="0.01" ${motionLockAttrs}`)}
+                                    ${ltxDirectorNumberField('End Time', 'video.end_time', Number(segment.loadVideo?.end_time || segment.length || 0).toFixed(2), `min="0" step="0.01" ${motionLockAttrs}`)}
+                                    ${ltxDirectorNumberField('Start Frame', 'video.start_frame', Math.round(segment.loadVideo?.start_frame || 0), `min="0" step="1" ${motionLockAttrs}`)}
+                                    ${ltxDirectorNumberField('Duration Frames', 'video.duration_frames', Math.max(1, Math.round(segment.loadVideo?.duration_frames || ltxDirectorSecondsToFrames(segment.length))), `min="1" step="1" ${motionLockAttrs}`)}
                                 </div>
                             </div>
                         ` : ''}
@@ -8856,7 +8971,7 @@
                 } else if (key === 'transitionLoraEnabled') {
                     segment.transitionLoraEnabled = !!element.checked;
                     if (segment.transitionLoraEnabled && !segment.transitionPrompt) {
-                        segment.transitionPrompt = 'continuous motion carried into the next visual segment, same subject momentum, natural movement completion, no dissolve, no crossfade';
+                        segment.transitionPrompt = 'continuous motion into the end frame/reference image, preserve identity, natural movement completion, no dissolve, no crossfade';
                     }
                 } else if (key === 'transitionPrompt') {
                     segment.transitionPrompt = String(value || '');
@@ -8864,7 +8979,7 @@
                     segment.motionTransfer = segment.motionTransfer || { mode: 'pose', strength: 1 };
                     segment.motionTransfer.enabled = !!element.checked;
                     segment.motionTransfer.strength = 1;
-                    ltxDirectorSyncMotionTransferSegment(segment);
+                    ltxDirectorSyncMotionTransferSegment(segment, { lockToSource: true });
                 } else if (key === 'resizeMethod') {
                     segment.resizeMethod = String(value || 'maintain aspect ratio');
                     ltxDirectorState.resizeMethod = segment.resizeMethod;
@@ -8879,6 +8994,12 @@
                     segment.start = ltxDirectorFramesToSeconds(Number(value));
                     ltxDirectorConstrainSegment(segment, { syncLoadVideo: true });
                 } else {
+                    if (key === 'length' && segment.motionTransfer?.enabled && ltxDirectorMotionVideoDuration(segment) > 0) {
+                        ltxDirectorSyncMotionTransferSegment(segment, { lockToSource: true });
+                        renderLtxDirector();
+                        renderLtxDirectorInfoPanel();
+                        return;
+                    }
                     segment[key] = Number(value);
                     if (key === 'start' || key === 'length') {
                         ltxDirectorConstrainSegment(segment, { syncLoadVideo: true });
@@ -8892,6 +9013,12 @@
                 }
             } else if (field?.startsWith('video.') && segment?.loadVideo) {
                 const key = field.split('.')[1];
+                if ((key === 'start_time' || key === 'start_frame' || key === 'end_time' || key === 'duration_frames') && segment.motionTransfer?.enabled && ltxDirectorMotionVideoDuration(segment) > 0) {
+                    ltxDirectorSyncMotionTransferSegment(segment, { lockToSource: true });
+                    renderLtxDirector();
+                    renderLtxDirectorInfoPanel();
+                    return;
+                }
                 segment.loadVideo[key] = Number(value);
                 if (key === 'start_time') segment.loadVideo.start_frame = ltxDirectorSecondsToFrames(value);
                 if (key === 'end_time') {
@@ -9113,6 +9240,8 @@
                     },
                     guideStrength: Number(segment.transitionLoraEnabled ? Math.max(1, Number(segment.guideStrength ?? 1)) : (segment.guideStrength ?? 1)),
                     transitionLoraEnabled: !!segment.transitionLoraEnabled,
+                    transitionImageFile: segment.transitionImageFile || '',
+                    transitionImageB64: segment.transitionImageB64 || segment.transitionImageSrc || '',
                     transitionToNextVisual: !!transitionTarget,
                     transitionTargetId: transitionTarget?.id || '',
                     transitionTargetStart: transitionTarget ? Math.max(0, Math.round(Number(transitionTarget.start || 0) * fps)) : null,
@@ -9292,6 +9421,22 @@
             });
         }
 
+        function ltxDirectorIdentityIcLoraName() {
+            const candidates = (backendCatalog?.categories?.loras || [])
+                .map(asset => String(asset.relative_path || asset.name || '').replace(/^loras[\\/]/i, '').replaceAll('/', '\\'))
+                .filter(Boolean);
+            return candidates.find(name => /ltx[_\\/-]?ic.*union.*control.*ref0?\.?5/i.test(name))
+                || candidates.find(name => /ltx.*union.*control/i.test(name))
+                || candidates.find(name => /ic[-_ ]?lora.*control/i.test(name))
+                || '';
+        }
+
+        function ltxDirectorBase64Payload(dataUrl = '') {
+            const value = String(dataUrl || '');
+            const comma = value.indexOf(',');
+            return comma >= 0 ? value.slice(comma + 1) : value;
+        }
+
         function ltxDirectorVideoMetadataDuration(dataUrl) {
             return new Promise(resolve => {
                 const video = document.createElement('video');
@@ -9335,7 +9480,8 @@
             const numeric = Math.max(0, Math.round(Number(value || 0)));
             const factor = ltxLatentUpscaleFactor(latentUpscaleName);
             if (!numeric || factor <= 1) return numeric;
-            const units = Math.max(2, Math.round(numeric / factor / 32));
+            let units = Math.max(2, Math.round(numeric / factor / 32));
+            if (/ltx|spatial|upscal/i.test(String(latentUpscaleName || '')) && units % 2) units += 1;
             return Math.max(64, units * 32);
         }
 
@@ -9400,7 +9546,7 @@
             const textEncoder = /\.(safetensors|ckpt|pt|pth|bin|gguf)$/i.test(textEncoderChoice) && !/projection|text_projection|proj/i.test(textEncoderChoice) ? textEncoderChoice : 'gemma-3-12b-it-heretic-v2_nvfp4.safetensors';
             const videoVae = /\.(safetensors|ckpt|pt|pth|bin)$/i.test(videoVaeChoice) && !/taeltx|preview/i.test(videoVaeChoice) ? videoVaeChoice : 'LTX23_video_vae_bf16.safetensors';
             const audioVae = /\.(safetensors|ckpt|pt|pth|bin)$/i.test(audioVaeChoice) ? audioVaeChoice : 'LTX23_audio_vae_bf16.safetensors';
-            const rawLatentUpscale = document.getElementById('latentUpscaleSelect')?.value || '';
+            const rawLatentUpscale = payload?.video?.latent_upscale ?? document.getElementById('latentUpscaleSelect')?.value ?? '';
             const latentUpscaleChoice = comfyFileNameFromValue(rawLatentUpscale);
             const latentUpscale = /^(none)$/i.test(latentUpscaleChoice)
                 ? ''
@@ -9418,6 +9564,10 @@
             const minSteps = ltxMinimumSteps(checkpointName);
             const steps = Math.max(minSteps, parseInt(payload?.steps || document.getElementById('stepsSlider')?.value || minSteps, 10) || minSteps);
             const cfg = Number(payload?.cfg ?? document.getElementById('cfgSlider')?.value ?? 1) || 1;
+            const audioSegments = director.timeline_data?.audioSegments || [];
+            const timelineSegments = director.timeline_data?.segments || [];
+            const directorNeedsIdentityIc = timelineSegments.some(segment => !!segment.motionTransfer?.enabled || !!segment.transitionLoraEnabled);
+            const identityIcLoraName = directorNeedsIdentityIc ? ltxDirectorIdentityIcLoraName() : '';
             const loraNodes = {};
             let directorModelRef = ['1', 0];
             ltxDirectorWorkflowLoras(payload).slice(0, 8).forEach((lora, index) => {
@@ -9440,8 +9590,20 @@
                 };
                 directorModelRef = [nodeId, 0];
             });
-            const audioSegments = director.timeline_data?.audioSegments || [];
-            const timelineSegments = director.timeline_data?.segments || [];
+            let identityIcDownscaleRef = 1.0;
+            if (directorNeedsIdentityIc && identityIcLoraName) {
+                loraNodes['55'] = {
+                    class_type: 'LTXICLoRALoaderModelOnly',
+                    inputs: {
+                        model: directorModelRef,
+                        lora_name: identityIcLoraName,
+                        strength_model: Math.max(0, Math.min(1.25, Number(payload?.video?.ltx_ic_lora_strength || 1)))
+                    },
+                    _meta: { title: `LTX IC-LoRA Union Control - ${identityIcLoraName.split(/[\\/]/).pop() || 'Identity'}` }
+                };
+                directorModelRef = ['55', 0];
+                identityIcDownscaleRef = ['55', 1];
+            }
             const directorAudioCueRegex = /lip[- ]?sync|sincron|fala|falando|voz|dialogo|people talking|ambient|ambiente|room tone|soundscape|efeito sonoro|sound effect/i;
             const hasTimelineAudio = useCustomAudio && audioSegments.length > 0;
             const wantsGeneratedAudio = timelineSegments.some((segment) => {
@@ -9453,9 +9615,255 @@
             const schedulerLatentRef = samplerLatentRef;
             const videoVaeRef = ['23', 0];
             let decodeLatentRef = ['14', 0];
-            let samplerModelRef = useCustomAudio ? ['16', 0] : ['4', 0];
-            let samplerPositiveRef = ['7', 0];
-            let samplerNegativeRef = ['7', 1];
+            let samplerModelRef = useCustomAudio ? ['16', 0] : (directorNeedsIdentityIc ? directorModelRef : ['4', 0]);
+            const identityIcNodes = {};
+            let directorGuidePositiveRef = ['6', 0];
+            let directorGuideNegativeRef = ['6', 1];
+            let directorGuideVideoLatentRef = ['4', 2];
+            if (false && directorNeedsIdentityIc && identityIcLoraName) {
+                let nextIdentityNode = 56;
+                timelineSegments
+                    .filter(segment => (segment.motionTransfer?.enabled || segment.transitionLoraEnabled) && (segment.imageB64 || segment.imageSrc))
+                    .slice(0, 8)
+                    .forEach((segment, index) => {
+                        const loadId = String(nextIdentityNode++);
+                        const guideId = String(nextIdentityNode++);
+                        identityIcNodes[loadId] = {
+                            class_type: 'easy loadImageBase64',
+                            inputs: {
+                                base64_data: ltxDirectorBase64Payload(segment.imageB64 || segment.imageSrc || ''),
+                                image_output: 'Hide',
+                                save_prefix: `nexus_ltx_director_ic_identity_${index + 1}`
+                            },
+                            _meta: { title: `Load Director IC Identity #${index + 1}` }
+                        };
+                        identityIcNodes[guideId] = {
+                            class_type: 'LTXAddVideoICLoRAGuide',
+                            inputs: {
+                                positive: directorGuidePositiveRef,
+                                negative: directorGuideNegativeRef,
+                                vae: videoVaeRef,
+                                latent: directorGuideVideoLatentRef,
+                                image: [loadId, 0],
+                                frame_idx: Math.max(0, Math.round(Number(segment.start || 0))),
+                                strength: 1.0,
+                                latent_downscale_factor: 1.0,
+                                crop: document.getElementById('ltxIcCropSelect')?.value || 'disabled',
+                                use_tiled_encode: document.getElementById('ltxIcTiledEncodeSelect')?.value === 'true',
+                                tile_size: 256,
+                                tile_overlap: 64
+                            },
+                            _meta: { title: `LTX IC-LoRA Union Identity Guide #${index + 1}` }
+                        };
+                        directorGuidePositiveRef = [guideId, 0];
+                        directorGuideNegativeRef = [guideId, 1];
+                        directorGuideVideoLatentRef = [guideId, 2];
+                    });
+            }
+            const directorUsesNativeGuide = !directorNeedsIdentityIc;
+            let samplerPositiveRef = directorUsesNativeGuide ? ['7', 0] : ['6', 0];
+            let samplerNegativeRef = directorUsesNativeGuide ? ['7', 1] : ['6', 1];
+            let motionDirectorLatentRef = directorUsesNativeGuide ? ['7', 2] : ['4', 2];
+            const motionTransferNodes = {};
+            const directorMotionSegments = timelineSegments
+                .filter(segment => !!segment.motionTransfer?.enabled && (!!segment.motionTransfer?.videoB64 || !!segment.motionTransfer?.videoFile));
+            const directorTransitionIdentitySegments = timelineSegments
+                .filter(segment => !!segment.transitionLoraEnabled && (!!segment.imageB64 || !!segment.imageSrc));
+            const ltxDirectorGuideFrameIdx = (segment) => {
+                const start = Math.max(0, Math.round(Number(segment?.start || 0)));
+                if (start <= 0) return 0;
+                return Math.max(1, start - ((start - 1) % 8));
+            };
+            const addDirectorImageLoader = (nodeId, segment, title) => {
+                motionTransferNodes[nodeId] = {
+                    class_type: 'easy loadImageBase64',
+                    inputs: {
+                        base64_data: ltxDirectorBase64Payload(segment.imageB64 || segment.imageSrc || ''),
+                        image_output: 'Hide',
+                        save_prefix: title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'nexus_ltx_director_identity'
+                    },
+                    _meta: { title }
+                };
+                return [nodeId, 0];
+            };
+            if (directorNeedsIdentityIc && identityIcLoraName) {
+                let nextMotionNode = 200;
+                directorMotionSegments.slice(0, 4).forEach((segment, index) => {
+                    const mode = ['pose', 'canny', 'depth', 'camera'].includes(String(segment.motionTransfer?.mode || '').toLowerCase())
+                        ? String(segment.motionTransfer?.mode || '').toLowerCase()
+                        : 'pose';
+                    const videoLoadId = String(nextMotionNode++);
+                    const motionResizeId = String(nextMotionNode++);
+                    const targetLoadId = String(nextMotionNode++);
+                    const targetResizeId = String(nextMotionNode++);
+                    const targetConditionId = String(nextMotionNode++);
+                    const motionGuideId = String(nextMotionNode++);
+                    const durationFrames = Math.max(1, Math.round(Number(segment.length || 1)));
+                    motionTransferNodes[videoLoadId] = {
+                        class_type: 'VHS_LoadVideo',
+                        inputs: {
+                            video: segment.motionTransfer?.videoFile || `nexus_director_motion_${index + 1}.mp4`,
+                            force_rate: Math.max(1, Number(director.frame_rate || 24)),
+                            custom_width: 0,
+                            custom_height: 0,
+                            frame_load_cap: durationFrames,
+                            skip_first_frames: 0,
+                            select_every_nth: 1,
+                            format: 'LTXV'
+                        },
+                        _meta: { title: `Load Director Motion Reference #${index + 1}` }
+                    };
+                    motionTransferNodes[motionResizeId] = {
+                        class_type: 'ImageResizeKJv2',
+                        inputs: {
+                            image: [videoLoadId, 0],
+                            width: directorBaseWidth,
+                            height: directorBaseHeight,
+                            upscale_method: 'lanczos',
+                            keep_proportion: 'pad',
+                            pad_color: '0, 0, 0',
+                            crop_position: 'center',
+                            divisible_by: 32,
+                            device: 'cpu'
+                        },
+                        _meta: { title: `Resize Director Motion Reference #${index + 1}` }
+                    };
+                    let motionGuideImageRef = [motionResizeId, 0];
+                    if (mode === 'pose') {
+                        const poseId = String(nextMotionNode++);
+                        motionTransferNodes[poseId] = {
+                            class_type: 'DWPreprocessor',
+                            inputs: {
+                                image: [motionResizeId, 0],
+                                detect_hand: 'enable',
+                                detect_body: 'enable',
+                                detect_face: 'enable',
+                                resolution: Math.max(directorBaseWidth, directorBaseHeight),
+                                scale_stick_for_xinsr_cn: 'disable',
+                                bbox_detector: 'yolox_l.onnx',
+                                pose_estimator: 'dw-ll_ucoco_384_bs5.torchscript.pt'
+                            },
+                            _meta: { title: `DWPose Director Motion Reference #${index + 1}` }
+                        };
+                        motionGuideImageRef = [poseId, 0];
+                    } else if (mode === 'canny') {
+                        const cannyId = String(nextMotionNode++);
+                        motionTransferNodes[cannyId] = {
+                            class_type: 'CannyEdgePreprocessor',
+                            inputs: {
+                                image: [motionResizeId, 0],
+                                low_threshold: 92,
+                                high_threshold: 200,
+                                resolution: Math.max(directorBaseWidth, directorBaseHeight)
+                            },
+                            _meta: { title: `Canny Director Motion Reference #${index + 1}` }
+                        };
+                        motionGuideImageRef = [cannyId, 0];
+                    }
+                    const motionPostResizeId = String(nextMotionNode++);
+                    motionTransferNodes[motionPostResizeId] = {
+                        class_type: 'ImageResizeKJv2',
+                        inputs: {
+                            image: motionGuideImageRef,
+                            width: directorBaseWidth,
+                            height: directorBaseHeight,
+                            upscale_method: 'lanczos',
+                            keep_proportion: 'pad',
+                            pad_color: '0, 0, 0',
+                            crop_position: 'center',
+                            divisible_by: 32,
+                            device: 'cpu'
+                        },
+                        _meta: { title: `Match Director Motion Control Canvas #${index + 1}` }
+                    };
+                    motionGuideImageRef = [motionPostResizeId, 0];
+                    const targetImageRef = addDirectorImageLoader(targetLoadId, segment, `Load Director Motion Identity #${index + 1}`);
+                    motionTransferNodes[targetResizeId] = {
+                        class_type: 'ResizeImageMaskNode',
+                        inputs: {
+                            input: targetImageRef,
+                            resize_type: 'scale longer dimension',
+                            'resize_type.longer_size': Math.max(1536, directorBaseWidth, directorBaseHeight),
+                            scale_method: 'lanczos'
+                        },
+                        _meta: { title: `Resize Director Motion Identity Like Official IC #${index + 1}` }
+                    };
+                    motionTransferNodes[targetConditionId] = {
+                        class_type: 'LTXVImgToVideoConditionOnly',
+                        inputs: {
+                            vae: videoVaeRef,
+                            image: [targetResizeId, 0],
+                            latent: motionDirectorLatentRef,
+                            strength: Math.max(0, Math.min(1, Number(segment.motionTransfer?.strength ?? 1))),
+                            bypass: false
+                        },
+                        _meta: { title: `Condition Director Motion Identity #${index + 1}` }
+                    };
+                    motionTransferNodes[motionGuideId] = {
+                        class_type: 'LTXAddVideoICLoRAGuide',
+                        inputs: {
+                            positive: samplerPositiveRef,
+                            negative: samplerNegativeRef,
+                            vae: videoVaeRef,
+                            latent: [targetConditionId, 0],
+                            image: motionGuideImageRef,
+                            frame_idx: ltxDirectorGuideFrameIdx(segment),
+                            strength: Math.max(0, Math.min(1, Number(segment.motionTransfer?.strength ?? 1))),
+                            latent_downscale_factor: 1.0,
+                            crop: 'disabled',
+                            use_tiled_encode: document.getElementById('ltxIcTiledEncodeSelect')?.value === 'true',
+                            tile_size: 256,
+                            tile_overlap: 64
+                        },
+                        _meta: { title: `LTX IC-LoRA Union Director Motion #${index + 1} (${mode})` }
+                    };
+                    samplerPositiveRef = [motionGuideId, 0];
+                    samplerNegativeRef = [motionGuideId, 1];
+                    motionDirectorLatentRef = [motionGuideId, 2];
+                });
+                directorTransitionIdentitySegments.slice(0, 4).forEach((segment, index) => {
+                    const loadId = String(nextMotionNode++);
+                    const resizeId = String(nextMotionNode++);
+                    const guideId = String(nextMotionNode++);
+                    const imageRef = addDirectorImageLoader(loadId, segment, `Load Director Transition Identity #${index + 1}`);
+                    motionTransferNodes[resizeId] = {
+                        class_type: 'ImageResizeKJv2',
+                        inputs: {
+                            image: imageRef,
+                            width: directorBaseWidth,
+                            height: directorBaseHeight,
+                            upscale_method: 'lanczos',
+                            keep_proportion: 'pad',
+                            pad_color: '0, 0, 0',
+                            crop_position: 'center',
+                            divisible_by: 32,
+                            device: 'cpu'
+                        },
+                        _meta: { title: `Resize Director Transition Identity #${index + 1}` }
+                    };
+                    motionTransferNodes[guideId] = {
+                        class_type: 'LTXAddVideoICLoRAGuide',
+                        inputs: {
+                            positive: samplerPositiveRef,
+                            negative: samplerNegativeRef,
+                            vae: videoVaeRef,
+                            latent: motionDirectorLatentRef,
+                            image: [resizeId, 0],
+                            frame_idx: ltxDirectorGuideFrameIdx(segment),
+                            strength: Math.max(0, Math.min(1, Number(segment.guideStrength ?? 1))),
+                            latent_downscale_factor: 1.0,
+                            crop: 'disabled',
+                            use_tiled_encode: document.getElementById('ltxIcTiledEncodeSelect')?.value === 'true',
+                            tile_size: 256,
+                            tile_overlap: 64
+                        },
+                        _meta: { title: `LTX IC-LoRA Union Director Transition #${index + 1}` }
+                    };
+                    samplerPositiveRef = [guideId, 0];
+                    samplerNegativeRef = [guideId, 1];
+                    motionDirectorLatentRef = [guideId, 2];
+                });
+            }
             const audioMixNodes = {};
             let audioMixRef = ['4', 6];
             const useDirectorCombinedAudio = false;
@@ -9634,6 +10042,19 @@
                     decodeLatentRef = ['32', 0];
                 }
             }
+            const cropGuideNodes = {};
+            if (directorNeedsIdentityIc && Object.keys(motionTransferNodes).length) {
+                cropGuideNodes['35'] = {
+                    class_type: 'LTXVCropGuides',
+                    inputs: {
+                        positive: samplerPositiveRef,
+                        negative: samplerNegativeRef,
+                        latent: decodeLatentRef
+                    },
+                    _meta: { title: 'Crop Director IC-LoRA Guide Frames Before Decode' }
+                };
+                decodeLatentRef = ['35', 2];
+            }
             const finalScaleNodes = {};
             const latentFactor = ltxLatentUpscaleFactor(latentUpscale);
             const latentOutputWidth = Math.round(directorBaseWidth * latentFactor);
@@ -9763,13 +10184,37 @@
                 ? { class_type: 'ManualSigmas', inputs: { sigmas: LTX_DISTILLED_8_STEP_SIGMAS }, _meta: { title: 'Official LTX 2.3 8-Step Sigmas' } }
                 : { class_type: 'LTXVScheduler', inputs: { steps, max_shift: 2.05, base_shift: 0.95, stretch: true, terminal: 0.1, latent: schedulerLatentRef }, _meta: { title: 'LTX Scheduler' } };
             const audioWorkflowNodes = {
-                '8': { class_type: 'LTXVConcatAVLatent', inputs: { video_latent: ['7', 2], audio_latent: ['4', 3] }, _meta: { title: 'Merge Video + Custom Audio Latents' } },
+                '8': { class_type: 'LTXVConcatAVLatent', inputs: { video_latent: motionDirectorLatentRef, audio_latent: ['4', 3] }, _meta: { title: 'Merge Video + Custom Audio Latents' } },
                 '14': { class_type: 'LTXVSeparateAVLatent', inputs: { av_latent: ['13', 0] }, _meta: { title: 'Separate Video + Audio Latents' } },
                 ...(useCustomAudio ? {
                     '16': { class_type: 'LTX2AudioLatentNormalizingSampling', inputs: { model: ['4', 0], audio_normalization_factors: '1,1,0.25,1,1,0.25,1,1' }, _meta: { title: 'Normalize LTX2 Audio Sampling' } },
                     ...audioMixNodes
                 } : {})
             };
+            const directorConditioningNodes = {};
+            const directorBasePositiveRef = directorNeedsIdentityIc ? ['36', 0] : ['4', 1];
+            if (directorNeedsIdentityIc) {
+                const localPromptText = String(director.local_prompts || '')
+                    .split('|')
+                    .map(item => item.trim())
+                    .filter(Boolean)
+                    .join(', ');
+                const positiveText = ltxTransitionPrompt(
+                    [payload?.prompt, director.global_prompt, localPromptText]
+                        .map(item => String(item || '').trim())
+                        .filter(Boolean)
+                        .join(', '),
+                    payload?.video || {}
+                );
+                directorConditioningNodes['36'] = {
+                    class_type: 'CLIPTextEncode',
+                    inputs: {
+                        clip: ['2', 0],
+                        text: positiveText || 'preserve the exact subject identity from the reference image, clean continuous motion'
+                    },
+                    _meta: { title: 'Director IC-LoRA Positive Prompt' }
+                };
+            }
             const workflow = {
                 '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: checkpointName }, _meta: { title: 'Load LTX 2.3 Checkpoint' } },
                 '2': { class_type: 'LTXAVTextEncoderLoader', inputs: { text_encoder: textEncoder, ckpt_name: LTX_TEXT_PROJECTION_NAME, device: 'default' }, _meta: { title: 'LTX Text Encoder Projection' } },
@@ -9801,8 +10246,10 @@
                     _meta: { title: 'LTX Director' }
                 },
                 '5': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: director.local_negative_prompts || payload?.negative_prompt || document.getElementById('negPrompt')?.value || '' }, _meta: { title: 'Negative Prompt' } },
-                '6': { class_type: 'LTXVConditioning', inputs: { positive: ['4', 1], negative: ['5', 0], frame_rate: ['4', 5] }, _meta: { title: 'LTX Frame Rate Conditioning' } },
-                '7': { class_type: 'LTXDirectorGuide', inputs: { positive: ['6', 0], negative: ['6', 1], vae: videoVaeRef, latent: ['4', 2], guide_data: ['4', 4], scale_by: 1, upscale_method: 'bicubic' }, _meta: { title: 'Apply Director Guides' } },
+                '6': { class_type: 'LTXVConditioning', inputs: { positive: directorBasePositiveRef, negative: ['5', 0], frame_rate: ['4', 5] }, _meta: { title: 'LTX Frame Rate Conditioning' } },
+                ...(directorUsesNativeGuide ? {
+                    '7': { class_type: 'LTXDirectorGuide', inputs: { positive: directorGuidePositiveRef, negative: directorGuideNegativeRef, vae: videoVaeRef, latent: directorGuideVideoLatentRef, guide_data: ['4', 4], scale_by: 1, upscale_method: 'bicubic' }, _meta: { title: 'Apply Director Guides' } }
+                } : {}),
                 '9': { class_type: 'RandomNoise', inputs: { noise_seed: payload?.seed ?? document.getElementById('seedInput')?.value ?? -1 }, _meta: { title: 'Seed' } },
                 '10': { class_type: 'KSamplerSelect', inputs: { sampler_name: normalizeSamplerForWorkflow(payload?.sampler || document.getElementById('samplingMethodSelect')?.value || 'Euler CFG++') }, _meta: { title: 'Sampler' } },
                 '11': sigmaNode,
@@ -9812,7 +10259,7 @@
                 '33': { class_type: 'VHS_SelectImages', inputs: { image: decodedFramesRef, indexes: `0:${trimFrameCount}`, err_if_missing: false, err_if_empty: true }, _meta: { title: 'Trim Director Frames To Timeline' } },
                 '22': { class_type: 'VHS_VideoCombine', inputs: saveVideoInputs, _meta: { title: 'Save High Quality Video' } }
             };
-            return { ...workflow, ...audioWorkflowNodes, ...directorGeneratedAudioNodes, ...latentUpscaleNodes, ...finalScaleNodes, ...loraNodes };
+            return { ...workflow, ...audioWorkflowNodes, ...directorConditioningNodes, ...directorGeneratedAudioNodes, ...identityIcNodes, ...motionTransferNodes, ...cropGuideNodes, ...latentUpscaleNodes, ...finalScaleNodes, ...loraNodes };
         }
 
         function normalizeSamplerForWorkflow(value) {
@@ -10078,6 +10525,11 @@
             document.getElementById('ltxDirectorMotionVideoInput')?.addEventListener('change', event => {
                 const file = [...(event.target.files || [])].find(isVideoFile);
                 if (file) addLtxDirectorMotionVideoFile(file);
+                event.target.value = '';
+            });
+            document.getElementById('ltxDirectorTransitionImageInput')?.addEventListener('change', event => {
+                const file = [...(event.target.files || [])].find(isImageFile);
+                if (file) addLtxDirectorTransitionImageFile(file);
                 event.target.value = '';
             });
             ['ltxDirectorDuration', 'ltxDirectorFps', 'ltxDirectorWidth', 'ltxDirectorHeight', 'ltxDirectorResizeMethod', 'ltxDirectorDisplayMode', 'ltxDirectorEpsilon', 'ltxDirectorDivisibleBy', 'ltxDirectorImgCompression'].forEach(id => {
@@ -11812,6 +12264,7 @@
             const hasImage = !!referenceImageMeta.src;
             const hasBaseVideo = !!referenceBaseVideoMeta.src;
             const startEndFrame = isStartEndFrameMode();
+            const cameraMotionEndFrame = isLtxCameraMotionTransferMode();
             panel?.classList.toggle('has-reference', hasImage || hasBaseVideo);
             if (clearButton) {
                 clearButton.classList.toggle('hidden', (!hasImage && !hasBaseVideo) || startEndFrame);
@@ -11841,12 +12294,15 @@
                 multiList.classList.toggle('hidden', !showSlots);
                 multiList.classList.toggle('mt-2', !startEndFrame);
                 multiList.classList.toggle('mt-0', startEndFrame);
-                const slots = startEndFrame ? [1, 2] : extraSlots;
+                multiList.classList.toggle('grid-cols-2', !cameraMotionEndFrame);
+                multiList.classList.toggle('grid-cols-3', cameraMotionEndFrame);
+                const slots = startEndFrame ? [1, ...extraSlots] : extraSlots;
                 multiList.innerHTML = showSlots ? slots.map(slot => {
                     const isStartSlot = startEndFrame && slot === 1;
                     const item = isStartSlot ? referenceImageMeta : (extraRefs[slot - 2] || {});
                     const hasSlotImage = !!item.src || (isStartSlot && hasBaseVideo);
                     const slotLabel = referenceSlotLabel(slot);
+                    const isOptionalEndFrame = startEndFrame && cameraMotionEndFrame && slot === 3;
                     const pickerAttr = isStartSlot
                         ? 'data-reference-main-slot="1"'
                         : `data-qwen-ref-slot="${slot}"`;
@@ -11861,7 +12317,7 @@
                             ${hasSlotImage && !(isStartSlot && hasBaseVideo) ? `<img src="${escapeHtml(item.src)}" class="absolute inset-0 w-full h-full object-cover" alt="${escapeHtml(slotLabel)}">` : ''}
                             ${isStartSlot && hasBaseVideo ? '<span class="absolute inset-0 flex items-center justify-center text-xl text-nexus-red"><i class="fa-solid fa-film"></i></span>' : ''}
                             <span class="absolute left-1.5 bottom-1.5 bg-black/80 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white">${escapeHtml(slotLabel)}</span>
-                            ${hasSlotImage ? `<span class="absolute left-1.5 top-1.5 max-w-[calc(100%-2.5rem)] truncate bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-nexus-muted">${escapeHtml((isStartSlot && hasBaseVideo ? referenceBaseVideoMeta.label : item.label) || slotLabel)}</span>` : '<span class="absolute inset-0 flex items-center justify-center text-[9px] font-mono text-nexus-muted">drop or click</span>'}
+                            ${hasSlotImage ? `<span class="absolute left-1.5 top-1.5 max-w-[calc(100%-2.5rem)] truncate bg-black/75 px-1.5 py-0.5 text-[8px] font-mono text-nexus-muted">${escapeHtml((isStartSlot && hasBaseVideo ? referenceBaseVideoMeta.label : item.label) || slotLabel)}</span>` : `<span class="absolute inset-0 flex items-center justify-center text-[9px] font-mono text-nexus-muted">${isOptionalEndFrame ? 'OPTIONAL' : 'drop or click'}</span>`}
                             ${hasSlotImage ? `<span class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm" ${removeAttr} onclick="event.preventDefault();event.stopPropagation();${removeAction}" title="Remove ${escapeHtml(slotLabel)}"><i class="fa-solid fa-xmark text-[9px]"></i></span>` : ''}
                         </button>
                     `;
@@ -11948,6 +12404,33 @@
             updateWorkflowPreview();
         }
 
+        function isLtxCameraMotionTransferSelected() {
+            return activePreset === 'LTX'
+                && currentActivity === 'img2img'
+                && !!document.getElementById('ltxMotionTransferToggle')?.checked
+                && String(document.getElementById('ltxMotionTransferModeSelect')?.value || '').toLowerCase() === 'camera';
+        }
+
+        function ltxCameraMotionBucketFrames(rawFrames) {
+            const frames = Math.max(1, Math.round(Number(rawFrames || 1)));
+            if (frames < 9) return 9;
+            return (frames - 1) % 8 === 0 ? frames : Math.max(9, Math.floor((frames - 1) / 8) * 8 + 1);
+        }
+
+        function applyLtxCameraMotionDefaults() {
+            syncActivePresetCompatibleDimensions();
+            const latent = document.getElementById('latentUpscaleSelect');
+            const latentX2 = 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors';
+            const currentLatent = String(latent?.value || '').trim();
+            if (latent && (!currentLatent || /^(automatic|auto)$/i.test(currentLatent)) && [...latent.options].some(option => String(option.value || option.textContent || '').includes(latentX2))) {
+                setSelectValue('latentUpscaleSelect', latentX2);
+            }
+            const transition = document.getElementById('ltxTransitionLoraToggle');
+            if (transition) transition.checked = false;
+            updateRangeLabel('steps');
+            updateRangeLabel('cfg');
+        }
+
         function syncLtxLinearMotionTransferTimeLock() {
             const secondsInput = document.getElementById('secondsInput');
             const framesInput = document.getElementById('framesInput');
@@ -11967,9 +12450,13 @@
             framesInput.title = locked ? 'Locked to Motion Transfer reference video duration' : '';
             if (!locked) return false;
             const fps = Math.max(1, Number(fpsInput.value || 24));
-            const duration = Math.max(0.25, Number(referenceBaseVideoMeta.duration || 1));
+            const referenceFrames = ltxReferenceFramesFromDuration(referenceBaseVideoMeta.duration || 1, fps);
+            const lockedFrames = isLtxCameraMotionTransferSelected()
+                ? ltxCameraMotionBucketFrames(referenceFrames)
+                : referenceFrames;
+            const duration = ltxReferenceDurationFromFrames(lockedFrames, fps);
             secondsInput.value = duration.toFixed(2).replace(/\.00$/, '');
-            framesInput.value = String(alignedVideoFrames('LTX', duration, fps));
+            framesInput.value = String(lockedFrames);
             return true;
         }
 
@@ -11984,6 +12471,7 @@
             }
             const select = document.getElementById('ltxMotionTransferModeSelect');
             if (select) select.value = mode;
+            if (mode === 'camera') applyLtxCameraMotionDefaults();
             clearLtxMotionPreprocess({ quiet: true });
             syncReferenceImageSurfaces();
             syncGenerationActionUi();
@@ -12750,10 +13238,19 @@
             const video = document.createElement('video');
             video.preload = 'metadata';
             video.onloadedmetadata = () => {
+                const fps = Math.max(1, Number(document.getElementById('fpsInput')?.value || 24));
+                const frames = ltxReferenceFramesFromDuration(video.duration || 0, fps);
                 referenceBaseVideoMeta.width = video.videoWidth || 0;
                 referenceBaseVideoMeta.height = video.videoHeight || 0;
                 referenceBaseVideoMeta.duration = video.duration || 0;
-                if (referenceBaseVideoMeta.width && referenceBaseVideoMeta.height) setDimensions(referenceBaseVideoMeta.width, referenceBaseVideoMeta.height);
+                referenceBaseVideoMeta.frames = frames;
+                referenceBaseVideoMeta.ltxDuration = ltxReferenceDurationFromFrames(frames, fps);
+                const isLtxMotionGuide = activePreset === 'LTX'
+                    && currentActivity === 'img2img'
+                    && !!document.getElementById('ltxMotionTransferToggle')?.checked;
+                if (!isLtxMotionGuide && referenceBaseVideoMeta.width && referenceBaseVideoMeta.height) {
+                    setDimensions(referenceBaseVideoMeta.width, referenceBaseVideoMeta.height);
+                }
                 syncLtxLinearMotionTransferTimeLock();
                 syncReferenceImageSurfaces();
             };
@@ -14090,8 +14587,16 @@
         function toggleLanguageMenu(event) {
             event?.preventDefault();
             event?.stopPropagation();
+            document.getElementById('donateMenu')?.classList.add('hidden');
             renderLanguageMenu();
             document.getElementById('languageMenu')?.classList.toggle('hidden');
+        }
+
+        function toggleDonateMenu(event) {
+            event?.preventDefault();
+            event?.stopPropagation();
+            document.getElementById('languageMenu')?.classList.add('hidden');
+            document.getElementById('donateMenu')?.classList.toggle('hidden');
         }
 
         function applyGoogleTranslateLanguage(lang, options = {}) {
@@ -14117,6 +14622,8 @@
         document.addEventListener('click', event => {
             const selector = document.getElementById('languageSelector');
             if (selector && !selector.contains(event.target)) document.getElementById('languageMenu')?.classList.add('hidden');
+            const donateSelector = document.getElementById('donateSelector');
+            if (donateSelector && !donateSelector.contains(event.target)) document.getElementById('donateMenu')?.classList.add('hidden');
         });
         renderLanguageMenu();
         if (nexusLanguage !== 'en') loadGoogleTranslateScript();
@@ -16273,11 +16780,30 @@
                 && referenceExtraSlotsEnabled()
                 && !!referenceImageDataUrl
                 && (referenceImageExtraDataUrls || []).some(item => !!item?.src);
-            const hasLtxMotionTargetImage = activePreset === 'LTX' && !!referenceBaseVideoDataUrl && (
-                !!referenceImageDataUrl || (referenceImageExtraDataUrls || []).some(item => !!item?.src)
-            );
+            const ltxMotionModeValue = String(document.getElementById('ltxMotionTransferModeSelect')?.value || 'pose').toLowerCase();
+            const ltxMotionExtraRefs = referenceImageExtraDataUrls || [];
+            const ltxMotionTargetImageSrc = activePreset === 'LTX'
+                ? (ltxMotionExtraRefs[0]?.src || referenceImageDataUrl || '')
+                : '';
+            const ltxMotionOptionalEndFrameSrc = activePreset === 'LTX' && ltxMotionModeValue === 'camera'
+                ? (ltxMotionExtraRefs[1]?.src || '')
+                : '';
+            const ltxMotionCameraTransition = !!ltxMotionOptionalEndFrameSrc;
+            const ltxTransitionStrengthRaw = parseFloat(document.getElementById('ltxTransitionLoraStrength')?.value || String(LTX_TRANSITION_DEFAULT_STRENGTH));
+            const ltxEffectiveTransitionStrength = ltxMotionCameraTransition && Math.abs(ltxTransitionStrengthRaw - LTX_TRANSITION_DEFAULT_STRENGTH) < 0.0001
+                ? 0.7
+                : ltxTransitionStrengthRaw;
+            if (activePreset === 'LTX') syncActivePresetCompatibleDimensions();
+            const ltxDefaultLatentUpscale = 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors';
+            const ltxSelectedLatentUpscale = document.getElementById('latentUpscaleSelect')?.value || 'Automatic';
+            const ltxEffectiveLatentUpscale = activePreset === 'LTX' && /^(automatic|auto)?$/i.test(ltxSelectedLatentUpscale)
+                ? ltxDefaultLatentUpscale
+                : ltxSelectedLatentUpscale;
+            const ltxMotionTargetStrength = ltxMotionModeValue === 'camera' ? 0.2 : 1.0;
+            const hasLtxMotionTargetImage = activePreset === 'LTX' && !!referenceBaseVideoDataUrl && !!ltxMotionTargetImageSrc;
             const ltxMotionTransferRoute = hasLtxMotionTargetImage && !!document.getElementById('ltxMotionTransferToggle')?.checked;
             const ltxTransitionRoute = activePreset === 'LTX' && hasLtxEndFrame && !ltxMotionTransferRoute;
+            if (ltxMotionTransferRoute && !isDirectorWorkspaceActive()) syncLtxLinearMotionTransferTimeLock();
             const requestedSeconds = parseFloat(document.getElementById('secondsInput')?.value || '5');
             const effectiveVideoSeconds = requestedSeconds;
             const requestedFpsRaw = parseFloat(document.getElementById('fpsInput')?.value || '16');
@@ -16335,7 +16861,10 @@
                     fill_mask_present: !!inpaintIntent.fill,
                     reference_image: referenceImageDataUrl || null,
                     reference_images: ltxMotionTransferRoute
-                        ? [(referenceImageExtraDataUrls || []).find(item => item?.src)?.src || referenceImageDataUrl].filter(Boolean)
+                        ? [
+                            ltxMotionTargetImageSrc,
+                            ...(ltxMotionCameraTransition ? [ltxMotionOptionalEndFrameSrc] : [])
+                        ].filter(Boolean)
                         : (referenceExtraSlotsEnabled()
                             ? [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean)
                             : (referenceImageDataUrl ? [referenceImageDataUrl] : [])),
@@ -16374,29 +16903,33 @@
                     active_audio: !!document.getElementById('activeAudioToggle')?.checked,
                     omnicine_enabled: activePreset === 'LTX' && !!activeOmnicineSelection(),
                     omnicine_lora: activeOmnicineSelection() || 'Off',
-                    latent_upscale: ltxTransitionRoute && /^(automatic|auto)?$/i.test(document.getElementById('latentUpscaleSelect')?.value || 'Automatic')
-                        ? 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors'
-                        : (document.getElementById('latentUpscaleSelect')?.value || 'Automatic'),
+                    latent_upscale: ltxEffectiveLatentUpscale,
                     latent_upscale_refine: !!document.getElementById('ltxLatentUpscaleRefineToggle')?.checked,
                     detailer_enabled: activePreset === 'LTX' ? !!document.getElementById('ltxDetailerToggle')?.checked : false,
-                    detailer_lora: document.getElementById('ltxDetailerLoraSelect')?.value || 'Automatic',
+                    detailer_lora: (activePreset === 'LTX' && !!document.getElementById('ltxDetailerToggle')?.checked && /^(none|off|disabled)$/i.test(String(document.getElementById('ltxDetailerLoraSelect')?.value || '')))
+                        ? 'Automatic'
+                        : (document.getElementById('ltxDetailerLoraSelect')?.value || 'Automatic'),
                     detailer_strength: parseFloat(document.getElementById('ltxDetailerStrengthSlider')?.value || '1'),
                     decode_tiles_x: parseInt(document.getElementById('ltxDecodeTilesXInput')?.value || '2', 10),
                     decode_tiles_y: parseInt(document.getElementById('ltxDecodeTilesYInput')?.value || '2', 10),
                     decode_overlap: parseInt(document.getElementById('ltxDecodeOverlapInput')?.value || '6', 10),
                     ltx_ic_crop: document.getElementById('ltxIcCropSelect')?.value || 'disabled',
+                    ltx_ic_timeline_guides: false,
                     ltx_ic_tiled_encode: document.getElementById('ltxIcTiledEncodeSelect')?.value === 'true',
                     ltx_ic_tile_size: 256,
                     ltx_ic_tile_overlap: 64,
                     motion_transfer_enabled: ltxMotionTransferRoute,
                     motion_transfer_mode: ltxMotionTransferRoute ? 'ltx_ic_union' : 'off',
-                    motion_transfer_control_mode: ltxMotionTransferRoute ? (document.getElementById('ltxMotionTransferModeSelect')?.value || 'pose') : 'off',
+                    motion_transfer_control_mode: ltxMotionTransferRoute ? ltxMotionModeValue : 'off',
                     motion_transfer_motion_strength: ltxMotionTransferRoute ? 1.0 : undefined,
-                    motion_transfer_target_strength: ltxMotionTransferRoute ? 1.0 : undefined,
-                    ltx_ic_lora_strength: ltxMotionTransferRoute ? 1.0 : undefined,
-                    transition_lora_enabled: activePreset === 'LTX' && !ltxMotionTransferRoute && (!!document.getElementById('ltxTransitionLoraToggle')?.checked || hasLtxEndFrame),
+                    motion_transfer_target_strength: ltxMotionTransferRoute ? ltxMotionTargetStrength : undefined,
+                    ltx_ic_lora_strength: (ltxMotionTransferRoute || ltxTransitionRoute) ? 1.0 : undefined,
+                    transition_lora_enabled: activePreset === 'LTX' && (
+                        (!ltxMotionTransferRoute && (!!document.getElementById('ltxTransitionLoraToggle')?.checked || hasLtxEndFrame))
+                        || (ltxMotionTransferRoute && ltxMotionCameraTransition && !!document.getElementById('ltxTransitionLoraToggle')?.checked)
+                    ),
                     transition_lora: document.getElementById('ltxTransitionLoraSelect')?.value || 'Automatic',
-                    transition_lora_strength: parseFloat(document.getElementById('ltxTransitionLoraStrength')?.value || String(LTX_TRANSITION_DEFAULT_STRENGTH)),
+                    transition_lora_strength: ltxEffectiveTransitionStrength,
                     start_frame_strength: ltxTransitionRoute ? 1.0 : undefined,
                     end_frame_strength: ltxTransitionRoute ? 1.0 : undefined,
                     ltx_start_end_mode: ltxTransitionRoute ? 'flf_guides' : undefined,
@@ -16420,6 +16953,18 @@
                 payload.negative_prompt = payload.negative_prompt
                     ? `${payload.negative_prompt}, different person, changed face, changed ethnicity, asian facial features, east asian face, kpop face, identity drift, double face, ghost face, smear, crossfade, dissolve`
                     : 'different person, changed face, changed ethnicity, asian facial features, east asian face, kpop face, identity drift, double face, ghost face, smear, crossfade, dissolve';
+            }
+            if (ltxMotionTransferRoute) {
+                const cameraMotionPrompt = ltxMotionModeValue === 'camera'
+                    ? 'apply the reference camera motion clearly: slow cinematic camera orbit and horizontal pan around the target scene, visible parallax and camera rotation while preserving the target subject and setting'
+                    : 'transfer only the reference motion and camera movement';
+                const motionIdentityPrompt = `preserve the exact target subject identity, same face, same facial proportions, same outfit and lighting, ${cameraMotionPrompt}, continuous stable video`;
+                payload.prompt = payload.prompt
+                    ? `${payload.prompt}, ${motionIdentityPrompt}`
+                    : motionIdentityPrompt;
+                payload.negative_prompt = payload.negative_prompt
+                    ? `${payload.negative_prompt}, different person, changed face, identity drift, double face, ghost face, smear, excessive blur, frozen frame, control map texture`
+                    : 'different person, changed face, identity drift, double face, ghost face, smear, excessive blur, frozen frame, control map texture';
             }
             payload.distilled_loras = payload.distilled_loras.filter(item => {
                 const name = String(item?.name || '').trim();
@@ -16474,13 +17019,15 @@
                     motion_transfer_mode: directorHasMotionTransfer ? 'ltx_ic_union' : 'off',
                     motion_transfer_control_mode: director.timeline_data?.motionTransfer?.[0]?.mode || 'pose',
                     motion_transfer_motion_strength: 1.0,
-                    motion_transfer_target_strength: 1.0,
+                    motion_transfer_target_strength: (director.timeline_data?.motionTransfer?.[0]?.mode || 'pose') === 'camera' ? 0.7 : 1.0,
                     ltx_ic_lora_strength: 1.0,
+                    ltx_ic_timeline_guides: false,
                     transition_lora_enabled: payload.video.transition_lora_enabled || director.timeline_data.segments.some(segment => segment.transitionLoraEnabled),
                     transition_lora: document.getElementById('ltxTransitionLoraSelect')?.value || payload.video.transition_lora || 'Automatic',
                     omnicine_enabled: !!activeOmnicineSelection(),
                     omnicine_lora: activeOmnicineSelection() || 'Off',
                     latent_upscale_refine: !!document.getElementById('ltxLatentUpscaleRefineToggle')?.checked,
+                    director_segment_render: directorHasTransition || directorHasMotionTransfer,
                     director_timeline: true
                 };
                 if (directorHasTransition || directorHasMotionTransfer) {
@@ -16494,12 +17041,19 @@
                     payload.negative_prompt = payload.negative_prompt
                         ? `${payload.negative_prompt}, different person, changed face, changed ethnicity, asian facial features, east asian face, kpop face, identity drift, double face, ghost face, smear, crossfade, dissolve`
                         : 'different person, changed face, changed ethnicity, asian facial features, east asian face, kpop face, identity drift, double face, ghost face, smear, crossfade, dissolve';
-                    if (/^(automatic|auto)?$/i.test(payload.video.latent_upscale || 'Automatic')) {
+                    if (directorHasMotionTransfer) {
+                        payload.distilled_loras = [
+                            {
+                                name: 'ltx\\ltx-2.3-22b-distilled-lora-384-1.1.safetensors',
+                                strength: LTX_DISTILLED_384_DEFAULT_STRENGTH
+                            }
+                        ];
+                    } else if (/^(automatic|auto)?$/i.test(payload.video.latent_upscale || 'Automatic')) {
                         payload.video.latent_upscale = 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors';
                     }
                 }
                 payload.director = director;
-                payload.workflow_override = buildLtxDirectorApiWorkflow(payload);
+                payload.workflow_override = (directorHasTransition || directorHasMotionTransfer) ? null : buildLtxDirectorApiWorkflow(payload);
             } else if (activePreset === 'Qwen' && currentActivity === 'img2img') {
                 payload.workflow_override = null;
                 payload.workflow_id = null;

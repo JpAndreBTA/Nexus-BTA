@@ -52,15 +52,22 @@ einops>=0.8
 tqdm>=4.66
 psutil>=6.0
 
-# LTX 2.3 IC-LoRA motion transfer preprocessors (Pose/DWPose, Canny, Depth)
+# LTX 2.3 IC-LoRA motion transfer preprocessors (Pose/DWPose, Canny, Depth, Cameraman).
+# The KJNodes repo below provides LTXVAddGuideMulti / LTXV Img To Video Inplace KJ,
+# which are required by Cameraman + end-frame / latent-upscale guide reapplication.
 controlnet-aux>=0.0.10
 onnxruntime>=1.18
 
-# Required ComfyUI custom-node repos for LTX 2.3 IC preprocessors.
+# Required ComfyUI custom-node repos for LTX 2.3 IC preprocessors and Cameraman.
 # Installed by scripts/install_ltx_director_deps.ps1:
 # - https://github.com/Fannovel16/comfyui_controlnet_aux.git
 # - https://github.com/yuvraj108c/ComfyUI-Video-Depth-Anything.git
 # - https://github.com/Lightricks/ComfyUI-LTXVideo.git
+# - https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
+# - https://github.com/kijai/ComfyUI-KJNodes.git
+# - https://github.com/rgthree/rgthree-comfy.git
+# - https://github.com/danTheMonk/comfyui-int-and-float.git
+# - https://github.com/ClownsharkBatwing/RES4LYF.git
 # - https://github.com/scraed/LanPaint.git
 
 # Optional attention/runtime packages, install only when compatible with the GPU and PyTorch build:

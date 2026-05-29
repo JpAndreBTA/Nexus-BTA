@@ -3019,6 +3019,8 @@ def _ltx_base_dimension_for_upscale(final_dimension: int, latent_upscale_name: s
     if factor <= 1.0:
         return max(64, int(final_dimension))
     units = max(2, int(round(int(final_dimension) / factor / 32)))
+    if re.search(r"ltx|spatial|upscal", str(latent_upscale_name or ""), flags=re.IGNORECASE) and units % 2:
+        units += 1
     return max(64, units * 32)
 
 
@@ -3185,10 +3187,18 @@ def build_basic_ltx_img2video_workflow(
         and _bool_option(video_options.get("motion_transfer_enabled"), False)
         and not text_to_video
     )
-    video_vae_ref: list[Any] = ["1", 2] if motion_transfer_route else (["21", 0] if video_vae_name else ["1", 2])
+    motion_control_mode = str(video_options.get("motion_transfer_control_mode") or "pose").strip().lower()
+    if motion_control_mode not in {"pose", "canny", "depth", "camera", "raw"}:
+        motion_control_mode = "pose"
+    video_vae_ref: list[Any] = ["21", 0] if video_vae_name else ["1", 2]
     motion_scaffold_route = bool((base_video_name or "").strip() and video_options.get("ltx_motion_scaffold"))
     use_first_last_guides = bool(not text_to_video and (has_end_reference or len(frame_guides) > 1) and not (base_video_name or "").strip())
-    transition_route = bool((use_first_last_guides or motion_scaffold_route) and _ltx_transition_lora_enabled(request, has_end_reference or len(frame_guides) > 1))
+    motion_camera_end_frame_route = bool(motion_transfer_route and motion_control_mode == "camera" and has_end_reference)
+    motion_transition_route = bool(motion_transfer_route and has_end_reference and _ltx_transition_lora_enabled(request, True))
+    transition_route = bool(
+        (use_first_last_guides or motion_scaffold_route or motion_transition_route)
+        and _ltx_transition_lora_enabled(request, has_end_reference or len(frame_guides) > 1)
+    )
 
     ic_lora_loader_ref: list[Any] | None = None
     ic_lora_downscale_ref: list[Any] | float = 1.0
@@ -3209,8 +3219,9 @@ def build_basic_ltx_img2video_workflow(
         next_lora_id += 1
 
     positive_prompt = _ltx_transition_prompt(request.prompt, request, has_end_reference)
+    use_ltx_nag_model = bool(transition_route or (motion_transfer_route and motion_control_mode == "camera"))
     transition_model_ref: list[Any] = ltx_model_ref
-    if transition_route:
+    if use_ltx_nag_model:
         transition_model_ref = ["37", 0]
     main_model_ref: list[Any] = transition_model_ref
     if not (use_latent_upscale and refine_latent_upscale):
@@ -3231,6 +3242,8 @@ def build_basic_ltx_img2video_workflow(
     first_audio_latent_ref: list[Any] | None = None
 
     preprocess_nodes: dict[str, Any] = {}
+    motion_guides_cropped_before_sampling = False
+    use_ic_timeline_guides = _bool_option(video_options.get("ltx_ic_timeline_guides"), False)
     reference_image_ref: list[Any] = ["3", 0]
     if not text_to_video:
         start_frame_image_ref: list[Any] = ["3", 0]
@@ -3259,8 +3272,8 @@ def build_basic_ltx_img2video_workflow(
         reference_image_ref = ["22", 0]
         has_end_frame = has_end_reference
         use_motion_scaffold = bool((base_video_name or "").strip() and video_options.get("ltx_motion_scaffold"))
-        if (has_end_frame or len(frame_guides) > 1) and not use_motion_scaffold:
-            guide_specs: list[dict[str, Any]] = []
+        guide_specs: list[dict[str, Any]] = []
+        if (has_end_frame or len(frame_guides) > 1) and not use_motion_scaffold and not motion_camera_end_frame_route:
             if frame_guides:
                 for guide in frame_guides[:8]:
                     guide_index_value = int(_number_or_none(guide.get("index")) if _number_or_none(guide.get("index")) is not None else 0)
@@ -3355,11 +3368,21 @@ def build_basic_ltx_img2video_workflow(
                 }
                 sampler_latent_ref = ["76", 0]
                 scheduler_latent_ref = ["76", 0]
+        if motion_camera_end_frame_route and (reference_end_image_name or "").strip() and not guide_specs:
+            guide_specs = [
+                {
+                    "image": reference_image_name,
+                    "index": 0,
+                    "strength": max(0.0, min(1.0, float(_number_or_none(video_options.get("motion_transfer_target_strength")) or 0.2))),
+                },
+                {
+                    "image": str(reference_end_image_name or ""),
+                    "index": length - 1,
+                    "strength": max(0.0, min(1.0, float(_number_or_none(video_options.get("end_frame_strength")) or 0.7))),
+                },
+            ]
         if (base_video_name or "").strip():
             motion_transfer_enabled = motion_transfer_route
-            motion_control_mode = str(video_options.get("motion_transfer_control_mode") or "pose").strip().lower()
-            if motion_control_mode not in {"pose", "canny", "depth", "camera", "raw"}:
-                motion_control_mode = "pose"
             motion_strength = float(
                 _number_or_none(video_options.get("motion_strength") or video_options.get("video_strength"))
                 or request.img2img.denoise
@@ -3369,9 +3392,26 @@ def build_basic_ltx_img2video_workflow(
                 motion_strength = float(_number_or_none(video_options.get("motion_transfer_motion_strength")) or 1.0)
             if motion_scaffold_route:
                 motion_control_mode = str(video_options.get("ltx_start_end_control_mode") or "canny").strip().lower()
+            use_camera_reference_frames = bool(
+                motion_transfer_enabled
+                and motion_control_mode == "camera"
+                and "VHS_LoadVideo" in available_nodes
+            )
             preprocess_nodes["72"] = {
-                "class_type": "LoadVideo" if (motion_transfer_enabled or motion_scaffold_route) else "VHS_LoadVideo",
+                "class_type": "VHS_LoadVideo" if use_camera_reference_frames else ("LoadVideo" if (motion_transfer_enabled or motion_scaffold_route) else "VHS_LoadVideo"),
                 "inputs": (
+                    {
+                        "video": base_video_name,
+                        "force_rate": float(fps),
+                        "custom_width": 0,
+                        "custom_height": 0,
+                        "frame_load_cap": length,
+                        "skip_first_frames": 0,
+                        "select_every_nth": 1,
+                        "format": "LTXV",
+                    }
+                    if use_camera_reference_frames
+                    else (
                     {"file": base_video_name}
                     if (motion_transfer_enabled or motion_scaffold_route)
                     else {
@@ -3384,19 +3424,23 @@ def build_basic_ltx_img2video_workflow(
                         "select_every_nth": 1,
                         "format": "LTXV",
                     }
+                    )
                 ),
-                "_meta": {"title": "LTX Base Motion Video"},
+                "_meta": {"title": "LTX Cameraman Reference Video" if use_camera_reference_frames else "LTX Base Motion Video"},
             }
             if motion_transfer_enabled or motion_scaffold_route:
-                preprocess_nodes["74"] = {
-                    "class_type": "GetVideoComponents",
-                    "inputs": {"video": ["72", 0]},
-                    "_meta": {"title": "LTX Motion Video Components"},
-                }
+                motion_resize_source_ref: list[Any] = ["72", 0]
+                if not use_camera_reference_frames:
+                    preprocess_nodes["74"] = {
+                        "class_type": "GetVideoComponents",
+                        "inputs": {"video": ["72", 0]},
+                        "_meta": {"title": "LTX Motion Video Components"},
+                    }
+                    motion_resize_source_ref = ["74", 0]
                 preprocess_nodes["75"] = {
                     "class_type": "ImageResizeKJv2",
                     "inputs": {
-                        "image": ["74", 0],
+                        "image": motion_resize_source_ref,
                         "width": width,
                         "height": height,
                         "upscale_method": "lanczos",
@@ -3410,7 +3454,7 @@ def build_basic_ltx_img2video_workflow(
                 }
             if motion_transfer_enabled:
                 target_condition_image_ref: list[Any] = start_frame_image_ref
-                if "ResizeImageMaskNode" in available_nodes:
+                if motion_control_mode != "camera" and "ResizeImageMaskNode" in available_nodes:
                     preprocess_nodes["78"] = {
                         "class_type": "ResizeImageMaskNode",
                         "inputs": {
@@ -3436,22 +3480,37 @@ def build_basic_ltx_img2video_workflow(
                             "divisible_by": 32,
                             "device": "cpu",
                         },
-                        "_meta": {"title": "Resize LTX Motion Target Like IC Workflow"},
+                        "_meta": {"title": "Resize LTX Cameraman Target Like Official Workflow" if motion_control_mode == "camera" else "Resize LTX Motion Target Like IC Workflow"},
                     }
                     target_condition_image_ref = ["78", 0]
-                preprocess_nodes["79"] = {
-                    "class_type": "LTXVImgToVideoConditionOnly",
-                    "inputs": {
-                        "vae": video_vae_ref,
-                        "image": target_condition_image_ref,
-                        "latent": sampler_latent_ref,
-                        "strength": max(0.0, min(1.0, float(_number_or_none(video_options.get("motion_transfer_target_strength")) or 1.0))),
-                        "bypass": False,
-                    },
-                    "_meta": {"title": "LTX Motion Transfer Target Condition"},
-                }
-                sampler_latent_ref = ["79", 0]
-                scheduler_latent_ref = ["79", 0]
+                if not motion_transition_route and not motion_camera_end_frame_route:
+                    target_strength = max(0.0, min(1.0, float(_number_or_none(video_options.get("motion_transfer_target_strength")) or 1.0)))
+                    if motion_control_mode == "camera":
+                        preprocess_nodes["79"] = {
+                            "class_type": "LTXVImgToVideoConditionOnly",
+                            "inputs": {
+                                "vae": video_vae_ref,
+                                "image": target_condition_image_ref,
+                                "latent": sampler_latent_ref,
+                                "strength": target_strength,
+                                "bypass": _bool_option(video_options.get("ltx_ic_image_bypass"), False),
+                            },
+                            "_meta": {"title": "LTX Cameraman First Frame Conditioning"},
+                        }
+                    else:
+                        preprocess_nodes["79"] = {
+                            "class_type": "LTXVImgToVideoConditionOnly",
+                            "inputs": {
+                                "vae": video_vae_ref,
+                                "image": target_condition_image_ref,
+                                "latent": sampler_latent_ref,
+                                "strength": target_strength,
+                                "bypass": _bool_option(video_options.get("ltx_ic_image_bypass"), False),
+                            },
+                            "_meta": {"title": "LTX Motion Transfer Target Condition (Official IC Bypass)"},
+                        }
+                    sampler_latent_ref = ["79", 0]
+                    scheduler_latent_ref = ["79", 0]
             motion_guide_image_ref: list[Any] = ["72", 0]
             if motion_transfer_enabled or motion_scaffold_route:
                 motion_guide_image_ref = ["75", 0]
@@ -3492,6 +3551,9 @@ def build_basic_ltx_img2video_workflow(
                         "_meta": {"title": "LTX Start/End Scaffold Canny IC Control" if motion_scaffold_route else "LTX Motion Transfer Canny"},
                     }
                     motion_guide_image_ref = ["271", 0]
+                elif motion_control_mode == "camera":
+                    # Cameraman IC-LoRA uses the resized reference video frames directly, unlike Pose/Canny/Depth.
+                    motion_guide_image_ref = ["75", 0]
                 elif motion_control_mode == "depth" and {"LoadVideoDepthAnythingModel", "VideoDepthAnythingProcess", "VideoDepthAnythingOutput"}.issubset(available_nodes):
                     preprocess_nodes["271"] = {
                         "class_type": "LoadVideoDepthAnythingModel",
@@ -3531,7 +3593,7 @@ def build_basic_ltx_img2video_workflow(
                         "_meta": {"title": "LTX Start/End Scaffold Canny IC Control"},
                     }
                     motion_guide_image_ref = ["274", 0]
-            if (motion_transfer_enabled or motion_scaffold_route) and "ResizeImageMaskNode" in available_nodes:
+            if (motion_transfer_enabled or motion_scaffold_route) and motion_control_mode != "camera" and "ResizeImageMaskNode" in available_nodes:
                 preprocess_nodes["84"] = {
                     "class_type": "SimpleMath+",
                     "inputs": {
@@ -3570,9 +3632,57 @@ def build_basic_ltx_img2video_workflow(
                     }
                     sampler_latent_ref = ["7", 0]
                     scheduler_latent_ref = ["7", 0]
-                    preprocess_nodes["79"]["inputs"]["latent"] = sampler_latent_ref
-                    sampler_latent_ref = ["79", 0]
-                    scheduler_latent_ref = ["79", 0]
+                    if (motion_transition_route or motion_camera_end_frame_route) and (reference_end_image_name or "").strip():
+                        preprocess_nodes["86"] = {
+                            "class_type": "LoadImage",
+                            "inputs": {"image": str(reference_end_image_name)},
+                            "_meta": {"title": "LTX Motion Transfer Optional End Frame"},
+                        }
+                        preprocess_nodes["87"] = {
+                            "class_type": "ImageResizeKJv2",
+                            "inputs": {
+                                "image": ["86", 0],
+                                "width": width,
+                                "height": height,
+                                "upscale_method": "lanczos",
+                                "keep_proportion": "crop",
+                                "pad_color": "0, 0, 0",
+                                "crop_position": "center",
+                                "divisible_by": 32,
+                                "device": "cpu",
+                            },
+                            "_meta": {"title": "Resize LTX Motion Transfer End Frame"},
+                        }
+                        guide_strength_default = (
+                            max(0.0, min(1.0, float(_number_or_none(video_options.get("motion_transfer_target_strength")) or 0.2)))
+                            if motion_control_mode == "camera"
+                            else 1.0
+                        )
+                        start_strength = max(0.0, min(1.0, float(_number_or_none(video_options.get("start_frame_strength")) or guide_strength_default)))
+                        end_strength = max(0.0, min(1.0, float(_number_or_none(video_options.get("end_frame_strength")) or guide_strength_default)))
+                        preprocess_nodes["89"] = {
+                            "class_type": "LTXVImgToVideoInplaceKJ",
+                            "inputs": {
+                                "vae": video_vae_ref,
+                                "latent": sampler_latent_ref,
+                                "num_images": "2",
+                                "num_images.image_1": target_condition_image_ref,
+                                "num_images.strength_1": start_strength,
+                                "num_images.index_1": 0,
+                                "num_images.image_2": ["87", 0],
+                                "num_images.strength_2": end_strength,
+                                "num_images.index_2": -1,
+                            },
+                            "_meta": {"title": "LTX Motion Transfer Target + End Frame Before Camera Guide"},
+                        }
+                        sampler_latent_ref = ["89", 0]
+                        scheduler_latent_ref = ["89", 0]
+                    elif "79" in preprocess_nodes:
+                        preprocess_nodes["79"]["inputs"]["latent"] = sampler_latent_ref
+                        sampler_latent_ref = ["79", 0]
+                        scheduler_latent_ref = ["79", 0]
+                ic_guide_crop = str(video_options.get("ltx_ic_crop") or "disabled")
+                ic_guide_tiled_encode = bool(video_options.get("ltx_ic_tiled_encode") or False)
                 preprocess_nodes["73"] = {
                     "class_type": "LTXAddVideoICLoRAGuide",
                     "inputs": {
@@ -3584,8 +3694,8 @@ def build_basic_ltx_img2video_workflow(
                         "frame_idx": 0,
                         "strength": max(0.0, min(1.0, motion_strength)),
                         "latent_downscale_factor": ic_lora_downscale_ref,
-                        "crop": str(video_options.get("ltx_ic_crop") or "disabled"),
-                        "use_tiled_encode": bool(video_options.get("ltx_ic_tiled_encode") or False),
+                        "crop": ic_guide_crop,
+                        "use_tiled_encode": ic_guide_tiled_encode,
                         "tile_size": int(_number_or_none(video_options.get("ltx_ic_tile_size")) or 256),
                         "tile_overlap": int(_number_or_none(video_options.get("ltx_ic_tile_overlap")) or 64),
                     },
@@ -3609,6 +3719,21 @@ def build_basic_ltx_img2video_workflow(
             ltx_negative_ref = ["73", 1]
             sampler_latent_ref = ["73", 2]
             scheduler_latent_ref = ["73", 2]
+            if motion_transfer_enabled and "LTXVCropGuides" in available_nodes:
+                preprocess_nodes["81"] = {
+                    "class_type": "LTXVCropGuides",
+                    "inputs": {
+                        "positive": ltx_positive_ref,
+                        "negative": ltx_negative_ref,
+                        "latent": sampler_latent_ref,
+                    },
+                    "_meta": {"title": "Crop LTX Motion Transfer Guides Before Sampling"},
+                }
+                ltx_positive_ref = ["81", 0]
+                ltx_negative_ref = ["81", 1]
+                sampler_latent_ref = ["81", 2]
+                scheduler_latent_ref = ["81", 2]
+                motion_guides_cropped_before_sampling = True
 
     audio_nodes: dict[str, Any] = {}
     if has_audio_context:
@@ -3645,15 +3770,33 @@ def build_basic_ltx_img2video_workflow(
         decode_latent_ref = ["19", 0]
 
     video_vae_nodes: dict[str, Any] = {}
-    if video_vae_name and not motion_transfer_route:
+    if video_vae_name:
         video_vae_nodes["21"] = {
             "class_type": "VAELoader",
             "inputs": {"vae_name": video_vae_name},
             "_meta": {"title": "Load LTX Video VAE"},
         }
 
+    refiner_positive_ref: list[Any] = ltx_positive_ref
+    refiner_negative_ref: list[Any] = ltx_negative_ref
     latent_upscale_nodes: dict[str, Any] = {}
     if use_latent_upscale:
+        crop_ic_guides_before_upscale = bool(
+            motion_transfer_route or (transition_route and use_ic_timeline_guides and ic_lora_loader_ref)
+        )
+        if crop_ic_guides_before_upscale:
+            latent_upscale_nodes["540"] = {
+                "class_type": "LTXVCropGuides",
+                "inputs": {
+                    "positive": ltx_positive_ref,
+                    "negative": ltx_negative_ref,
+                    "latent": decode_latent_ref,
+                },
+                "_meta": {"title": "Crop LTX IC Guides Before Latent Upscale"},
+            }
+            refiner_positive_ref = ["540", 0]
+            refiner_negative_ref = ["540", 1]
+            decode_latent_ref = ["540", 2]
         latent_upscale_nodes["23"] = {
             "class_type": "LatentUpscaleModelLoader",
             "inputs": {"model_name": latent_upscale_name},
@@ -3666,14 +3809,23 @@ def build_basic_ltx_img2video_workflow(
         }
         refiner_latent_ref: list[Any] = ["24", 0]
         if not text_to_video:
-            if ((reference_end_image_name or "").strip() or len(frame_guides) > 1) and not use_motion_scaffold:
-                refiner_positive_ref = ltx_positive_ref
-                refiner_negative_ref = ltx_negative_ref
+            if ((reference_end_image_name or "").strip() or len(frame_guides) > 1) and not use_motion_scaffold and not motion_camera_end_frame_route:
+                if not crop_ic_guides_before_upscale:
+                    refiner_positive_ref = ltx_positive_ref
+                    refiner_negative_ref = ltx_negative_ref
                 if not (use_ic_timeline_guides and transition_route and ic_lora_loader_ref):
+                    use_guide_multi_after_upscale = bool((motion_transition_route or motion_camera_end_frame_route) and "LTXVAddGuideMulti" in available_nodes)
                     upscale_in_place_inputs: dict[str, Any] = {
                         "vae": video_vae_ref,
                         "latent": ["24", 0],
                         "num_images": str(len(guide_specs)),
+                    }
+                    upscale_guide_multi_inputs: dict[str, Any] = {
+                        "positive": refiner_positive_ref,
+                        "negative": refiner_negative_ref,
+                        "vae": video_vae_ref,
+                        "latent": ["24", 0],
+                        "num_guides": str(len(guide_specs)),
                     }
                     for guide_index, guide in enumerate(guide_specs, start=1):
                         load_id = "3" if guide_index == 1 and guide["image"] == reference_image_name else str(550 + guide_index)
@@ -3700,34 +3852,91 @@ def build_basic_ltx_img2video_workflow(
                             },
                             "_meta": {"title": f"Resize LTX Upscale Timeline Frame {guide_index}"},
                         }
-                        latent_upscale_nodes[preprocess_id] = {
-                            "class_type": "LTXVPreprocess",
-                            "inputs": {"image": [resize_id, 0], "img_compression": img_compression},
-                            "_meta": {"title": f"LTX Upscale Timeline Frame {guide_index} Preprocess"},
+                        if use_guide_multi_after_upscale:
+                            upscale_guide_multi_inputs[f"num_guides.image_{guide_index}"] = [resize_id, 0]
+                            upscale_guide_multi_inputs[f"num_guides.frame_idx_{guide_index}"] = guide["index"]
+                            upscale_guide_multi_inputs[f"num_guides.strength_{guide_index}"] = guide["strength"]
+                        else:
+                            latent_upscale_nodes[preprocess_id] = {
+                                "class_type": "LTXVPreprocess",
+                                "inputs": {"image": [resize_id, 0], "img_compression": img_compression},
+                                "_meta": {"title": f"LTX Upscale Timeline Frame {guide_index} Preprocess"},
+                            }
+                            upscale_in_place_inputs[f"num_images.image_{guide_index}"] = [preprocess_id, 0]
+                            upscale_in_place_inputs[f"num_images.strength_{guide_index}"] = guide["strength"]
+                            upscale_in_place_inputs[f"num_images.index_{guide_index}"] = guide["index"]
+                    if use_guide_multi_after_upscale:
+                        latent_upscale_nodes["25"] = {
+                            "class_type": "LTXVAddGuideMulti",
+                            "inputs": upscale_guide_multi_inputs,
+                            "_meta": {"title": "Reapply LTX Camera Start/End Guides After Latent Upscale"},
                         }
-                        upscale_in_place_inputs[f"num_images.image_{guide_index}"] = [preprocess_id, 0]
-                        upscale_in_place_inputs[f"num_images.strength_{guide_index}"] = guide["strength"]
-                        upscale_in_place_inputs[f"num_images.index_{guide_index}"] = guide["index"]
+                        refiner_positive_ref = ["25", 0]
+                        refiner_negative_ref = ["25", 1]
+                        refiner_latent_ref = ["25", 2]
+                    else:
+                        latent_upscale_nodes["25"] = {
+                            "class_type": "LTXVImgToVideoInplaceKJ",
+                            "inputs": upscale_in_place_inputs,
+                            "_meta": {"title": "Reapply LTX Start/End Frames After Latent Upscale"},
+                        }
+                        refiner_latent_ref = ["25", 0]
+            else:
+                if motion_transfer_route and motion_control_mode == "camera":
+                    camera_upscale_strength = max(0.0, min(1.0, float(_number_or_none(video_options.get("motion_transfer_target_strength")) if _number_or_none(video_options.get("motion_transfer_target_strength")) is not None else 0.2)))
+                    if "LTXVImgToVideoInplace" in available_nodes:
+                        latent_upscale_nodes["25"] = {
+                            "class_type": "LTXVImgToVideoInplace",
+                            "inputs": {
+                                "vae": video_vae_ref,
+                                "image": reference_image_ref,
+                                "latent": ["24", 0],
+                                "strength": camera_upscale_strength,
+                                "bypass": False,
+                            },
+                            "_meta": {"title": "Reapply LTX Camera Reference After Latent Upscale"},
+                        }
+                        refiner_latent_ref = ["25", 0]
+                    elif "LTXVImgToVideoInplaceKJ" in available_nodes:
+                        latent_upscale_nodes["25"] = {
+                            "class_type": "LTXVImgToVideoInplaceKJ",
+                            "inputs": {
+                                "vae": video_vae_ref,
+                                "latent": ["24", 0],
+                                "num_images": "1",
+                                "num_images.image_1": reference_image_ref,
+                                "num_images.strength_1": camera_upscale_strength,
+                                "num_images.index_1": 0,
+                            },
+                            "_meta": {"title": "Reapply LTX Camera Reference After Latent Upscale"},
+                        }
+                        refiner_latent_ref = ["25", 0]
+                    else:
+                        latent_upscale_nodes["25"] = {
+                            "class_type": "LTXVImgToVideoConditionOnly",
+                            "inputs": {
+                                "vae": video_vae_ref,
+                                "image": reference_image_ref,
+                                "latent": ["24", 0],
+                                "strength": camera_upscale_strength,
+                            },
+                            "_meta": {"title": "Reapply LTX Camera Reference After Latent Upscale"},
+                        }
+                        refiner_latent_ref = ["25", 0]
+                else:
                     latent_upscale_nodes["25"] = {
-                        "class_type": "LTXVImgToVideoInplaceKJ",
-                        "inputs": upscale_in_place_inputs,
-                        "_meta": {"title": "Reapply LTX Start/End Frames After Latent Upscale"},
+                        "class_type": "LTXVImgToVideoConditionOnly",
+                        "inputs": {
+                            "vae": video_vae_ref,
+                            "image": reference_image_ref,
+                            "latent": ["24", 0],
+                            "strength": float(video_options.get("upscale_condition_strength") or 1.0),
+                        },
+                        "_meta": {"title": "Reapply Reference After Latent Upscale"},
                     }
                     refiner_latent_ref = ["25", 0]
-            else:
-                latent_upscale_nodes["25"] = {
-                    "class_type": "LTXVImgToVideoConditionOnly",
-                    "inputs": {
-                        "vae": video_vae_ref,
-                        "image": reference_image_ref,
-                        "latent": ["24", 0],
-                        "strength": float(video_options.get("upscale_condition_strength") or 1.0),
-                    },
-                    "_meta": {"title": "Reapply Reference After Latent Upscale"},
-                }
-                refiner_latent_ref = ["25", 0]
         if refine_latent_upscale:
-            if not text_to_video and (not (reference_end_image_name or "").strip() or use_motion_scaffold):
+            if not text_to_video and not motion_transfer_route and (not (reference_end_image_name or "").strip() or use_motion_scaffold):
                 latent_upscale_nodes["540"] = {
                     "class_type": "LTXVCropGuides",
                     "inputs": {
@@ -3737,8 +3946,8 @@ def build_basic_ltx_img2video_workflow(
                     },
                     "_meta": {"title": "Crop LTX Guides Before Upscale Refiner"},
                 }
-                refiner_positive_ref: list[Any] = ["540", 0]
-                refiner_negative_ref: list[Any] = ["540", 1]
+                refiner_positive_ref = ["540", 0]
+                refiner_negative_ref = ["540", 1]
                 refiner_latent_ref = ["540", 2]
             elif not text_to_video:
                 refiner_positive_ref = refiner_positive_ref
@@ -3763,7 +3972,12 @@ def build_basic_ltx_img2video_workflow(
             "inputs": {"sigmas": LTX_TRANSITION_REFINER_SIGMAS if transition_route else LTX_UPSCALE_REFINER_SIGMAS},
             "_meta": {"title": "Official LTX 2.3 Upscale Refiner Sigmas"},
             }
-            refiner_model_ref = add_detailer_lora(transition_model_ref, "LTX Refiner Detailer LoRA")
+            refiner_base_model_ref = (
+                ltx_model_ref
+                if (transition_route and use_ic_timeline_guides and ic_lora_loader_ref)
+                else transition_model_ref
+            )
+            refiner_model_ref = add_detailer_lora(refiner_base_model_ref, "LTX Refiner Detailer LoRA")
             latent_upscale_nodes["28"] = {
                 "class_type": "CFGGuider",
                 "inputs": {
@@ -3817,7 +4031,7 @@ def build_basic_ltx_img2video_workflow(
         create_video_inputs["audio"] = ["33", 0]
 
     guide_crop_nodes: dict[str, Any] = {}
-    if motion_transfer_route:
+    if motion_transfer_route and not motion_guides_cropped_before_sampling and not (use_latent_upscale and refine_latent_upscale):
         guide_crop_nodes["81"] = {
             "class_type": "LTXVCropGuides",
             "inputs": {
@@ -3865,7 +4079,13 @@ def build_basic_ltx_img2video_workflow(
         create_video_inputs["images"] = create_video_image_ref
 
     sigma_node: dict[str, Any]
-    if steps == 8:
+    if motion_transfer_route and motion_control_mode == "camera":
+        sigma_node = {
+            "class_type": "ManualSigmas",
+            "inputs": {"sigmas": LTX_DISTILLED_8_STEP_SIGMAS},
+            "_meta": {"title": "Official LTX 2.3 Cameraman Sigmas"},
+        }
+    elif steps == 8:
         sigma_node = {
             "class_type": "ManualSigmas",
             "inputs": {"sigmas": LTX_TRANSITION_8_STEP_SIGMAS if transition_route else LTX_DISTILLED_8_STEP_SIGMAS},
@@ -4034,7 +4254,7 @@ def build_basic_ltx_img2video_workflow(
             "_meta": {"title": "Decode Frames"},
         },
     }
-    if transition_route:
+    if use_ltx_nag_model:
         workflow["37"] = {
             "class_type": "LTX2_NAG",
             "inputs": {
@@ -4045,7 +4265,7 @@ def build_basic_ltx_img2video_workflow(
                 "nag_cond_video": ltx_negative_ref,
                 "inplace": True,
             },
-            "_meta": {"title": "Official LTX Transition NAG"},
+            "_meta": {"title": "Official LTX Cameraman/Transition NAG"},
         }
     if text_to_video:
         workflow.pop("3", None)

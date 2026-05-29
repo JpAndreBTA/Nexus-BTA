@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "test-results"
 RESULTS.mkdir(exist_ok=True)
 BASE = "http://127.0.0.1:7861/ui"
-MOTION_GUIDE = ROOT / "input" / "nexus_ltx_wan_motion_guide_4813b9fc9a.mp4"
+MOTION_GUIDE = ROOT / "input" / "nexus_ltx_wan_motion_guide_56cae91f3b.mp4"
+CAMERA_MOTION_GUIDE = ROOT / "input" / "CameraMan_ref.mp4"
 TARGET_IMAGE = ROOT / "input" / "Smoke_Character.png"
 START_REFERENCE = ROOT / "input" / "nexus_smoke_reference.png"
 END_REFERENCE = ROOT / "input" / "nexus_smoke_reference2.jpg"
@@ -30,8 +31,8 @@ WIDTH = int(os.environ.get("NEXUS_LTX_WIDTH") or "512")
 HEIGHT = int(os.environ.get("NEXUS_LTX_HEIGHT") or "512")
 STEPS = int(os.environ.get("NEXUS_LTX_STEPS") or "4")
 CFG = float(os.environ.get("NEXUS_LTX_CFG") or "1")
-FPS = float(os.environ.get("NEXUS_LTX_FPS") or "8")
-SECONDS = float(os.environ.get("NEXUS_LTX_SECONDS") or "1")
+FPS = float(os.environ.get("NEXUS_LTX_FPS") or "24")
+SECONDS = float(os.environ.get("NEXUS_LTX_SECONDS") or "2")
 ENABLE_DETAILER = os.environ.get("NEXUS_LTX_ENABLE_DETAILER", "").strip().lower() in {"1", "true", "yes", "on"}
 RUN_MOTION = os.environ.get("NEXUS_LTX_RUN_MOTION", "1").strip().lower() not in {"0", "false", "no", "off"}
 RUN_START_END = os.environ.get("NEXUS_LTX_RUN_START_END", "1").strip().lower() not in {"0", "false", "no", "off"}
@@ -49,9 +50,13 @@ START_END_MIN_CHANGED_ANY10 = 0.12
 
 
 def require_inputs() -> None:
-    missing = [path for path in (MOTION_GUIDE, TARGET_IMAGE, START_REFERENCE, END_REFERENCE) if not path.exists()]
+    missing = [path for path in (MOTION_GUIDE, CAMERA_MOTION_GUIDE, TARGET_IMAGE, START_REFERENCE, END_REFERENCE) if not path.exists()]
     if missing:
         raise FileNotFoundError("Missing requested frontend smoke input(s): " + ", ".join(str(path) for path in missing))
+
+
+def motion_guide_for_mode(mode: str) -> Path:
+    return CAMERA_MOTION_GUIDE if str(mode or "").strip().lower() == "camera" else MOTION_GUIDE
 
 
 def js_json(page: Page, expression: str):
@@ -94,7 +99,7 @@ def set_ltx_linear_defaults(page: Page) -> None:
           syncSlider('height');
           updateSliderFromNumber('steps');
           updateSliderFromNumber('cfg');
-          if (document.querySelector('#latentUpscaleSelect')) document.querySelector('#latentUpscaleSelect').value = 'None';
+          if (document.querySelector('#latentUpscaleSelect')) document.querySelector('#latentUpscaleSelect').value = 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors';
           if (document.querySelector('#activeAudioToggle')) document.querySelector('#activeAudioToggle').checked = false;
           syncGenerationActionUi();
         }"""
@@ -106,12 +111,16 @@ def force_battery_fields(page: Page) -> None:
     page.locator("#heightInput").fill(str(HEIGHT))
     page.locator("#stepsValue").fill(str(STEPS))
     page.locator("#cfgValue").fill(str(CFG))
+    page.locator("#fpsInput").fill(str(FPS))
+    if not page.locator("#secondsInput").evaluate("el => !!el.readOnly"):
+        page.locator("#secondsInput").fill(str(SECONDS))
     page.evaluate(
         """() => {
           syncSlider('width');
           syncSlider('height');
           updateSliderFromNumber('steps');
           updateSliderFromNumber('cfg');
+          if (typeof syncLtxLinearMotionTransferTimeLock === 'function') syncLtxLinearMotionTransferTimeLock();
           if (document.querySelector('#distilledLoraOneSelect')) document.querySelector('#distilledLoraOneSelect').value = 'None';
           if (document.querySelector('#distilledLoraTwoSelect')) document.querySelector('#distilledLoraTwoSelect').value = 'ltx\\\\ltx-2.3-22b-distilled-lora-384-1.1.safetensors';
           if (document.querySelector('#distilledLoraTwoStrength')) document.querySelector('#distilledLoraTwoStrength').value = '0.5';
@@ -413,12 +422,13 @@ def motion_stats(frames: np.ndarray) -> dict[str, float]:
     }
 
 
-def analyze_ltx_motion_transfer_motion(path: Path, case: str) -> dict[str, object]:
-    guide_stats = motion_stats(read_luma_frames(MOTION_GUIDE, case, "guide"))
+def analyze_ltx_motion_transfer_motion(path: Path, case: str, guide_path: Path | None = None) -> dict[str, object]:
+    guide_stats = motion_stats(read_luma_frames(guide_path or MOTION_GUIDE, case, "guide"))
     stats = motion_stats(read_luma_frames(path, case, "final"))
-    min_last_mad = max(10.0, guide_stats["last_mad"] * 0.45)
-    min_changed_any10 = max(MOTION_MIN_CHANGED_ANY10, guide_stats["changed_any10"] * 0.55)
-    min_consecutive_mad = max(MOTION_MIN_CONSECUTIVE_MAD, guide_stats["consecutive_mad"] * 0.65)
+    is_camera = "camera" in case.lower()
+    min_last_mad = max(8.0 if is_camera else 10.0, guide_stats["last_mad"] * (0.40 if is_camera else 0.45))
+    min_changed_any10 = max(0.28 if is_camera else MOTION_MIN_CHANGED_ANY10, guide_stats["changed_any10"] * (0.50 if is_camera else 0.55))
+    min_consecutive_mad = max(2.3 if is_camera else MOTION_MIN_CONSECUTIVE_MAD, guide_stats["consecutive_mad"] * (0.55 if is_camera else 0.65))
     frozen_like = (
         stats["last_mad"] < min_last_mad
         or stats["changed_any10"] < min_changed_any10
@@ -500,12 +510,11 @@ def click_global_generate(page: Page) -> str:
 
 
 def run_motion_transfer_mode(page: Page, mode: str) -> dict[str, object]:
+    guide_path = motion_guide_for_mode(mode)
     page.evaluate("() => clearReferenceImage({ quiet: true })")
-    page.locator("#referenceImageInput").set_input_files([str(MOTION_GUIDE), str(TARGET_IMAGE)])
-    page.wait_for_function("() => shouldPreprocessLtxMotionTransfer()", timeout=60000)
+    page.locator("#referenceImageInput").set_input_files([str(guide_path), str(TARGET_IMAGE)])
     force_battery_fields(page)
     page.evaluate("mode => setLtxMotionTransferMode(mode)", mode)
-    page.wait_for_function("() => shouldPreprocessLtxMotionTransfer()", timeout=60000)
     payload = collect_payload(page)
     assert_common_payload(payload, f"motion-{mode}-preprocess")
     video = payload.get("video")
@@ -520,23 +529,26 @@ def run_motion_transfer_mode(page: Page, mode: str) -> dict[str, object]:
     if not isinstance(refs, list) or len(refs) != 1 or not str(refs[0]).startswith("data:image/"):
         raise AssertionError(f"motion-{mode}: missing Smoke_Character target image.")
 
-    page.locator("#globalGenerateButton").click()
-    page.wait_for_function("() => document.querySelector('#ltxMotionPreprocessBar')?.classList.contains('flex')", timeout=900000)
-    page.wait_for_function("() => !generationUiActive", timeout=30000)
-    preprocess_item = js_json(page, "ltxMotionPreprocessReady")
-    preprocess_media = str(
-        preprocess_item.get("mediaType")
-        or preprocess_item.get("filename")
-        or preprocess_item.get("path")
-        or preprocess_item.get("url")
-        or preprocess_item.get("image")
-        or ""
-    ).lower()
-    if "video" not in preprocess_media and not preprocess_media.split("?", 1)[0].endswith((".mp4", ".webm", ".mov")):
-        raise AssertionError(f"motion-{mode}: preprocess did not return a video preview: {preprocess_item!r}")
-    preprocess_path = str(preprocess_item.get("path") or preprocess_item.get("filename") or "")
-    if not preprocess_path.replace("\\", "/").startswith("Motion_Transfer/"):
-        raise AssertionError(f"motion-{mode}: preprocess output was not stored under Motion_Transfer: {preprocess_item!r}")
+    preprocess_item: dict[str, object] | None = None
+    if mode != "camera":
+        page.wait_for_function("() => shouldPreprocessLtxMotionTransfer()", timeout=60000)
+        page.locator("#globalGenerateButton").click()
+        page.wait_for_function("() => document.querySelector('#ltxMotionPreprocessBar')?.classList.contains('flex')", timeout=900000)
+        page.wait_for_function("() => !generationUiActive", timeout=30000)
+        preprocess_item = js_json(page, "ltxMotionPreprocessReady")
+        preprocess_media = str(
+            preprocess_item.get("mediaType")
+            or preprocess_item.get("filename")
+            or preprocess_item.get("path")
+            or preprocess_item.get("url")
+            or preprocess_item.get("image")
+            or ""
+        ).lower()
+        if "video" not in preprocess_media and not preprocess_media.split("?", 1)[0].endswith((".mp4", ".webm", ".mov")):
+            raise AssertionError(f"motion-{mode}: preprocess did not return a video preview: {preprocess_item!r}")
+        preprocess_path = str(preprocess_item.get("path") or preprocess_item.get("filename") or "")
+        if not preprocess_path.replace("\\", "/").startswith("Motion_Transfer/"):
+            raise AssertionError(f"motion-{mode}: preprocess output was not stored under Motion_Transfer: {preprocess_item!r}")
 
     final_payload = collect_payload(page)
     assert_common_payload(final_payload, f"motion-{mode}-generate")
@@ -546,13 +558,16 @@ def run_motion_transfer_mode(page: Page, mode: str) -> dict[str, object]:
     distilled = final_payload.get("distilled_loras")
     if not isinstance(distilled, list) or len(distilled) != 1 or "384" not in str(distilled[0].get("name") if isinstance(distilled[0], dict) else ""):
         raise AssertionError(f"motion-{mode}: expected official IC-LoRA distilled 384 stack only, got {distilled!r}")
-    page.locator("#ltxMotionPreprocessBar button", has_text="Generate").click()
-    page.wait_for_function("() => activeGenerationJobId", timeout=30000)
-    job_id = str(page.evaluate("() => activeGenerationJobId"))
+    if mode == "camera":
+        job_id = click_global_generate(page)
+    else:
+        page.locator("#ltxMotionPreprocessBar button", has_text="Generate").click()
+        page.wait_for_function("() => activeGenerationJobId", timeout=30000)
+        job_id = str(page.evaluate("() => activeGenerationJobId"))
     job = poll_job(page, job_id)
     final_path = local_output_path(final_video_output(job, f"motion-{mode}"))
     quality = analyze_video_visual_quality(final_path, f"motion_{mode}")
-    motion_quality = analyze_ltx_motion_transfer_motion(final_path, f"motion_{mode}")
+    motion_quality = analyze_ltx_motion_transfer_motion(final_path, f"motion_{mode}", guide_path)
     page.wait_for_function("() => !generationUiActive", timeout=30000)
     gallery_item = latest_video_metadata(page)
     metadata = gallery_item.get("metadata") or gallery_item.get("info") or {}
@@ -655,6 +670,7 @@ def main() -> None:
         "run_motion": RUN_MOTION,
         "run_start_end": RUN_START_END,
         "motion_guide": str(MOTION_GUIDE),
+        "camera_motion_guide": str(CAMERA_MOTION_GUIDE),
         "target": str(TARGET_IMAGE),
         "start": str(START_REFERENCE),
         "end": str(END_REFERENCE),

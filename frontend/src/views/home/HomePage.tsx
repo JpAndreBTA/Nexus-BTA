@@ -73,7 +73,7 @@ function modelMatchesPreset(model: { label: string; name: string }, preset: stri
 }
 
 function controlNetCompatiblePreset(preset: string) {
-  return ['sd', 'sd15', 'xl', 'sdxl', 'ltx'].includes(preset.toLowerCase());
+  return ['sd', 'sd15', 'xl', 'sdxl', 'ltx', 'flux', 'qwen', 'zimageturbo', 'zimage'].includes(preset.toLowerCase());
 }
 
 function videoPreset(preset: string) {
@@ -107,7 +107,30 @@ function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>
       }));
   }
 
-  const presetTokens = ['xl', 'sdxl'].includes(lowerPreset) ? ['sdxl', 'xl'] : ['sd15', 'sd1', 'v11', '1.5'];
+  if (['qwen', 'zimageturbo', 'zimage'].includes(lowerPreset)) {
+    const categories = [
+      ...(((catalog?.categories.model_patches ?? []) as CatalogAsset[])),
+      ...(((catalog?.categories.controlnet ?? []) as CatalogAsset[])),
+    ];
+    const presetTokens = lowerPreset === 'qwen'
+      ? ['qwen', 'diffsynth', 'instantx']
+      : ['zimage', 'z-image', 'z_image', 'fun', 'controlnet-union'];
+    return categories
+      .filter((model) => {
+        const haystack = `${model.name} ${model.folder} ${model.relative_path} ${model.tags?.join(' ')}`.toLowerCase();
+        return presetTokens.some((token) => haystack.includes(token));
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((model) => ({
+        label: model.relative_path || model.name,
+        value: model.relative_path || model.path,
+        name: model.name,
+      }));
+  }
+
+  const presetTokens = lowerPreset === 'flux'
+    ? ['flux', 'flux.1', 'flux1', 'union']
+    : (['xl', 'sdxl'].includes(lowerPreset) ? ['sdxl', 'xl'] : ['sd15', 'sd1', 'v11', '1.5']);
   const typeTokens: Record<string, string[]> = {
     canny: ['canny'],
     depth: ['depth'],
@@ -119,6 +142,7 @@ function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>
   return ((catalog?.categories.controlnet ?? []) as CatalogAsset[])
     .filter((model) => {
       const haystack = `${model.name} ${model.folder} ${model.relative_path} ${model.tags?.join(' ')}`.toLowerCase();
+      if (lowerPreset === 'flux' && haystack.includes('union')) return presetTokens.some((token) => haystack.includes(token));
       return presetTokens.some((token) => haystack.includes(token)) && tokens.some((token) => haystack.includes(token));
     })
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -427,6 +451,11 @@ export function HomePage() {
         batch_count: 1,
         mask_blur: generation.maskBlur,
         mask_content: generation.maskContent,
+        inpaint_engine: generation.inpaintEngine,
+        differential_diffusion: generation.inpaintEngine === 'differential',
+        differential_strength: generation.differentialStrength,
+        lanpaint_thinking_steps: generation.lanpaintThinkingSteps,
+        lanpaint_prompt_mode: 'Image First',
         reference_image: generation.referenceImage,
         reference_images: allReferenceImages,
         mask_image: generation.img2imgMode === 'inpaint' ? generation.inpaintMaskImage : null,
@@ -671,18 +700,33 @@ export function HomePage() {
                   </select>
                 </label>
                 {generation.img2imgMode === 'inpaint' && (
-                  <div className="two-col">
+                  <>
                     <label className="field">
-                      <span>Mask Blur</span>
-                      <input type="number" min={0} max={64} value={generation.maskBlur} onChange={(event) => generation.setMaskBlur(Number(event.currentTarget.value))} />
-                    </label>
-                    <label className="field">
-                      <span>Fill</span>
-                      <select value={generation.maskContent} onChange={(event) => generation.setMaskContent(event.currentTarget.value)}>
-                        <option>Original</option>
+                      <span>Engine</span>
+                      <select value={generation.inpaintEngine} onChange={(event) => generation.setInpaintEngine(event.currentTarget.value as 'lanpaint' | 'differential' | 'default')}>
+                        <option value="lanpaint">LanPaint</option>
+                        <option value="differential">Differential Diffusion</option>
+                        <option value="default">Default VAE Inpaint</option>
                       </select>
                     </label>
-                  </div>
+                    <div className="two-col">
+                      <label className="field">
+                        <span>Mask Blur</span>
+                        <input type="number" min={0} max={64} value={generation.maskBlur} onChange={(event) => generation.setMaskBlur(Number(event.currentTarget.value))} />
+                      </label>
+                      {generation.inpaintEngine === 'lanpaint' ? (
+                        <label className="field">
+                          <span>Think Steps</span>
+                          <input type="number" min={0} max={100} value={generation.lanpaintThinkingSteps} onChange={(event) => generation.setLanpaintThinkingSteps(Number(event.currentTarget.value))} />
+                        </label>
+                      ) : (
+                        <label className="field">
+                          <span>Diff Strength</span>
+                          <input type="number" min={0} max={1} step={0.01} value={generation.differentialStrength} onChange={(event) => generation.setDifferentialStrength(Number(event.currentTarget.value))} />
+                        </label>
+                      )}
+                    </div>
+                  </>
                 )}
               </>
             )}

@@ -6,6 +6,8 @@ New here? Start with `run.bat`, open the UI, pick a model tab, write a simple pr
 
 ## First Look
 
+<video src="https://i.imgur.com/v9pnHrc.mp4" controls muted loop playsinline width="100%"></video>
+
 The `examples/` folder includes quick visual references for the main workspaces.
 
 ![Nexus BTA main interface](examples/Ui_layout.png)
@@ -22,11 +24,11 @@ Switch to Node Workflow when you want to inspect or tune the generated Comfy gra
 
 ![LTX 2.3 linear video workspace](examples/LTX_2.3.png)
 
-The LTX 2.3 Linear View keeps img2video/txt2video controls synchronized with the Comfy workflow, including video VAE, audio VAE, distilled LoRAs, latent upscaling and the optional Transition LoRA for start/end frame motion.
+The LTX 2.3 Linear View keeps img2video/txt2video controls synchronized with the Comfy workflow, including video VAE, audio VAE, distilled LoRAs, latent upscaling, IC-LoRA identity/detailing, Motion Transfer and the optional Transition LoRA for start/end frame motion.
 
 ![LTX 2.3 Director timeline](examples/LTX_2.3Director.png)
 
-The LTX 2.3 Director Suite adds a timeline for image, text, video and audio segments, with per-segment prompts, negative prompts, crop/camera controls, custom audio and generated speech/ambience routing.
+The LTX 2.3 Director Suite adds a timeline for image, text, video and audio segments, with per-segment prompts, negative prompts, crop/camera controls, custom audio, generated speech/ambience routing, Motion Transfer segments, Transition LoRA end frames and joined final video export.
 
 ![Civitai browser modal](examples/Civitai_Modal.png)
 
@@ -37,9 +39,13 @@ The Civitai modal helps browse models, download assets, and route them into the 
 - One launcher: `run.bat` starts Nexus and the embedded ComfyUI runtime.
 - Smart model folders: checkpoints, UNET/diffusion models, VAEs, text encoders, LoRAs, ControlNet, and video assets are discovered automatically.
 - Template-aware side menu: preset changes keep workflow nodes, CFG, steps, resolution, video motion, LoRA stacks, and ControlNet in sync.
+- LTX 2.3 Motion Transfer: Pose, Canny, Depth and Camera/Cameraman modes use IC-LoRA-compatible workflows with target identity conditioning, latent upscale x2, optional IC Detailer and Director segment rendering.
+- Modern ControlNet routes: Flux, Qwen and Z-Image/ZImage presets expose compatible ControlNet model selection from the side menu and Civitai model browser.
+- Inpaint workspace: LanPaint is the default inpaint template, Differential Diffusion remains selectable, and the canvas includes paint/remove masks, outpaint expand canvas, magic wand/select object, undo and redo.
+- Extras video tools: video upscale can route through classic upscalers, FlashVSR-ready and SeedVR2-ready engines, LTX IC Detailer refine/upscale, interpolation, denoise, face restoration and MP4 encode.
 - Template-scoped references: Qwen multi-reference image slots stay on Qwen, while SD/SDXL/Flux/Lumina/Anima/WAN/LTX return to their own img2img or img2video source controls.
 - Clean gallery: final outputs refresh on launch, when the gallery opens, and after a new generation. Temporary Comfy previews are ignored.
-- Organized outputs: image saves land under `output/image/` and video saves land under `output/video/`, with date/time prefixes for easier sorting.
+- Organized outputs: image saves land under `output/image/`, normal video saves land under `output/video/`, Director joined videos land under `output/videos/`, and Director segment renders remain archived under `output/director/<date_time>/segments/`.
 - Visual workflow view: inspect, link, multi-select, move and tune nodes without leaving the app; edited graphs are sent through the backend as Comfy workflow overrides.
 - Civitai and Concept LoRA modals: browse, download, preview, multi-select, and route assets into the right local folders.
 
@@ -91,9 +97,10 @@ Use [requirements/model_assets.md](requirements/model_assets.md) as the friendly
 - Textual inversion files live in `models/embeddings`; the prompt Emb buttons insert them into positive or negative prompts for SD 1.5, SDXL, Pony and Illustrious routes.
 - WAN 2.2 and LTX 2.3 use video-specific encoders, so use their model, VAE, text encoder and distilled LoRA assets instead of classic textual inversion. WAN 2.2 4-step runs need the matching high/low 4-step LoRA pair under `models/loras/wan`.
 - LTX 2.3 assets are available from [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3); WAN 2.2 assets are available from [Wan-AI](https://huggingface.co/Wan-AI).
-- LTX 2.3 latent upscale is part of the normal route. For a `512x512` output, Nexus samples the base latent at `256x256`, applies `LatentUpscaleModelLoader` + `LTXVLatentUpsampler`, refines it, and then decodes the final video.
+- LTX 2.3 latent upscale is part of the normal route. For a `512x512` output, Nexus samples the base latent at `256x256`, applies `LatentUpscaleModelLoader` + `LTXVLatentUpsampler` with `ltx-2.3-spatial-upscaler-x2-1.1.safetensors`, refines it, and then decodes the final video.
 - LTX 2.3 start/end frame and transition-style txt2video/img2video use [joyfox/LTX-2.3-Transition-LORA](https://huggingface.co/joyfox/LTX-2.3-Transition-LORA) with trigger `zhuanchang`, installed under `models/loras/ltx_transition`.
-- Extras uses `models/upscale_models` for image/video raster upscalers, `models/frame_interpolation` for RIFE/FILM frame interpolation, and `models/background_removal` for 2026 background-removal routes such as ComfyUI native BiRefNet. Alpha-aware video export is exposed as PNG sequence or MOV ProRes 4444.
+- LTX 2.3 Motion Transfer uses IC-LoRA Union Control for Pose/Canny/Depth and the CameraMan IC-LoRA for camera motion transfer under `models/loras/ltx_ic`.
+- Extras uses `models/upscale_models` for image/video raster upscalers, `models/video_restore_models` for FlashVSR/SeedVR2-style video restoration engines, `models/frame_interpolation` for RIFE/FILM frame interpolation, and `models/background_removal` for 2026 background-removal routes such as ComfyUI native BiRefNet. Alpha-aware video export is exposed as PNG sequence or MOV ProRes 4444.
 - Remove BG expects `models/background_removal/birefnet.safetensors` for the native ComfyUI BiRefNet workflow. RMBG-2.0, InSPyReNet and BEN/BEN2 remain selectable compatibility routes when matching ComfyUI custom nodes are installed.
 
 ## Credits
@@ -108,21 +115,25 @@ Generated media is grouped by type:
 ```text
 output/image/YYYYMMDD_HHMMSS_<preset>_<activity>_...
 output/video/YYYYMMDD_HHMMSS_<preset>_<activity>_...
+output/videos/YYYYMMDD_HHMMSS_LTX_DIRECTOR_SEGMENTS_...   # Joined Director renders
+output/director/YYYYMMDD_HHMMSS/segments/...              # Per-segment Director videos
 output/extras/video/YYYYMMDD_HHMMSS/...   # Extras PNG sequences
 ```
 
-Nexus applies this naming layer to default templates, loaded workflows and visual workflow overrides before sending the job to ComfyUI. Normal video generations stay in the `output/video` root. Extras video PNG sequence exports receive a per-run dated folder under `output/extras/video` so frame sequences do not mix with other runs. The Gallery can navigate output folders with visible folder cards, back/forward history, optional folder picker and date/type sorting.
+Nexus applies this naming layer to default templates, loaded workflows and visual workflow overrides before sending the job to ComfyUI. Normal video generations stay in the `output/video` root. LTX Director segment renders are preserved in the Director archive and the joined timeline video is exported to `output/videos`. Extras video PNG sequence exports receive a per-run dated folder under `output/extras/video` so frame sequences do not mix with other runs. The Gallery can navigate output folders with visible folder cards, back/forward history, optional folder picker and date/type sorting.
 
 ## Verified Smoke Battery
 
-Last verified on May 24, 2026:
+Last verified on May 29, 2026:
 
 - SD 1.5 and SDXL image generation, img2img, inpaint, and ControlNet Canny.
-- Qwen at 512x512 with CFG 1 and 4 steps.
+- Qwen, Flux and Z-Image/ZImage ControlNet routes at 512x512 with side-menu model selection.
 - WAN 2.2 at 512x512, 2 seconds, 24 FPS.
-- LTX 2.3 at 512x512, 4-5 seconds, 24 FPS, with latent upscale/refiner routed in both Linear View and Director Suite.
-- Extras image upscale with Remacri/UltraSharp/RealESRGAN, RIFE `rife_v4.26`, video upscale, PNG sequence alpha and MOV ProRes 4444 alpha export.
+- LTX 2.3 Linear View at 512x512/768x512, 24 FPS, 4 steps, CFG 1, with latent upscale x2, start/end frame, Transition LoRA, IC Detailer and Motion Transfer modes for Pose, Canny, Depth and Camera/Cameraman.
+- LTX 2.3 Director Suite with Motion Transfer segments, non-motion segments, Transition LoRA end frames, CameraMan motion transfer, IC identity conditioning, per-segment outputs and joined final video export.
+- Extras image upscale with Remacri/UltraSharp/RealESRGAN, RIFE `rife_v4.26`, video upscale, LTX IC Detailer refine/upscale, FlashVSR/SeedVR2-ready engines, denoise, face restoration, PNG sequence alpha and MOV ProRes 4444 alpha export.
 - Extras Remove BG frontend plan sync with `models/background_removal/birefnet.safetensors`, recommended `Remove BG Image` and `Remove BG Video` presets, video PNG sequence or MOV ProRes 4444 alpha export, RGBA/mask output options and folder-aware Gallery navigation.
+- Inpaint with LanPaint default workflow, Differential Diffusion option, paint/remove masks, generative outpaint canvas expansion, magic wand/select object and undo/redo.
 - LTX 2.3 Director Suite with custom background audio, generated speech/ambience segments, per-segment negative prompts and non-black video output.
 - Anima with Concept LoRA selection and gallery metadata.
 - Node Workflow editor smoke: menu search, categorized add-node menu, visual multi-selection, grouped drag behavior, port connection/unlink affordances, and workflow override routing from the active graph.

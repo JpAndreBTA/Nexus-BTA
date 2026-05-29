@@ -27,6 +27,9 @@ export interface GenerationState {
   resizeMode: string;
   maskBlur: number;
   maskContent: string;
+  inpaintEngine: 'lanpaint' | 'differential' | 'default';
+  differentialStrength: number;
+  lanpaintThinkingSteps: number;
   brushSize: number;
   referenceImage: string | null;
   referenceImageName: string;
@@ -87,6 +90,9 @@ export interface GenerationState {
   setResizeMode: (resizeMode: string) => void;
   setMaskBlur: (maskBlur: number) => void;
   setMaskContent: (maskContent: string) => void;
+  setInpaintEngine: (inpaintEngine: 'lanpaint' | 'differential' | 'default') => void;
+  setDifferentialStrength: (differentialStrength: number) => void;
+  setLanpaintThinkingSteps: (lanpaintThinkingSteps: number) => void;
   setBrushSize: (brushSize: number) => void;
   setReferenceImage: (dataUrl: string | null, name?: string) => void;
   addExtraReferenceImages: (images: ReferenceImage[]) => void;
@@ -145,6 +151,9 @@ export const useGenerationStore = create<GenerationState>()(
   resizeMode: 'Just Resize',
   maskBlur: 8,
   maskContent: 'Original',
+  inpaintEngine: 'lanpaint',
+  differentialStrength: 1,
+  lanpaintThinkingSteps: 5,
   brushSize: 42,
   referenceImage: null,
   referenceImageName: '',
@@ -249,6 +258,9 @@ export const useGenerationStore = create<GenerationState>()(
   setResizeMode: (resizeMode) => set({ resizeMode }),
   setMaskBlur: (maskBlur) => set({ maskBlur }),
   setMaskContent: (maskContent) => set({ maskContent }),
+  setInpaintEngine: (inpaintEngine) => set({ inpaintEngine }),
+  setDifferentialStrength: (differentialStrength) => set({ differentialStrength }),
+  setLanpaintThinkingSteps: (lanpaintThinkingSteps) => set({ lanpaintThinkingSteps }),
   setBrushSize: (brushSize) => set({ brushSize }),
   setReferenceImage: (referenceImage, referenceImageName = '') => set({ referenceImage, referenceImageName, inpaintMaskImage: null }),
   addExtraReferenceImages: (images) => set((state) => ({ extraReferenceImages: [...state.extraReferenceImages, ...images].slice(0, 6) })),
@@ -306,6 +318,9 @@ export const useGenerationStore = create<GenerationState>()(
         resizeMode: state.resizeMode,
         maskBlur: state.maskBlur,
         maskContent: state.maskContent,
+        inpaintEngine: state.inpaintEngine,
+        differentialStrength: state.differentialStrength,
+        lanpaintThinkingSteps: state.lanpaintThinkingSteps,
         brushSize: state.brushSize,
         controlNetEnabled: state.controlNetEnabled,
         controlNetType: state.controlNetType,

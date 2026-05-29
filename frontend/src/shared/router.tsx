@@ -23,6 +23,23 @@ function shellPresetLabel(preset: string) {
   return preset === 'ZImageTurbo' ? 'Z-IMG' : preset.toUpperCase();
 }
 
+function civitaiBaseModel(preset: string) {
+  const values: Record<string, string> = {
+    SD: 'SD 1.5',
+    SDXL: 'SDXL 1.0',
+    Flux: 'Flux.1 D',
+    Qwen: 'Qwen Image',
+    ZImageTurbo: 'ZImageTurbo',
+    Wan: 'WAN 2.2',
+    LTX: 'LTXV 2.3',
+  };
+  return values[preset] || preset;
+}
+
+function isVideoPreview(url: string | undefined) {
+  return /\.(mp4|webm|mov)(\?|$)/i.test(String(url || ''));
+}
+
 function checkpointOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data'], preset: string) {
   const lowerPreset = preset.toLowerCase();
   const rules: Record<string, string[]> = {
@@ -80,7 +97,7 @@ function AppTopbar() {
       const result = await nexusApi.civitaiSearch({
         query,
         types: '',
-        base_model: generation.preset === 'SD' ? 'SD 1.5' : generation.preset,
+        base_model: civitaiBaseModel(generation.preset),
         sort: 'Most Downloaded',
         period: 'AllTime',
         nsfw: true,
@@ -151,7 +168,7 @@ function AppTopbar() {
               {['All Types', 'Checkpoints', 'LoRAs', 'Embeddings'].map((label) => (
                 <button className="mini-button" type="button" key={label}>{label}</button>
               ))}
-              <span>Base: {shellPresetLabel(generation.preset)}</span>
+              <span>Base: {civitaiBaseModel(generation.preset)}</span>
               <span>Order: Most Downloaded</span>
             </div>
             <div className="civitai-card-grid">
@@ -163,7 +180,7 @@ function AppTopbar() {
                 { name: 'Cyberpunk Aesthetic', type: 'LoRA', versions: [{ base_model: 'Anima' }] },
               ]).map((item) => (
                 <article className="civitai-card" key={`${item.id || item.name}`}>
-                  {item.preview ? <img src={item.preview} alt={item.name} /> : <div><span>{item.versions?.[0]?.base_model || item.type}</span></div>}
+                  {item.preview && !isVideoPreview(item.preview) ? <img src={item.preview} alt={item.name} loading="lazy" decoding="async" /> : <div><span>{item.versions?.[0]?.base_model || item.type}</span></div>}
                   <strong>{item.name}</strong>
                   <small>{item.creator ? `by ${item.creator}` : item.type} {item.versions?.[0]?.file_name ? `/ ${item.versions[0].file_name}` : ''}</small>
                 </article>

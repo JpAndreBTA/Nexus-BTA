@@ -392,7 +392,40 @@ def _audio_key(value: object) -> str:
 
 def _materialize_ltx_director_audio(prompt: dict[str, Any]) -> None:
     replacements: dict[str, str] = {}
+    video_replacements: dict[str, str] = {}
     missing_custom_audio: list[str] = []
+
+    def remember_video_replacement(old_value: object, filename: str) -> None:
+        if not old_value or not filename:
+            return
+        value = str(old_value).strip()
+        if not value:
+            return
+        video_replacements[value.lower()] = filename
+        video_replacements[Path(value).name.lower()] = filename
+
+    def materialize_motion_entry(entry: Any, prefix: str) -> bool:
+        if not isinstance(entry, dict):
+            return False
+        video_b64 = str(entry.get("videoB64") or entry.get("videoSrc") or "").strip()
+        if not video_b64.startswith("data:video/"):
+            return False
+        old_values = [
+            entry.get("videoFile"),
+            entry.get("video"),
+            entry.get("fileName"),
+            video_b64,
+        ]
+        filename = _write_input_data_video(video_b64, prefix)
+        entry["videoFile"] = filename
+        entry["video"] = filename
+        entry["fileName"] = entry.get("fileName") or filename
+        entry["videoB64"] = ""
+        entry["videoSrc"] = ""
+        for old_value in old_values:
+            remember_video_replacement(old_value, filename)
+        return True
+
     for node in prompt.values():
         if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "ltxdirector":
             continue
@@ -413,7 +446,16 @@ def _materialize_ltx_director_audio(prompt: dict[str, Any]) -> None:
                     continue
                 video_b64 = str(segment.get("videoB64") or "")
                 if not video_b64.startswith("data:video/"):
+                    motion = segment.get("motionTransfer")
+                    if materialize_motion_entry(motion, "nexus_director_motion"):
+                        changed = True
                     continue
+                old_video_values = [
+                    segment.get("videoFile"),
+                    segment.get("video"),
+                    segment.get("fileName"),
+                    video_b64,
+                ]
                 filename = _write_input_data_video(video_b64, "nexus_director_video")
                 segment["videoFile"] = filename
                 segment["fileName"] = segment.get("fileName") or filename
@@ -422,6 +464,18 @@ def _materialize_ltx_director_audio(prompt: dict[str, Any]) -> None:
                 if isinstance(load_video, dict):
                     load_video["video"] = filename
                 changed = True
+                for old_value in old_video_values:
+                    remember_video_replacement(old_value, filename)
+
+                motion = segment.get("motionTransfer")
+                if materialize_motion_entry(motion, "nexus_director_motion"):
+                    changed = True
+
+        motion_entries = timeline.get("motionTransfer")
+        if isinstance(motion_entries, list):
+            for entry in motion_entries:
+                if materialize_motion_entry(entry, "nexus_director_motion"):
+                    changed = True
 
         audio_segments = timeline.get("audioSegments")
         if not isinstance(audio_segments, list):
@@ -492,10 +546,23 @@ def _materialize_ltx_director_audio(prompt: dict[str, Any]) -> None:
         )
 
     if not replacements:
-        return
-    fallback = next(iter(replacements.values())) if len(set(replacements.values())) == 1 else None
+        fallback = None
+    else:
+        fallback = next(iter(replacements.values())) if len(set(replacements.values())) == 1 else None
     for node in prompt.values():
         if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "loadaudioui":
+            if isinstance(node, dict):
+                inputs = node.setdefault("inputs", {})
+                class_type = str(node.get("class_type", "")).lower()
+                video_key = "file" if class_type == "loadvideo" else ("video" if class_type == "vhs_loadvideo" else "")
+                if video_key:
+                    current_video = str(inputs.get(video_key) or "").strip()
+                    if current_video.startswith("data:video/"):
+                        inputs[video_key] = _write_input_data_video(current_video, "nexus_director_motion")
+                    else:
+                        replacement_video = video_replacements.get(current_video.lower()) or video_replacements.get(Path(current_video).name.lower())
+                        if replacement_video:
+                            inputs[video_key] = replacement_video
             continue
         inputs = node.setdefault("inputs", {})
         current = inputs.get("audio")
@@ -879,6 +946,566 @@ def _prepare_ltx_director_motion_transfer(request: GenerateRequest) -> str | Non
     return base_video
 
 
+def _ltx_director_timeline(request: GenerateRequest) -> dict[str, Any]:
+    director = request.director if isinstance(request.director, dict) else {}
+    timeline = director.get("timeline_data") if isinstance(director.get("timeline_data"), dict) else {}
+    if not timeline and isinstance(director.get("timeline_data_json"), str):
+        try:
+            parsed = json.loads(str(director.get("timeline_data_json") or "{}"))
+            if isinstance(parsed, dict):
+                timeline = parsed
+        except Exception:
+            timeline = {}
+    return timeline if isinstance(timeline, dict) else {}
+
+
+def _ltx_director_segment_render_requested(request: GenerateRequest) -> bool:
+    if request.preset.lower() != "ltx" or getattr(request, "workspace", "") != "director":
+        return False
+    video_options = request.video or {}
+    if not video_options.get("director_segment_render"):
+        return False
+    timeline = _ltx_director_timeline(request)
+    for segment in timeline.get("segments") or []:
+        if not isinstance(segment, dict):
+            continue
+        motion = segment.get("motionTransfer") if isinstance(segment.get("motionTransfer"), dict) else {}
+        if motion.get("enabled") or segment.get("transitionLoraEnabled"):
+            return True
+    return False
+
+
+def _clone_generate_request(request: GenerateRequest) -> GenerateRequest:
+    if hasattr(request, "model_copy"):
+        return request.model_copy(deep=True)  # type: ignore[attr-defined]
+    return request.copy(deep=True)  # type: ignore[no-any-return]
+
+
+def _director_segment_seconds(segment: dict[str, Any], fps: float, fallback: float = 2.0) -> float:
+    raw = _number_or_none(segment.get("length") or segment.get("duration"))
+    if raw is None:
+        return fallback
+    if raw > 24:
+        return max(0.25, float(raw) / max(1.0, fps))
+    return max(0.25, float(raw))
+
+
+def _director_segment_frame_count(seconds: float, fps: float) -> int:
+    frames = max(9, int(round(max(0.25, seconds) * max(1.0, fps))) + 1)
+    if (frames - 1) % 8 != 0:
+        frames = (((frames - 1) // 8) + 1) * 8 + 1
+    return frames
+
+
+def _director_materialize_image_value(value: str, prefix: str) -> str | None:
+    value = str(value or "").strip()
+    if not value:
+        return None
+    if value.startswith("data:image/") or value.startswith("/outputs/") or "/outputs/" in value or Path(value).exists():
+        return _prepare_reference_value(value, prefix)
+    candidate = (settings.input_dir / value).resolve()
+    try:
+        if candidate.exists() and candidate.is_relative_to(settings.input_dir.resolve()):
+            return candidate.name
+    except Exception:
+        pass
+    return None
+
+
+def _director_materialize_segment_image(segment: dict[str, Any], prefix: str) -> str | None:
+    for key in ("imageB64", "imageSrc", "imageFile"):
+        resolved = _director_materialize_image_value(str(segment.get(key) or ""), prefix)
+        if resolved:
+            return resolved
+    return None
+
+
+def _director_materialize_motion_video(motion: dict[str, Any], prefix: str) -> str | None:
+    for key in ("videoB64", "videoSrc", "videoFile", "video"):
+        value = str(motion.get(key) or "").strip()
+        if not value:
+            continue
+        if value.startswith("data:video/") or value.startswith("/outputs/") or "/outputs/" in value or Path(value).exists():
+            return _prepare_video_value(value, prefix)
+        candidate = (settings.input_dir / value).resolve()
+        try:
+            if candidate.exists() and candidate.is_relative_to(settings.input_dir.resolve()):
+                return candidate.name
+        except Exception:
+            continue
+    return None
+
+
+def _normalize_director_motion_reference(video_name: str, seconds: float, fps: float, width: int, height: int, frames: int) -> str:
+    source = (settings.input_dir / video_name).resolve()
+    if not source.exists():
+        raise ValueError("Director Motion Transfer reference video could not be resolved.")
+    ffmpeg = _ffmpeg_binary()
+    if not ffmpeg:
+        return video_name
+    source_duration = max(0.001, _ffprobe_duration(source))
+    ratio = max(0.05, min(20.0, float(seconds) / source_duration))
+    out_name = f"nexus_director_motion_sync_{uuid.uuid4().hex[:10]}.mp4"
+    target = settings.input_dir / out_name
+    safe_width = max(64, int(width)) - (max(64, int(width)) % 2)
+    safe_height = max(64, int(height)) - (max(64, int(height)) % 2)
+    vf = (
+        f"setpts={ratio:.8f}*PTS,"
+        f"fps={max(1.0, float(fps)):.6f},"
+        f"scale={safe_width}:{safe_height}:force_original_aspect_ratio=increase,"
+        f"crop={safe_width}:{safe_height},"
+        "tpad=stop_mode=clone:stop_duration=10,"
+        f"trim=end_frame={max(1, int(frames))},"
+        f"setpts=N/({max(1.0, float(fps)):.6f}*TB),"
+        "format=yuv420p"
+    )
+    _run_ffmpeg(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(source),
+            "-an",
+            "-vf",
+            vf,
+            "-frames:v",
+            str(max(1, int(frames))),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "16",
+            "-preset",
+            "medium",
+            "-movflags",
+            "+faststart",
+            str(target),
+        ]
+    )
+    return out_name
+
+
+def _output_path_from_item(item: dict[str, Any]) -> Path | None:
+    relative = str(item.get("path") or "").strip()
+    if relative:
+        path = (settings.output_dir / relative).resolve()
+        try:
+            if path.exists() and path.is_relative_to(settings.output_dir.resolve()):
+                return path
+        except Exception:
+            return None
+    filename = str(item.get("filename") or "").strip()
+    subfolder = str(item.get("subfolder") or "").strip()
+    if filename:
+        path = (settings.output_dir / subfolder / filename).resolve()
+        try:
+            if path.exists() and path.is_relative_to(settings.output_dir.resolve()):
+                return path
+        except Exception:
+            return None
+    return None
+
+
+def _archive_director_segment_videos(paths: list[Path], run_stamp: str) -> list[Path]:
+    segments_dir = settings.output_dir / "director" / run_stamp / "segments"
+    segments_dir.mkdir(parents=True, exist_ok=True)
+    archived: list[Path] = []
+    for index, source in enumerate(paths, start=1):
+        suffix = source.suffix.lower() or ".mp4"
+        target = segments_dir / f"segment_{index:03d}_{source.stem}{suffix}"
+        shutil.copy2(source, target)
+        metadata = source.with_name(source.name + ".nexus.json")
+        if metadata.exists():
+            shutil.copy2(metadata, target.with_name(target.name + ".nexus.json"))
+        archived.append(target)
+    return archived
+
+
+def _concat_director_segment_videos(paths: list[Path], fps: float, width: int, height: int, run_stamp: str | None = None) -> Path:
+    if not paths:
+        raise ValueError("Director segment render did not produce any videos.")
+    ffmpeg = _ffmpeg_binary()
+    if not ffmpeg:
+        if len(paths) == 1:
+            output_dir = settings.output_dir / "videos"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            target = output_dir / f"{run_stamp or datetime.now().strftime('%Y%m%d_%H%M%S')}_LTX_DIRECTOR_SEGMENTS_{uuid.uuid4().hex[:6]}.mp4"
+            shutil.copy2(paths[0], target)
+            return target
+        raise ValueError("FFmpeg is required to join Director segment renders.")
+    work_dir = settings.temp_dir / "ltx_director_segments" / uuid.uuid4().hex[:12]
+    work_dir.mkdir(parents=True, exist_ok=True)
+    list_file = work_dir / "segments.txt"
+    list_lines = [f"file '{path.as_posix().replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'" for path in paths]
+    list_file.write_text("\n".join(list_lines), encoding="utf-8")
+    output_dir = settings.output_dir / "videos"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target = output_dir / f"{run_stamp or datetime.now().strftime('%Y%m%d_%H%M%S')}_LTX_DIRECTOR_SEGMENTS_{uuid.uuid4().hex[:6]}.mp4"
+    vf = (
+        f"fps={max(1.0, float(fps)):.6f},"
+        f"scale={int(width)}:{int(height)}:force_original_aspect_ratio=increase:flags=lanczos,"
+        f"crop={int(width)}:{int(height)},format=yuv420p"
+    )
+    _run_ffmpeg(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(list_file),
+            "-vf",
+            vf,
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "16",
+            "-preset",
+            "medium",
+            "-movflags",
+            "+faststart",
+            str(target),
+        ]
+    )
+    return target
+
+
+def _director_materialize_audio_path(segment: dict[str, Any]) -> Path | None:
+    audio_b64 = str(segment.get("audioB64") or "").strip()
+    source_video_b64 = str(segment.get("sourceVideoB64") or "").strip()
+    if source_video_b64.startswith("data:video/"):
+        video_name = _write_input_data_video(source_video_b64, "nexus_director_audio_source")
+        audio_name = _extract_audio_to_input(settings.input_dir / video_name, "nexus_director_audio")
+        return settings.input_dir / audio_name
+    if audio_b64.startswith("data:audio/"):
+        return settings.input_dir / _write_input_data_audio(audio_b64, "nexus_director_audio")
+    for key in ("audioFile", "fileName", "sourceVideoFile"):
+        value = str(segment.get(key) or "").strip()
+        if not value:
+            continue
+        candidate = (settings.input_dir / Path(value).name).resolve()
+        try:
+            if candidate.exists() and candidate.is_relative_to(settings.input_dir.resolve()):
+                if key == "sourceVideoFile" or candidate.suffix.lower() in {".mp4", ".mov", ".webm", ".mkv", ".avi"}:
+                    audio_name = _extract_audio_to_input(candidate, "nexus_director_audio")
+                    return settings.input_dir / audio_name
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
+def _mux_director_audio(final_video: Path, timeline: dict[str, Any], run_stamp: str) -> Path:
+    audio_segments = [item for item in timeline.get("audioSegments") or [] if isinstance(item, dict)]
+    if not audio_segments:
+        return final_video
+    ffmpeg = _ffmpeg_binary()
+    if not ffmpeg:
+        return final_video
+    audio_inputs: list[tuple[Path, float, float]] = []
+    for segment in audio_segments:
+        path = _director_materialize_audio_path(segment)
+        if not path:
+            continue
+        start = max(0.0, float(_number_or_none(segment.get("start")) or 0.0))
+        length = max(0.05, float(_number_or_none(segment.get("length") or segment.get("sourceDuration")) or 0.0))
+        audio_inputs.append((path, start, length))
+    if not audio_inputs:
+        return final_video
+    temp_audio = settings.temp_dir / "ltx_director_segments" / f"{run_stamp}_audio.wav"
+    temp_audio.parent.mkdir(parents=True, exist_ok=True)
+    command = [ffmpeg, "-y"]
+    filters: list[str] = []
+    mix_labels: list[str] = []
+    for index, (path, start, length) in enumerate(audio_inputs):
+        command.extend(["-i", str(path)])
+        delay_ms = int(round(start * 1000))
+        trim = f",atrim=duration={length:.6f}" if length > 0 else ""
+        label = f"a{index}"
+        filters.append(f"[{index}:a]aresample=48000{trim},adelay={delay_ms}|{delay_ms}[{label}]")
+        mix_labels.append(f"[{label}]")
+    filters.append("".join(mix_labels) + f"amix=inputs={len(mix_labels)}:duration=longest:dropout_transition=0[aout]")
+    _run_ffmpeg([*command, "-filter_complex", ";".join(filters), "-map", "[aout]", "-c:a", "pcm_s16le", str(temp_audio)])
+    muxed = final_video.with_name(final_video.stem + "_audio.mp4")
+    _run_ffmpeg(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(final_video),
+            "-i",
+            str(temp_audio),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-shortest",
+            str(muxed),
+        ]
+    )
+    try:
+        final_video.unlink()
+        muxed.replace(final_video)
+    except Exception:
+        return muxed
+    return final_video
+
+
+async def _run_ltx_director_segment_render(
+    request: GenerateRequest,
+    assets: dict[str, str],
+    object_info: dict[str, Any],
+    job_id: str | None = None,
+) -> GenerateResponse | None:
+    if not _ltx_director_segment_render_requested(request):
+        return None
+    timeline = _ltx_director_timeline(request)
+    all_segments = [segment for segment in timeline.get("segments") or [] if isinstance(segment, dict)]
+    visual_segments = [
+        segment
+        for segment in all_segments
+        if str(segment.get("sourceType") or segment.get("type") or "image").lower() in {"image", "video", "text"}
+    ]
+    if not visual_segments:
+        return None
+    visual_segments.sort(key=lambda item: float(_number_or_none(item.get("start")) or 0))
+    fps = max(1.0, float(_number_or_none((request.video or {}).get("fps") or request.director.get("frame_rate")) or 24))
+    width = max(64, int(request.width)) - (max(64, int(request.width)) % 32)
+    height = max(64, int(request.height)) - (max(64, int(request.height)) % 32)
+    checkpoint_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
+    text_encoder_name = assets.get("text_encoder")
+    if not checkpoint_name or not text_encoder_name:
+        raise ValueError("LTX Director segment render requires an LTX checkpoint and Gemma text encoder.")
+    if not assets.get("text_projection") or not (assets.get("video_vae") or assets.get("vae")) or not assets.get("audio_vae"):
+        raise ValueError("LTX Director segment render requires LTX 2.3 text projection, video VAE and audio VAE.")
+    available_nodes = set(object_info or {})
+    output_paths: list[Path] = []
+    last_prompt_id: str | None = None
+    director_run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    for index, segment in enumerate(visual_segments):
+        motion = segment.get("motionTransfer") if isinstance(segment.get("motionTransfer"), dict) else {}
+        motion_mode = str(motion.get("mode") or "pose").strip().lower()
+        if motion_mode not in {"pose", "canny", "depth", "camera"}:
+            motion_mode = "pose"
+        segment_width = 768 if motion.get("enabled") and motion_mode == "camera" else width
+        segment_height = 512 if motion.get("enabled") and motion_mode == "camera" else height
+        segment_request = _clone_generate_request(request)
+        segment_request.activity = "img2img"
+        segment_request.workspace = "director_segment"
+        segment_request.workflow_override = None
+        segment_request.workflow_id = None
+        segment_request.width = segment_width
+        segment_request.height = segment_height
+        segment_request.cfg = float(request.cfg or 1.0)
+        segment_request.steps = int(request.steps or 4)
+        segment_request.sampler = request.sampler or "euler_cfg_pp"
+        segment_prompt = str(segment.get("prompt") or request.prompt or "").strip()
+        segment_request.prompt = segment_prompt or request.prompt or "preserve the same subject identity, natural continuous motion"
+        segment_request.negative_prompt = str(segment.get("negativePrompt") or request.negative_prompt or "").strip()
+        if motion.get("enabled") and motion_mode == "camera":
+            camera_identity_prompt = (
+                "preserve the exact target subject identity, same face, same facial proportions, "
+                "same outfit and lighting, apply the reference camera motion clearly: slow cinematic camera orbit "
+                "and horizontal pan around the target scene, visible parallax and camera rotation while preserving "
+                "the target subject and setting, continuous stable video"
+            )
+            segment_request.prompt = f"{segment_request.prompt}, {camera_identity_prompt}" if segment_request.prompt else camera_identity_prompt
+        if segment_request.negative_prompt:
+            segment_request.negative_prompt += ", changed identity, different person, ghost face, smear, crossfade, dissolve"
+        else:
+            segment_request.negative_prompt = "changed identity, different person, ghost face, smear, crossfade, dissolve"
+        if motion.get("enabled") and motion_mode == "camera":
+            segment_request.negative_prompt += (
+                ", different person, changed face, changed ethnicity, asian facial features, east asian face, "
+                "kpop face, identity drift, double face, ghost face, smear, excessive blur, frozen frame, "
+                "control map texture"
+            )
+        seconds = _director_segment_seconds(segment, fps, fallback=max(2.0, float(_number_or_none((request.video or {}).get("seconds")) or 2.0)))
+        frames = _director_segment_frame_count(seconds, fps)
+        segment_request.video = {
+            **(request.video or {}),
+            "fps": fps,
+            "seconds": seconds,
+            "duration": seconds,
+            "frames": frames,
+            "length": frames,
+            "active_audio": False,
+            "director_segment_render": False,
+            "motion_transfer_enabled": False,
+            "transition_lora_enabled": False,
+        }
+        reference_image_name = _director_materialize_segment_image(segment, f"nexus_director_segment_{index + 1}")
+        if not reference_image_name:
+            next_image = next(
+                (
+                    name
+                    for item in visual_segments
+                    if item is not segment
+                    for name in [_director_materialize_segment_image(item, f"nexus_director_segment_{index + 1}_fallback")]
+                    if name
+                ),
+                None,
+            )
+            reference_image_name = next_image
+        if not reference_image_name:
+            raise ValueError(f"Director segment {index + 1} is missing a reference image.")
+        reference_end_image_name: str | None = None
+        base_video_name: str | None = None
+        parent_video = request.video or {}
+        if motion.get("enabled"):
+            raw_motion_name = _director_materialize_motion_video(motion, f"nexus_director_motion_{index + 1}")
+            if not raw_motion_name:
+                raise ValueError(f"Director segment {index + 1} has Motion Transfer enabled but no video reference.")
+            base_video_name = _normalize_director_motion_reference(raw_motion_name, seconds, fps, segment_width, segment_height, frames)
+            segment_request.video.update(
+                {
+                    "motion_transfer_enabled": True,
+                    "motion_transfer_mode": "ltx_ic_union",
+                    "motion_transfer_control_mode": motion_mode,
+                    "motion_transfer_motion_strength": float(_number_or_none(parent_video.get("motion_transfer_motion_strength")) or 1.0),
+                    "motion_transfer_target_strength": float(
+                        _number_or_none(motion.get("targetStrength"))
+                        if _number_or_none(motion.get("targetStrength")) is not None
+                        else (0.7 if motion_mode == "camera" else (_number_or_none(parent_video.get("motion_transfer_target_strength")) if _number_or_none(parent_video.get("motion_transfer_target_strength")) is not None else 1.0))
+                    ),
+                    "ltx_ic_lora_strength": float(_number_or_none(parent_video.get("ltx_ic_lora_strength")) or 1.0),
+                    "ltx_ic_image_bypass": bool(parent_video.get("ltx_ic_image_bypass") or False),
+                    "ltx_ic_crop": parent_video.get("ltx_ic_crop") or "disabled",
+                    "ltx_ic_tiled_encode": bool(parent_video.get("ltx_ic_tiled_encode") or False),
+                    "ltx_ic_tile_size": int(_number_or_none(parent_video.get("ltx_ic_tile_size")) or 256),
+                    "ltx_ic_tile_overlap": int(_number_or_none(parent_video.get("ltx_ic_tile_overlap")) or 64),
+                }
+            )
+        if segment.get("transitionLoraEnabled"):
+            explicit_end = _director_materialize_image_value(str(segment.get("transitionImageB64") or segment.get("transitionImageSrc") or segment.get("transitionImageFile") or ""), f"nexus_director_transition_end_{index + 1}")
+            next_visual = next((item for item in visual_segments[index + 1 :] if item is not segment), None)
+            reference_end_image_name = explicit_end or (_director_materialize_segment_image(next_visual, f"nexus_director_transition_next_{index + 1}") if next_visual else None)
+            if not reference_end_image_name:
+                raise ValueError(f"Director segment {index + 1} has Transition LoRA enabled but no end frame/reference image.")
+            segment_request.video.update(
+                {
+                    "transition_lora_enabled": True,
+                    "transition_lora": parent_video.get("transition_lora") or "Automatic",
+                    "transition_lora_strength": float(_number_or_none(parent_video.get("transition_lora_strength")) or 1.0),
+                    "ltx_ic_timeline_guides": bool(parent_video.get("ltx_ic_timeline_guides") or False),
+                    "ltx_ic_lora_strength": float(_number_or_none(parent_video.get("ltx_ic_lora_strength")) or 1.0),
+                    "ltx_ic_crop": parent_video.get("ltx_ic_crop") or "disabled",
+                    "ltx_ic_tiled_encode": bool(parent_video.get("ltx_ic_tiled_encode") or False),
+                    "ltx_ic_tile_size": int(_number_or_none(parent_video.get("ltx_ic_tile_size")) or 256),
+                    "ltx_ic_tile_overlap": int(_number_or_none(parent_video.get("ltx_ic_tile_overlap")) or 64),
+                    "start_frame_strength": float(_number_or_none(parent_video.get("start_frame_strength")) or 1.0),
+                    "end_frame_strength": float(_number_or_none(parent_video.get("end_frame_strength")) or 1.0),
+                }
+            )
+        segment_motion_mode = str(segment_request.video.get("motion_transfer_control_mode") or "pose").lower()
+        ic_lora_name = assets.get("cameraman_lora") if segment_motion_mode == "camera" else assets.get("ic_lora")
+        if (base_video_name or reference_end_image_name) and not ic_lora_name:
+            raise ValueError("LTX Director segment render requires IC-LoRA Union Control under models/loras.")
+        if job_id:
+            _update_generation_job(
+                job_id,
+                {
+                    "status": "building",
+                    "progress": min(90, 10 + index * 70 // max(1, len(visual_segments))),
+                    "message": f"Building LTX Director segment {index + 1}/{len(visual_segments)}",
+                },
+                force=True,
+            )
+        prompt = build_basic_ltx_img2video_workflow(
+            segment_request,
+            checkpoint_name,
+            text_encoder_name,
+            reference_image_name,
+            reference_end_image_name=reference_end_image_name,
+            base_video_name=base_video_name,
+            ic_lora_name=ic_lora_name,
+            text_projection_name=assets.get("text_projection"),
+            audio_vae_name=assets.get("audio_vae"),
+            video_vae_name=assets.get("video_vae") or assets.get("vae"),
+            latent_upscale_name=assets.get("latent_upscale"),
+            transition_lora_name=assets.get("transition_lora"),
+            detailer_lora_name=assets.get("detailer_lora"),
+            video_combine_node=_available_comfy_node(object_info, "VHS_VideoCombine"),
+            available_nodes=available_nodes,
+        )
+        _apply_output_prefixes(prompt, segment_request)
+        segment_started_at = datetime.now().timestamp()
+
+        def segment_progress(update: dict[str, Any], segment_index: int = index) -> None:
+            if not job_id:
+                return
+            base = 12 + segment_index * 72 / max(1, len(visual_segments))
+            span = 72 / max(1, len(visual_segments))
+            progress = base + span * (float(update.get("progress") or 0) / 100.0)
+            _update_generation_job(
+                job_id,
+                {
+                    **update,
+                    "progress": min(94, int(progress)),
+                    "message": f"Rendering LTX Director segment {segment_index + 1}/{len(visual_segments)}",
+                },
+            )
+
+        prompt_id, outputs = await comfy.run_workflow(prompt, progress_callback=segment_progress)
+        last_prompt_id = prompt_id
+        if not outputs:
+            outputs = await _recover_outputs_from_history(prompt_id, segment_started_at)
+        outputs = _cleanup_video_sidecar_images(outputs, segment_started_at)
+        if not outputs:
+            outputs = _cleanup_video_sidecar_images(_recent_output_files(segment_started_at - 300, limit=12), segment_started_at)
+        video_path = next(
+            (
+                path
+                for item in outputs
+                for path in [_output_path_from_item(item)]
+                if path and path.suffix.lower() in {".mp4", ".webm", ".mkv", ".mov", ".avi"}
+            ),
+            None,
+        )
+        if not video_path:
+            raise ValueError(f"LTX Director segment {index + 1} did not produce a video.")
+        output_paths.append(video_path)
+    if job_id:
+        _update_generation_job(job_id, {"status": "running", "progress": 95, "message": "Joining LTX Director segments"}, force=True)
+    archived_segments = _archive_director_segment_videos(output_paths, director_run_stamp)
+    final_path = _concat_director_segment_videos(archived_segments, fps, width, height, director_run_stamp)
+    final_path = _mux_director_audio(final_path, timeline, director_run_stamp)
+    outputs = [_output_item(final_path, "video")]
+    _annotate_output_metadata(outputs, request, assets)
+    final_metadata = final_path.with_name(final_path.name + ".nexus.json")
+    if final_metadata.exists():
+        try:
+            metadata = json.loads(final_metadata.read_text(encoding="utf-8"))
+            metadata.setdefault("director", {})
+            metadata["director"]["segment_archive"] = str((settings.output_dir / "director" / director_run_stamp / "segments").relative_to(settings.output_dir)).replace("\\", "/")
+            metadata["director"]["segment_outputs"] = [
+                str(path.relative_to(settings.output_dir)).replace("\\", "/")
+                for path in archived_segments
+                if path.exists()
+            ]
+            final_metadata.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+    return GenerateResponse(
+        job_id=last_prompt_id or f"director-segments-{uuid.uuid4().hex[:10]}",
+        prompt_id=last_prompt_id,
+        status="completed",
+        message="LTX Director segment render completed.",
+        outputs=outputs,
+    )
+
+
 def _available_comfy_node(object_info: dict[str, Any], *names: str) -> str | None:
     available = set(object_info or {})
     for name in names:
@@ -1076,6 +1703,10 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
         current_value = str(video.get(target_key) or "").strip().lower()
         if assets.get(source_key) and (not current_value or current_value in {"automatic", "auto"}):
             video[target_key] = assets[source_key]
+    motion_mode = str(video.get("motion_transfer_control_mode") or "").strip().lower()
+    if motion_mode == "camera" and assets.get("cameraman_lora"):
+        video["ic_lora"] = assets["cameraman_lora"]
+        video["motion_ic_lora"] = assets["cameraman_lora"]
     activity_label = _generation_activity_label(request)
     return {
         "prompt": request.prompt,
@@ -4070,19 +4701,51 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         _apply_inpaint_intent_prompt(request)
         reference_image_names = _prepare_reference_images(request)
         ltx_director_frame_guides: list[dict[str, Any]] = []
-        if request.preset.lower() == "ltx" and getattr(request, "workspace", "") == "director":
-            ltx_director_frame_guides = _prepare_ltx_director_frame_guides(request)
+        ltx_director_segment_render_mode = _ltx_director_segment_render_requested(request)
+        if request.preset.lower() == "ltx" and getattr(request, "workspace", "") == "director" and not ltx_director_segment_render_mode:
+            ltx_director_frame_guides = [] if request.workflow_override else _prepare_ltx_director_frame_guides(request)
             if ltx_director_frame_guides:
                 reference_image_names = [str(guide["image"]) for guide in ltx_director_frame_guides]
                 request.activity = "img2img"
                 request.workflow_override = None
                 request.workflow_id = None
-        ltx_director_motion_video = _prepare_ltx_director_motion_transfer(request)
+        ltx_director_motion_video = None if (
+            request.preset.lower() == "ltx"
+            and getattr(request, "workspace", "") == "director"
+            and (request.workflow_override or ltx_director_segment_render_mode)
+        ) else _prepare_ltx_director_motion_transfer(request)
         if ltx_director_motion_video:
             request.activity = "img2img"
             request.workflow_override = None
             request.workflow_id = None
         base_video_name = ltx_director_motion_video or _prepare_base_video(request)
+        if (
+            base_video_name
+            and request.preset.lower() == "ltx"
+            and isinstance(request.video, dict)
+            and request.video.get("motion_transfer_enabled")
+            and not ltx_director_segment_render_mode
+        ):
+            video_options = request.video or {}
+            fps = max(1.0, float(_number_or_none(video_options.get("fps")) or 24))
+            seconds = float(_number_or_none(video_options.get("seconds") or video_options.get("duration")) or 0)
+            frames_value = _number_or_none(video_options.get("frames") or video_options.get("length"))
+            frames = int(round(frames_value)) if frames_value is not None else 0
+            if frames <= 0:
+                if seconds <= 0:
+                    seconds = max(0.25, _ffprobe_duration(settings.input_dir / base_video_name))
+                frames = max(1, int(round(seconds * fps)))
+            if seconds <= 0:
+                seconds = max(0.25, frames / fps)
+            base_video_name = _normalize_director_motion_reference(
+                base_video_name,
+                seconds,
+                fps,
+                max(64, int(request.width or 512)),
+                max(64, int(request.height or 512)),
+                frames,
+            )
+            request.img2img.base_video = str(settings.input_dir / base_video_name)
         if not base_video_name and request.preset.lower() == "ltx" and len(reference_image_names) >= 2:
             base_video_name = _prepare_ltx_motion_scaffold(reference_image_names, request)
         reference_image_name = reference_image_names[0] if reference_image_names else None
@@ -4130,6 +4793,12 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if job_id:
             _update_generation_job(job_id, {"status": "preparing", "progress": 7, "message": "Reading Comfy object registry"})
         object_info = await comfy.object_info()
+        director_segment_response = await _run_ltx_director_segment_render(request, assets, object_info, job_id=job_id)
+        if director_segment_response:
+            _cleanup_generation_temp()
+            await _release_comfy_memory_if_idle()
+            _schedule_comfy_idle_release()
+            return director_segment_response
 
         if request.workflow_override:
             if job_id:
@@ -4189,24 +4858,47 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                         if motion_control_mode == "camera":
                             raise ValueError("LTX Motion Transfer camera mode requires LTX 2.3 IC-LoRA Cameraman under models/loras/ltx.")
                         raise ValueError("LTX Motion Transfer requires an LTX 2.3 IC-LoRA Union Control model under models/loras.")
+                    motion_required_nodes = [
+                        "LTXICLoRALoaderModelOnly",
+                        "LTXAddVideoICLoRAGuide",
+                        "LTXVImgToVideoConditionOnly",
+                        "LTXVEmptyLatentAudio",
+                        "LTXVConcatAVLatent",
+                        "LTXVSeparateAVLatent",
+                        "LTXVCropGuides",
+                        "ImageResizeKJv2",
+                    ]
+                    if reference_end_image_name and motion_control_mode == "camera":
+                        motion_required_nodes.append("LTXVAddGuideMulti")
+                    if motion_control_mode == "camera":
+                        motion_required_nodes.append("VHS_LoadVideo")
+                    else:
+                        motion_required_nodes.extend(["LoadVideo", "GetVideoComponents", "ResizeImageMaskNode", "SimpleMath+"])
                     missing_motion_nodes = [
                         node
-                        for node in (
-                            "LTXICLoRALoaderModelOnly",
-                            "LTXAddVideoICLoRAGuide",
-                            "LTXVImgToVideoConditionOnly",
-                            "LTXVEmptyLatentAudio",
-                            "LTXVConcatAVLatent",
-                            "LTXVSeparateAVLatent",
-                            "LTXVCropGuides",
-                            "LoadVideo",
-                            "GetVideoComponents",
-                            "ImageResizeKJv2",
-                            "ResizeImageMaskNode",
-                            "SimpleMath+",
-                        )
+                        for node in motion_required_nodes
                         if not _available_comfy_node(object_info, node)
                     ]
+                    if motion_control_mode == "pose" and not (
+                        _available_comfy_node(object_info, "DWPreprocessor")
+                        or _available_comfy_node(object_info, "OpenposePreprocessor")
+                    ):
+                        missing_motion_nodes.append("DWPreprocessor or OpenposePreprocessor")
+                    if motion_control_mode == "canny" and not (
+                        _available_comfy_node(object_info, "CannyEdgePreprocessor")
+                        or _available_comfy_node(object_info, "Canny")
+                    ):
+                        missing_motion_nodes.append("CannyEdgePreprocessor or Canny")
+                    if motion_control_mode == "depth":
+                        missing_motion_nodes.extend(
+                            node
+                            for node in (
+                                "LoadVideoDepthAnythingModel",
+                                "VideoDepthAnythingProcess",
+                                "VideoDepthAnythingOutput",
+                            )
+                            if not _available_comfy_node(object_info, node)
+                        )
                     if missing_motion_nodes:
                         raise ValueError("LTX Motion Transfer requires ComfyUI-LTXVideo IC-LoRA nodes: " + ", ".join(missing_motion_nodes) + ".")
                 elif base_video_name and not _available_comfy_node(object_info, "LTXVAddGuide"):

@@ -318,6 +318,8 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, re
 
     upscale = None if latent_upscale_disabled else (
         _find_name(by_category, selected_upscale)
+        or _first(by_category, ["latent_upscale_models", "upscale_models"], ["ltx-2.3", "spatial", "x2"])
+        or _first(by_category, ["latent_upscale_models", "upscale_models"], ["spatial", "x2"])
         or _first(by_category, ["latent_upscale_models", "upscale_models"], ["ltx", "spatial"])
     )
     if upscale:
@@ -627,6 +629,8 @@ def _comfy_name(item: ModelFile) -> str:
         name = relative[len(prefix) :]
         if item.category == "loras" and name.lower().startswith("ltx2\\"):
             return "ltx\\" + name.split("\\", 1)[1]
+        if item.category == "loras" and name.lower().startswith("ltx_ic\\"):
+            return "ltx_ic\\" + name.split("\\", 1)[1]
         return name
     return item.name
 

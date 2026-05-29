@@ -254,8 +254,20 @@ def _match_repo_to_installed_node(repo: str, installed_by_key: dict[str, str]) -
 
 def _heuristic_custom_node_name(class_type: str) -> str | None:
     value = class_type.lower()
+    if value in {
+        "ltxvaddguidemulti",
+        "ltxvaddguidesfrombatch",
+        "ltxvimgtovideoinplacekj",
+        "ltx2_nag",
+        "ltx2samplingpreviewoverride",
+    }:
+        return "ComfyUI-KJNodes"
     if "rgthree" in value or "fast groups bypasser" in value:
         return "rgthree-comfy"
+    if "res4lyf" in value or "clown" in value or "bong" in value:
+        return "RES4LYF"
+    if "inttofloat" in value or "floattoint" in value or "int-and-float" in value:
+        return "comfyui-int-and-float"
     if "ultralyticsdetectorprovider" in value or "bbox_detector" in value or "samdetector" in value:
         return "ComfyUI-Impact-Subpack"
     if value.startswith("easy ") or "easy getnode" in value or "easy setnode" in value:
@@ -275,10 +287,22 @@ def _heuristic_custom_node_name(class_type: str) -> str | None:
 
 def _canonical_repo_for_missing_node(class_type: str) -> str | None:
     value = class_type.lower()
+    if value in {
+        "ltxvaddguidemulti",
+        "ltxvaddguidesfrombatch",
+        "ltxvimgtovideoinplacekj",
+        "ltx2_nag",
+        "ltx2samplingpreviewoverride",
+    }:
+        return "https://github.com/kijai/ComfyUI-KJNodes"
     if "ultralyticsdetectorprovider" in value:
         return "https://github.com/ltdrdata/ComfyUI-Impact-Subpack"
     if "fast groups bypasser" in value or "rgthree" in value:
         return "https://github.com/rgthree/rgthree-comfy"
+    if "res4lyf" in value or "clown" in value or "bong" in value:
+        return "https://github.com/ClownsharkBatwing/RES4LYF"
+    if "inttofloat" in value or "floattoint" in value or "int-and-float" in value:
+        return "https://github.com/danTheMonk/comfyui-int-and-float"
     if value.startswith("easy ") or "easy getnode" in value or "easy setnode" in value:
         return "https://github.com/yolain/ComfyUI-Easy-Use"
     if "melbandroformer" in value or "roformer" in value:
