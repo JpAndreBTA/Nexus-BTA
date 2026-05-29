@@ -18,9 +18,19 @@ TRAIN_LORA_SOURCES = [
         "note": "Official ComfyUI LTX examples include multi-frame control with start and end frames.",
     },
     {
-        "label": "LTX-2 LoRA trainer",
-        "url": "https://ltx.io/model/model-blog/how-to-fine-tune-a-video-generation-model-with-lora",
-        "note": "Official LTX guide uses cached latents/embeddings and YAML configs.",
+        "label": "LTX-2 Trainer",
+        "url": "https://github.com/Lightricks/LTX-2/tree/main/packages/ltx-trainer",
+        "note": "Official LTX trainer package for LoRA, full fine-tuning and IC-LoRA.",
+    },
+    {
+        "label": "LTX-2 Training Docs",
+        "url": "https://docs.ltx.video/open-source-model/ltx-2-trainer/ltx-2-training",
+        "note": "LTX-2.3 training needs a local checkpoint, Gemma text encoder, CUDA Linux runtime and high VRAM for full runs.",
+    },
+    {
+        "label": "LTX IC-LoRA Docs",
+        "url": "https://docs.ltx.video/open-source-model/usage-guides/ic-lo-ra",
+        "note": "IC-LoRA uses paired video/control signals such as depth, pose, edges or sparse tracks.",
     },
     {
         "label": "kohya-ss sd-scripts",
@@ -180,10 +190,78 @@ TRAIN_LORA_PRESETS: dict[str, dict[str, Any]] = {
         "trainer_label": "LTX-2 trainer",
         "resolution": "960x544",
         "frames": 49,
-        "caption": "Use scene clips/captions; LTX frames must satisfy (F - 1) % 8 == 0.",
+        "caption": "Use LTX-2.3 clips/captions; frames should satisfy (F - 1) % 8 == 0. IC-LoRA needs paired target/control signals.",
         "templates": {
-            "character": {"rank": 32, "alpha": 16, "learning_rate": 3e-5, "steps": 2600, "repeats": 4, "batch_size": 1},
-            "style": {"rank": 16, "alpha": 8, "learning_rate": 2e-5, "steps": 1800, "repeats": 4, "batch_size": 1},
+            "character": {
+                "mode_label": "Character LoRA",
+                "training_mode": "lora",
+                "rank": 32,
+                "alpha": 16,
+                "learning_rate": 3e-5,
+                "steps": 2600,
+                "repeats": 4,
+                "batch_size": 1,
+                "dataset_mode": "clip_caption",
+                "control_type": "none",
+                "attention_strength": 1.0,
+                "target_fps": 24,
+            },
+            "style": {
+                "mode_label": "Style LoRA",
+                "training_mode": "lora",
+                "rank": 16,
+                "alpha": 8,
+                "learning_rate": 2e-5,
+                "steps": 1800,
+                "repeats": 4,
+                "batch_size": 1,
+                "dataset_mode": "clip_caption",
+                "control_type": "none",
+                "attention_strength": 1.0,
+                "target_fps": 24,
+            },
+            "motion": {
+                "mode_label": "Motion LoRA",
+                "training_mode": "lora",
+                "rank": 32,
+                "alpha": 16,
+                "learning_rate": 2e-5,
+                "steps": 2200,
+                "repeats": 4,
+                "batch_size": 1,
+                "dataset_mode": "clip_caption",
+                "control_type": "none",
+                "attention_strength": 1.0,
+                "target_fps": 24,
+            },
+            "audio_video": {
+                "mode_label": "Audio-Video LoRA",
+                "training_mode": "audio_video_lora",
+                "rank": 16,
+                "alpha": 8,
+                "learning_rate": 1.5e-5,
+                "steps": 2400,
+                "repeats": 3,
+                "batch_size": 1,
+                "dataset_mode": "audio_video_pairs",
+                "control_type": "none",
+                "attention_strength": 1.0,
+                "target_fps": 24,
+            },
+            "ic_lora": {
+                "mode_label": "IC-LoRA",
+                "training_mode": "ic_lora",
+                "rank": 16,
+                "alpha": 8,
+                "learning_rate": 1.5e-5,
+                "steps": 3000,
+                "repeats": 3,
+                "batch_size": 1,
+                "dataset_mode": "paired_control_video",
+                "control_type": "union",
+                "attention_strength": 1.0,
+                "target_fps": 24,
+            },
         },
     },
     "Anima": {
@@ -419,9 +497,11 @@ def build_train_lora_job(
     preset_key = str(plan.get("preset") or "SD")
     preset = TRAIN_LORA_PRESETS.get(preset_key) or TRAIN_LORA_PRESETS["SD"]
     mode = str(plan.get("mode") or plan.get("type") or "character").lower()
-    if mode not in {"character", "style"}:
-        mode = "character"
-    base_defaults = dict((preset.get("templates") or {}).get(mode) or {})
+    preset_templates = preset.get("templates") or {}
+    valid_modes = set(preset_templates) or {"character", "style"}
+    if mode not in valid_modes:
+        mode = "character" if "character" in valid_modes else sorted(valid_modes)[0]
+    base_defaults = dict(preset_templates.get(mode) or {})
     requested_device = str(plan.get("device_profile") or "auto")
     if requested_device == "auto" or requested_device not in DEVICE_PROFILES:
         requested_device = recommended_device_profile(settings, memory_snapshot)
@@ -433,10 +513,22 @@ def build_train_lora_job(
         memory_policy = str(device.get("memory_policy") or settings.runtime.vram_policy or "shared").strip().lower()
     if memory_policy not in {"shared", "gpu_only"}:
         memory_policy = "shared"
+    ltx_options = dict(plan.get("ltx") or {}) if str(preset.get("trainer") or "") == "ltx_trainer" else {}
+    ltx_training_mode = str(ltx_options.get("training_mode") or base_defaults.get("training_mode") or "lora")
+    ltx_control_type = str(ltx_options.get("control_type") or base_defaults.get("control_type") or "none").lower()
+    ltx_dataset_mode = str(ltx_options.get("dataset_mode") or base_defaults.get("dataset_mode") or "clip_caption")
+    ltx_attention_strength = _number(
+        ltx_options.get("attention_strength"),
+        float(base_defaults.get("attention_strength", 1.0)),
+        0.0,
+        1.0,
+    )
+    ltx_target_fps = _int(ltx_options.get("target_fps"), int(base_defaults.get("target_fps", 24)), 1, 60)
     config = {
         "preset": preset_key,
         "preset_label": preset["label"],
         "mode": mode,
+        "mode_label": base_defaults.get("mode_label", mode.replace("_", " ").title()),
         "base_model": preset["base"],
         "trainer": preset["trainer"],
         "trainer_label": preset["trainer_label"],
@@ -464,6 +556,25 @@ def build_train_lora_job(
         "source_dir": str(plan.get("source_dir") or ""),
         "device_profile": requested_device,
     }
+    if str(preset.get("trainer") or "") == "ltx_trainer":
+        config["ltx"] = {
+            "training_mode": ltx_training_mode,
+            "control_type": ltx_control_type,
+            "dataset_mode": ltx_dataset_mode,
+            "attention_strength": ltx_attention_strength,
+            "target_fps": ltx_target_fps,
+            "text_encoder_path": str(ltx_options.get("text_encoder_path") or ""),
+            "comfy_nodes": [
+                "LTXICLoRALoaderModelOnly",
+                "LTXAddVideoICLoRAGuide",
+                "LTXVPreprocess",
+            ] if ltx_training_mode == "ic_lora" or ltx_control_type != "none" else [],
+            "notes": (
+                "IC-LoRA expects paired target/control media with matched resolution and FPS."
+                if ltx_training_mode == "ic_lora" or ltx_control_type != "none"
+                else "Standard LTX LoRA uses clips or frames with captions."
+            ),
+        }
 
     job_root = train_lora_job_root(settings, job_id)
     dataset_dir = job_root / "dataset"
@@ -524,7 +635,7 @@ def _job_readme(config: dict[str, Any], config_path: Path, dataset_toml: Path | 
     lines = [
         f"# {config['output_name']}",
         "",
-        f"Preset: {config['preset_label']} / {config['mode']}",
+        f"Preset: {config['preset_label']} / {config.get('mode_label') or config['mode']}",
         f"Trainer: {config['trainer_label']}",
         f"Trigger: `{config['trigger_word']}`",
         f"Config: `{config_path}`",
@@ -534,14 +645,26 @@ def _job_readme(config: dict[str, Any], config_path: Path, dataset_toml: Path | 
     lines.extend(
         [
             "",
+            "LTX/Comfy route:" if config.get("ltx") else "",
+            *((
+                [
+                    f"- Training mode: `{config['ltx']['training_mode']}`",
+                    f"- Control type: `{config['ltx']['control_type']}`",
+                    f"- Dataset mode: `{config['ltx']['dataset_mode']}`",
+                    f"- Attention strength: `{config['ltx']['attention_strength']}`",
+                    f"- Target FPS: `{config['ltx']['target_fps']}`",
+                    f"- Comfy nodes: `{', '.join(config['ltx'].get('comfy_nodes') or ['standard LTX LoRA route'])}`",
+                ]
+            ) if config.get("ltx") else []),
+            "",
             "Install notes:",
             "- SD/SDXL/Anima: kohya-ss sd-scripts.",
             "- FLUX/Qwen: AI Toolkit.",
-            "- LTX: LTX-2 trainer with cached latents/embeddings.",
+            "- LTX: LTX-2 trainer with cached latents/embeddings; IC-LoRA pairs target video with control signals.",
             "- Wan: musubi-tuner compatible Wan LoRA trainer.",
         ]
     )
-    return "\n".join(lines) + "\n"
+    return "\n".join(line for line in lines if line != "") + "\n"
 
 
 def _job_terminal_log(config: dict[str, Any], runner: dict[str, Any], saved_files: list[dict[str, Any]]) -> str:
@@ -554,6 +677,15 @@ def _job_terminal_log(config: dict[str, Any], runner: dict[str, Any], saved_file
         f"batch={config['batch_size']} grad_accum={config['gradient_accumulation']} precision={config['precision']} optimizer={config['optimizer']} memory_policy={config['memory_policy']}",
         f"dataset={config['dataset_dir']} uploaded_files={len(saved_files)} source_dir={config['source_dir'] or '-'}",
     ]
+    if config.get("ltx"):
+        ltx = config["ltx"]
+        lines.extend(
+            [
+                f"ltx_training_mode={ltx['training_mode']} control_type={ltx['control_type']} dataset_mode={ltx['dataset_mode']}",
+                f"ltx_attention_strength={ltx['attention_strength']} target_fps={ltx['target_fps']} text_encoder_path={ltx['text_encoder_path'] or '-'}",
+                "comfy_nodes=" + ",".join(ltx.get("comfy_nodes") or ["standard_ltx_lora"]),
+            ]
+        )
     if runner.get("available"):
         lines.append("runner=available")
         lines.append("command=" + " ".join(str(part) for part in runner.get("command") or []))

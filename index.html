@@ -3189,6 +3189,9 @@
                                     <select id="trainLoraModeSelect" onchange="resetTrainLoraSettings()" class="flat-input">
                                         <option value="character">Character LoRA</option>
                                         <option value="style">Style LoRA</option>
+                                        <option value="motion">Motion LoRA</option>
+                                        <option value="audio_video">Audio-Video LoRA</option>
+                                        <option value="ic_lora">IC-LoRA</option>
                                     </select>
                                 </label>
                                 <label class="space-y-1 min-w-0">
@@ -3247,18 +3250,61 @@
                                     </button>
                                 </div>
                             </label>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                <div class="bg-nexus-bg border border-nexus-border rounded-sm p-3">
-                                    <span class="mini-label">Preset Notes</span>
-                                    <p id="trainLoraPresetNotes" class="mt-2 text-[11px] leading-5 text-nexus-muted"></p>
-                                </div>
+                             <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                 <div class="bg-nexus-bg border border-nexus-border rounded-sm p-3">
+                                     <span class="mini-label">Preset Notes</span>
+                                     <p id="trainLoraPresetNotes" class="mt-2 text-[11px] leading-5 text-nexus-muted"></p>
+                                 </div>
                                 <div class="bg-nexus-bg border border-nexus-border rounded-sm p-3">
                                     <span class="mini-label">Detected Captions</span>
                                     <p id="trainLoraCaptionSummary" class="mt-2 text-[11px] leading-5 text-nexus-muted">No caption files selected.</p>
                                 </div>
-                            </div>
-                            <textarea id="trainLoraCaption" class="hidden"></textarea>
-                        </div>
+                             </div>
+                             <div id="trainLoraLtxPanel" class="hidden bg-zinc-950/70 border border-nexus-border rounded-sm p-3 space-y-2">
+                                 <div class="flex items-center justify-between gap-2">
+                                     <span class="mini-label"><i class="fa-solid fa-film text-nexus-red mr-1"></i>LTX 2.3 / IC-LoRA Route</span>
+                                     <span id="trainLoraLtxRouteBadge" class="text-[9px] font-mono text-nexus-red uppercase">standard lora</span>
+                                 </div>
+                                 <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
+                                     <label class="space-y-1 min-w-0">
+                                         <span class="mini-label">Control</span>
+                                         <select id="trainLoraLtxControlType" class="flat-input">
+                                             <option value="none">None</option>
+                                             <option value="depth">Depth</option>
+                                             <option value="pose">Pose</option>
+                                             <option value="canny">Canny / Edge</option>
+                                             <option value="sparse_track">Sparse Track</option>
+                                             <option value="union">Union Control</option>
+                                             <option value="hdr">HDR</option>
+                                             <option value="lipdub">LipDub</option>
+                                         </select>
+                                     </label>
+                                     <label class="space-y-1 min-w-0">
+                                         <span class="mini-label">Dataset Pairing</span>
+                                         <select id="trainLoraLtxDatasetMode" class="flat-input">
+                                             <option value="clip_caption">Clip + caption</option>
+                                             <option value="paired_control_video">Video + control video</option>
+                                             <option value="frame_control_pairs">Frames + control frames</option>
+                                             <option value="audio_video_pairs">Audio + video pairs</option>
+                                         </select>
+                                     </label>
+                                     <label class="space-y-1 min-w-0">
+                                         <span class="mini-label">Attention</span>
+                                         <input id="trainLoraLtxAttentionStrength" type="number" min="0" max="1" step="0.05" class="flat-input" value="1">
+                                     </label>
+                                     <label class="space-y-1 min-w-0">
+                                         <span class="mini-label">FPS</span>
+                                         <input id="trainLoraLtxFps" type="number" min="1" max="60" step="1" class="flat-input" value="24">
+                                     </label>
+                                 </div>
+                                 <label class="space-y-1 block">
+                                     <span class="mini-label">Gemma Text Encoder</span>
+                                     <input id="trainLoraLtxTextEncoderPath" class="flat-input font-mono text-[11px]" placeholder="Optional local Gemma text_encoder folder">
+                                 </label>
+                                 <p id="trainLoraLtxNotes" class="text-[10px] leading-4 text-nexus-muted font-mono">LTX standard LoRA uses video clips plus captions. IC-LoRA expects paired target/control signals for Comfy LTX guide nodes.</p>
+                             </div>
+                             <textarea id="trainLoraCaption" class="hidden"></textarea>
+                         </div>
                         <div class="data-card p-3 space-y-3">
                             <div class="grid grid-cols-3 xl:grid-cols-4 gap-2">
                                 <label class="space-y-1"><span class="mini-label">Resolution</span><input id="trainLoraResolution" class="flat-input"></label>
@@ -3546,6 +3592,47 @@
         let trainLoraCurrentJob = null;
         let trainLoraPollTimer = null;
         let trainLoraLogTimer = null;
+        const TRAIN_LORA_MODE_LABELS = {
+            character: 'Character LoRA',
+            style: 'Style LoRA',
+            motion: 'Motion LoRA',
+            audio_video: 'Audio-Video LoRA',
+            ic_lora: 'IC-LoRA',
+            full: 'Full Fine-Tune'
+        };
+        const TRAIN_LORA_FALLBACK_CATALOG = {
+            templates: {
+                SD: { label: 'SD 1.5', base: 'Stable Diffusion 1.5', trainer: 'kohya_ss', trainer_label: 'kohya-ss sd-scripts', resolution: 512, caption: 'Use a short trigger token plus concrete subject/style captions.', templates: { character: { rank: 16, alpha: 16, learning_rate: 0.0001, steps: 1800, repeats: 12, batch_size: 2 }, style: { rank: 8, alpha: 8, learning_rate: 0.00008, steps: 1200, repeats: 8, batch_size: 2 } } },
+                XL: { label: 'SDXL', base: 'Stable Diffusion XL', trainer: 'kohya_ss', trainer_label: 'kohya-ss sd-scripts', resolution: 1024, caption: 'Prefer 1024px buckets, captions with trigger token and visual attributes.', templates: { character: { rank: 16, alpha: 16, learning_rate: 0.00008, steps: 2200, repeats: 10, batch_size: 1 }, style: { rank: 12, alpha: 12, learning_rate: 0.00006, steps: 1600, repeats: 8, batch_size: 1 } } },
+                Illustrious: { label: 'Illustrious', base: 'Illustrious XL', trainer: 'kohya_ss', trainer_label: 'kohya-ss sd-scripts', resolution: 1024, caption: 'Use Danbooru-style tags with a stable trigger.', templates: { character: { rank: 16, alpha: 16, learning_rate: 0.00008, steps: 2200, repeats: 10, batch_size: 1 }, style: { rank: 12, alpha: 12, learning_rate: 0.00006, steps: 1600, repeats: 8, batch_size: 1 } } },
+                Pony: { label: 'Pony', base: 'Pony Diffusion XL', trainer: 'kohya_ss', trainer_label: 'kohya-ss sd-scripts', resolution: 1024, caption: 'Use Pony score/source tags consistently and keep the trigger near the start.', templates: { character: { rank: 16, alpha: 16, learning_rate: 0.00008, steps: 2200, repeats: 10, batch_size: 1 }, style: { rank: 12, alpha: 12, learning_rate: 0.00006, steps: 1600, repeats: 8, batch_size: 1 } } },
+                Flux: { label: 'FLUX', base: 'FLUX.1', trainer: 'ai_toolkit', trainer_label: 'AI Toolkit', resolution: 1024, caption: 'Use natural captions; keep trigger token rare and consistent.', templates: { character: { rank: 16, alpha: 16, learning_rate: 0.0001, steps: 1800, repeats: 8, batch_size: 1 }, style: { rank: 8, alpha: 8, learning_rate: 0.00008, steps: 1200, repeats: 6, batch_size: 1 } } },
+                Flux2: { label: 'FLUX 2', base: 'FLUX.2', trainer: 'ai_toolkit', trainer_label: 'AI Toolkit', resolution: 1024, caption: 'Use natural language captions and a rare trigger token.', templates: { character: { rank: 16, alpha: 16, learning_rate: 0.00008, steps: 1800, repeats: 8, batch_size: 1 }, style: { rank: 8, alpha: 8, learning_rate: 0.00006, steps: 1200, repeats: 6, batch_size: 1 } } },
+                Flux2Klein: { label: 'FLUX 2 Klein', base: 'FLUX.2 Klein', trainer: 'ai_toolkit', trainer_label: 'AI Toolkit', resolution: 1024, caption: 'Klein presets favor low rank and cached latents for fast iteration.', templates: { character: { rank: 8, alpha: 8, learning_rate: 0.00009, steps: 1400, repeats: 8, batch_size: 1 }, style: { rank: 8, alpha: 8, learning_rate: 0.00007, steps: 1000, repeats: 6, batch_size: 1 } } },
+                Qwen: { label: 'QWEN', base: 'Qwen Image/Edit', trainer: 'ai_toolkit', trainer_label: 'AI Toolkit', resolution: 1024, caption: 'Caption edit intent, retained identity, and the visual delta from the source.', templates: { character: { rank: 16, alpha: 16, learning_rate: 0.00007, steps: 2000, repeats: 8, batch_size: 1 }, style: { rank: 8, alpha: 8, learning_rate: 0.00006, steps: 1400, repeats: 6, batch_size: 1 } } },
+                Wan: { label: 'WAN', base: 'Wan 2.2 Video', trainer: 'musubi_tuner', trainer_label: 'musubi-tuner / Wan trainer', resolution: 832, frames: 81, caption: 'Use short clips with motion captions; cache latents before long runs.', templates: { character: { rank: 32, alpha: 16, learning_rate: 0.00002, steps: 2400, repeats: 4, batch_size: 1 }, style: { rank: 16, alpha: 8, learning_rate: 0.00002, steps: 1800, repeats: 4, batch_size: 1 } } },
+                LTX: { label: 'LTX 2.3', base: 'LTX 2.3 Video', trainer: 'ltx_trainer', trainer_label: 'LTX-2 trainer', resolution: '960x544', frames: 49, caption: 'Use LTX-2.3 clips/captions; frames should satisfy (F - 1) % 8 == 0. IC-LoRA needs paired target/control signals.', templates: { character: { mode_label: 'Character LoRA', training_mode: 'lora', rank: 32, alpha: 16, learning_rate: 0.00003, steps: 2600, repeats: 4, batch_size: 1, dataset_mode: 'clip_caption', control_type: 'none', attention_strength: 1.0, target_fps: 24 }, style: { mode_label: 'Style LoRA', training_mode: 'lora', rank: 16, alpha: 8, learning_rate: 0.00002, steps: 1800, repeats: 4, batch_size: 1, dataset_mode: 'clip_caption', control_type: 'none', attention_strength: 1.0, target_fps: 24 }, motion: { mode_label: 'Motion LoRA', training_mode: 'lora', rank: 32, alpha: 16, learning_rate: 0.00002, steps: 2200, repeats: 4, batch_size: 1, dataset_mode: 'clip_caption', control_type: 'none', attention_strength: 1.0, target_fps: 24 }, audio_video: { mode_label: 'Audio-Video LoRA', training_mode: 'audio_video_lora', rank: 16, alpha: 8, learning_rate: 0.000015, steps: 2400, repeats: 3, batch_size: 1, dataset_mode: 'audio_video_pairs', control_type: 'none', attention_strength: 1.0, target_fps: 24 }, ic_lora: { mode_label: 'IC-LoRA', training_mode: 'ic_lora', rank: 16, alpha: 8, learning_rate: 0.000015, steps: 3000, repeats: 3, batch_size: 1, dataset_mode: 'paired_control_video', control_type: 'union', attention_strength: 1.0, target_fps: 24 } } },
+                Anima: { label: 'ANIMA', base: 'Anima / anime SD family', trainer: 'kohya_ss', trainer_label: 'kohya-ss sd-scripts', resolution: 768, caption: 'Use tag-style captions for anime and keep character tags stable.', templates: { character: { rank: 16, alpha: 16, learning_rate: 0.0001, steps: 1800, repeats: 12, batch_size: 2 }, style: { rank: 8, alpha: 8, learning_rate: 0.00008, steps: 1200, repeats: 8, batch_size: 2 } } },
+                ZImageTurbo: { label: 'Z-IMG', base: 'Z-Image Turbo', trainer: 'simpletuner', trainer_label: 'SimpleTuner compatible', resolution: 1024, caption: 'Use clean image captions and conservative learning rate for turbo checkpoints.', templates: { character: { rank: 16, alpha: 16, learning_rate: 0.00005, steps: 1800, repeats: 8, batch_size: 1 }, style: { rank: 8, alpha: 8, learning_rate: 0.00004, steps: 1200, repeats: 6, batch_size: 1 } } },
+                Lumina: { label: 'LUMINA', base: 'Lumina Image', trainer: 'simpletuner', trainer_label: 'SimpleTuner compatible', resolution: 1024, caption: 'Prefer varied aesthetic captions and lower LR for style transfer.', templates: { character: { rank: 16, alpha: 16, learning_rate: 0.00006, steps: 1800, repeats: 8, batch_size: 1 }, style: { rank: 8, alpha: 8, learning_rate: 0.00005, steps: 1200, repeats: 6, batch_size: 1 } } }
+            },
+            template_order: ['SD', 'XL', 'Illustrious', 'Pony', 'Flux', 'Flux2', 'Flux2Klein', 'Qwen', 'Wan', 'LTX', 'Anima', 'ZImageTurbo', 'Lumina'],
+            device_profiles: {
+                auto: { label: 'Auto' },
+                low: { label: 'Low VRAM 6-8GB', memory_policy: 'shared', precision: 'fp16', batch_size: 1, gradient_accumulation: 4, max_rank: 8, optimizer: 'adamw8bit', cache_latents: true, gradient_checkpointing: true },
+                balanced: { label: 'Balanced 10-16GB', memory_policy: 'shared', precision: 'bf16', batch_size: 1, gradient_accumulation: 2, max_rank: 16, optimizer: 'adamw8bit', cache_latents: true, gradient_checkpointing: true },
+                high: { label: 'High VRAM 20-24GB', memory_policy: 'gpu_only', precision: 'bf16', batch_size: 2, gradient_accumulation: 1, max_rank: 32, optimizer: 'adamw', cache_latents: true, gradient_checkpointing: false },
+                video: { label: 'Video 32GB+', memory_policy: 'gpu_only', precision: 'bf16', batch_size: 1, gradient_accumulation: 1, max_rank: 32, optimizer: 'adamw8bit', cache_latents: true, gradient_checkpointing: true }
+            },
+            recommended_device: 'low',
+            detected_vram_gb: 0,
+            paths: { outputs: './training/lora/outputs' },
+            sources: [
+                { label: 'LTX-2 Trainer', url: 'https://github.com/Lightricks/LTX-2/tree/main/packages/ltx-trainer', note: 'Official LTX trainer package for LoRA, full tuning and IC-LoRA.' },
+                { label: 'LTX-2 Training Docs', url: 'https://docs.ltx.video/open-source-model/ltx-2-trainer/ltx-2-training', note: 'Requirements include local LTX-2.3 checkpoint, Gemma text encoder and CUDA Linux runtime.' },
+                { label: 'LTX IC-LoRA Docs', url: 'https://docs.ltx.video/open-source-model/usage-guides/ic-lo-ra', note: 'IC-LoRA uses paired control signals such as depth, pose, edges or sparse tracks.' }
+            ]
+        };
         let activeLoraFolderFilter = 'All';
         let activeGalleryIndex = 0;
         let activeGalleryFolder = '';
@@ -15030,14 +15117,7 @@
                 trainLoraCatalog = await nexusFetch('/train-lora/templates');
             } catch (error) {
                 showToast("Train LoRA Offline", error.message.slice(0, 140));
-                trainLoraCatalog = {
-                    templates: {},
-                    template_order: [],
-                    device_profiles: {},
-                    recommended_device: 'low',
-                    detected_vram_gb: 0,
-                    sources: []
-                };
+                trainLoraCatalog = JSON.parse(JSON.stringify(TRAIN_LORA_FALLBACK_CATALOG));
             }
             return trainLoraCatalog;
         }
@@ -15047,8 +15127,28 @@
             return trainLoraCatalog?.templates?.[key] || null;
         }
 
+        function trainLoraModeEntries(preset = trainLoraSelectedPreset()) {
+            const templates = preset?.templates || {};
+            const keys = Object.keys(templates);
+            const safeKeys = keys.length ? keys : ['character', 'style'];
+            return safeKeys.map(key => {
+                const item = templates[key] || {};
+                return [key, item.mode_label || TRAIN_LORA_MODE_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())];
+            });
+        }
+
+        function renderTrainLoraModeOptions(preset = trainLoraSelectedPreset()) {
+            const select = document.getElementById('trainLoraModeSelect');
+            if (!select) return;
+            const entries = trainLoraModeEntries(preset);
+            const current = select.value;
+            select.innerHTML = entries.map(([key, label]) => `<option value="${escapeHtml(key)}">${escapeHtml(label)}</option>`).join('');
+            select.value = entries.some(([key]) => key === current) ? current : (entries[0]?.[0] || 'character');
+        }
+
         function trainLoraTemplateDefaults() {
             const preset = trainLoraSelectedPreset();
+            renderTrainLoraModeOptions(preset);
             const mode = document.getElementById('trainLoraModeSelect')?.value || 'character';
             return { preset, mode, defaults: preset?.templates?.[mode] || {} };
         }
@@ -15060,12 +15160,27 @@
 
         function syncTrainLoraTemplateUi() {
             const preset = trainLoraSelectedPreset();
+            const mode = document.getElementById('trainLoraModeSelect')?.value || 'character';
+            const defaults = preset?.templates?.[mode] || {};
             const isVideo = trainLoraIsVideoPreset(preset);
+            const isLtx = String(preset?.trainer || '').toLowerCase().includes('ltx');
+            const isIcLora = mode === 'ic_lora' || String(defaults.training_mode || '').toLowerCase().includes('ic');
             document.getElementById('trainLoraFramesField')?.classList.toggle('hidden', !isVideo);
+            document.getElementById('trainLoraLtxPanel')?.classList.toggle('hidden', !isLtx);
             const input = document.getElementById('trainLoraDatasetFiles');
             if (input) input.accept = isVideo ? '.mp4,.mov,.webm,.png,.jpg,.jpeg,.webp,.txt,.caption' : '.png,.jpg,.jpeg,.webp,.txt,.caption';
             const summary = document.getElementById('trainLoraFileSummary');
-            if (summary && !input?.files?.length) summary.innerText = isVideo ? 'drop/click clips, frames and captions' : 'drop/click images and captions';
+            if (summary && !input?.files?.length) summary.innerText = isIcLora ? 'drop/click target clips + control signals + captions' : (isVideo ? 'drop/click clips, frames and captions' : 'drop/click images and captions');
+            const routeBadge = document.getElementById('trainLoraLtxRouteBadge');
+            if (routeBadge) routeBadge.innerText = isIcLora ? 'IC-LoRA control' : (mode === 'audio_video' ? 'audio-video lora' : 'standard lora');
+            const ltxNotes = document.getElementById('trainLoraLtxNotes');
+            if (ltxNotes) {
+                ltxNotes.innerText = isIcLora
+                    ? 'IC-LoRA trains video-to-video control adapters for Comfy LTX nodes: target video plus control video/frames, matched resolution and FPS.'
+                    : (mode === 'audio_video'
+                        ? 'Audio-Video LoRA expects synchronized audio/video pairs and captions for the LTX audio-video trainer path.'
+                        : 'Standard LTX LoRA uses video clips or image/video captions for style, character or motion adaptation.');
+            }
         }
 
         function renderTrainLoraCatalog() {
@@ -15082,6 +15197,7 @@
                 }).join('');
                 presetSelect.value = trainLoraCatalog.templates?.[activePreset] ? activePreset : (order[0] || 'SD');
             }
+            renderTrainLoraModeOptions(trainLoraSelectedPreset());
             if (firstDeviceRender) {
                 const profiles = trainLoraCatalog.device_profiles || {};
                 deviceSelect.innerHTML = Object.entries(profiles).map(([key, item]) => `<option value="${escapeHtml(key)}">${escapeHtml(item.label || key)}</option>`).join('');
@@ -15157,6 +15273,10 @@
             document.getElementById('trainLoraLearningRate').value = defaults.learning_rate || 0.0001;
             document.getElementById('trainLoraBatchSize').value = defaults.batch_size || 1;
             document.getElementById('trainLoraRepeats').value = defaults.repeats || 8;
+            document.getElementById('trainLoraLtxControlType').value = defaults.control_type || (mode === 'ic_lora' ? 'union' : 'none');
+            document.getElementById('trainLoraLtxDatasetMode').value = defaults.dataset_mode || (mode === 'ic_lora' ? 'paired_control_video' : (mode === 'audio_video' ? 'audio_video_pairs' : 'clip_caption'));
+            document.getElementById('trainLoraLtxAttentionStrength').value = defaults.attention_strength ?? (mode === 'ic_lora' ? 1 : 1);
+            document.getElementById('trainLoraLtxFps').value = defaults.target_fps || 24;
             document.getElementById('trainLoraCaption').value = preset.caption || '';
             const notes = document.getElementById('trainLoraPresetNotes');
             if (notes) notes.innerText = preset.caption || '';
@@ -15265,9 +15385,13 @@
         }
 
         function collectTrainLoraPlan() {
+            const preset = trainLoraSelectedPreset();
+            const mode = document.getElementById('trainLoraModeSelect')?.value || 'character';
+            const defaults = preset?.templates?.[mode] || {};
+            const isLtx = String(preset?.trainer || '').toLowerCase().includes('ltx');
             return {
                 preset: document.getElementById('trainLoraPresetSelect')?.value || activePreset,
-                mode: document.getElementById('trainLoraModeSelect')?.value || 'character',
+                mode,
                 device_profile: document.getElementById('trainLoraDeviceSelect')?.value || 'auto',
                 output_name: document.getElementById('trainLoraOutputName')?.value || '',
                 output_dir: document.getElementById('trainLoraOutputDir')?.value || '',
@@ -15293,7 +15417,16 @@
                     memory_policy: document.getElementById('trainLoraMemoryPolicy')?.value || 'auto',
                     cache_latents: !!document.getElementById('trainLoraCacheLatents')?.checked,
                     gradient_checkpointing: !!document.getElementById('trainLoraGradCheckpoint')?.checked
-                }
+                },
+                ltx: isLtx ? {
+                    training_mode: defaults.training_mode || (mode === 'ic_lora' ? 'ic_lora' : (mode === 'audio_video' ? 'audio_video_lora' : 'lora')),
+                    control_type: document.getElementById('trainLoraLtxControlType')?.value || defaults.control_type || 'none',
+                    dataset_mode: document.getElementById('trainLoraLtxDatasetMode')?.value || defaults.dataset_mode || 'clip_caption',
+                    attention_strength: parseFloat(document.getElementById('trainLoraLtxAttentionStrength')?.value || defaults.attention_strength || '1'),
+                    target_fps: parseInt(document.getElementById('trainLoraLtxFps')?.value || defaults.target_fps || '24', 10),
+                    text_encoder_path: document.getElementById('trainLoraLtxTextEncoderPath')?.value || '',
+                    comfy_nodes: ['LTXICLoRALoaderModelOnly', 'LTXAddVideoICLoRAGuide', 'LTXVPreprocess']
+                } : null
             };
         }
 
