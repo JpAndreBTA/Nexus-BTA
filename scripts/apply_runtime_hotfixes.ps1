@@ -7,6 +7,8 @@ $ErrorActionPreference = "Stop"
 $root = $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProjectRoot)
 $qwenNodes = Join-Path $root "runtime\ComfyUI\comfy_extras\nodes_qwen.py"
 $ltxDirectorNode = Join-Path $root "custom_nodes\WhatDreamsCost-ComfyUI\ltx_director.py"
+$trellis2Nodes = Join-Path $root "custom_nodes\ComfyUI-Trellis2\nodes.py"
+$trellis2WindowedAttn = Join-Path $root "custom_nodes\ComfyUI-Trellis2\trellis2\modules\sparse\attention\windowed_attn.py"
 
 if (Test-Path -LiteralPath $qwenNodes) {
     $content = Get-Content -LiteralPath $qwenNodes -Raw
@@ -21,6 +23,201 @@ if (Test-Path -LiteralPath $qwenNodes) {
             Set-Content -LiteralPath $qwenNodes -Value $patched -Encoding UTF8
             Write-Host "[NEXUS BTA] Applied ComfyUI Qwen node_helpers hotfix."
         }
+    }
+}
+
+if (Test-Path -LiteralPath $trellis2Nodes) {
+    $content = Get-Content -LiteralPath $trellis2Nodes -Raw
+    if ($content -notmatch "NEXUS_TRELLIS_LOADMODEL_OUTPUT_HOTFIX") {
+        $patched = [regex]::Replace(
+            $content,
+            '(?s)(class Trellis2LoadModel:.*?CATEGORY = "Trellis2Wrapper"\s*)OUTPUT_NODE = True',
+            "`$1# NEXUS_TRELLIS_LOADMODEL_OUTPUT_HOTFIX`r`n    OUTPUT_NODE = False",
+            1
+        )
+        if ($patched -ne $content) {
+            Set-Content -LiteralPath $trellis2Nodes -Value $patched -Encoding UTF8
+            Write-Host "[NEXUS BTA] Applied Trellis2 LoadModel output-node hotfix."
+        }
+    }
+    $content = Get-Content -LiteralPath $trellis2Nodes -Raw
+    if ($content -notmatch "NEXUS_TRELLIS_PREPROCESS_ALPHA_HOTFIX") {
+        $patched = $content.Replace(
+            "        output_np = np.array(output)`r`n        alpha = output_np[:, :, 3]",
+            "        output_np = np.array(output)`r`n        # NEXUS_TRELLIS_PREPROCESS_ALPHA_HOTFIX`r`n        if output_np.ndim == 2:`r`n            output_np = np.stack([output_np, output_np, output_np, np.full_like(output_np, 255)], axis=-1)`r`n        elif output_np.shape[2] == 3:`r`n            output_np = np.concatenate([output_np, np.full(output_np.shape[:2] + (1,), 255, dtype=output_np.dtype)], axis=2)`r`n        alpha = output_np[:, :, 3]"
+        )
+        if ($patched -ne $content) {
+            Set-Content -LiteralPath $trellis2Nodes -Value $patched -Encoding UTF8
+            Write-Host "[NEXUS BTA] Applied Trellis2 RGB alpha preprocessing hotfix."
+        }
+    }
+    $content = Get-Content -LiteralPath $trellis2Nodes -Raw
+    if ($content -match "NEXUS_TRELLIS_PREPROCESS_ALPHA_HOTFIX" -and $content -notmatch "Image\.fromarray\(output_np\)\.convert\(\""RGBA\""\)") {
+        $patched = $content.Replace(
+            "        alpha = output_np[:, :, 3]",
+            "        output = Image.fromarray(output_np).convert(`"RGBA`")`r`n        alpha = output_np[:, :, 3]"
+        )
+        if ($patched -ne $content) {
+            Set-Content -LiteralPath $trellis2Nodes -Value $patched -Encoding UTF8
+            Write-Host "[NEXUS BTA] Applied Trellis2 RGBA crop hotfix."
+        }
+    }
+    $content = Get-Content -LiteralPath $trellis2Nodes -Raw
+    if ($content -notmatch "NEXUS_TRELLIS_OUTPUT_NODE_ROUTE_HOTFIX") {
+        $routeHotfix = @'
+
+# NEXUS_TRELLIS_OUTPUT_NODE_ROUTE_HOTFIX
+for _nexus_trellis_intermediate in (
+    Trellis2ImageCondMultiViewGenerator,
+    Trellis2SparseMultiViewGenerator,
+    Trellis2ShapeMultiViewGenerator,
+    Trellis2ShapeCascadeMultiViewGenerator,
+    Trellis2TexSlatMultiViewGenerator,
+    Trellis2DecodeLatents,
+    Trellis2ReconstructMeshWithQuad,
+    Trellis2FillHolesWithCuMesh,
+    Trellis2FillHolesNicelyWithMeshlib,
+    Trellis2SimplifyMesh,
+    Trellis2UnWrapAndRasterizer,
+):
+    _nexus_trellis_intermediate.OUTPUT_NODE = False
+
+'@
+        $patched = $content -replace "(?m)^NODE_CLASS_MAPPINGS = \{", "$routeHotfix`r`nNODE_CLASS_MAPPINGS = {"
+        if ($patched -ne $content) {
+            Set-Content -LiteralPath $trellis2Nodes -Value $patched -Encoding UTF8
+            Write-Host "[NEXUS BTA] Applied Trellis2 terminal export output routing hotfix."
+        }
+    }
+}
+
+if (Test-Path -LiteralPath $trellis2WindowedAttn) {
+    $content = (Get-Content -LiteralPath $trellis2WindowedAttn -Raw) -replace "`r`n", "`n"
+    if ($content -notmatch "NEXUS_TRELLIS_WINDOWED_SDPA_HOTFIX") {
+        $helper = @'
+
+# NEXUS_TRELLIS_WINDOWED_SDPA_HOTFIX
+def _seq_lens_to_ints(seq_lens):
+    if isinstance(seq_lens, torch.Tensor):
+        return [int(v) for v in seq_lens.detach().cpu().tolist()]
+    return [int(v.item() if isinstance(v, torch.Tensor) else v) for v in seq_lens]
+
+
+def _windowed_sdpa(q, k, v, q_seq_lens, kv_seq_lens=None):
+    q_seq_lens = _seq_lens_to_ints(q_seq_lens)
+    kv_seq_lens = q_seq_lens if kv_seq_lens is None else _seq_lens_to_ints(kv_seq_lens)
+    outs = []
+    q_off = 0
+    kv_off = 0
+    for qn, kn in zip(q_seq_lens, kv_seq_lens):
+        q_i = q[q_off:q_off + qn].transpose(0, 1).unsqueeze(0)
+        k_i = k[kv_off:kv_off + kn].transpose(0, 1).unsqueeze(0)
+        v_i = v[kv_off:kv_off + kn].transpose(0, 1).unsqueeze(0)
+        out_i = torch.nn.functional.scaled_dot_product_attention(
+            q_i,
+            k_i,
+            v_i,
+            dropout_p=0.0,
+            is_causal=False,
+        )[0].transpose(0, 1)
+        outs.append(out_i)
+        q_off += qn
+        kv_off += kn
+    return torch.cat(outs, dim=0)
+
+'@
+        $content = [regex]::Replace(
+            $content,
+            "(?s)(__all__ = \[\s*'sparse_windowed_scaled_dot_product_self_attention',\s*'sparse_windowed_scaled_dot_product_cross_attention',\s*\]\s*)\ndef calc_window_partition",
+            "`$1$helper`ndef calc_window_partition",
+            1
+        )
+
+        $selfOld = @'
+    if config.ATTN == 'xformers':
+        if 'xops' not in globals():
+            import xformers.ops as xops
+        q, k, v = qkv_feats.unbind(dim=1)                                               # [M, H, C]
+        q = q.unsqueeze(0)                                                              # [1, M, H, C]
+        k = k.unsqueeze(0)                                                              # [1, M, H, C]
+        v = v.unsqueeze(0)                                                              # [1, M, H, C]
+        out = xops.memory_efficient_attention(q, k, v, **attn_func_args)[0]             # [M, H, C]
+    elif config.ATTN == 'flash_attn':
+        if 'flash_attn' not in globals():
+            import flash_attn
+        out = flash_attn.flash_attn_varlen_qkvpacked_func(qkv_feats, **attn_func_args)  # [M, H, C]
+'@
+        $selfNew = @'
+    q, k, v = qkv_feats.unbind(dim=1)
+    if config.ATTN == 'xformers':
+        try:
+            if 'xops' not in globals():
+                import xformers.ops as xops
+            q_x = q.unsqueeze(0)                                                        # [1, M, H, C]
+            k_x = k.unsqueeze(0)                                                        # [1, M, H, C]
+            v_x = v.unsqueeze(0)                                                        # [1, M, H, C]
+            out = xops.memory_efficient_attention(q_x, k_x, v_x, **attn_func_args)[0]   # [M, H, C]
+        except Exception:
+            out = _windowed_sdpa(q, k, v, seq_lens)
+    elif config.ATTN == 'flash_attn':
+        try:
+            if 'flash_attn' not in globals():
+                import flash_attn
+            out = flash_attn.flash_attn_varlen_qkvpacked_func(qkv_feats, **attn_func_args)  # [M, H, C]
+        except Exception:
+            out = _windowed_sdpa(q, k, v, seq_lens)
+    else:
+        out = _windowed_sdpa(q, k, v, seq_lens)
+'@
+        $content = $content.Replace($selfOld, $selfNew)
+
+        $crossOld = @'
+    if config.ATTN == 'xformers':
+        if 'xops' not in globals():
+            import xformers.ops as xops
+        k, v = kv_feats.unbind(dim=1)                                                   # [M, H, C]
+        q = q.unsqueeze(0)                                                              # [1, M, H, C]
+        k = k.unsqueeze(0)                                                              # [1, M, H, C]
+        v = v.unsqueeze(0)                                                              # [1, M, H, C]
+        mask = xops.fmha.BlockDiagonalMask.from_seqlens(q_seq_lens, kv_seq_lens)
+        out = xops.memory_efficient_attention(q, k, v, attn_bias=mask)[0]               # [M, H, C]
+    elif config.ATTN == 'flash_attn':
+        if 'flash_attn' not in globals():
+            import flash_attn
+        out = flash_attn.flash_attn_varlen_kvpacked_func(q_feats, kv_feats,
+            cu_seqlens_q=q_attn_func_args['cu_seqlens'], cu_seqlens_k=kv_attn_func_args['cu_seqlens'],
+            max_seqlen_q=q_attn_func_args['max_seqlen'], max_seqlen_k=kv_attn_func_args['max_seqlen'],
+        )  # [M, H, C]
+'@
+        $crossNew = @'
+    k, v = kv_feats.unbind(dim=1)
+    if config.ATTN == 'xformers':
+        try:
+            if 'xops' not in globals():
+                import xformers.ops as xops
+            q_x = q_feats.unsqueeze(0)                                                  # [1, M, H, C]
+            k_x = k.unsqueeze(0)                                                        # [1, M, H, C]
+            v_x = v.unsqueeze(0)                                                        # [1, M, H, C]
+            mask = xops.fmha.BlockDiagonalMask.from_seqlens(q_seq_lens, kv_seq_lens)
+            out = xops.memory_efficient_attention(q_x, k_x, v_x, attn_bias=mask)[0]     # [M, H, C]
+        except Exception:
+            out = _windowed_sdpa(q_feats, k, v, q_seq_lens, kv_seq_lens)
+    elif config.ATTN == 'flash_attn':
+        try:
+            if 'flash_attn' not in globals():
+                import flash_attn
+            out = flash_attn.flash_attn_varlen_kvpacked_func(q_feats, kv_feats,
+                cu_seqlens_q=q_attn_func_args['cu_seqlens'], cu_seqlens_k=kv_attn_func_args['cu_seqlens'],
+                max_seqlen_q=q_attn_func_args['max_seqlen'], max_seqlen_k=kv_attn_func_args['max_seqlen'],
+            )  # [M, H, C]
+        except Exception:
+            out = _windowed_sdpa(q_feats, k, v, q_seq_lens, kv_seq_lens)
+    else:
+        out = _windowed_sdpa(q_feats, k, v, q_seq_lens, kv_seq_lens)
+'@
+        $content = $content.Replace($crossOld, $crossNew)
+        Set-Content -LiteralPath $trellis2WindowedAttn -Value $content -Encoding UTF8
+        Write-Host "[NEXUS BTA] Applied Trellis2 windowed SDPA fallback hotfix."
     }
 }
 

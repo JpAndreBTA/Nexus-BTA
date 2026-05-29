@@ -117,6 +117,17 @@ class RuntimeOptions(BaseModel):
     precision: str = "auto"
 
 
+class SettingsUpdate(BaseModel):
+    models_dir: str | None = None
+    custom_nodes_dir: str | None = None
+    workflows_dir: str | None = None
+    reference_model_sources: list[str] | None = None
+    reference_custom_node_sources: list[str] | None = None
+    reference_workflow_sources: list[str] | None = None
+    model_sources: dict[str, list[str]] | None = None
+    runtime: RuntimeOptions | None = None
+
+
 class GenerateRequest(BaseModel):
     activity: str = "txt2img"
     workspace: str = "viewer"
@@ -145,6 +156,7 @@ class GenerateRequest(BaseModel):
     controlnet: ControlNetSettings = Field(default_factory=ControlNetSettings)
     video: dict[str, Any] = Field(default_factory=dict)
     director: dict[str, Any] = Field(default_factory=dict)
+    model3d: dict[str, Any] = Field(default_factory=dict)
     runtime: RuntimeOptions = Field(default_factory=RuntimeOptions)
 
 

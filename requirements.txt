@@ -28,11 +28,13 @@ torchvision>=0.19
 torchaudio>=2.4
 accelerate>=0.33
 diffusers>=0.31
-transformers>=4.44
+transformers>=4.57.6,<5
 safetensors>=0.4.4
 peft>=0.12
 datasets>=2.21
 huggingface-hub>=0.24
+# Kaggle fallback for gated mirrors such as DINOv3 when Hugging Face access is not authorized.
+kagglehub==0.3.13
 tensorboard>=2.17
 toml>=0.10
 tomlkit>=0.13
@@ -69,6 +71,22 @@ onnxruntime>=1.18
 # - https://github.com/danTheMonk/comfyui-int-and-float.git
 # - https://github.com/ClownsharkBatwing/RES4LYF.git
 # - https://github.com/scraed/LanPaint.git
+
+# TRELLIS.2 / 3D MODEL template support.
+# Core custom node repo: https://github.com/visualbruno/ComfyUI-Trellis2
+# Model weights: https://huggingface.co/microsoft/TRELLIS.2-4B
+meshlib
+pymeshlab
+open3d
+plotly
+rembg
+scipy
+trimesh
+plyfile
+zstandard
+# ComfyUI-Trellis2 native Windows wheels are installed from
+# custom_nodes/ComfyUI-Trellis2/wheels/Windows/<Torch build>/ when available:
+# cumesh, custom_rasterizer, nvdiffrast, flex_gemm, o_voxel
 
 # Optional attention/runtime packages, install only when compatible with the GPU and PyTorch build:
 # xformers

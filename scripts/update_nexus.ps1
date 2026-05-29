@@ -7,9 +7,12 @@ $ErrorActionPreference = "Stop"
 $root = $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProjectRoot)
 $python = Join-Path $root "runtime\.venv\Scripts\python.exe"
 $bootstrap = Join-Path $root "scripts\bootstrap_nexus_runtime.ps1"
+$customNodeDeps = Join-Path $root "scripts\install_comfy_custom_node_deps.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
 $wan22Deps = Join-Path $root "scripts\install_wan22_deps.ps1"
+$dinov3Deps = Join-Path $root "scripts\install_dinov3_deps.ps1"
 $terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
+$settingsPath = Join-Path $root "config\nexus_settings.json"
 
 if (Test-Path -LiteralPath $terminalHelpers) {
     . $terminalHelpers
@@ -23,13 +26,92 @@ if (Test-Path -LiteralPath $terminalHelpers) {
     }
 }
 
+function Get-NexusConfiguredModelsDir {
+    if (![string]::IsNullOrWhiteSpace($env:NEXUS_MODELS_DIR)) {
+        return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:NEXUS_MODELS_DIR)
+    }
+    if (Test-Path -LiteralPath $settingsPath) {
+        try {
+            $settingsJson = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+            if (![string]::IsNullOrWhiteSpace([string]$settingsJson.models_dir)) {
+                return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath([string]$settingsJson.models_dir)
+            }
+        } catch {
+            Write-NexusLine "Could not read configured model path; falling back to ./models." "Warn"
+        }
+    }
+    return Join-Path $root "models"
+}
+
+$modelsDir = Get-NexusConfiguredModelsDir
+
+function Get-NexusConfiguredComfyRoot {
+    if (![string]::IsNullOrWhiteSpace($env:NEXUS_COMFY_ROOT)) {
+        return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:NEXUS_COMFY_ROOT)
+    }
+    if (Test-Path -LiteralPath $settingsPath) {
+        try {
+            $settingsJson = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+            if (![string]::IsNullOrWhiteSpace([string]$settingsJson.comfy_root)) {
+                return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath([string]$settingsJson.comfy_root)
+            }
+        } catch {
+            Write-NexusLine "Could not read configured ComfyUI path; falling back to embedded runtime." "Warn"
+        }
+    }
+    return Join-Path $root "runtime\ComfyUI"
+}
+
+function Get-NexusConfiguredComfyPython {
+    if (![string]::IsNullOrWhiteSpace($env:NEXUS_COMFY_PYTHON) -and (Test-Path -LiteralPath $env:NEXUS_COMFY_PYTHON)) {
+        return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:NEXUS_COMFY_PYTHON)
+    }
+    if (Test-Path -LiteralPath $settingsPath) {
+        try {
+            $settingsJson = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+            if (![string]::IsNullOrWhiteSpace([string]$settingsJson.comfy_python) -and (Test-Path -LiteralPath ([string]$settingsJson.comfy_python))) {
+                return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath([string]$settingsJson.comfy_python)
+            }
+        } catch {
+            Write-NexusLine "Could not read configured ComfyUI Python; falling back to Nexus runtime Python." "Warn"
+        }
+    }
+    return $python
+}
+
+function Get-NexusConfiguredCustomNodesDir {
+    if (![string]::IsNullOrWhiteSpace($env:NEXUS_CUSTOM_NODES_DIR)) {
+        return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:NEXUS_CUSTOM_NODES_DIR)
+    }
+    if (Test-Path -LiteralPath $settingsPath) {
+        try {
+            $settingsJson = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+            if (![string]::IsNullOrWhiteSpace([string]$settingsJson.custom_nodes_dir)) {
+                return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath([string]$settingsJson.custom_nodes_dir)
+            }
+        } catch {
+            Write-NexusLine "Could not read configured custom nodes path; falling back to ./custom_nodes." "Warn"
+        }
+    }
+    return Join-Path $root "custom_nodes"
+}
+
+$comfyRoot = Get-NexusConfiguredComfyRoot
+$comfyPython = Get-NexusConfiguredComfyPython
+$customNodesDir = Get-NexusConfiguredCustomNodesDir
+
 Write-NexusLogo
 Write-NexusSection "Updates"
 Invoke-NexusRepositoryUpdate -ProjectRoot $root -Strict
 
-if (!(Test-Path -LiteralPath (Join-Path $root "runtime\ComfyUI\main.py")) -or !(Test-Path -LiteralPath $python)) {
+if (!(Test-Path -LiteralPath (Join-Path $comfyRoot "main.py")) -or !(Test-Path -LiteralPath $python)) {
+    if ((!(Test-Path -LiteralPath (Join-Path $comfyRoot "main.py"))) -and !([string]$env:NEXUS_DOWNLOAD_COMFY_RUNTIME -match '^(1|true|yes|y)$')) {
+        throw "ComfyUI runtime not found at $comfyRoot. Use run.bat/update.bat to choose download or a custom ComfyUI path."
+    }
     Write-NexusLine "Embedded ComfyUI is missing; preparing local runtime..." "Warn"
     & $bootstrap -ProjectRoot $root -CopyPythonEnv
+    $comfyRoot = Get-NexusConfiguredComfyRoot
+    $comfyPython = Get-NexusConfiguredComfyPython
 }
 
 if (Test-Path -LiteralPath $python) {
@@ -44,19 +126,27 @@ if (Test-Path -LiteralPath $python) {
     }
     Write-NexusLine "Backend Python requirements satisfied." "Ok"
 
-    $comfyRequirements = Join-Path $root "runtime\ComfyUI\requirements.txt"
+    $comfyRequirements = Join-Path $comfyRoot "requirements.txt"
     if (Test-Path -LiteralPath $comfyRequirements) {
         Write-NexusLine "ComfyUI Python..." "Info"
-        & $python -m pip install -q -r $comfyRequirements
+        & $comfyPython -m pip install -q -r $comfyRequirements
         Write-NexusLine "ComfyUI Python requirements satisfied." "Ok"
     }
 
+    if (Test-Path -LiteralPath $customNodeDeps) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $customNodeDeps -ProjectRoot $root -RuntimePython $comfyPython -CustomNodesDir $customNodesDir -Strict
+    }
+
     if (Test-Path -LiteralPath $ltxDirectorDeps) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $python
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -CustomNodesDir $customNodesDir -Strict
     }
 
     if (Test-Path -LiteralPath $wan22Deps) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $python
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
+    }
+
+    if (Test-Path -LiteralPath $dinov3Deps) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $dinov3Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
     }
 } else {
     Write-NexusLine "Runtime Python not found; run run.bat after bootstrap." "Warn"
@@ -65,24 +155,24 @@ if (Test-Path -LiteralPath $python) {
 Write-NexusSection "Folders"
 New-Item -ItemType Directory -Force -Path (Join-Path $root "workflows\nexus_base") | Out-Null
 foreach ($dir in @(
-    "models\checkpoints\sd15",
-    "models\checkpoints\sdxl",
-    "models\checkpoints\flux",
-    "models\checkpoints\qwen",
-    "models\checkpoints\lumina",
-    "models\checkpoints\wan",
-    "models\checkpoints\ltx",
-    "models\checkpoints\anima",
-    "models\loras",
-    "models\vae",
-    "models\text_encoders",
-    "models\clip_vision",
-    "models\controlnet",
-    "models\upscale_models",
-    "models\latent_upscale_models",
-    "models\embeddings"
+    "checkpoints\sd15",
+    "checkpoints\sdxl",
+    "checkpoints\flux",
+    "checkpoints\qwen",
+    "checkpoints\lumina",
+    "checkpoints\wan",
+    "checkpoints\ltx",
+    "checkpoints\anima",
+    "loras",
+    "vae",
+    "text_encoders",
+    "clip_vision",
+    "controlnet",
+    "upscale_models",
+    "latent_upscale_models",
+    "embeddings"
 )) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $root $dir) | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $modelsDir $dir) | Out-Null
 }
 
 Write-NexusLine "Model and workflow folders are ready." "Ok"

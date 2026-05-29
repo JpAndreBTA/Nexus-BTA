@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,38 @@ from pydantic import BaseModel, Field
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = PROJECT_ROOT / "config"
 SETTINGS_PATH = CONFIG_DIR / "nexus_settings.json"
+STARTUP_PATH = CONFIG_DIR / "nexus_startup.json"
+STARTUP_ENV_PATH = CONFIG_DIR / "nexus_startup_env.cmd"
+
+
+DEFAULT_MODEL_SOURCES: dict[str, list[Path]] = {
+    "checkpoints": [],
+    "diffusion_models": [],
+    "unet": [],
+    "vae": [],
+    "text_encoders": [],
+    "clip": [],
+    "clip_vision": [],
+    "loras": [],
+    "controlnet": [],
+    "model_patches": [],
+    "upscale_models": [],
+    "latent_upscale_models": [],
+    "refine": [],
+    "frame_interpolation": [],
+    "video": [],
+    "video_restore_models": [],
+    "denoise_models": [],
+    "face_restore_models": [],
+    "background_removal": [],
+    "embeddings": [],
+    "animatediff_models": [],
+    "animatediff_motion_lora": [],
+    "style_models": [],
+    "diffusers": [],
+    "3d": [],
+    "workflows": [],
+}
 
 
 class RuntimeSettings(BaseModel):
@@ -43,6 +76,9 @@ class NexusSettings(BaseModel):
     user_dir: Path = PROJECT_ROOT / "user"
     reference_model_sources: list[Path] = Field(
         default_factory=lambda: [Path(r"C:\ComfyUpdate\models")]
+    )
+    model_sources: dict[str, list[Path]] = Field(
+        default_factory=lambda: {key: list(paths) for key, paths in DEFAULT_MODEL_SOURCES.items()}
     )
     reference_custom_node_sources: list[Path] = Field(
         default_factory=lambda: [Path(r"C:\ComfyUpdate\custom_nodes")]
@@ -110,14 +146,34 @@ def _coerce_paths(data: dict[str, Any]) -> dict[str, Any]:
             data[key] = Path(data[key])
     for key in list_path_keys:
         if key in data and data[key]:
-            data[key] = [Path(item) for item in data[key]]
+            data[key] = coerce_path_list(data[key])
+    if isinstance(data.get("model_sources"), dict):
+        data["model_sources"] = {
+            str(key): [Path(item) for item in value]
+            for key, value in data["model_sources"].items()
+            if isinstance(value, list)
+        }
     return data
+
+
+def coerce_path_list(value: Any) -> list[Path]:
+    if value is None:
+        return []
+    if isinstance(value, (str, Path)):
+        text = str(value).strip()
+        return [Path(text)] if text else []
+    if isinstance(value, list):
+        if value and all(isinstance(item, str) and len(item) == 1 for item in value):
+            joined = "".join(value).strip()
+            return [Path(joined)] if joined else []
+        return [Path(item) for item in value if str(item).strip()]
+    return []
 
 
 def load_settings() -> NexusSettings:
     migrated = False
     if SETTINGS_PATH.exists():
-        raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8-sig"))
         settings = NexusSettings(**_coerce_paths(raw))
     else:
         settings = NexusSettings()
@@ -131,6 +187,11 @@ def load_settings() -> NexusSettings:
         settings.runtime.vram_policy = "shared"
         migrated = True
 
+    for key, value in DEFAULT_MODEL_SOURCES.items():
+        if key not in settings.model_sources:
+            settings.model_sources[key] = list(value)
+            migrated = True
+
     settings.ensure_directories()
     if migrated or not SETTINGS_PATH.exists():
         save_settings(settings)
@@ -142,6 +203,72 @@ def save_settings(settings: NexusSettings) -> None:
     SETTINGS_PATH.write_text(
         settings.model_dump_json(indent=2),
         encoding="utf-8",
+    )
+
+
+def _same_path(left: Path | str | None, right: Path | str | None) -> bool:
+    if left is None or right is None:
+        return False
+    try:
+        return Path(left).resolve() == Path(right).resolve()
+    except OSError:
+        return str(left).strip().rstrip("\\/").lower() == str(right).strip().rstrip("\\/").lower()
+
+
+def sync_startup_model_path(settings: NexusSettings, previous_models_dir: Path | None = None) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    state: dict[str, Any] = {}
+    if STARTUP_PATH.exists():
+        try:
+            loaded = json.loads(STARTUP_PATH.read_text(encoding="utf-8-sig"))
+            if isinstance(loaded, dict):
+                state = loaded
+        except (json.JSONDecodeError, OSError):
+            state = {}
+
+    selected_models_dir = str(settings.models_dir)
+    model_sources = {
+        str(key): [str(path) for path in paths]
+        for key, paths in settings.model_sources.items()
+    }
+    previous_sources = state.get("model_sources") if isinstance(state.get("model_sources"), dict) else {}
+    relevant_source_keys = ("checkpoints", "diffusion_models", "unet")
+    relevant_sources_changed = any(
+        [str(item) for item in previous_sources.get(key, [])] != model_sources.get(key, [])
+        for key in relevant_source_keys
+    )
+    existing_selection_matches = _same_path(state.get("selected_models_dir"), settings.models_dir)
+    model_path_changed = previous_models_dir is not None and not _same_path(previous_models_dir, settings.models_dir)
+
+    state["model_path_prompted"] = True
+    state["selected_models_dir"] = selected_models_dir
+    state["models_dir"] = selected_models_dir
+    state["model_sources"] = model_sources
+    state["reference_model_sources"] = [str(path) for path in settings.reference_model_sources]
+    state["workflows_dir"] = str(settings.workflows_dir)
+    state["reference_workflow_sources"] = [str(path) for path in settings.reference_workflow_sources]
+    state["model_path_source"] = "ui_settings"
+    state["saved_at"] = datetime.now().isoformat(timespec="seconds")
+    state["last_checked_at"] = state["saved_at"]
+
+    if model_path_changed or not existing_selection_matches or relevant_sources_changed:
+        state["download_optional_models"] = False
+        state["download_choice_saved_at"] = state["saved_at"]
+    elif "download_optional_models" not in state:
+        state["download_optional_models"] = False
+
+    STARTUP_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    allow_downloads = "1" if bool(state.get("download_optional_models")) else "0"
+    STARTUP_ENV_PATH.write_text(
+        "\n".join(
+            [
+                "@echo off",
+                f'set "NEXUS_MODELS_DIR={selected_models_dir}"',
+                f'set "NEXUS_ALLOW_MODEL_DOWNLOADS={allow_downloads}"',
+                "",
+            ]
+        ),
+        encoding="ascii",
     )
 
 

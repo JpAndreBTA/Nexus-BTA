@@ -14,9 +14,12 @@ $comfyRoot = Join-Path $root "runtime\ComfyUI"
 $bootstrap = Join-Path $root "scripts\bootstrap_nexus_runtime.ps1"
 $watcher = Join-Path $root "scripts\watch_launcher.ps1"
 $runtimeHotfixes = Join-Path $root "scripts\apply_runtime_hotfixes.ps1"
+$customNodeDeps = Join-Path $root "scripts\install_comfy_custom_node_deps.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
 $wan22Deps = Join-Path $root "scripts\install_wan22_deps.ps1"
+$dinov3Deps = Join-Path $root "scripts\install_dinov3_deps.ps1"
 $terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
+$settingsPath = Join-Path $root "config\nexus_settings.json"
 $uiUrl = "http://127.0.0.1:7861/ui"
 
 if (Test-Path -LiteralPath $terminalHelpers) {
@@ -27,6 +30,81 @@ if (Test-Path -LiteralPath $terminalHelpers) {
     function Write-NexusSection([string]$Title) { Write-Host ""; Write-NexusLine $Title "Step" }
     function Invoke-NexusRepositoryUpdate([string]$ProjectRoot, [switch]$PromptBeforePull) { return }
 }
+
+function Get-NexusConfiguredModelsDir {
+    if (![string]::IsNullOrWhiteSpace($env:NEXUS_MODELS_DIR)) {
+        return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:NEXUS_MODELS_DIR)
+    }
+    if (Test-Path -LiteralPath $settingsPath) {
+        try {
+            $settingsJson = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+            if (![string]::IsNullOrWhiteSpace([string]$settingsJson.models_dir)) {
+                return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath([string]$settingsJson.models_dir)
+            }
+        } catch {
+            Write-NexusLine "Could not read configured model path; falling back to ./models." "Warn"
+        }
+    }
+    return Join-Path $root "models"
+}
+
+$modelsDir = Get-NexusConfiguredModelsDir
+
+function Get-NexusConfiguredComfyRoot {
+    if (![string]::IsNullOrWhiteSpace($env:NEXUS_COMFY_ROOT)) {
+        return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:NEXUS_COMFY_ROOT)
+    }
+    if (Test-Path -LiteralPath $settingsPath) {
+        try {
+            $settingsJson = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+            if (![string]::IsNullOrWhiteSpace([string]$settingsJson.comfy_root)) {
+                return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath([string]$settingsJson.comfy_root)
+            }
+        } catch {
+            Write-NexusLine "Could not read configured ComfyUI path; falling back to embedded runtime." "Warn"
+        }
+    }
+    return Join-Path $root "runtime\ComfyUI"
+}
+
+function Get-NexusConfiguredComfyPython {
+    if (![string]::IsNullOrWhiteSpace($env:NEXUS_COMFY_PYTHON) -and (Test-Path -LiteralPath $env:NEXUS_COMFY_PYTHON)) {
+        return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:NEXUS_COMFY_PYTHON)
+    }
+    if (Test-Path -LiteralPath $settingsPath) {
+        try {
+            $settingsJson = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+            if (![string]::IsNullOrWhiteSpace([string]$settingsJson.comfy_python) -and (Test-Path -LiteralPath ([string]$settingsJson.comfy_python))) {
+                return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath([string]$settingsJson.comfy_python)
+            }
+        } catch {
+            Write-NexusLine "Could not read configured ComfyUI Python; falling back to Nexus runtime Python." "Warn"
+        }
+    }
+    return $python
+}
+
+function Get-NexusConfiguredCustomNodesDir {
+    if (![string]::IsNullOrWhiteSpace($env:NEXUS_CUSTOM_NODES_DIR)) {
+        return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:NEXUS_CUSTOM_NODES_DIR)
+    }
+    if (Test-Path -LiteralPath $settingsPath) {
+        try {
+            $settingsJson = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+            if (![string]::IsNullOrWhiteSpace([string]$settingsJson.custom_nodes_dir)) {
+                return $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath([string]$settingsJson.custom_nodes_dir)
+            }
+        } catch {
+            Write-NexusLine "Could not read configured custom nodes path; falling back to ./custom_nodes." "Warn"
+        }
+    }
+    return Join-Path $root "custom_nodes"
+}
+
+$comfyRoot = Get-NexusConfiguredComfyRoot
+$comfyMain = Join-Path $comfyRoot "main.py"
+$comfyPython = Get-NexusConfiguredComfyPython
+$customNodesDir = Get-NexusConfiguredCustomNodesDir
 
 function Test-NexusHealth {
     try {
@@ -104,9 +182,15 @@ if (!(Test-Path -LiteralPath $comfyMain) -or !(Test-Path -LiteralPath $python)) 
     if (!(Test-Path -LiteralPath $bootstrap)) {
         throw "Runtime missing and bootstrap script not found."
     }
+    if ((!(Test-Path -LiteralPath $comfyMain)) -and !([string]$env:NEXUS_DOWNLOAD_COMFY_RUNTIME -match '^(1|true|yes|y)$')) {
+        throw "ComfyUI runtime not found at $comfyRoot. Run run.bat again and choose download, or select a custom ComfyUI path."
+    }
     Write-NexusSection "First Run"
     Write-NexusLine "Preparing embedded ComfyUI runtime..." "Info"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $bootstrap -ProjectRoot $root -CopyPythonEnv
+    $comfyRoot = Get-NexusConfiguredComfyRoot
+    $comfyMain = Join-Path $comfyRoot "main.py"
+    $comfyPython = Get-NexusConfiguredComfyPython
 }
 
 if (!(Test-Path -LiteralPath $comfyMain)) {
@@ -119,12 +203,20 @@ if (!(Test-Path -LiteralPath $python)) {
 
 if (Test-Path -LiteralPath $ltxDirectorDeps) {
     Write-NexusSection "Requirements"
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $python
+    if (Test-Path -LiteralPath $customNodeDeps) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $customNodeDeps -ProjectRoot $root -RuntimePython $comfyPython -CustomNodesDir $customNodesDir -Strict
+    }
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -CustomNodesDir $customNodesDir -Strict
 }
 
 if (Test-Path -LiteralPath $wan22Deps) {
     Write-NexusSection "Wan 2.2"
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $python
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
+}
+
+if (Test-Path -LiteralPath $dinov3Deps) {
+    Write-NexusSection "DINOv3"
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $dinov3Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
 }
 
 if (Test-Path -LiteralPath $runtimeHotfixes) {

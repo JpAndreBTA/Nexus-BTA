@@ -107,6 +107,13 @@ class ComfyClient:
         database_path.parent.mkdir(parents=True, exist_ok=True)
         extra_model_paths = self.settings.project_root / "config" / "nexus_extra_model_paths.yaml"
 
+        embedded_comfy_root = self.settings.project_root / "runtime" / "ComfyUI"
+        try:
+            use_project_base = self.settings.comfy_root.resolve() == embedded_comfy_root.resolve()
+        except OSError:
+            use_project_base = str(self.settings.comfy_root).strip().rstrip("\\/").lower() == str(embedded_comfy_root).strip().rstrip("\\/").lower()
+        comfy_base_dir = self.settings.project_root if use_project_base else self.settings.comfy_root
+
         args = [
             str(python_exe),
             str(main_py),
@@ -115,7 +122,7 @@ class ComfyClient:
             "--port",
             str(self.settings.runtime.comfy_port),
             "--base-directory",
-            str(self.settings.project_root),
+            str(comfy_base_dir),
             "--output-directory",
             str(self.settings.output_dir),
             "--input-directory",
@@ -478,6 +485,53 @@ class ComfyClient:
                         progress_callback({"status": "failed", "progress": 100, "message": message_text, "prompt_id": prompt_id})
                     raise ComfyExecutionError(message_text)
 
+    def _output_record_from_path(self, path: Path) -> dict[str, Any] | None:
+        try:
+            output_root = self.settings.output_dir.resolve()
+            resolved = path.resolve()
+            relative = resolved.relative_to(output_root)
+        except (OSError, ValueError):
+            return None
+        suffix = path.suffix.lower()
+        if suffix in {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae"}:
+            media_kind = "3d"
+        elif suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"}:
+            media_kind = "video"
+        elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+            media_kind = "image"
+        else:
+            return None
+        safe_relative_path = relative.as_posix()
+        return {
+            "kind": media_kind,
+            "filename": path.name,
+            "subfolder": relative.parent.as_posix() if str(relative.parent) != "." else "",
+            "type": "output",
+            "path": safe_relative_path,
+            "url": f"/outputs/{quote(safe_relative_path, safe='/')}",
+            "detected_from_filesystem": True,
+        }
+
+    def _recent_output_files(self, started_at: float) -> list[dict[str, Any]]:
+        output_root = self.settings.output_dir
+        if not output_root.exists():
+            return []
+        suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae", ".mp4", ".webm", ".mkv", ".mov", ".avi", ".png", ".jpg", ".jpeg", ".webp"}
+        records: list[dict[str, Any]] = []
+        for path in output_root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in suffixes:
+                continue
+            try:
+                if path.stat().st_mtime < started_at - 2:
+                    continue
+            except OSError:
+                continue
+            record = self._output_record_from_path(path)
+            if record:
+                records.append(record)
+        records.sort(key=lambda item: str(item.get("path") or ""))
+        return records
+
     async def history(self, prompt_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(f"{self.base_url}/history/{prompt_id}")
@@ -506,6 +560,9 @@ class ComfyClient:
                 if status.get("status_str") == "error":
                     raise ComfyExecutionError(_history_error_message(status))
                 if item.get("status", {}).get("completed"):
+                    fallback_outputs = self._recent_output_files(started_at)
+                    if fallback_outputs:
+                        return fallback_outputs
                     completed_since = completed_since or time.time()
                     if progress_callback:
                         progress_callback(
@@ -543,8 +600,9 @@ class ComfyClient:
 
 def extract_outputs(history_item: dict[str, Any]) -> list[dict[str, Any]]:
     outputs: list[dict[str, Any]] = []
+    model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae"}
     for node_output in history_item.get("outputs", {}).values():
-        for key in ["images", "videos", "gifs"]:
+        for key in ["images", "videos", "gifs", "meshes", "models", "model_files", "files"]:
             for item in node_output.get(key, []) or []:
                 filename = item.get("filename")
                 if not filename:
@@ -557,7 +615,12 @@ def extract_outputs(history_item: dict[str, Any]) -> list[dict[str, Any]]:
                 safe_relative_path = relative_path.replace("\\", "/")
                 url = f"/outputs/{quote(safe_relative_path, safe='/')}"
                 suffix = Path(filename).suffix.lower()
-                media_kind = "video" if suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else key[:-1]
+                if suffix in model_suffixes:
+                    media_kind = "3d"
+                elif suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"}:
+                    media_kind = "video"
+                else:
+                    media_kind = key[:-1]
                 outputs.append(
                     {
                         "kind": media_kind,

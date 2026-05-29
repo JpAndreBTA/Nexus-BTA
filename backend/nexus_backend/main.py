@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from .asset_resolver import resolve_generation_assets
 from .civitai import download_civitai_asset, resolve_civitai_asset, search_civitai_models
 from .comfy_client import ComfyClient, extract_outputs
-from .config import load_settings, save_settings
+from .config import DEFAULT_MODEL_SOURCES, coerce_path_list, load_settings, save_settings, sync_startup_model_path
 from .dependencies import custom_node_dependency_status, custom_node_requirements, install_custom_node_dependencies
 from .importer import import_resource
 from .lora_training import (
@@ -50,6 +50,7 @@ from .schemas import (
     DistilledLoraSelection,
     RuntimeHealth,
     RuntimeOptions,
+    SettingsUpdate,
     WorkflowSaveRequest,
 )
 from .templates import ensure_templates_file, load_templates
@@ -127,6 +128,11 @@ LTX_HF_LORA_ARTIFACTS: dict[str, dict[str, str]] = {
         "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth",
     },
 }
+
+TRELLIS2_REPO_ID = "microsoft/TRELLIS.2-4B"
+DINOV3_REPO_ID = "facebook/dinov3-vitl16-pretrain-lvd1689m"
+DINOV3_KAGGLE_HANDLE = "x1an9l1/facebook-dinov3-vitl16-pretrain-lvd1689m/transformers/default"
+HF_TOKEN_PATH = settings.project_root / "config" / "huggingface_token.txt"
 
 EXTRAS_VIDEO_RESTORE_NODES: dict[str, tuple[str, ...]] = {
     "flashvsr": ("ComfyUI-FlashVSR", "ComfyUI-FlashVSR_Ultra_Fast"),
@@ -840,7 +846,8 @@ def _reference_image_values(request: GenerateRequest) -> list[str]:
 def _prepare_reference_images(request: GenerateRequest) -> list[str]:
     if request.activity != "img2img":
         return []
-    values = _reference_image_values(request)[:3]
+    max_refs = 4 if request.preset.lower() == "model3d" else 3
+    values = _reference_image_values(request)[:max_refs]
     return [_prepare_reference_value(value, f"nexus_reference_{index + 1}") for index, value in enumerate(values)]
 
 
@@ -1567,13 +1574,19 @@ def _prepare_reference_image(request: GenerateRequest) -> str | None:
 
 
 def _prepare_mask_image(request: GenerateRequest) -> str | None:
-    value = (request.img2img.mask_image or "").strip()
+    model3d_options = request.model3d if isinstance(request.model3d, dict) else {}
+    model3d_texture_paint = request.preset.lower() == "model3d" and str(getattr(request, "workspace", "") or "").lower() == "texture_paint"
+    model3d_mask_space = str(model3d_options.get("texture_mask_space") or "").lower()
+    model3d_view_mask = str(model3d_options.get("texture_view_mask_image") or "").strip()
+    model3d_uv_mask = str(model3d_options.get("texture_mask_image") or "").strip()
+    model3d_value = model3d_view_mask if model3d_texture_paint and model3d_mask_space == "viewpoint" and model3d_view_mask else model3d_uv_mask
+    value = (model3d_value if request.preset.lower() == "model3d" else "") or (request.img2img.mask_image or "").strip()
     mode = request.img2img.mode.lower()
-    if request.activity != "img2img" or not value or "inpaint" not in mode:
+    if request.activity != "img2img" or not value or ("inpaint" not in mode and not model3d_texture_paint):
         return None
     if not value.startswith("data:image/"):
         raise ValueError("Invalid inpaint mask image.")
-    return _write_input_data_image(value, "nexus_mask")
+    return _write_input_data_image(value, "nexus_texture_mask" if model3d_texture_paint else "nexus_mask")
 
 
 def _prepare_controlnet_image(request: GenerateRequest) -> str | None:
@@ -2095,10 +2108,14 @@ def _output_node_kind(node: dict[str, Any]) -> str | None:
         return "image"
     if class_lower in {"savevideo", "vhs_videocombine", "videocombine", "decodeandsavevideo"}:
         return "video"
+    if class_lower in {"saveglb", "savegltf", "savemesh", "save3dmodel"}:
+        return "3d"
     if "filename_prefix" not in (node.get("inputs") or {}):
         return None
     if "video" in class_lower or "gif" in class_lower:
         return "video"
+    if any(token in class_lower for token in ("mesh", "glb", "gltf", "3d", "obj", "save3d")):
+        return "3d"
     if "image" in class_lower or "rgba" in class_lower:
         return "image"
     return None
@@ -2106,6 +2123,7 @@ def _output_node_kind(node: dict[str, Any]) -> str | None:
 
 def _apply_output_prefixes(prompt: dict[str, Any], request: GenerateRequest) -> None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model3d_timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     base = "_".join(
         part
         for part in (
@@ -2123,6 +2141,10 @@ def _apply_output_prefixes(prompt: dict[str, Any], request: GenerateRequest) -> 
             continue
         inputs = node.setdefault("inputs", {})
         if not isinstance(inputs, dict):
+            continue
+        if str(request.preset or "").lower() == "model3d":
+            filename = "3DMODEL" if kind == "3d" else ("TEXTURE" if kind == "image" else kind.upper())
+            inputs["filename_prefix"] = f"3D/{model3d_timestamp}/{filename}"
             continue
         current = _output_slug(Path(str(inputs.get("filename_prefix") or "")).name, "")
         suffix = f"_{current}" if current and current.lower() not in {"comfyui", "nexus_bta"} else ""
@@ -2162,7 +2184,8 @@ def _cleanup_video_sidecar_images(outputs: list[dict[str, Any]], start_timestamp
 def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[str, Any]]:
     if not settings.output_dir.exists():
         return []
-    media_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mkv", ".mov", ".avi"}
+    model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz"}
+    media_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mkv", ".mov", ".avi", *model_suffixes}
     root = settings.output_dir.resolve()
     candidates: list[Path] = []
     for path in settings.output_dir.rglob("*"):
@@ -2181,7 +2204,7 @@ def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[st
     for path in sorted(candidates, key=lambda item: item.stat().st_mtime, reverse=True)[:limit]:
         relative = path.relative_to(settings.output_dir).as_posix()
         suffix = path.suffix.lower()
-        kind = "video" if suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "image"
+        kind = "3d" if suffix in model_suffixes else ("video" if suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "image")
         outputs.append(
             {
                 "kind": kind,
@@ -3739,6 +3762,8 @@ app.add_middleware(
 
 if settings.output_dir.exists():
     app.mount("/outputs", StaticFiles(directory=settings.output_dir), name="outputs")
+settings.input_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/inputs", StaticFiles(directory=settings.input_dir), name="inputs")
 if settings.models_dir.exists():
     app.mount("/model-assets", StaticFiles(directory=settings.models_dir), name="model-assets")
 assets_dir = settings.project_root / "assets"
@@ -3775,6 +3800,48 @@ async def config() -> dict[str, Any]:
     return settings.model_dump(mode="json")
 
 
+@app.patch("/api/config")
+async def update_config(request: SettingsUpdate) -> dict[str, Any]:
+    previous_models_dir = settings.models_dir
+    path_fields = ("models_dir", "custom_nodes_dir", "workflows_dir")
+    for field in path_fields:
+        value = getattr(request, field)
+        if value:
+            setattr(settings, field, Path(value))
+
+    list_path_fields = (
+        "reference_model_sources",
+        "reference_custom_node_sources",
+        "reference_workflow_sources",
+    )
+    for field in list_path_fields:
+        value = getattr(request, field)
+        if value is not None:
+            setattr(settings, field, coerce_path_list(value))
+
+    if request.model_sources is not None:
+        next_model_sources = {
+            str(key): list(value)
+            for key, value in settings.model_sources.items()
+        }
+        for key, value in request.model_sources.items():
+            clean_key = str(key).strip()
+            if clean_key:
+                next_model_sources[clean_key] = [Path(item) for item in value if str(item).strip()]
+        for key, value in DEFAULT_MODEL_SOURCES.items():
+            next_model_sources.setdefault(key, list(value))
+        settings.model_sources = next_model_sources
+
+    if request.runtime is not None:
+        _apply_runtime_options(request.runtime)
+
+    settings.ensure_directories()
+    save_settings(settings)
+    if request.models_dir is not None or request.model_sources is not None or request.reference_model_sources is not None:
+        sync_startup_model_path(settings, previous_models_dir=previous_models_dir)
+    return settings.model_dump(mode="json")
+
+
 @app.get("/api/templates")
 async def templates() -> dict[str, Any]:
     return load_templates()
@@ -3788,6 +3855,155 @@ async def model_tree() -> dict[str, Any]:
 @app.get("/api/models")
 async def models(include_references: bool = Query(False)) -> dict[str, Any]:
     return scan_models(settings, include_references=include_references).model_dump(mode="json")
+
+
+def _trellis2_model_dir() -> Path:
+    return settings.models_dir / "3d" / "trellis2" / "TRELLIS.2-4B"
+
+
+def _huggingface_token() -> str | None:
+    for key in ("HF_TOKEN", "HUGGINGFACE_HUB_TOKEN"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
+    if HF_TOKEN_PATH.exists():
+        for line in HF_TOKEN_PATH.read_text(encoding="utf-8-sig").splitlines():
+            value = line.strip()
+            if value and not value.startswith("#"):
+                return value
+    return None
+
+
+def _dinov3_model_dir() -> Path:
+    return settings.models_dir / "facebook" / "dinov3-vitl16-pretrain-lvd1689m"
+
+
+def _dinov3_candidate_dirs() -> list[Path]:
+    roots: list[Path] = [settings.models_dir]
+    roots.extend(settings.model_sources.get("3d", []))
+    roots.extend(settings.model_sources.get("clip_vision", []))
+    roots.extend(settings.reference_model_sources)
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        for candidate in (
+            root / "facebook" / "dinov3-vitl16-pretrain-lvd1689m",
+            root / "dinov3-vitl16-pretrain-lvd1689m",
+        ):
+            key = str(candidate)
+            if key.lower() not in seen:
+                seen.add(key.lower())
+                candidates.append(candidate)
+    return candidates
+
+
+def _dinov3_installed_dir() -> Path:
+    for candidate in _dinov3_candidate_dirs():
+        if _dinov3_snapshot_files(candidate):
+            return candidate
+    return _dinov3_model_dir()
+
+
+def _dinov3_snapshot_files(target: Path) -> list[str]:
+    if not target.exists():
+        return []
+    required = target / "model.safetensors"
+    if not required.exists() or required.stat().st_size <= 0:
+        return []
+    files: list[str] = []
+    for path in target.rglob("*"):
+        if not path.is_file() or ".cache" in path.parts:
+            continue
+        if path.stat().st_size <= 0:
+            continue
+        files.append(path.relative_to(target).as_posix())
+    return sorted(files)
+
+
+def _copy_dinov3_snapshot(source_dir: Path, target_dir: Path) -> None:
+    source_root = source_dir
+    nested = source_dir / "facebook" / "dinov3-vitl16-pretrain-lvd1689m"
+    if (nested / "model.safetensors").exists():
+        source_root = nested
+    if not (source_root / "model.safetensors").exists():
+        raise RuntimeError(f"Kaggle DINOv3 download did not contain model.safetensors under {source_dir}")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for item in source_root.iterdir():
+        target = target_dir / item.name
+        if item.is_dir():
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(item, target)
+        else:
+            shutil.copy2(item, target)
+
+
+def _trellis2_candidate_dirs() -> list[Path]:
+    roots: list[Path] = [settings.models_dir]
+    roots.extend(settings.model_sources.get("3d", []))
+    roots.extend(settings.reference_model_sources)
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        for candidate in (
+            root / "3d" / "trellis2" / "TRELLIS.2-4B",
+            root / "trellis2" / "TRELLIS.2-4B",
+            root / "microsoft" / "TRELLIS.2-4B",
+            root / "TRELLIS.2-4B",
+        ):
+            key = str(candidate)
+            if key.lower() not in seen:
+                seen.add(key.lower())
+                candidates.append(candidate)
+    return candidates
+
+
+def _trellis2_installed_dir() -> Path:
+    for candidate in _trellis2_candidate_dirs():
+        if _trellis2_snapshot_files(candidate):
+            return candidate
+    return _trellis2_model_dir()
+
+
+def _trellis2_snapshot_files(target: Path) -> list[str]:
+    if not target.exists():
+        return []
+    files: list[str] = []
+    for path in target.rglob("*"):
+        if not path.is_file() or ".cache" in path.parts:
+            continue
+        if path.stat().st_size <= 0:
+            continue
+        files.append(path.relative_to(target).as_posix())
+    return sorted(files)
+
+
+@app.get("/api/model3d/trellis2/status")
+async def model3d_trellis2_status() -> dict[str, Any]:
+    target = _trellis2_installed_dir()
+    existing = _trellis2_snapshot_files(target)
+    return {
+        "installed": bool(existing),
+        "path": str(target),
+        "existing": existing,
+        "missing": [] if existing else ["snapshot"],
+        "source": f"https://huggingface.co/{TRELLIS2_REPO_ID}",
+    }
+
+
+@app.get("/api/model3d/dinov3/status")
+async def model3d_dinov3_status() -> dict[str, Any]:
+    target = _dinov3_installed_dir()
+    existing = _dinov3_snapshot_files(target)
+    return {
+        "installed": bool(existing),
+        "path": str(target),
+        "existing": existing,
+        "missing": [] if existing else ["model.safetensors"],
+        "source": f"https://huggingface.co/{DINOV3_REPO_ID}",
+        "token_file": str(HF_TOKEN_PATH),
+        "token_configured": bool(_huggingface_token()),
+    }
 
 
 @app.get("/api/loras")
@@ -4498,6 +4714,156 @@ async def civitai_downloads() -> dict[str, Any]:
     jobs = list(download_jobs.values())[-30:]
     active = [job for job in jobs if job.get("status") in {"queued", "resolving", "downloading", "saving_preview", "downloaded"}]
     return {"active": len(active), "jobs": jobs}
+
+
+async def _run_trellis2_download_job(job_id: str) -> None:
+    target_dir = _trellis2_model_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        token = _huggingface_token()
+        _update_download_job(job_id, {
+            "status": "downloading",
+            "progress": 5,
+            "message": "Downloading TRELLIS.2-4B snapshot from Hugging Face.",
+            "token_configured": bool(token),
+        })
+
+        def _snapshot_download() -> None:
+            try:
+                from huggingface_hub import snapshot_download
+            except ImportError as exc:
+                raise RuntimeError("huggingface_hub is required to download TRELLIS.2-4B.") from exc
+            snapshot_download(
+                repo_id=TRELLIS2_REPO_ID,
+                local_dir=str(target_dir),
+                local_dir_use_symlinks=False,
+                resume_download=True,
+                token=token,
+            )
+
+        await asyncio.to_thread(_snapshot_download)
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {
+            "status": "downloaded",
+            "progress": 100,
+            "message": "TRELLIS.2-4B ready.",
+            "path": str(target_dir),
+            "completed_at": datetime.now().isoformat(timespec="seconds"),
+        })
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+async def _run_dinov3_download_job(job_id: str) -> None:
+    target_dir = _dinov3_model_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        token = _huggingface_token()
+        _update_download_job(job_id, {
+            "status": "downloading",
+            "progress": 5,
+            "message": "Downloading DINOv3 ViT-L/16 snapshot from Hugging Face.",
+            "token_configured": bool(token),
+        })
+
+        def _snapshot_download() -> None:
+            try:
+                from huggingface_hub import snapshot_download
+            except ImportError as exc:
+                raise RuntimeError("huggingface_hub is required to download DINOv3.") from exc
+            snapshot_download(
+                repo_id=DINOV3_REPO_ID,
+                local_dir=str(target_dir),
+                local_dir_use_symlinks=False,
+                resume_download=True,
+                token=token,
+                allow_patterns=[
+                    "config.json",
+                    "model.safetensors",
+                    "preprocessor_config.json",
+                    "*.json",
+                    "*.txt",
+                    "*.md",
+                ],
+            )
+
+        try:
+            await asyncio.to_thread(_snapshot_download)
+        except Exception as hf_exc:
+            _update_download_job(job_id, {
+                "status": "downloading",
+                "progress": 35,
+                "message": f"Hugging Face DINOv3 download failed ({type(hf_exc).__name__}); trying Kaggle mirror.",
+                "hf_error": str(hf_exc),
+                "kaggle_handle": DINOV3_KAGGLE_HANDLE,
+            })
+
+            def _kaggle_download() -> None:
+                try:
+                    import kagglehub
+                except ImportError as exc:
+                    raise RuntimeError("kagglehub is required to download DINOv3 from Kaggle.") from exc
+                source = Path(kagglehub.model_download(DINOV3_KAGGLE_HANDLE))
+                _copy_dinov3_snapshot(source, target_dir)
+
+            await asyncio.to_thread(_kaggle_download)
+        existing = _dinov3_snapshot_files(target_dir)
+        if not existing:
+            raise RuntimeError("DINOv3 download finished, but model.safetensors was not found.")
+        _update_download_job(job_id, {
+            "status": "downloaded",
+            "progress": 100,
+            "message": "DINOv3 ViT-L/16 ready.",
+            "path": str(target_dir),
+            "existing": existing,
+            "completed_at": datetime.now().isoformat(timespec="seconds"),
+        })
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.post("/api/model3d/trellis2/download/start")
+async def model3d_trellis2_download_start() -> dict[str, Any]:
+    status = await model3d_trellis2_status()
+    job_id = uuid.uuid4().hex
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued TRELLIS.2-4B download.",
+        "filename": "TRELLIS.2-4B",
+        "url": f"https://huggingface.co/{TRELLIS2_REPO_ID}",
+        "path": status["path"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    if status["installed"]:
+        download_jobs[job_id].update({"status": "downloaded", "progress": 100, "message": "TRELLIS.2-4B already installed."})
+        return download_jobs[job_id]
+    asyncio.create_task(_run_trellis2_download_job(job_id))
+    return download_jobs[job_id]
+
+
+@app.post("/api/model3d/dinov3/download/start")
+async def model3d_dinov3_download_start() -> dict[str, Any]:
+    status = await model3d_dinov3_status()
+    job_id = uuid.uuid4().hex
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued DINOv3 ViT-L/16 download.",
+        "filename": "dinov3-vitl16-pretrain-lvd1689m",
+        "url": f"https://huggingface.co/{DINOV3_REPO_ID}",
+        "path": status["path"],
+        "token_file": str(HF_TOKEN_PATH),
+        "token_configured": status["token_configured"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    if status["installed"]:
+        download_jobs[job_id].update({"status": "downloaded", "progress": 100, "message": "DINOv3 ViT-L/16 already installed."})
+        return download_jobs[job_id]
+    asyncio.create_task(_run_dinov3_download_job(job_id))
+    return download_jobs[job_id]
 
 
 @app.post("/api/import")
@@ -5381,12 +5747,13 @@ async def gallery() -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     if not settings.output_dir.exists():
         return items
+    model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz"}
     for path in sorted(settings.output_dir.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
-        if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi"}:
+        if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", *model_suffixes}:
             continue
         relative = path.relative_to(settings.output_dir).as_posix()
         url_path = quote(relative, safe="/")
-        media_type = "video" if path.suffix.lower() in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "image"
+        media_type = "3d" if path.suffix.lower() in model_suffixes else ("video" if path.suffix.lower() in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "image")
         if media_type == "image" and relative.replace("\\", "/").startswith("video/"):
             continue
         metadata = _read_output_metadata(path)

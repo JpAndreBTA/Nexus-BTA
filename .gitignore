@@ -16,6 +16,10 @@ workflows/comfyui/
 
 # Local configuration and caches
 config/nexus_settings.json
+config/nexus_startup.json
+config/nexus_startup_env.cmd
+config/huggingface_token.txt
+frontend/results/
 .serena/
 .venv/
 venv/

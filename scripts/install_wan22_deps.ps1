@@ -1,6 +1,7 @@
 param(
     [string]$ProjectRoot = "D:\NexusBTA",
     [string]$RuntimePython = "",
+    [string]$ModelsDir = "",
     [switch]$IncludeWanModels,
     [switch]$Strict
 )
@@ -43,22 +44,69 @@ if (!$RuntimePython) {
     $RuntimePython = if (Test-Path -LiteralPath $candidate) { $candidate } else { "python" }
 }
 
-$modelsDir = Join-Path $root "models"
+$settingsPath = Join-Path $root "config\nexus_settings.json"
+$modelsDir = if (![string]::IsNullOrWhiteSpace($ModelsDir)) {
+    Get-AbsolutePath $ModelsDir
+} elseif (![string]::IsNullOrWhiteSpace($env:NEXUS_MODELS_DIR)) {
+    Get-AbsolutePath $env:NEXUS_MODELS_DIR
+} else {
+    Join-Path $root "models"
+}
 foreach ($dir in @("diffusion_models", "text_encoders", "vae", "clip_vision", "loras")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $modelsDir $dir) | Out-Null
 }
+$allowModelDownloads = [string]::IsNullOrWhiteSpace($env:NEXUS_ALLOW_MODEL_DOWNLOADS) -eq $false -and $env:NEXUS_ALLOW_MODEL_DOWNLOADS -match '^(1|true|yes|y)$'
 
-$assets = @(
+function Get-NexusModelRootsForCategory([string]$Category) {
+    $roots = @($modelsDir)
+    if (Test-Path -LiteralPath $settingsPath) {
+        try {
+            $settingsJson = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+            foreach ($item in @($settingsJson.model_sources.$Category)) {
+                if (![string]::IsNullOrWhiteSpace([string]$item)) { $roots += [string]$item }
+            }
+            foreach ($item in @($settingsJson.reference_model_sources)) {
+                if (![string]::IsNullOrWhiteSpace([string]$item)) { $roots += [string]$item }
+            }
+        } catch {
+            Write-NexusWarn "Could not read model source settings: $($_.Exception.Message)"
+        }
+    }
+    return @($roots | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Test-NexusWanAssetPresent($Asset) {
+    $minBytes = [int64]($Asset.MinBytes)
+    if ((Test-Path -LiteralPath $Asset.Target) -and (Get-Item -LiteralPath $Asset.Target).Length -ge $minBytes) {
+        return $true
+    }
+    foreach ($alias in @($Asset.Aliases)) {
+        if ($alias -and (Test-Path -LiteralPath $alias) -and (Get-Item -LiteralPath $alias).Length -ge $minBytes) {
+            return $true
+        }
+    }
+    foreach ($rootPath in Get-NexusModelRootsForCategory ([string]$Asset.Category)) {
+        $candidate = Join-Path (Join-Path $rootPath ([string]$Asset.Category)) (Split-Path $Asset.Target -Leaf)
+        if ((Test-Path -LiteralPath $candidate) -and (Get-Item -LiteralPath $candidate).Length -ge $minBytes) {
+            return $true
+        }
+    }
+    return $false
+}
+
+$optionalAssets = @(
     @{
         Repo = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
         File = "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
         Target = Join-Path $modelsDir "text_encoders\umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+        Category = "text_encoders"
         MinBytes = 1GB
     },
     @{
         Repo = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
         File = "split_files/vae/wan_2.1_vae.safetensors"
         Target = Join-Path $modelsDir "vae\wan_2.1_vae.safetensors"
+        Category = "vae"
         MinBytes = 100MB
     },
     @{
@@ -66,38 +114,59 @@ $assets = @(
         File = "split_files/vae/wan2.2_vae.safetensors"
         Target = Join-Path $modelsDir "vae\wan2.2_vae.safetensors"
         Aliases = @((Join-Path $modelsDir "vae\wan22-vae.safetensors"))
+        Category = "vae"
         MinBytes = 100MB
-    },
+    }
+)
+
+$mandatoryAssets = @(
     @{
         Repo = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
         File = "split_files/clip_vision/clip_vision_h.safetensors"
         Target = Join-Path $modelsDir "clip_vision\clip_vision_h.safetensors"
+        Category = "clip_vision"
         MinBytes = 500MB
     }
 )
 
 if ($IncludeWanModels) {
-    $assets += @(
+    $optionalAssets += @(
         @{
             Repo = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
             File = "split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
             Target = Join-Path $modelsDir "diffusion_models\wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
+            Category = "diffusion_models"
             MinBytes = 1GB
         },
         @{
             Repo = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
             File = "split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
             Target = Join-Path $modelsDir "diffusion_models\wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
+            Category = "diffusion_models"
             MinBytes = 1GB
         }
     )
 }
 
-Invoke-NexusStep -Label "Installing Hugging Face downloader" -Step {
-    & $RuntimePython -m pip install -q "huggingface-hub>=0.24"
-    if ($LASTEXITCODE -ne 0) {
-        throw "pip install huggingface-hub failed with exit code $LASTEXITCODE"
+$assets = @($mandatoryAssets | Where-Object { -not (Test-NexusWanAssetPresent $_) })
+if (!$allowModelDownloads) {
+    $missing = @($optionalAssets | Where-Object { -not (Test-NexusWanAssetPresent $_) })
+    if ($missing.Count -gt 0) {
+        Write-NexusWarn ("Skipping Wan 2.2 model downloads because startup model downloads were not approved: {0}" -f (($missing | ForEach-Object { Split-Path $_.Target -Leaf }) -join ", "))
     }
+} else {
+    $assets += @($optionalAssets | Where-Object { -not (Test-NexusWanAssetPresent $_) })
+}
+
+if ($assets.Count -gt 0) {
+    Invoke-NexusStep -Label "Installing Hugging Face downloader" -Step {
+        & $RuntimePython -m pip install -q "huggingface-hub>=0.24"
+        if ($LASTEXITCODE -ne 0) {
+            throw "pip install huggingface-hub failed with exit code $LASTEXITCODE"
+        }
+    }
+} else {
+    Write-NexusLine "Wan 2.2 model downloads skipped or already satisfied." "Info"
 }
 
 $assetJson = $assets | ConvertTo-Json -Depth 5 -Compress
@@ -149,18 +218,20 @@ for asset in assets:
         shutil.rmtree(tmpdir, ignore_errors=True)
 '@
 
-Invoke-NexusStep -Label "Downloading Wan 2.2 support assets" -Step {
-    $env:NEXUS_WAN22_ASSETS = $assetJson
-    $tempScript = Join-Path ([System.IO.Path]::GetTempPath()) ("nexus_wan22_assets_{0}.py" -f ([System.Guid]::NewGuid().ToString("N")))
-    try {
-        Set-Content -LiteralPath $tempScript -Value $downloadScript -Encoding UTF8
-        & $RuntimePython $tempScript
-        if ($LASTEXITCODE -ne 0) {
-            throw "Wan 2.2 asset downloader failed with exit code $LASTEXITCODE"
+if ($assets.Count -gt 0) {
+    Invoke-NexusStep -Label "Downloading Wan 2.2 support assets" -Step {
+        $env:NEXUS_WAN22_ASSETS = $assetJson
+        $tempScript = Join-Path ([System.IO.Path]::GetTempPath()) ("nexus_wan22_assets_{0}.py" -f ([System.Guid]::NewGuid().ToString("N")))
+        try {
+            Set-Content -LiteralPath $tempScript -Value $downloadScript -Encoding UTF8
+            & $RuntimePython $tempScript
+            if ($LASTEXITCODE -ne 0) {
+                throw "Wan 2.2 asset downloader failed with exit code $LASTEXITCODE"
+            }
+        } finally {
+            Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+            Remove-Item Env:\NEXUS_WAN22_ASSETS -ErrorAction SilentlyContinue
         }
-    } finally {
-        Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
-        Remove-Item Env:\NEXUS_WAN22_ASSETS -ErrorAction SilentlyContinue
     }
 }
 

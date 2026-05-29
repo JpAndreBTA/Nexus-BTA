@@ -129,6 +129,7 @@ class WorkflowRegistry:
         roots = [
             self.settings.project_root / "workflows" / "nexus_base",
             self.settings.workflows_dir,
+            *self.settings.reference_workflow_sources,
         ]
         seen: set[Path] = set()
         for root in roots:
@@ -233,6 +234,7 @@ class WorkflowRegistry:
                 "wan": ["wan"],
                 "flux": [],
                 "qwen": [],
+                "model3d": ["trellis", "3d", "meshwithtexturing", "meshonly"],
                 "zimageturbo": ["z-image-turbo", "zimage-turbo", "zimage"],
                 "zimage": ["z-image-turbo", "zimage-turbo", "zimage"],
                 "lumina": ["lumina"],
@@ -250,7 +252,7 @@ class WorkflowRegistry:
         tags = sorted(
             {
                 tag
-                for tag in ["ltx", "anima", "wan", "flux", "qwen", "zimage", "z-image", "gguf", "i2v", "t2v"]
+                for tag in ["ltx", "anima", "wan", "flux", "qwen", "zimage", "z-image", "trellis", "3d", "mesh", "gguf", "i2v", "t2v"]
                 if tag in path.name.lower() or any(tag in cls.lower() for cls in classes)
             }
         )
@@ -666,6 +668,52 @@ def _known_ui_widget_order(node_type: str) -> list[str]:
         return ["cfg"]
     if lower == "loadimage":
         return ["image", "upload"]
+    if lower == "trellis2loadimagewithtransparency":
+        return ["image", "upload"]
+    if lower == "trellis2loadmodel":
+        return [
+            "modelname",
+            "backend",
+            "device",
+            "low_vram",
+            "keep_models_loaded",
+            "conv_backend",
+            "sparse_backend",
+            "use_reconviagen",
+        ]
+    if lower == "trellis2preprocessimage":
+        return ["padding", "remove_background", "max_size"]
+    if lower == "trellis2sparsemultiviewgenerator":
+        return [
+            "seed",
+            "control_after_generate",
+            "sparse_structure_steps",
+            "sparse_structure_guidance_strength",
+            "sparse_structure_guidance_rescale",
+            "sparse_structure_rescale_t",
+            "sparse_structure_sampler",
+            "sparse_structure_resolution",
+            "sparse_structure_guidance_interval_start",
+            "sparse_structure_guidance_interval_end",
+            "fill_holes",
+            "hole_iterations",
+            "verbose",
+            "dino_lock",
+            "dino_substeps",
+            "hole_fill_algorithm",
+            "dino_foundation_cap",
+            "keep_only_shell",
+            "front_axis",
+            "blend_temperature",
+        ]
+    if lower == "trellis2shapemultiviewgenerator":
+        return ["resolution", "steps", "guidance_strength", "guidance_rescale", "rescale_t", "sampler", "threshold", "batch_size"]
+    if lower == "trellis2shapecascademultiviewgenerator":
+        return ["seed", "resolution", "sparse_structure_resolution", "max_num_tokens", "steps", "guidance_strength", "guidance_rescale", "rescale_t"]
+    if lower == "trellis2texslatmultiviewgenerator":
+        return ["resolution", "steps", "guidance_strength", "guidance_rescale", "rescale_t", "sampler", "temperature", "scale"]
+    if lower in {"primitiveint", "primitivestring"}:
+        return ["value", "control_after_generate"]
     if lower == "loadvideo":
         return ["video", "output_mode"]
     if lower in {"vhs_loadvideo", "loadvideoui"}:
@@ -995,9 +1043,13 @@ def convert_ui_to_api(data: dict[str, Any], object_info: dict[str, Any]) -> dict
         if object_info and class_type not in object_info and _is_ui_helper_node(str(class_type)):
             continue
         inputs: dict[str, Any] = {}
+        linked_widget_names: set[str] = set()
         for input_info in node.get("inputs", []) or []:
             name = input_info.get("name")
             link = input_info.get("link")
+            widget = input_info.get("widget")
+            if name and isinstance(widget, dict) and widget.get("name"):
+                linked_widget_names.add(str(widget.get("name")))
             if name and link is not None and int(link) in links:
                 origin_id, origin_slot = links[int(link)]
                 inputs[name] = [origin_id, origin_slot]
@@ -1014,12 +1066,21 @@ def convert_ui_to_api(data: dict[str, Any], object_info: dict[str, Any]) -> dict
             widget_names = _widget_input_names(class_type, object_info)
             value_iter = iter(widget_values if isinstance(widget_values, list) else [])
             for name in widget_names:
-                if name in inputs:
+                if name in inputs and name not in linked_widget_names:
                     continue
+                value = None
+                has_value = False
                 try:
-                    inputs[name] = next(value_iter)
+                    value = next(value_iter)
+                    has_value = True
                 except StopIteration:
                     break
+                if name in inputs:
+                    if name in linked_widget_names:
+                        continue
+                    continue
+                if has_value:
+                    inputs[name] = value
 
         api[node_id] = {
             "class_type": class_type,
@@ -1032,13 +1093,17 @@ def convert_ui_to_api(data: dict[str, Any], object_info: dict[str, Any]) -> dict
 
 
 def _widget_input_names(class_type: str, object_info: dict[str, Any]) -> list[str]:
+    lower = class_type.lower()
+    known = _known_ui_widget_order(class_type)
+    if lower in {"trellis2sparsemultiviewgenerator"} and known:
+        return known
     info = object_info.get(class_type, {}).get("input", {}) if object_info else {}
     names: list[str] = []
     for group in ["required", "optional"]:
         values = info.get(group, {})
         if isinstance(values, dict):
             names.extend(values.keys())
-    for name in _known_ui_widget_order(class_type):
+    for name in known:
         if name not in names:
             names.append(name)
     return names
@@ -4574,6 +4639,7 @@ def patch_workflow(
             set_input_or_linked(inputs, "terminal", terminal_value)
 
     _ensure_external_vae_loader(api, assets)
+    _ensure_model3d_trellis_route(api, request, assets)
     _apply_side_menu_loras(api, request)
     _ensure_zimage_reference_route(api, request, assets)
     _ensure_qwen_image_edit_route(api, request, assets)
@@ -4585,6 +4651,201 @@ def patch_workflow(
     _ensure_inpaint_mask_route(api, request, assets)
     _ensure_ltx_director_frame_trim(api, request)
     return api
+
+
+def _model3d_number(options: dict[str, Any], key: str, default: float) -> float:
+    value = _number_or_none(options.get(key))
+    return default if value is None else value
+
+
+def _model3d_int(options: dict[str, Any], key: str, default: int) -> int:
+    return int(round(_model3d_number(options, key, float(default))))
+
+
+def _model3d_bool(options: dict[str, Any], key: str, default: bool = False) -> bool:
+    value = options.get(key)
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _model3d_sparse_resolution(options: dict[str, Any]) -> int:
+    explicit = _number_or_none(options.get("sparse_structure_resolution"))
+    if explicit is not None:
+        return max(32, min(128, int(round(explicit))))
+    voxel = _model3d_int(options, "voxel_resolution", 1024)
+    return max(32, min(128, int(round(voxel / 8))))
+
+
+def _set_existing_model3d_inputs(inputs: dict[str, Any], names: list[str], value: Any) -> None:
+    if value is None:
+        return
+    for name in names:
+        if name in inputs:
+            inputs[name] = value
+
+
+def _find_trellis_loader(api: dict[str, Any], title_token: str) -> str | None:
+    wanted = title_token.lower()
+    fallback: str | None = None
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("class_type", "")).lower() != "trellis2loadimagewithtransparency":
+            continue
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        if wanted in title:
+            return str(node_id)
+        fallback = fallback or str(node_id)
+    return fallback if wanted == "front" else None
+
+
+def _ensure_trellis_reference_preprocess(api: dict[str, Any], image_name: str, view: str) -> list[Any]:
+    loader_id = _find_trellis_loader(api, view)
+    if not loader_id:
+        loader_id = str(_next_api_node_id(api))
+        api[loader_id] = {
+            "class_type": "Trellis2LoadImageWithTransparency",
+            "inputs": {},
+            "_meta": {"title": f"{view.title()} Image"},
+        }
+    loader = api[str(loader_id)]
+    inputs = loader.setdefault("inputs", {})
+    if isinstance(inputs, dict):
+        inputs["image"] = image_name
+    loader.setdefault("_meta", {})["title"] = f"{view.title()} Image"
+
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("class_type", "")).lower() != "trellis2preprocessimage":
+            continue
+        inputs = node.setdefault("inputs", {})
+        if isinstance(inputs, dict) and inputs.get("image") == [str(loader_id), 2]:
+            return [str(node_id), 0]
+
+    preprocess_id = str(_next_api_node_id(api))
+    api[preprocess_id] = {
+        "class_type": "Trellis2PreProcessImage",
+        "inputs": {"image": [str(loader_id), 2], "padding": 10, "remove_background": False, "max_size": 1024},
+        "_meta": {"title": f"Preprocess {view.title()} Image"},
+    }
+    return [preprocess_id, 0]
+
+
+def _ensure_model3d_trellis_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
+    if str(request.preset or "").lower() != "model3d":
+        return
+    options = request.model3d or {}
+    raw_refs = assets.get("reference_images") or []
+    if isinstance(raw_refs, str):
+        raw_refs = [raw_refs]
+    refs = [str(item) for item in raw_refs if str(item or "").strip()][:4]
+    if not refs and assets.get("reference_image"):
+        refs = [str(assets["reference_image"])]
+    if not refs:
+        return
+
+    view_order = ["front", "left", "right", "back"]
+    image_refs: dict[str, list[Any]] = {}
+    for view, image_name in zip(view_order, refs):
+        image_refs[view] = _ensure_trellis_reference_preprocess(api, image_name, view)
+
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        inputs = node.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+
+        if class_lower == "trellis2imagecondmultiviewgenerator":
+            fallback_ref = next(iter(image_refs.values()), None)
+            for view in view_order:
+                key = f"{view}_image"
+                if view in image_refs:
+                    inputs[key] = image_refs[view]
+                elif fallback_ref is not None:
+                    inputs[key] = fallback_ref
+        elif class_lower == "trellis2loadmodel":
+            model_name = str(options.get("model") or inputs.get("modelname") or "microsoft/TRELLIS.2-4B")
+            inputs["modelname"] = model_name
+            inputs.pop("model", None)
+            inputs["backend"] = "sdpa"
+            inputs.setdefault("device", "cuda")
+            inputs.setdefault("low_vram", True)
+            inputs.setdefault("keep_models_loaded", False)
+            inputs.setdefault("conv_backend", "flex_gemm")
+            inputs.setdefault("sparse_backend", "flash_attn")
+            inputs.setdefault("use_reconviagen", False)
+        elif class_lower == "trellis2preprocessimage":
+            inputs["max_size"] = _model3d_int(options, "voxel_resolution", 1024)
+            _set_existing_model3d_inputs(inputs, ["mask", "texture_mask", "inpaint_mask"], assets.get("mask_image"))
+        elif class_lower == "trellis2sparsemultiviewgenerator":
+            inputs["seed"] = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+            inputs["sparse_structure_steps"] = _model3d_int(options, "sparse_steps", 12)
+            inputs["sparse_structure_guidance_strength"] = _model3d_number(options, "sparse_guidance", 7.5)
+            inputs["sparse_structure_guidance_rescale"] = _model3d_number(options, "sparse_rescale", 0.7)
+            inputs["sparse_structure_rescale_t"] = _model3d_number(options, "sparse_rescale_t", 5)
+            inputs["sparse_structure_resolution"] = _model3d_sparse_resolution(options)
+        elif class_lower == "trellis2shapemultiviewgenerator":
+            inputs["resolution"] = _model3d_int(options, "voxel_resolution", 1024)
+            inputs["shape_steps"] = _model3d_int(options, "shape_steps", 12)
+            inputs["shape_guidance_strength"] = _model3d_number(options, "shape_guidance", 7.5)
+            inputs["shape_guidance_rescale"] = _model3d_number(options, "shape_rescale", 0.5)
+            inputs["shape_rescale_t"] = _model3d_number(options, "shape_rescale_t", 3)
+        elif class_lower == "trellis2shapecascademultiviewgenerator":
+            inputs["seed"] = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+            inputs["resolution"] = _model3d_int(options, "voxel_resolution", 1024)
+            inputs["sparse_structure_resolution"] = _model3d_sparse_resolution(options)
+            inputs["shape_steps"] = _model3d_int(options, "shape_steps", 12)
+            inputs["shape_guidance_strength"] = _model3d_number(options, "shape_guidance", 7.5)
+            inputs["shape_guidance_rescale"] = _model3d_number(options, "shape_rescale", 0.5)
+            inputs["shape_rescale_t"] = _model3d_number(options, "shape_rescale_t", 3)
+        elif class_lower == "trellis2texslatmultiviewgenerator":
+            inputs["resolution"] = _model3d_int(options, "texture_size", 2048)
+            inputs["texture_steps"] = _model3d_int(options, "material_steps", 12)
+            inputs["texture_guidance_strength"] = _model3d_number(options, "material_guidance", 1.0)
+            inputs["texture_guidance_rescale"] = _model3d_number(options, "material_rescale", 0.0)
+            inputs["texture_rescale_t"] = _model3d_number(options, "material_rescale_t", 3)
+            _set_existing_model3d_inputs(inputs, ["prompt", "positive", "text", "texture_prompt"], str(options.get("texture_positive") or request.prompt or ""))
+            _set_existing_model3d_inputs(inputs, ["negative", "negative_prompt"], str(options.get("texture_negative") or request.negative_prompt or ""))
+            _set_existing_model3d_inputs(inputs, ["denoise", "denoise_strength", "strength"], _model3d_number(options, "texture_denoise", 0.45))
+            _set_existing_model3d_inputs(inputs, ["mask_grow", "mask_expand", "grow_mask"], _model3d_int(options, "texture_mask_grow", 8))
+            _set_existing_model3d_inputs(inputs, ["mask", "texture_mask", "inpaint_mask"], assets.get("mask_image"))
+            _set_existing_model3d_inputs(inputs, ["albedo", "albedo_mode"], _model3d_bool(options, "texture_albedo_mode", True))
+            _set_existing_model3d_inputs(inputs, ["partial_regenerate", "partially_regenerate", "use_existing_texture"], _model3d_bool(options, "texture_partial_regenerate", True))
+            _set_existing_model3d_inputs(inputs, ["ignore_geometry", "geometry_guidance"], _model3d_bool(options, "texture_ignore_geometry", False))
+            node.setdefault("_meta", {})["nexus_texture_paint"] = {
+                "mode": str(options.get("texture_mode") or ""),
+                "generation": str(options.get("texture_generation") or ""),
+                "output_map": str(options.get("texture_output_map") or ""),
+                "control_type": str(options.get("texture_control_type") or ""),
+                "preserve_existing": _model3d_bool(options, "texture_preserve_existing", True),
+                "mask_space": str(options.get("texture_mask_space") or "uv"),
+                "active_tool": str(options.get("texture_active_tool") or ""),
+                "active_layer": str(options.get("texture_active_layer") or ""),
+                "layers": options.get("texture_layers") if isinstance(options.get("texture_layers"), list) else [],
+                "mask_image": bool(assets.get("mask_image")),
+            }
+        elif class_lower == "trellis2exportmesh":
+            inputs["file_format"] = "glb"
+        elif class_lower == "trellis2unwrapandrasterizer":
+            inputs.setdefault("reorient_vertices", "90 degrees")
+        elif class_lower == "primitiveint":
+            if "target face" in title:
+                inputs["value"] = _model3d_int(options, "decimation_target", 300000)
+            elif "texture" in title:
+                inputs["value"] = _model3d_int(options, "texture_size", 2048)
+        elif "texture" in class_lower or "inpaint" in class_lower or "project" in class_lower:
+            _set_existing_model3d_inputs(inputs, ["prompt", "positive", "text", "texture_prompt"], str(options.get("texture_positive") or request.prompt or ""))
+            _set_existing_model3d_inputs(inputs, ["negative", "negative_prompt"], str(options.get("texture_negative") or request.negative_prompt or ""))
+            _set_existing_model3d_inputs(inputs, ["mask", "texture_mask", "inpaint_mask"], assets.get("mask_image"))
+            _set_existing_model3d_inputs(inputs, ["denoise", "denoise_strength", "strength"], _model3d_number(options, "texture_denoise", 0.45))
+            _set_existing_model3d_inputs(inputs, ["albedo", "albedo_mode"], _model3d_bool(options, "texture_albedo_mode", True))
 
 
 def _ensure_ltx_director_frame_trim(api: dict[str, Any], request: GenerateRequest) -> None:

@@ -188,5 +188,28 @@
       "gallery_metadata"
     ],
     "workflow_hint": "anima"
+  },
+  "Model3D": {
+    "label": "3D MODEL",
+    "family": "trellis2",
+    "type": "3d",
+    "model_folder": "./models/3d/trellis2",
+    "native_size": [
+      1024,
+      1024
+    ],
+    "sampler": "trellis2_image_to_3d",
+    "scheduler": "projection_multiview",
+    "steps": 14,
+    "cfg": 8.0,
+    "supports": [
+      "image_to_3d",
+      "multiview",
+      "texture_paint",
+      "controlnet_texture",
+      "glb",
+      "wasm_preview"
+    ],
+    "workflow_hint": "model3d_trellis2"
   }
 }

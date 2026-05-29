@@ -44,6 +44,28 @@ CHECKPOINT_PRESET_FOLDERS = [
     "zimage",
 ]
 
+MODEL_SOURCE_CATEGORY_ALIASES = {
+    "checkpoint": "checkpoints",
+    "checkpoints": "checkpoints",
+    "vae": "vae",
+    "lora": "loras",
+    "loras": "loras",
+    "controlnet": "controlnet",
+    "controlnets": "controlnet",
+    "upscale": "upscale_models",
+    "upscale_models": "upscale_models",
+    "latent_upscale": "latent_upscale_models",
+    "latent_upscale_models": "latent_upscale_models",
+    "refine": "refine",
+    "refiner": "refine",
+    "interpolate": "frame_interpolation",
+    "interpolation": "frame_interpolation",
+    "frame_interpolation": "frame_interpolation",
+    "video": "video",
+    "3d": "3d",
+    "model3d": "3d",
+}
+
 
 def _iso_mtime(path: Path) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
@@ -94,21 +116,38 @@ def _preview_for_model(path: Path, root: Path) -> str:
     return "/model-assets/" + _safe_relative(preview, root)
 
 
+def _configured_model_roots(settings: NexusSettings) -> list[tuple[Path, str | None]]:
+    roots: list[tuple[Path, str | None]] = [(settings.models_dir, None)]
+    for alias, paths in settings.model_sources.items():
+        category = MODEL_SOURCE_CATEGORY_ALIASES.get(alias.strip().lower())
+        for path in paths:
+            roots.append((path, category))
+    return roots
+
+
 def scan_models(settings: NexusSettings, include_references: bool = False) -> ModelCatalog:
-    roots: list[tuple[Path, str]] = [(settings.models_dir, "managed")]
+    roots: list[tuple[Path, str, str | None]] = [
+        (root, "managed" if root == settings.models_dir else "reference", category)
+        for root, category in _configured_model_roots(settings)
+    ]
     if include_references:
-        roots.extend((source, "reference") for source in settings.reference_model_sources)
+        roots.extend((source, "reference", None) for source in settings.reference_model_sources)
 
     categories: dict[str, list[ModelFile]] = {category: [] for category in MODEL_CATEGORIES}
     supported = {ext.lower() for ext in settings.supported_model_extensions}
+    seen_roots: set[tuple[str, str | None]] = set()
 
-    for root, source in roots:
+    for root, source, category_override in roots:
         if not root.exists():
             continue
+        root_key = (str(root.resolve()), category_override)
+        if root_key in seen_roots:
+            continue
+        seen_roots.add(root_key)
         for file_path in root.rglob("*"):
             if not file_path.is_file() or file_path.suffix.lower() not in supported:
                 continue
-            category = _category_for(file_path, root)
+            category = category_override or _category_for(file_path, root)
             folder = _folder_tag(file_path, root, category)
             item = ModelFile(
                 name=file_path.name,
