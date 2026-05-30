@@ -10,7 +10,7 @@ if errorlevel 1 (
   exit /b 1
 )
 if exist "%ROOT%config\nexus_startup_env.cmd" call "%ROOT%config\nexus_startup_env.cmd"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\start_nexus.ps1" -ProjectRoot "%~dp0." -StartComfy -ComfyWarmupSeconds 75
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\start_nexus.ps1" -ProjectRoot "%~dp0." -StartComfy -ComfyWarmupSeconds 0
 if errorlevel 1 (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "& { . '%ROOT%scripts\nexus_terminal.ps1'; Write-NexusLine 'Startup failed.' 'Error' }"
   powershell -NoProfile -ExecutionPolicy Bypass -Command "& { . '%ROOT%scripts\nexus_terminal.ps1'; Write-NexusLine 'Open update.bat to repair or refresh dependencies, then run run.bat again.' 'Warn' }"

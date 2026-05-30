@@ -2,7 +2,7 @@ param(
     [string]$ProjectRoot = "D:\NexusBTA",
     [switch]$StartComfy,
     [switch]$RequireComfy,
-    [int]$ComfyWarmupSeconds = 75,
+    [int]$ComfyWarmupSeconds = 0,
     [switch]$NoOpen
 )
 
@@ -149,7 +149,7 @@ function Test-NexusComfyHealth {
 }
 
 function Wait-NexusComfyReady {
-    param([int]$Seconds = 75)
+    param([int]$Seconds = 0)
 
     $deadline = (Get-Date).AddSeconds($Seconds)
     $lastError = ""
@@ -160,6 +160,16 @@ function Wait-NexusComfyReady {
     } catch {
         $lastError = $_.Exception.Message
         Write-NexusLine "ComfyUI did not accept background warmup yet; continuing with readiness checks..." "Warn"
+    }
+
+    if ($Seconds -le 0) {
+        if ([string]::IsNullOrWhiteSpace($lastError)) {
+            Write-NexusLine "ComfyUI warmup started in the background." "Info"
+            Write-NexusLine "ComfyUI startup log: logs\comfyui.log" "Info"
+            return $true
+        }
+        Write-NexusLine "ComfyUI startup log: logs\comfyui.log" "Info"
+        return $false
     }
 
     while ((Get-Date) -lt $deadline) {
@@ -418,9 +428,13 @@ Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/model-tree" -TimeoutSe
 
 if ($StartComfy) {
     Write-NexusLine "Starting embedded ComfyUI..." "Info"
-    if (!(Wait-NexusComfyReady -Seconds $ComfyWarmupSeconds)) {
+    $warmupSeconds = $ComfyWarmupSeconds
+    if ($RequireComfy -and $warmupSeconds -le 0) {
+        $warmupSeconds = 360
+    }
+    if (!(Wait-NexusComfyReady -Seconds $warmupSeconds)) {
         if ($RequireComfy) {
-            throw "ComfyUI startup failed: runtime did not become ready after $ComfyWarmupSeconds seconds. Open update.bat to repair or refresh dependencies, then run run.bat again."
+            throw "ComfyUI startup failed: runtime did not become ready after $warmupSeconds seconds. Open update.bat to repair or refresh dependencies, then run run.bat again."
         }
     }
 } else {
