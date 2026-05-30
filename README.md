@@ -1,8 +1,20 @@
 # Nexus BTA
 
-Nexus BTA is a local AI image and video studio built around an embedded ComfyUI runtime. It gives you one focused interface for SD 1.5, SDXL, Flux, Qwen, Lumina, WAN 2.2, LTX 2.3, Anima, LoRAs, ControlNet, inpaint, img2img, txt2img, and short video workflows.
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jpandre)
 
-New here on Windows? Start with `run.bat`, open the UI, pick a model tab, write a simple prompt, and generate. Linux and macOS can run the backend/UI manually, but the bundled one-click launcher and dependency installers are Windows PowerShell scripts today. Nexus is designed to keep the heavy ComfyUI wiring available when you need it, while keeping the everyday controls close at hand.
+Nexus BTA is a local AI image, video, workflow and 3D experiment studio built around an embedded ComfyUI runtime. It keeps the most common controls in one clean interface, while still letting advanced users inspect and edit the Comfy workflow graph.
+
+If you are new here on Windows, start simple:
+
+1. Run `run.bat`.
+2. Open `http://127.0.0.1:7861/ui`.
+3. Pick a model tab.
+4. Write a prompt.
+5. Click Generate.
+
+Nexus supports SD 1.5, SDXL, Flux, Qwen, Z-Image Turbo, Lumina, WAN 2.2, LTX 2.3, Anima, LoRAs, ControlNet, inpaint, img2img, txt2img, video tools, workflow nodes, template customization and early 3D routes.
+
+> **3D status:** the 3D workspace is still experimental. It works for testing TRELLIS/texture-paint routes, but it is not fully optimized yet and still has bugs. The next updates will continue improving 3D quality, preprocessing, cropping, background cleanup and stability.
 
 ## First Look
 
@@ -10,29 +22,56 @@ New here on Windows? Start with `run.bat`, open the UI, pick a model tab, write 
 
 The `examples/` folder includes quick visual references for the main workspaces.
 
-![Nexus BTA main interface](examples/Ui_layout.png)
-
-The main layout keeps model presets, generation controls, the viewer, workflow tabs, and the gallery in one focused workspace.
-
-![Inpaint workspace](examples/Inpaint_layout.png)
-
-Use the inpaint canvas to load a reference, paint masks, undo/redo brush edits, and send gallery images directly into the canvas.
-
-![Node workflow workspace](examples/Node_Workflow_layout.png)
-
-Switch to Node Workflow when you want to inspect or tune the generated Comfy graph without leaving Nexus. The editor supports a Blender-style add-node menu with search, categorized node presets, click-to-connect ports, click-to-unlink inputs, Ctrl+click multi-select, and drag-box selection. When this tab is active, Nexus sends the edited visual graph as the Comfy workflow override instead of treating the view as a mockup.
-
-![LTX 2.3 linear video workspace](examples/LTX_2.3.png)
-
-The LTX 2.3 Linear View keeps img2video/txt2video controls synchronized with the Comfy workflow, including video VAE, audio VAE, distilled LoRAs, latent upscaling, IC-LoRA identity/detailing, Motion Transfer and the optional Transition LoRA for start/end frame motion.
-
-![LTX 2.3 Director timeline](examples/LTX_2.3Director.png)
-
-The LTX 2.3 Director Suite adds a timeline for image, text, video and audio segments, with per-segment prompts, negative prompts, crop/camera controls, custom audio, generated speech/ambience routing, Motion Transfer segments, Transition LoRA end frames and joined final video export.
-
-![Civitai browser modal](examples/Civitai_Modal.png)
-
-The Civitai modal helps browse models, download assets, and route them into the right Nexus model folders.
+<table>
+  <tr>
+    <td width="50%">
+      <img src="examples/Ui_layout.png" alt="Nexus BTA main interface">
+      <br><b>Main workspace</b><br>
+      Pick a model, write prompts, generate, and browse outputs from one focused screen.
+    </td>
+    <td width="50%">
+      <img src="examples/NexusCustomize.png" alt="Nexus Customize theme editor">
+      <br><b>Nexus Customize</b><br>
+      Save, load, reset or randomize UI themes, panel colors and template layout.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="examples/Inpaint_layout.png" alt="Inpaint workspace">
+      <br><b>Inpaint canvas</b><br>
+      Load a reference, paint masks, undo/redo edits, and send gallery images to the canvas.
+    </td>
+    <td width="50%">
+      <img src="examples/Node_Workflow_layout.png" alt="Node workflow workspace">
+      <br><b>Node Workflow</b><br>
+      Inspect, move, pin, bypass and edit workflow nodes without leaving Nexus.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="examples/LTX_2.3.png" alt="LTX 2.3 linear video workspace">
+      <br><b>LTX 2.3 Linear View</b><br>
+      Create short video routes with video VAE, audio VAE, distilled LoRAs and motion options.
+    </td>
+    <td width="50%">
+      <img src="examples/LTX_2.3Director.png" alt="LTX 2.3 Director timeline">
+      <br><b>LTX 2.3 Director</b><br>
+      Build image, text, video and audio segments on a timeline, then export the joined result.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="examples/Civitai_Modal.png" alt="Civitai browser modal">
+      <br><b>Civitai browser</b><br>
+      Browse, download and organize models into the correct local Nexus folders.
+    </td>
+    <td width="50%">
+      <img src="examples/3D_Model.png" alt="Nexus BTA 3D workspace">
+      <br><b>3D workspace</b><br>
+      Experimental image-to-3D and texture-paint route. It is useful for testing, but still has known bugs.
+    </td>
+  </tr>
+</table>
 
 ## Why It Feels Fast
 
@@ -49,6 +88,8 @@ The Civitai modal helps browse models, download assets, and route them into the 
 - Visual workflow view: inspect, link, multi-select, move and tune nodes without leaving the app; edited graphs are sent through the backend as Comfy workflow overrides.
 - Civitai and Concept LoRA modals: browse, download, preview, multi-select, and route assets into the right local folders.
 - Train LoRA workspace: prepare SD/SDXL/Flux/Qwen/WAN/LTX/Anima LoRA jobs, including LTX 2.3 Motion LoRA, Audio-Video LoRA and IC-LoRA plans with backend/Comfy route metadata.
+- Template customization: save/load JSON templates, randomize modern color themes, customize side-menu panels, and keep pinned workflow nodes in sync.
+- Experimental 3D workspace: test image-to-3D, texture paint and UV routes. This area is still being optimized and can contain bugs.
 
 ## Install
 
@@ -190,7 +231,7 @@ Nexus applies this naming layer to default templates, loaded workflows and visua
 
 ## Verified Smoke Battery
 
-Last verified on May 29, 2026:
+Last verified on May 30, 2026:
 
 - SD 1.5 and SDXL image generation, img2img, inpaint, and ControlNet Canny.
 - Qwen, Flux and Z-Image/ZImage ControlNet routes at 512x512 with side-menu model selection.
@@ -204,6 +245,8 @@ Last verified on May 29, 2026:
 - Legacy Train LoRA front end across SD, SDXL, Illustrious, Pony, Flux, Flux 2, Flux 2 Klein, Qwen, WAN, LTX 2.3, Anima, Z-Image Turbo and Lumina templates, including LTX character/style/motion/audio-video/IC-LoRA job preparation with Launch disabled.
 - Anima with Concept LoRA selection and gallery metadata.
 - Node Workflow editor smoke: menu search, categorized add-node menu, visual multi-selection, grouped drag behavior, port connection/unlink affordances, and workflow override routing from the active graph.
+- Nexus Customize smoke: theme save/load JSON, legacy template migration, randomize palettes, side-menu box colors, prompt text colors, Add LoRA modal theme, Civitai modal theme and pinned-node template state.
+- 3D workspace smoke: TRELLIS/texture-paint UI, gallery routing and frontend status checks. 3D remains experimental and is not fully optimized yet.
 
 ## Notes
 

@@ -76,19 +76,148 @@
         .bg-nexus-panel { background-color: var(--nexus-panel) !important; }
         .bg-nexus-hover { background-color: var(--nexus-hover) !important; }
         .bg-nexus-red { background-color: var(--nexus-red) !important; }
+        .bg-black,
+        .bg-zinc-950 { background-color: var(--nexus-bg) !important; }
+        .bg-zinc-900,
+        .bg-zinc-850,
+        .bg-zinc-800,
+        .bg-black\/45,
+        .bg-black\/70,
+        .bg-black\/75,
+        .bg-black\/80,
+        .bg-black\/85 { background-color: color-mix(in srgb, var(--nexus-panel) 84%, var(--nexus-bg)) !important; }
         .hover\:bg-nexus-hover:hover { background-color: var(--nexus-hover) !important; }
         .hover\:bg-nexus-red:hover { background-color: var(--nexus-red) !important; }
         .hover\:bg-nexus-darkRed:hover { background-color: var(--nexus-dark-red) !important; }
+        .hover\:bg-zinc-900:hover,
+        .hover\:bg-zinc-800:hover,
+        .hover\:bg-black:hover { background-color: var(--nexus-hover) !important; }
         .border-nexus-border { border-color: var(--nexus-border) !important; }
         .border-nexus-red { border-color: var(--nexus-red) !important; }
+        .border-black { border-color: var(--nexus-border) !important; }
         .hover\:border-nexus-red:hover { border-color: var(--nexus-red) !important; }
         .text-nexus-red { color: var(--nexus-red) !important; }
         .text-nexus-text { color: var(--nexus-text) !important; }
         .text-nexus-muted { color: var(--nexus-muted) !important; }
         .hover\:text-nexus-red:hover { color: var(--nexus-red) !important; }
+        .text-white { color: var(--nexus-text) !important; }
+        .hover\:text-white:hover { color: var(--nexus-text) !important; }
+        .bg-nexus-red.text-white,
+        .extras-mode-tab.active,
+        .workspace-tab.active,
+        .preset-btn.active,
+        #globalGenerateButton,
+        #globalCancelGenerationButton:hover,
+        #overlayCancelGenerationButton,
+        #donateKofiFrame + a { color: #fff !important; }
+        .from-black { --tw-gradient-from: color-mix(in srgb, var(--nexus-bg) 94%, transparent) var(--tw-gradient-from-position) !important; --tw-gradient-to: color-mix(in srgb, var(--nexus-bg) 0%, transparent) var(--tw-gradient-to-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important; }
+        .via-black\/50 { --tw-gradient-stops: var(--tw-gradient-from), color-mix(in srgb, var(--nexus-bg) 50%, transparent) var(--tw-gradient-via-position), var(--tw-gradient-to) !important; }
         header, .nexus-header-surface { background-color: var(--nexus-header) !important; }
-        #view-workflow, .dots-bg { background-color: var(--nexus-canvas) !important; }
-        .modal-surface, #templateToolsPanel { background-color: var(--nexus-modal) !important; }
+        #mainContent,
+        #view-viewer,
+        #view-canvas,
+        #view-workflow,
+        .dots-bg { background-color: var(--nexus-canvas) !important; }
+        .modal-surface,
+        #templateToolsPanel,
+        #languageMenu,
+        #donateMenu { background-color: var(--nexus-modal) !important; }
+
+        #extensionVersionModal,
+        #loraModal,
+        #embeddingModal,
+        #galleryModal,
+        #modelPathsModal,
+        #civitaiModal,
+        #loadPromptModal {
+            background-color: color-mix(in srgb, var(--nexus-modal) 82%, transparent) !important;
+        }
+
+        #loraModal > div,
+        #embeddingModal > div,
+        #galleryModal > div,
+        #modelPathsModal > div,
+        #civitaiModal > div,
+        #loadPromptModal > div {
+            background-color: var(--nexus-modal) !important;
+            border-color: var(--nexus-border) !important;
+        }
+
+        #loraModal .bg-nexus-bg,
+        #embeddingModal .bg-nexus-bg,
+        #galleryModal .bg-nexus-bg,
+        #modelPathsModal .bg-nexus-bg,
+        #civitaiModal .bg-nexus-bg,
+        #loadPromptModal .bg-nexus-bg,
+        #loraModal .bg-zinc-900,
+        #embeddingModal .bg-zinc-900,
+        #civitaiModal .bg-zinc-900 {
+            background-color: color-mix(in srgb, var(--nexus-modal) 78%, var(--nexus-panel)) !important;
+        }
+
+        #loraGrid,
+        #embeddingGrid,
+        #savedPromptsList,
+        #civitaiExplorerScroll,
+        #civitaiResultPanel {
+            background-color: color-mix(in srgb, var(--nexus-modal) 88%, var(--nexus-bg)) !important;
+        }
+
+        #activeSelectionsBar,
+        .lora-card,
+        .lora-card-title,
+        .lora-card-preview,
+        #civitaiResultPanel article,
+        #civitaiResultPanel [class*="bg-black"],
+        #civitaiResultPanel [class*="bg-zinc"],
+        #civitaiResultPanel [class*="bg-nexus-bg"] {
+            background-color: var(--nexus-panel) !important;
+            border-color: var(--nexus-border) !important;
+        }
+
+        .lora-card-preview::after,
+        #civitaiResultPanel article::after {
+            background: linear-gradient(to top, color-mix(in srgb, var(--nexus-panel) 92%, transparent), transparent) !important;
+        }
+
+        textarea,
+        select,
+        input[type="text"],
+        input[type="number"],
+        input[type="search"],
+        input[type="password"] {
+            background-color: var(--nexus-bg);
+            border-color: var(--nexus-border);
+            color: var(--nexus-text);
+        }
+
+        textarea::placeholder,
+        input::placeholder {
+            color: var(--nexus-muted) !important;
+            opacity: 0.78;
+        }
+
+        #posPrompt,
+        #negPrompt,
+        #galleryModalPrompt,
+        #galleryModalNegative {
+            background-color: color-mix(in srgb, var(--nexus-panel) 72%, var(--nexus-bg)) !important;
+            color: var(--nexus-text) !important;
+            border-color: var(--nexus-border) !important;
+        }
+
+        #positiveEmbeddingBtn,
+        #negativeEmbeddingBtn {
+            background-color: var(--nexus-hover) !important;
+            color: var(--nexus-muted) !important;
+            border-color: var(--nexus-border) !important;
+        }
+
+        #positiveEmbeddingBtn:hover,
+        #negativeEmbeddingBtn:hover {
+            color: var(--nexus-text) !important;
+            border-color: var(--nexus-red) !important;
+        }
 
         .theme-customizer-panel {
             background: color-mix(in srgb, var(--nexus-panel) 94%, #000);
@@ -891,11 +1020,17 @@
             display: none;
         }
 
+        input[type="range"],
+        input[type="checkbox"],
+        input[type="radio"] {
+            accent-color: var(--nexus-red);
+        }
+
         .toggle-track {
             width: 34px;
             height: 18px;
-            background: #27272a;
-            border: 1px solid #3f3f46;
+            background: var(--nexus-hover);
+            border: 1px solid var(--nexus-border);
             position: relative;
             display: inline-block;
             border-radius: 2px;
@@ -909,14 +1044,14 @@
             left: 2px;
             width: 12px;
             height: 12px;
-            background: #a1a1aa;
+            background: var(--nexus-muted);
             border-radius: 1px;
             transition: transform 0.12s ease, background-color 0.12s ease;
         }
 
         .toggle-switch input:checked + .toggle-track {
-            background: #ff3b3b;
-            border-color: #ff3b3b;
+            background: var(--nexus-red);
+            border-color: var(--nexus-red);
         }
 
         .toggle-switch input:checked + .toggle-track::after {
@@ -931,8 +1066,8 @@
         }
 
         .data-card {
-            border: 1px solid #27272a;
-            background: #18181b;
+            border: 1px solid var(--nexus-border);
+            background: var(--nexus-panel);
             border-radius: 2px;
         }
 
@@ -940,9 +1075,9 @@
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            border: 1px solid #27272a;
-            background: #09090b;
-            color: #d4d4d8;
+            border: 1px solid var(--nexus-border);
+            background: var(--nexus-bg);
+            color: var(--nexus-text);
             padding: 4px 7px;
             border-radius: 2px;
             font-size: 10px;
@@ -961,10 +1096,10 @@
         .flat-input {
             width: 100%;
             min-width: 0;
-            background: #09090b;
-            border: 1px solid #27272a;
+            background: var(--nexus-bg);
+            border: 1px solid var(--nexus-border);
             border-radius: 2px;
-            color: #fff;
+            color: var(--nexus-text);
             font-size: 12px;
             outline: none;
             padding: 7px 8px;
@@ -1099,47 +1234,66 @@
         }
 
         .flat-button {
-            border: 1px solid #27272a;
-            background: #09090b;
-            color: #d4d4d8;
+            border: 1px solid var(--nexus-border);
+            background: var(--nexus-bg);
+            color: var(--nexus-text);
             border-radius: 2px;
             transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
         }
 
         .flat-button:hover {
             color: #fff;
-            background: #27272a;
-            border-color: #3f3f46;
+            background: var(--nexus-hover);
+            border-color: var(--nexus-red);
         }
 
         .extras-mode-tab.active {
-            background: #ff3b3b;
-            border-color: #ff3b3b;
+            background: var(--nexus-red);
+            border-color: var(--nexus-red);
             color: #ffffff;
         }
 
         .extras-mode-tab:not(.active) {
-            background: #09090b;
-            border-color: #27272a;
-            color: #a1a1aa;
+            background: var(--nexus-bg);
+            border-color: var(--nexus-border);
+            color: var(--nexus-muted);
         }
 
         .extras-drop-zone {
             background:
-                linear-gradient(135deg, rgba(255, 59, 59, 0.06), transparent 32%),
-                #09090b;
+                linear-gradient(135deg, color-mix(in srgb, var(--nexus-red) 12%, transparent), transparent 32%),
+                var(--nexus-bg);
         }
 
         .extras-drop-zone.is-loaded {
             border-style: solid;
-            border-color: rgba(255, 59, 59, 0.72);
-            background: rgba(255, 59, 59, 0.045);
+            border-color: color-mix(in srgb, var(--nexus-red) 72%, transparent);
+            background: color-mix(in srgb, var(--nexus-red) 8%, var(--nexus-bg));
         }
 
         .extras-preview-shell {
             background:
                 radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.04), transparent 34%),
-                #050506;
+                var(--nexus-bg);
+        }
+
+        .workspace-tab.active,
+        .category-btn.bg-nexus-red,
+        .activity-btn.bg-nexus-hover {
+            background-color: var(--nexus-red) !important;
+            border-color: var(--nexus-red) !important;
+            color: #fff !important;
+        }
+
+        .modal-surface,
+        #view-extras,
+        #view-pnginfo,
+        #view-settings,
+        #view-trainLora,
+        #rightSidebar,
+        #leftSidebar {
+            background-color: var(--nexus-panel) !important;
+            border-color: var(--nexus-border) !important;
         }
 
         .extras-processing-ring {
@@ -1316,7 +1470,7 @@
             justify-content: center;
             border: 1px solid #27272a;
             background: #09090b;
-            color: #a1a1aa;
+            color: var(--nexus-muted);
             border-radius: 3px;
             transition: color .15s ease, border-color .15s ease, background .15s ease;
         }
@@ -1326,7 +1480,7 @@
         .model3d-hotbar button:hover,
         .model3d-icon-button:hover {
             color: #fff;
-            border-color: #ff3b3b;
+            border-color: var(--nexus-red);
             background: #18181b;
         }
 
@@ -2371,7 +2525,7 @@
                                 <input id="distilledLoraTwoStrength" class="flat-input font-mono text-center" type="number" value="0.50" min="0" max="2" step="0.05">
                             </label>
                         </div>
-                        <div class="bg-nexus-bg border border-nexus-border p-2 rounded-sm text-[10px] text-nexus-muted leading-4">
+                        <div class="hidden bg-nexus-bg border border-nexus-border p-2 rounded-sm text-[10px] text-nexus-muted leading-4">
                             <span class="text-white font-bold">Route:</span>
                             <span id="distilledLoraRouteText">No distilled LoRA required for this template.</span>
                         </div>
@@ -2649,7 +2803,7 @@
                                     <option value="depth">Depth / Geometry</option>
                                     <option value="camera">Camera / Cameraman</option>
                                 </select>
-                                <div class="bg-nexus-panel border border-nexus-border p-2 rounded-sm text-[10px] text-nexus-muted leading-4">
+                                <div class="hidden bg-nexus-panel border border-nexus-border p-2 rounded-sm text-[10px] text-nexus-muted leading-4">
                                     <span class="text-white font-bold">Auto route:</span>
                                     <span id="videoRouteText">ANIMA routes still-image generation; video adapters stay optional.</span>
                                 </div>
@@ -3087,6 +3241,7 @@
                             <p class="text-[10px] text-nexus-muted mt-1">Theme colors, canvas color, modal/header surfaces and side-menu box colors.</p>
                         </div>
                         <div class="flex items-center gap-1">
+                            <button type="button" onclick="randomizeNexusTemplateTheme()" class="h-8 w-8 flex items-center justify-center bg-nexus-bg border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Randomize modern theme"><i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i></button>
                             <button type="button" onclick="saveCurrentTemplate()" class="h-8 w-8 flex items-center justify-center bg-nexus-red text-white rounded-sm" title="Save/export template"><i class="fa-solid fa-floppy-disk text-[11px]"></i></button>
                             <button type="button" onclick="applyDefaultTemplate()" class="h-8 w-8 flex items-center justify-center bg-nexus-bg border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Restore NexusBTA default"><i class="fa-solid fa-house text-[11px]"></i></button>
                             <button type="button" onclick="closeThemeCustomizer()" class="h-8 w-8 flex items-center justify-center bg-nexus-bg border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Close customize"><i class="fa-solid fa-xmark text-[11px]"></i></button>
@@ -4792,6 +4947,98 @@
             ['text', 'Title Text', '--nexus-text'],
             ['muted', 'Description Text', '--nexus-muted'],
             ['canvas', 'Workflow Canvas', '--nexus-canvas']
+        ];
+        const NEXUS_RANDOM_THEME_PALETTES = [
+            {
+                name: 'Aurora Graphite',
+                accent: '#22c55e',
+                darkRed: '#16a34a',
+                background: '#111827',
+                panel: '#1f2937',
+                modal: '#273244',
+                header: '#0f172a',
+                border: '#3b82f6',
+                hover: '#334155',
+                text: '#f8fafc',
+                muted: '#a7f3d0',
+                canvas: '#172033',
+                swatches: ['#1e3a5f', '#234b3f', '#2b3f65', '#26384e', '#1f4c46']
+            },
+            {
+                name: 'Neo Indigo',
+                accent: '#818cf8',
+                darkRed: '#6366f1',
+                background: '#1e1b4b',
+                panel: '#312e81',
+                modal: '#3730a3',
+                header: '#111033',
+                border: '#a78bfa',
+                hover: '#4338ca',
+                text: '#eef2ff',
+                muted: '#c4b5fd',
+                canvas: '#27245f',
+                swatches: ['#312e81', '#3b3a8f', '#2f3b73', '#3b2e71', '#29386f']
+            },
+            {
+                name: 'Carbon Cyan',
+                accent: '#06b6d4',
+                darkRed: '#0891b2',
+                background: '#08111f',
+                panel: '#122238',
+                modal: '#18304a',
+                header: '#07101b',
+                border: '#38bdf8',
+                hover: '#1f3b57',
+                text: '#ecfeff',
+                muted: '#93c5fd',
+                canvas: '#0d1b2e',
+                swatches: ['#123147', '#17395a', '#1b4650', '#10283d', '#21314d']
+            },
+            {
+                name: 'Rose Slate',
+                accent: '#fb7185',
+                darkRed: '#e11d48',
+                background: '#18151f',
+                panel: '#292437',
+                modal: '#35283d',
+                header: '#120f19',
+                border: '#f472b6',
+                hover: '#3b3147',
+                text: '#fff1f2',
+                muted: '#f9a8d4',
+                canvas: '#201b2b',
+                swatches: ['#38283f', '#332a45', '#412d3d', '#2b2d46', '#3a2f50']
+            },
+            {
+                name: 'Amber Steel',
+                accent: '#f59e0b',
+                darkRed: '#d97706',
+                background: '#141414',
+                panel: '#262626',
+                modal: '#34302a',
+                header: '#111111',
+                border: '#fbbf24',
+                hover: '#3a3328',
+                text: '#fff7ed',
+                muted: '#fcd34d',
+                canvas: '#1c1b19',
+                swatches: ['#3b3323', '#2f352d', '#3d2f26', '#2d333a', '#393225']
+            },
+            {
+                name: 'Mint Paper Dark',
+                accent: '#2dd4bf',
+                darkRed: '#14b8a6',
+                background: '#10211f',
+                panel: '#18302d',
+                modal: '#203b37',
+                header: '#0b1716',
+                border: '#5eead4',
+                hover: '#23443f',
+                text: '#f0fdfa',
+                muted: '#99f6e4',
+                canvas: '#142a28',
+                swatches: ['#1d3a36', '#21433e', '#173931', '#273a41', '#1e453f']
+            }
         ];
         let nexusThemeState = nexusSafeStorage.json('nexus_theme_state', NEXUS_DEFAULT_THEME);
         let nexusThemePersistTimer = null;
@@ -19109,7 +19356,16 @@
             if (!panel?.dataset?.panelKey) return;
             panelCollapsedState[panel.dataset.panelKey] = !!collapsed;
             [...panel.children].forEach((child, index) => {
-                if (index > 0) child.classList.toggle('hidden', !!collapsed);
+                if (index === 0) return;
+                if (collapsed) {
+                    child.dataset.panelHiddenBeforeCollapse = child.classList.contains('hidden') ? '1' : '0';
+                    child.classList.add('hidden');
+                    return;
+                }
+                const previous = child.dataset.panelHiddenBeforeCollapse;
+                if (previous === '0') child.classList.remove('hidden');
+                if (previous === '1') child.classList.add('hidden');
+                delete child.dataset.panelHiddenBeforeCollapse;
             });
             const icon = panel.querySelector('[data-panel-collapse-icon]');
             if (icon) icon.className = `fa-solid ${collapsed ? 'fa-chevron-right' : 'fa-chevron-down'} text-[9px] text-nexus-muted`;
@@ -19530,7 +19786,7 @@
                 fields[id] = element.type === 'checkbox' ? element.checked : element.value;
             });
             return {
-                version: 1,
+                version: 2,
                 savedAt: new Date().toISOString(),
                 activePreset,
                 activeWorkspace,
@@ -19541,6 +19797,13 @@
                 panelOrder: capturePanelOrder(),
                 panelCollapsedState,
                 theme: normalizedThemeState(nexusThemeState),
+                customization: {
+                    theme: normalizedThemeState(nexusThemeState),
+                    panelOrder: capturePanelOrder(),
+                    panelCollapsedState: { ...panelCollapsedState },
+                    pinnedWorkflowNodes: Array.isArray(pinnedWorkflowNodes) ? pinnedWorkflowNodes.map(pin => ({ ...pin })) : [],
+                    syncedSurfaces: ['side-menus', 'buttons', 'toggles', 'tabs', 'extras', 'png-info', 'settings', 'train-lora', 'modals', 'gallery', 'workflow-canvas']
+                },
                 workflowGraph: activeWorkflowGraph,
                 workflowAnalysis: activeWorkflowAnalysis ? {
                     workflow: activeWorkflowAnalysis.workflow,
@@ -19552,7 +19815,30 @@
             };
         }
 
+        function migrateTemplateState(state) {
+            if (!state || typeof state !== 'object') return null;
+            const migrated = { ...state };
+            const customization = { ...(state.customization || {}) };
+            if (!customization.theme && state.theme) customization.theme = state.theme;
+            if (!customization.panelOrder && state.panelOrder) customization.panelOrder = state.panelOrder;
+            if (!customization.panelCollapsedState && state.panelCollapsedState) customization.panelCollapsedState = state.panelCollapsedState;
+            if (!customization.pinnedWorkflowNodes && Array.isArray(state.pinnedWorkflowNodes)) customization.pinnedWorkflowNodes = state.pinnedWorkflowNodes;
+            if (!Array.isArray(customization.syncedSurfaces)) {
+                customization.syncedSurfaces = ['side-menus', 'buttons', 'toggles', 'tabs', 'extras', 'png-info', 'settings', 'train-lora', 'modals', 'gallery', 'workflow-canvas'];
+            }
+            migrated.customization = customization;
+            if (state.theme || customization.theme) migrated.theme = state.theme || customization.theme;
+            migrated.panelOrder = state.panelOrder || customization.panelOrder || {};
+            migrated.panelCollapsedState = state.panelCollapsedState || customization.panelCollapsedState || {};
+            migrated.pinnedWorkflowNodes = Array.isArray(state.pinnedWorkflowNodes)
+                ? state.pinnedWorkflowNodes
+                : (Array.isArray(customization.pinnedWorkflowNodes) ? customization.pinnedWorkflowNodes : []);
+            migrated.version = Math.max(2, Number(state.version || 1));
+            return migrated;
+        }
+
         function applyTemplateState(state) {
+            state = migrateTemplateState(state);
             if (!state) return;
             if (state.activePreset && modelProfiles[state.activePreset]) {
                 applyModelProfile(state.activePreset, false);
@@ -19563,17 +19849,23 @@
                 if (element.type === 'checkbox') element.checked = !!value;
                 else setSelectValue(id, value);
             });
+            const customization = state.customization || {};
             activeLoras = Array.isArray(state.loras) ? state.loras : activeLoras;
-            pinnedWorkflowNodes = Array.isArray(state.pinnedWorkflowNodes) ? state.pinnedWorkflowNodes : [];
+            pinnedWorkflowNodes = Array.isArray(state.pinnedWorkflowNodes)
+                ? state.pinnedWorkflowNodes
+                : (Array.isArray(customization.pinnedWorkflowNodes) ? customization.pinnedWorkflowNodes : []);
             workflowTabs = Array.isArray(state.workflowTabs) ? state.workflowTabs : workflowTabs;
             activeWorkflowGraph = state.workflowGraph || activeWorkflowGraph;
             activeWorkflowAnalysis = state.workflowAnalysis || activeWorkflowAnalysis;
-            if (state.theme) applyNexusTheme(state.theme, { persist: true });
-            if (state.panelCollapsedState) {
-                panelCollapsedState = { ...state.panelCollapsedState };
+            const importedTheme = state.theme || customization.theme;
+            if (importedTheme) applyNexusTheme(importedTheme, { persist: true });
+            const importedPanelCollapsedState = state.panelCollapsedState || customization.panelCollapsedState;
+            if (importedPanelCollapsedState) {
+                panelCollapsedState = { ...importedPanelCollapsedState };
                 localStorage.setItem('nexus_panel_collapsed_state', JSON.stringify(panelCollapsedState));
             }
-            if (state.panelOrder) applyPanelOrder(state.panelOrder);
+            const importedPanelOrder = state.panelOrder || customization.panelOrder;
+            if (importedPanelOrder) applyPanelOrder(importedPanelOrder);
             if (state.currentActivity) currentActivity = state.currentActivity;
             if (state.activeWorkspace) activeWorkspace = state.activeWorkspace;
             localStorage.setItem('nexus_active_preset', activePreset);
@@ -19703,6 +19995,28 @@
             nexusThemeState = normalizedThemeState(nexusThemeState);
             nexusThemeState.panelColors = {};
             applyNexusTheme(nexusThemeState);
+        }
+
+        function randomChoice(items) {
+            return items[Math.floor(Math.random() * items.length)];
+        }
+
+        function randomizeNexusTemplateTheme() {
+            const palette = randomChoice(NEXUS_RANDOM_THEME_PALETTES);
+            const panelKeys = [...document.querySelectorAll('[data-panel-key]')]
+                .map(panel => panel.dataset.panelKey)
+                .filter((key, index, all) => key && all.indexOf(key) === index);
+            const panelColors = {};
+            panelKeys.forEach((key, index) => {
+                panelColors[key] = palette.swatches[index % palette.swatches.length];
+            });
+            nexusThemeState = normalizedThemeState({
+                ...palette,
+                panelColors
+            });
+            applyNexusTheme(nexusThemeState, { persist: true });
+            renderThemeCustomizer();
+            showToast("Template Randomized", `${palette.name} applied with balanced modern colors.`);
         }
 
         function renderThemeCustomizer() {
