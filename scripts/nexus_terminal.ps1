@@ -43,6 +43,45 @@ function Write-NexusSection {
     Write-NexusLine $Title "Step"
 }
 
+function Test-NexusIgnoredLocalChange {
+    param([string]$StatusLine)
+
+    $path = $StatusLine
+    if ($path.Length -gt 3) {
+        $path = $path.Substring(3).Trim()
+    }
+    if ($path -match " -> ") {
+        $path = ($path -split " -> ")[-1].Trim()
+    }
+    $path = $path.Replace("\", "/").Trim('"')
+
+    foreach ($prefix in @(
+        "models/",
+        "output/",
+        "input/",
+        "inputs/",
+        "temp/",
+        "runtime/",
+        "user/",
+        "custom_nodes/",
+        "test-results/",
+        "training/",
+        "frontend/results/",
+        "config/nexus_settings.json",
+        "config/nexus_startup.json",
+        "config/nexus_startup_env.cmd",
+        "config/nexus_dependency_state.json",
+        "config/huggingface_token.txt",
+        ".serena/"
+    )) {
+        if ($path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $path.Equals($prefix.TrimEnd("/"), [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Invoke-NexusRepositoryUpdate {
     param(
         [string]$ProjectRoot,
@@ -66,7 +105,7 @@ function Invoke-NexusRepositoryUpdate {
             throw "git fetch failed"
         }
 
-        $dirty = git -C $ProjectRoot status --porcelain
+        $dirty = @(git -C $ProjectRoot status --porcelain | Where-Object { -not (Test-NexusIgnoredLocalChange $_) })
         if ($dirty) {
             Write-NexusLine "Local changes detected; automatic pull skipped." "Warn"
             return
