@@ -4738,8 +4738,12 @@
                 </div>
             </div>
             
-            <div class="p-2 border-t border-nexus-border text-center flex justify-between items-center">
+            <div class="p-2 border-t border-nexus-border text-center flex justify-between items-center gap-2">
                 <span class="text-[10px] font-mono text-nexus-muted">Workspace: Default_Board</span>
+                <span id="comfyFooterLoading" class="hidden items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm text-[9px] font-mono text-nexus-muted">
+                    <i class="fa-solid fa-circle-notch animate-spin text-nexus-red"></i>
+                    <span>ComfyUI loading</span>
+                </span>
                 <i class="fa-solid fa-folder-open text-nexus-muted text-[10px]"></i>
             </div>
         </aside>
@@ -4888,6 +4892,9 @@
             ? `${window.location.origin}/api`
             : 'http://127.0.0.1:7861/api';
         let backendOnline = false;
+        let comfyRuntimeReady = false;
+        let comfyReadyTimer = null;
+        let pendingTemplateWorkflowPreset = null;
         let runtimeCapabilities = null;
         let backendCatalog = null;
         let backendWorkflows = [];
@@ -7844,11 +7851,20 @@
             if (overlay) overlay.classList.toggle('hidden', ready);
         }
 
+        function updateComfyFooterLoading() {
+            const indicator = document.getElementById('comfyFooterLoading');
+            if (!indicator) return;
+            indicator.classList.toggle('hidden', !backendOnline || comfyRuntimeReady);
+            indicator.classList.toggle('flex', backendOnline && !comfyRuntimeReady);
+        }
+
         async function initializeBackendBridge() {
             try {
                 setBootState('Connecting to Nexus backend...');
                 const health = await nexusFetch('/health');
                 backendOnline = true;
+                comfyRuntimeReady = !!health.comfy_running;
+                updateComfyFooterLoading();
                 setBootState('Syncing models, workflows and extensions...');
                 await nexusFetch('/model-tree', { method: 'POST' });
                 const [templates, catalog, loras, workflows, customNodes, dependencies] = await Promise.all([
@@ -7868,8 +7884,11 @@
                 renderAssetCounts();
                 renderManagerPanel();
                 refreshRuntimeMemory({ quiet: true });
-                if (!activeWorkflowId) {
+                if (comfyRuntimeReady && !activeWorkflowId) {
                     await loadTemplateWorkflow(activePreset, { quiet: true });
+                } else if (!comfyRuntimeReady) {
+                    pendingTemplateWorkflowPreset = activePreset;
+                    scheduleComfyReadySync();
                 }
                 setBootState('Nexus ready.', true);
                 syncGalleryFromBackend({ quiet: true, preferNewest: true, focusNewest: false, updateLinearOutput: false, force: true }).catch(error => {
@@ -7879,6 +7898,8 @@
                 showToast("Backend Online", health.comfy_running ? "Nexus and embedded ComfyUI are synced." : "Nexus backend is ready; ComfyUI will start on demand.");
             } catch (error) {
                 backendOnline = false;
+                comfyRuntimeReady = false;
+                updateComfyFooterLoading();
                 setBootState('Waiting for backend... run.bat keeps checking automatically.');
                 console.info('Nexus backend not ready yet.', error);
                 backendRetryTimer = setTimeout(initializeBackendBridge, 1500);
@@ -7896,6 +7917,36 @@
                 element.textContent = value;
                 select.appendChild(element);
             });
+        }
+
+        function scheduleComfyReadySync(delay = 2000) {
+            if (comfyReadyTimer || !backendOnline) return;
+            comfyReadyTimer = setTimeout(checkComfyReadyAndSync, delay);
+        }
+
+        async function checkComfyReadyAndSync() {
+            comfyReadyTimer = null;
+            if (!backendOnline) return;
+            try {
+                const health = await nexusFetch('/health');
+                comfyRuntimeReady = !!health.comfy_running;
+                updateComfyFooterLoading();
+                if (!comfyRuntimeReady) {
+                    scheduleComfyReadySync(2500);
+                    return;
+                }
+                const preset = pendingTemplateWorkflowPreset || activePreset;
+                pendingTemplateWorkflowPreset = null;
+                refreshRuntimeMemory({ quiet: true });
+                if (!activeWorkflowId) {
+                    await loadTemplateWorkflow(preset, { quiet: true, allowBeforeComfy: true });
+                }
+                renderManagerPanel();
+                showToast("ComfyUI Ready", "Workflow templates are synced with the active runtime.");
+            } catch (error) {
+                console.info('ComfyUI readiness check deferred.', error);
+                scheduleComfyReadySync(3000);
+            }
         }
 
         function modelPath(profile, modelName) {
@@ -20757,6 +20808,8 @@
             const comfy = snapshot.comfy_process || {};
             const backend = snapshot.backend_process || {};
             const gpu = snapshot.nvidia_smi || {};
+            comfyRuntimeReady = !!snapshot.comfy_running;
+            updateComfyFooterLoading();
             const state = snapshot.comfy_running ? 'Comfy ON' : 'Comfy OFF';
             const vram = gpu.available && gpu.total_mb
                 ? `VRAM ${gpu.used_mb || 0}/${gpu.total_mb} MB free ${gpu.free_mb || 0} MB`
@@ -21293,6 +21346,12 @@
 
         async function loadTemplateWorkflow(preset, options = {}) {
             if (!backendOnline) return;
+            if (!comfyRuntimeReady && !options.allowBeforeComfy) {
+                pendingTemplateWorkflowPreset = preset || activePreset;
+                scheduleComfyReadySync();
+                if (!options.quiet) showToast("ComfyUI Warming", "Workflow template will load after ComfyUI is ready.");
+                return;
+            }
             const serial = workflowLoadSerial;
             const saved = templateWorkflowSelections[preset];
             const workflow = saved?.id ? { id: saved.id, name: saved.name } : null;
