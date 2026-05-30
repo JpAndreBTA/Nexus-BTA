@@ -54,12 +54,13 @@ class ComfyClient:
                     raise RuntimeError(f"Port {self.settings.runtime.comfy_port} is already used by another ComfyUI/runtime process: {owner}")
                 return
             self.start()
-            deadline = time.time() + 120
+            start_timeout = max(60.0, float(os.environ.get("NEXUS_COMFY_START_TIMEOUT", "300")))
+            deadline = time.time() + start_timeout
             while time.time() < deadline:
                 if await self.is_running():
                     return
                 await asyncio.sleep(1)
-            raise RuntimeError("ComfyUI embedded runtime did not become ready in time.")
+            raise RuntimeError(f"ComfyUI embedded runtime did not become ready within {int(start_timeout)} seconds.")
 
     async def restart(self) -> None:
         self.stop()

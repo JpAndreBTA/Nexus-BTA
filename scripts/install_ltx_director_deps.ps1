@@ -27,6 +27,22 @@ function Invoke-NexusStep([scriptblock]$Step, [string]$Label) {
     }
 }
 
+function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
+    $dryArgs = @("-m", "pip", "install", "--dry-run", "--no-input", "--disable-pip-version-check", "-q") + $PipArgs
+    $dryOutput = & $RuntimePython @dryArgs 2>&1
+    $dryText = ($dryOutput | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0 -and [string]::IsNullOrWhiteSpace($dryText)) {
+        Write-NexusLine "$Label requirements already satisfied." "Ok"
+        return
+    }
+
+    & $RuntimePython -m pip install --disable-pip-version-check -q @PipArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip install failed with exit code $LASTEXITCODE"
+    }
+    Write-NexusLine "$Label requirements satisfied." "Ok"
+}
+
 function Get-AbsolutePath([string]$PathValue) {
     $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($PathValue)
 }
@@ -201,8 +217,7 @@ foreach ($repo in $repos) {
         $requirements = Join-Path $repo.Path "requirements.txt"
         if (Test-Path -LiteralPath $requirements) {
             Write-NexusLine "$($repo.Name) Python requirements..." "Info"
-            & $RuntimePython -m pip install -q -r $requirements
-            Write-NexusLine "$($repo.Name) requirements satisfied." "Ok"
+            Invoke-NexusPipInstallIfNeeded $repo.Name @("-r", $requirements)
         }
     }
 }

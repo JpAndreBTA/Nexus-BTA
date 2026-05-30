@@ -42,6 +42,22 @@ if (!(Test-Path -LiteralPath $CustomNodesDir)) {
     return
 }
 
+function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
+    $dryArgs = @("-m", "pip", "install", "--dry-run", "--no-input", "--disable-pip-version-check", "-q") + $PipArgs
+    $dryOutput = & $RuntimePython @dryArgs 2>&1
+    $dryText = ($dryOutput | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0 -and [string]::IsNullOrWhiteSpace($dryText)) {
+        Write-NexusLine "$Label requirements already satisfied." "Ok"
+        return
+    }
+
+    & $RuntimePython -m pip install --disable-pip-version-check -q @PipArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip install failed with exit code $LASTEXITCODE"
+    }
+    Write-NexusLine "$Label requirements satisfied." "Ok"
+}
+
 $requirements = Get-ChildItem -LiteralPath $CustomNodesDir -Directory -ErrorAction SilentlyContinue |
     ForEach-Object { Join-Path $_.FullName "requirements.txt" } |
     Where-Object { Test-Path -LiteralPath $_ }
@@ -55,11 +71,7 @@ foreach ($requirementsPath in $requirements) {
     $nodeName = Split-Path (Split-Path -Parent $requirementsPath) -Leaf
     try {
         Write-NexusLine "$nodeName Python requirements..." "Info"
-        & $RuntimePython -m pip install -q -r $requirementsPath
-        if ($LASTEXITCODE -ne 0) {
-            throw "pip install failed with exit code $LASTEXITCODE"
-        }
-        Write-NexusLine "$nodeName requirements satisfied." "Ok"
+        Invoke-NexusPipInstallIfNeeded $nodeName @("-r", $requirementsPath)
     } catch {
         if ($Strict) { throw }
         Write-NexusLine "$nodeName requirements failed: $($_.Exception.Message)" "Warn"

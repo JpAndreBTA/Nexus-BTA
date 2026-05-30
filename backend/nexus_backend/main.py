@@ -1757,10 +1757,70 @@ def _generation_activity_label(request: GenerateRequest) -> str:
     return request.activity
 
 
+def _model3d_mesh_quality_report(path: Path, request: GenerateRequest) -> dict[str, Any] | None:
+    if str(request.preset or "").lower() != "model3d" or path.suffix.lower() not in {".glb", ".gltf", ".obj", ".stl", ".ply"}:
+        return None
+    try:
+        import trimesh
+    except Exception:
+        return {"checked": False, "reason": "trimesh_unavailable"}
+    try:
+        loaded = trimesh.load(path, force="scene")
+        geometries = list(getattr(loaded, "geometry", {}).values()) if hasattr(loaded, "geometry") else [loaded]
+        meshes = []
+        for mesh in geometries:
+            faces = getattr(mesh, "faces", None)
+            if faces is not None and len(faces):
+                meshes.append(mesh)
+        if not meshes:
+            return {"checked": True, "passed": False, "reason": "no_mesh_geometry"}
+        mesh = trimesh.util.concatenate(meshes) if len(meshes) > 1 else meshes[0]
+        face_count = int(len(mesh.faces))
+        vertex_count = int(len(mesh.vertices))
+        parts = mesh.split(only_watertight=False)
+        component_faces = sorted((int(len(part.faces)) for part in parts), reverse=True)
+        largest_faces = component_faces[0] if component_faces else face_count
+        component_count = len(component_faces) or 1
+        target_faces = int((request.model3d or {}).get("decimation_target") or 250000)
+        min_expected_faces = max(50000, min(180000, int(target_faces * 0.18)))
+        largest_ratio = (largest_faces / face_count) if face_count else 0.0
+        issues: list[str] = []
+        if face_count < min_expected_faces:
+            issues.append("low_face_count")
+        if component_count > 64 and largest_ratio < 0.8:
+            issues.append("fragmented_components")
+        if component_count > 160:
+            issues.append("too_many_components")
+        extents = [float(value) for value in getattr(mesh.bounding_box, "extents", [])]
+        if len(extents) == 3 and (min(extents) <= 1e-6 or max(extents) / max(min(extents), 1e-6) > 80):
+            issues.append("degenerate_bounds")
+        return {
+            "checked": True,
+            "passed": not issues,
+            "issues": issues,
+            "faces": face_count,
+            "vertices": vertex_count,
+            "components": component_count,
+            "largest_component_faces": largest_faces,
+            "largest_component_ratio": round(largest_ratio, 4),
+            "watertight": bool(getattr(mesh, "is_watertight", False)),
+            "bounds": extents,
+            "target_faces": target_faces,
+            "min_expected_faces": min_expected_faces,
+        }
+    except Exception as exc:
+        return {"checked": False, "reason": str(exc)}
+
+
 def _resolve_generation_seed(request: GenerateRequest) -> int:
     if int(request.seed or -1) >= 0:
-        return int(request.seed)
-    seed = random.randint(0, 2**32 - 1)
+        seed = int(request.seed)
+        if str(request.preset or "").lower() == "model3d":
+            seed = min(seed, 0x7FFFFFFF)
+            request.seed = seed
+        return seed
+    max_seed = 0x7FFFFFFF if str(request.preset or "").lower() == "model3d" else 2**32 - 1
+    seed = random.randint(0, max_seed)
     request.seed = seed
     return seed
 
@@ -1791,6 +1851,10 @@ def _annotate_output_metadata(outputs: list[dict[str, Any]], request: GenerateRe
             "path": relative.replace("\\", "/"),
             "kind": output.get("kind") or path.suffix.lower().lstrip("."),
         }
+        quality_report = _model3d_mesh_quality_report(path, request)
+        if quality_report:
+            output["quality"] = quality_report
+            file_metadata["model3d_quality"] = quality_report
         try:
             path.with_suffix(path.suffix + ".nexus.json").write_text(json.dumps(file_metadata, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:

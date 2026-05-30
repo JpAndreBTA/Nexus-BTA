@@ -23,6 +23,7 @@ Current Implementation
 9. Generated media is organized under ./output/image and ./output/video with YYYYMMDD_HHMMSS prefixes.
 10. Settings include Reload UI, device probing, VRAM policy and attention toggles.
 11. LTX 2.3 core assets have been imported selectively into ./models; optional large EROS/Sulphur model imports are available through scripts/import_ltx23_assets.ps1 flags.
+12. 3D MODEL quality checks require trimesh in runtime/.venv; mesh cleanup routes use meshlib, pymeshlab and open3d from requirements.txt when available.
 
 Backend Commands
 ----------------

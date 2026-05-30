@@ -22,6 +22,22 @@ if (!(Get-Command Write-NexusWarn -ErrorAction SilentlyContinue)) {
     function Write-NexusWarn([string]$Message) { Write-NexusLine $Message "Warn" }
 }
 
+function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
+    $dryArgs = @("-m", "pip", "install", "--dry-run", "--no-input", "--disable-pip-version-check", "-q") + $PipArgs
+    $dryOutput = & $RuntimePython @dryArgs 2>&1
+    $dryText = ($dryOutput | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0 -and [string]::IsNullOrWhiteSpace($dryText)) {
+        Write-NexusLine "$Label requirements already satisfied." "Ok"
+        return
+    }
+
+    & $RuntimePython -m pip install --disable-pip-version-check -q @PipArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip install failed with exit code $LASTEXITCODE"
+    }
+    Write-NexusLine "$Label requirements satisfied." "Ok"
+}
+
 if (!$RuntimePython) {
     $candidate = Join-Path $root "runtime\.venv\Scripts\python.exe"
     $RuntimePython = if (Test-Path -LiteralPath $candidate) { $candidate } else { "python" }
@@ -37,11 +53,7 @@ $dinov3Model = Join-Path $dinov3Dir "model.safetensors"
 $allowModelDownloads = [string]::IsNullOrWhiteSpace($env:NEXUS_ALLOW_MODEL_DOWNLOADS) -eq $false -and $env:NEXUS_ALLOW_MODEL_DOWNLOADS -match '^(1|true|yes|y)$'
 
 Invoke-NexusStep -Label "Installing DINOv3 Python support" -Step {
-    & $RuntimePython -m pip install -q "transformers>=4.57.6,<5" "kagglehub==0.3.13"
-    if ($LASTEXITCODE -ne 0) {
-        throw "pip install DINOv3 support dependencies failed with exit code $LASTEXITCODE"
-    }
-    Write-NexusLine "DINOv3 Python support requirements satisfied." "Ok"
+    Invoke-NexusPipInstallIfNeeded "DINOv3 Python support" @("transformers>=4.57.6,<5", "kagglehub==0.3.13")
 }
 
 if (Test-Path -LiteralPath $dinov3Model) {

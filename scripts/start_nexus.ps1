@@ -20,6 +20,7 @@ $wan22Deps = Join-Path $root "scripts\install_wan22_deps.ps1"
 $dinov3Deps = Join-Path $root "scripts\install_dinov3_deps.ps1"
 $terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
 $settingsPath = Join-Path $root "config\nexus_settings.json"
+$dependencyStatePath = Join-Path $root "config\nexus_dependency_state.json"
 $uiUrl = "http://127.0.0.1:7861/ui"
 
 if (Test-Path -LiteralPath $terminalHelpers) {
@@ -127,6 +128,120 @@ function Wait-NexusHealth {
     return $false
 }
 
+function Test-NexusComfyDirect {
+    try {
+        $stats = Invoke-RestMethod "http://127.0.0.1:8189/system_stats" -TimeoutSec 5
+        return ($null -ne $stats)
+    } catch {
+        return $false
+    }
+}
+
+function Test-NexusComfyHealth {
+    try {
+        $runtimeHealth = Invoke-RestMethod "http://127.0.0.1:7861/api/health" -TimeoutSec 5
+        return [bool]$runtimeHealth.comfy_running
+    } catch {
+        return $false
+    }
+}
+
+function Wait-NexusComfyReady {
+    param([int]$Seconds = 360)
+
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    $lastError = ""
+    $startTimeout = [Math]::Min(45, [Math]::Max(15, $Seconds - 30))
+
+    try {
+        Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/comfy/start" -TimeoutSec $startTimeout | Out-Null
+    } catch {
+        $lastError = $_.Exception.Message
+        Write-NexusLine "ComfyUI is still warming up; waiting for runtime readiness..." "Warn"
+    }
+
+    while ((Get-Date) -lt $deadline) {
+        if (Test-NexusComfyHealth) {
+            return $true
+        }
+        if (Test-NexusComfyDirect) {
+            return $true
+        }
+        Start-Sleep -Seconds 2
+    }
+
+    if (![string]::IsNullOrWhiteSpace($lastError)) {
+        Write-NexusLine "Last ComfyUI startup response: $lastError" "Warn"
+    }
+    return $false
+}
+
+function Get-NexusFileFingerprint([string]$PathValue) {
+    if (!(Test-Path -LiteralPath $PathValue)) {
+        return "missing:$PathValue"
+    }
+    $item = Get-Item -LiteralPath $PathValue -ErrorAction SilentlyContinue
+    if (!$item) {
+        return "missing:$PathValue"
+    }
+    return "$($item.FullName)|$($item.Length)|$($item.LastWriteTimeUtc.Ticks)"
+}
+
+function Get-NexusDependencySignature {
+    $parts = New-Object System.Collections.Generic.List[string]
+    $parts.Add("python=$comfyPython")
+    $parts.Add("models=$modelsDir")
+    $parts.Add("custom_nodes=$customNodesDir")
+    foreach ($pathValue in @($settingsPath, $customNodeDeps, $ltxDirectorDeps, $wan22Deps, $dinov3Deps)) {
+        $parts.Add((Get-NexusFileFingerprint $pathValue))
+    }
+    if (Test-Path -LiteralPath $customNodesDir) {
+        $requirements = Get-ChildItem -LiteralPath $customNodesDir -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName "requirements.txt" } |
+            Where-Object { Test-Path -LiteralPath $_ } |
+            Sort-Object
+        foreach ($requirementsPath in $requirements) {
+            $parts.Add((Get-NexusFileFingerprint $requirementsPath))
+        }
+    }
+    $raw = [string]::Join("`n", $parts)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($raw)
+        return [System.BitConverter]::ToString($sha.ComputeHash($bytes)).Replace("-", "").ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+}
+
+function Test-NexusDependencyCheckRequired([string]$Signature) {
+    if ([string]$env:NEXUS_FORCE_DEP_CHECK -match '^(1|true|yes|y)$') {
+        return $true
+    }
+    if (!(Test-Path -LiteralPath $dependencyStatePath)) {
+        return $true
+    }
+    try {
+        $state = Get-Content -LiteralPath $dependencyStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        return [string]$state.signature -ne $Signature
+    } catch {
+        return $true
+    }
+}
+
+function Save-NexusDependencyState([string]$Signature) {
+    $state = [ordered]@{
+        signature = $Signature
+        checked_at = (Get-Date).ToUniversalTime().ToString("o")
+        comfy_python = $comfyPython
+        models_dir = $modelsDir
+        custom_nodes_dir = $customNodesDir
+    }
+    $json = $state | ConvertTo-Json -Depth 4
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($dependencyStatePath, $json, $utf8NoBom)
+}
+
 function Stop-NexusRuntimeProcesses {
     $patterns = @(
         "backend\\run_backend\.py",
@@ -201,7 +316,10 @@ if (!(Test-Path -LiteralPath $python)) {
     throw "Runtime Python was not created at $python."
 }
 
-if (Test-Path -LiteralPath $ltxDirectorDeps) {
+$dependencySignature = Get-NexusDependencySignature
+$dependencyCheckRequired = Test-NexusDependencyCheckRequired $dependencySignature
+
+if ($dependencyCheckRequired -and (Test-Path -LiteralPath $ltxDirectorDeps)) {
     Write-NexusSection "Requirements"
     if (Test-Path -LiteralPath $customNodeDeps) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $customNodeDeps -ProjectRoot $root -RuntimePython $comfyPython -CustomNodesDir $customNodesDir -Strict
@@ -209,14 +327,20 @@ if (Test-Path -LiteralPath $ltxDirectorDeps) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -CustomNodesDir $customNodesDir -Strict
 }
 
-if (Test-Path -LiteralPath $wan22Deps) {
+if ($dependencyCheckRequired -and (Test-Path -LiteralPath $wan22Deps)) {
     Write-NexusSection "Wan 2.2"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
 }
 
-if (Test-Path -LiteralPath $dinov3Deps) {
+if ($dependencyCheckRequired -and (Test-Path -LiteralPath $dinov3Deps)) {
     Write-NexusSection "DINOv3"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $dinov3Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
+}
+
+if ($dependencyCheckRequired) {
+    Save-NexusDependencyState $dependencySignature
+} else {
+    Write-NexusLine "Dependency checks are cached; skipping install scans for fast startup." "Ok"
 }
 
 if (Test-Path -LiteralPath $runtimeHotfixes) {
@@ -267,7 +391,7 @@ if ($comfyPortOwner) {
 
 if (!(Test-NexusHealth)) {
     Write-NexusLine "Starting backend..." "Info"
-    Start-Process -FilePath $python -ArgumentList @($backend) -WorkingDirectory $root -NoNewWindow
+    Start-Process -FilePath $python -ArgumentList @($backend) -WorkingDirectory $root -WindowStyle Hidden
 }
 
 Write-NexusLine "Waiting for API..." "Info"
@@ -280,14 +404,8 @@ Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/model-tree" -TimeoutSe
 
 if ($StartComfy) {
     Write-NexusLine "Starting embedded ComfyUI..." "Info"
-    try {
-        Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/comfy/start" -TimeoutSec 180 | Out-Null
-        $runtimeHealth = Invoke-RestMethod "http://127.0.0.1:7861/api/health" -TimeoutSec 10
-        if (-not $runtimeHealth.comfy_running) {
-            throw "ComfyUI did not report as running after startup."
-        }
-    } catch {
-        throw "ComfyUI startup failed: $($_.Exception.Message)"
+    if (!(Wait-NexusComfyReady -Seconds 360)) {
+        throw "ComfyUI startup failed: runtime did not become ready after 360 seconds."
     }
 } else {
     Write-NexusLine "ComfyUI will start on demand." "Info"

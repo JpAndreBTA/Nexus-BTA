@@ -1963,23 +1963,37 @@
                             <button type="button" onclick="setModel3DReferenceMode('multi')" id="model3DMultiBtn" class="flat-button py-2 text-[10px] font-bold">Many</button>
                         </div>
                         <div id="model3DReferenceGrid" class="grid grid-cols-3 overflow-hidden rounded-sm border border-dashed border-nexus-border bg-nexus-bg"></div>
-                        <button type="button" onclick="loadModel3DTestReference()" class="flat-button w-full py-2 text-[10px] font-bold uppercase">
-                            <i class="fa-solid fa-vial text-nexus-red mr-1"></i> Use input test image
-                        </button>
+                        <div class="grid grid-cols-3 gap-2">
+                            <button type="button" onclick="loadModel3DTestReference('3D_Model_InputTest2.png')" class="flat-button py-2 text-[10px] font-bold uppercase" title="Load 3D_Model_InputTest2.png">
+                                <i class="fa-solid fa-vial text-nexus-red mr-1"></i> Test 2
+                            </button>
+                            <button type="button" onclick="loadModel3DTestReference('3D_Model_InputTest3.png')" class="flat-button py-2 text-[10px] font-bold uppercase" title="Load 3D_Model_InputTest3.png">
+                                <i class="fa-solid fa-vial text-nexus-red mr-1"></i> Test 3
+                            </button>
+                            <button type="button" onclick="loadModel3DTestReference('3D_Model_InputTest_FRONT.PNG', ['3D_Model_InputTest_lEFT.png'])" class="flat-button py-2 text-[10px] font-bold uppercase" title="Load FRONT and LEFT references">
+                                <i class="fa-solid fa-cubes text-nexus-red mr-1"></i> Multi
+                            </button>
+                        </div>
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">
                             <span class="font-bold">Randomize seed</span>
                             <span class="toggle-switch"><input id="model3DRandomSeedToggle" type="checkbox" checked><span class="toggle-track"></span></span>
                         </label>
                         <div class="grid grid-cols-2 gap-2">
                             <label class="space-y-1"><span class="mini-label">Voxel resolution</span><select id="model3DVoxelSelect" class="flat-input"><option>512</option><option selected>1024</option><option>1536</option></select></label>
-                            <label class="space-y-1"><span class="mini-label">Texture size</span><select id="model3DTextureSizeSelect" class="flat-input"><option>1024</option><option selected>2048</option><option>4096</option></select></label>
+                            <label class="space-y-1"><span class="mini-label">Texture size</span><select id="model3DTextureSizeSelect" class="flat-input"><option selected>1024</option><option>2048</option><option>4096</option></select></label>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="space-y-1"><span class="mini-label">Guidance scale</span><input id="model3DGuidanceInput" class="flat-input font-mono text-center" type="number" min="1" max="12" step="0.1" value="8"></label>
+                            <label class="space-y-1"><span class="mini-label">Think steps</span><input id="model3DThinkStepsInput" class="flat-input font-mono text-center" type="number" min="1" max="100" step="1" value="14"></label>
+                            <label class="space-y-1"><span class="mini-label">Texture sharp</span><input id="model3DTextureSharpInput" class="flat-input font-mono text-center" type="number" min="0" max="10" step="0.1" value="3.0"></label>
+                            <label class="space-y-1"><span class="mini-label">Texture details</span><input id="model3DTextureDetailsInput" class="flat-input font-mono text-center" type="number" min="0" max="10" step="0.1" value="1.0"></label>
                         </div>
                         <label class="space-y-1 block">
                             <span class="mini-label">Decimation target</span>
                             <div class="model3d-range-row">
-                                <input id="model3DFacesRange" type="range" min="100000" max="500000" step="25000" value="300000" oninput="syncModel3DNumber('model3DFacesInput', this.value)">
-                                <input id="model3DFacesInput" class="flat-input font-mono text-center" type="number" min="100000" max="500000" step="25000" value="300000" oninput="syncModel3DNumber('model3DFacesRange', this.value)">
-                                <button type="button" class="model3d-range-reset" onclick="syncModel3DNumber('model3DFacesInput','300000');syncModel3DNumber('model3DFacesRange','300000')" title="Reset"><i class="fa-solid fa-rotate-left text-[10px]"></i></button>
+                                <input id="model3DFacesRange" type="range" min="100000" max="1000000" step="25000" value="250000" oninput="syncModel3DNumber('model3DFacesInput', this.value)">
+                                <input id="model3DFacesInput" class="flat-input font-mono text-center" type="number" min="100000" max="1000000" step="25000" value="250000" oninput="syncModel3DNumber('model3DFacesRange', this.value)">
+                                <button type="button" class="model3d-range-reset" onclick="syncModel3DNumber('model3DFacesInput','250000');syncModel3DNumber('model3DFacesRange','250000')" title="Reset"><i class="fa-solid fa-rotate-left text-[10px]"></i></button>
                             </div>
                         </label>
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">
@@ -1993,7 +2007,7 @@
                                     <div class="text-[10px] font-bold text-white">Stage 1: Sparse Structure Generation</div>
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="space-y-1"><span class="mini-label">Guidance strength</span><input id="model3DSparseGuidance" class="flat-input font-mono text-center" type="number" min="1" max="10" step="0.1" value="7.5"></label>
-                                        <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DSparseRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.05" value="0.7"></label>
+                                        <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DSparseRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.01" value="0.01"></label>
                                         <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DSparseSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="12"></label>
                                         <label class="space-y-1"><span class="mini-label">Rescale T</span><input id="model3DSparseRescaleT" class="flat-input font-mono text-center" type="number" min="1" max="6" step="1" value="5"></label>
                                     </div>
@@ -2002,7 +2016,7 @@
                                     <div class="text-[10px] font-bold text-white">Stage 2: Shape Generation</div>
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="space-y-1"><span class="mini-label">Guidance strength</span><input id="model3DShapeGuidance" class="flat-input font-mono text-center" type="number" min="1" max="10" step="0.1" value="7.5"></label>
-                                        <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DShapeRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.05" value="0.5"></label>
+                                        <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DShapeRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.01" value="0.01"></label>
                                         <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DShapeSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="12"></label>
                                         <label class="space-y-1"><span class="mini-label">Rescale T</span><input id="model3DShapeRescaleT" class="flat-input font-mono text-center" type="number" min="1" max="6" step="1" value="3"></label>
                                     </div>
@@ -17376,23 +17390,38 @@
             loadModel3DPreviewFromUrl(url, item.title || item.filename || '3D model');
         }
 
-        async function loadModel3DTestReference() {
-            try {
-                const response = await fetch(`${NEXUS_API.replace(/\/api$/, '')}/inputs/3D_Model_InputTest.png`);
-                if (!response.ok) throw new Error('test image not served');
-                const blob = await response.blob();
+        function readBlobAsDataUrl(blob) {
+            return new Promise((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onload = () => {
-                    setReferenceImageSource(String(reader.result || ''), '3D_Model_InputTest.png', { keepExtraReferences: true });
-                    currentActivity = 'img2img';
-                    localStorage.setItem('nexus_current_activity', currentActivity);
-                    setActiveActivityButton(getActivityButton('img2img'));
-                    updateModel3DTemplateUi();
-                    showToast('3D Test Image Loaded', 'input/3D_Model_InputTest.png is ready as the front reference.');
-                };
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('Blob read failed'));
                 reader.readAsDataURL(blob);
+            });
+        }
+
+        async function fetchInputDataUrl(filename) {
+            const response = await fetch(`${NEXUS_API.replace(/\/api$/, '')}/inputs/${encodeURIComponent(filename)}`);
+            if (!response.ok) throw new Error(`${filename} not served`);
+            return readBlobAsDataUrl(await response.blob());
+        }
+
+        async function loadModel3DTestReference(filename = '3D_Model_InputTest2.png', extraFilenames = []) {
+            try {
+                const primary = await fetchInputDataUrl(filename);
+                if (extraFilenames.length) setModel3DReferenceMode('multi');
+                setReferenceImageSource(primary, filename, { keepExtraReferences: true });
+                for (let index = 0; index < extraFilenames.length; index += 1) {
+                    const extraName = extraFilenames[index];
+                    const extraSrc = await fetchInputDataUrl(extraName);
+                    setReferenceImageExtraSlot(index + 2, extraSrc, extraName);
+                }
+                currentActivity = 'img2img';
+                localStorage.setItem('nexus_current_activity', currentActivity);
+                setActiveActivityButton(getActivityButton('img2img'));
+                updateModel3DTemplateUi();
+                showToast('3D Test Image Loaded', extraFilenames.length ? `${filename} plus ${extraFilenames.length} angle reference loaded.` : `${filename} is ready as the front reference.`);
             } catch (error) {
-                showToast('Test Image Missing', 'Could not load /inputs/3D_Model_InputTest.png from backend.');
+                showToast('Test Image Missing', `Could not load ${filename} from backend inputs.`);
             }
         }
 
@@ -19500,7 +19529,7 @@
                     { id: 'reference_stack', class_type: 'Trellis2ReferenceStack', title: 'Single / Multiview References', x: 390, y: 260, width: 300, height: 135, inputs: ['image_1', 'image_2', 'image_3'], outputs: ['TRELLIS2_IMAGES'], widgets: [{ name: 'mode', value: refs.length > 1 ? 'multi' : 'single' }], color: '#0f766e' },
                     { id: 'generate', class_type: 'Trellis2ImageTo3D', title: 'Image To 3D O-Voxel', x: 760, y: 230, width: 320, height: 185, inputs: ['model', 'images'], outputs: ['O_VOXEL', 'MESH'], widgets: [{ name: 'voxel_resolution', value: document.getElementById('model3DVoxelSelect')?.value || '1024' }, { name: 'guidance_scale', value: document.getElementById('model3DGuidanceInput')?.value || '8' }, { name: 'steps', value: document.getElementById('model3DThinkStepsInput')?.value || '14' }, { name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }], color: '#2f3c4f' },
                     { id: 'mesh', class_type: 'Trellis2VoxelToMesh', title: 'Voxel To Mesh / Remesh', x: 1160, y: 210, width: 300, height: 160, inputs: ['o_voxel'], outputs: ['MESH'], widgets: [{ name: 'faces_k', value: document.getElementById('model3DFacesInput')?.value || '250' }, { name: 'remesh', value: 'true' }, { name: 'fill_holes', value: 'meshlib' }], color: '#3f3f46' },
-                    { id: 'texture', class_type: 'Trellis2ProjectionTexturing', title: 'PBR Texture / Inpaint', x: 1160, y: 430, width: 330, height: 170, inputs: ['mesh', 'images'], outputs: ['TEXTURED_MESH', 'TEXTURE'], widgets: [{ name: 'texture_size', value: document.getElementById('model3DTextureSizeSelect')?.value || '2048' }, { name: 'texture_model', value: document.getElementById('model3DTextureModelSelect')?.value || 'sd15' }, { name: 'mode', value: document.getElementById('model3DTextureModeSelect')?.value || 'Multiview projection' }], color: '#5a4320' },
+                    { id: 'texture', class_type: 'Trellis2ProjectionTexturing', title: 'PBR Texture / Inpaint', x: 1160, y: 430, width: 330, height: 170, inputs: ['mesh', 'images'], outputs: ['TEXTURED_MESH', 'TEXTURE'], widgets: [{ name: 'texture_size', value: document.getElementById('model3DTextureSizeSelect')?.value || '1024' }, { name: 'texture_model', value: document.getElementById('model3DTextureModelSelect')?.value || 'sd15' }, { name: 'mode', value: document.getElementById('model3DTextureModeSelect')?.value || 'Multiview projection' }], color: '#5a4320' },
                     { id: 'preview', class_type: 'Preview3D', title: '3D Preview', x: 1560, y: 240, width: 230, height: 110, inputs: ['mesh'], outputs: [], widgets: [{ name: 'view', value: model3DViewer.mode || 'texture' }], color: '#164e63' },
                     { id: 'save', class_type: 'Save3DModel', title: 'Save GLB + Texture', x: 1560, y: 420, width: 250, height: 120, inputs: ['mesh', 'texture'], outputs: [], widgets: [{ name: 'filename_prefix', value: '3DMODEL' }, { name: 'format', value: 'glb' }], color: '#3f3f46' },
                     { id: 'note', class_type: 'Note', title: '3D MODEL Output Contract', x: 390, y: 470, width: 330, height: 130, inputs: [], outputs: [], widgets: [{ name: 'text', value: 'Outputs are routed to output/3D/DATE_HOUR_MINUTE/ with GLB model, texture maps, workflow and metadata.' }], color: '#5a4320' }
@@ -20480,8 +20509,10 @@
                     mesh_faces_k: parseInt(document.getElementById('model3DFacesInput')?.value || '250', 10),
                     guidance: parseFloat(document.getElementById('model3DGuidanceInput')?.value || '8'),
                     think_steps: parseInt(document.getElementById('model3DThinkStepsInput')?.value || '14', 10),
+                    texture_sharp: parseFloat(document.getElementById('model3DTextureSharpInput')?.value || '3'),
+                    texture_details: parseFloat(document.getElementById('model3DTextureDetailsInput')?.value || '1'),
                     randomize_seed: !!document.getElementById('model3DRandomSeedToggle')?.checked,
-                    decimation_target: parseInt(document.getElementById('model3DFacesInput')?.value || '300000', 10),
+                    decimation_target: parseInt(document.getElementById('model3DFacesInput')?.value || '250000', 10),
                     sparse_guidance: parseFloat(document.getElementById('model3DSparseGuidance')?.value || '7.5'),
                     sparse_rescale: parseFloat(document.getElementById('model3DSparseRescale')?.value || '0.7'),
                     sparse_steps: parseInt(document.getElementById('model3DSparseSteps')?.value || '12', 10),
@@ -20525,7 +20556,7 @@
                     })),
                     texture_controlnet: !!document.getElementById('model3DTextureControlNetToggle')?.checked,
                     texture_control_type: document.getElementById('model3DTextureControlTypeSelect')?.value || 'None',
-                    texture_size: parseInt(document.getElementById('model3DTextureSizeSelect')?.value || '2048', 10),
+                    texture_size: parseInt(document.getElementById('model3DTextureSizeSelect')?.value || '1024', 10),
                     output_dir: 'output/3D/DATE_HOUR_MINUTE'
                 },
                 runtime: {

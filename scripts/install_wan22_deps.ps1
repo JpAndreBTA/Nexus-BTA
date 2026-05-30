@@ -27,6 +27,22 @@ function Invoke-NexusStep([scriptblock]$Step, [string]$Label) {
     }
 }
 
+function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
+    $dryArgs = @("-m", "pip", "install", "--dry-run", "--no-input", "--disable-pip-version-check", "-q") + $PipArgs
+    $dryOutput = & $RuntimePython @dryArgs 2>&1
+    $dryText = ($dryOutput | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0 -and [string]::IsNullOrWhiteSpace($dryText)) {
+        Write-NexusLine "$Label requirements already satisfied." "Ok"
+        return
+    }
+
+    & $RuntimePython -m pip install --disable-pip-version-check -q @PipArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip install failed with exit code $LASTEXITCODE"
+    }
+    Write-NexusLine "$Label requirements satisfied." "Ok"
+}
+
 function Get-AbsolutePath([string]$PathValue) {
     $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($PathValue)
 }
@@ -160,10 +176,7 @@ if (!$allowModelDownloads) {
 
 if ($assets.Count -gt 0) {
     Invoke-NexusStep -Label "Installing Hugging Face downloader" -Step {
-        & $RuntimePython -m pip install -q "huggingface-hub>=0.24"
-        if ($LASTEXITCODE -ne 0) {
-            throw "pip install huggingface-hub failed with exit code $LASTEXITCODE"
-        }
+        Invoke-NexusPipInstallIfNeeded "Hugging Face downloader" @("huggingface-hub>=0.24")
     }
 } else {
     Write-NexusLine "Wan 2.2 model downloads skipped or already satisfied." "Info"
