@@ -36,6 +36,7 @@ class ComfyClient:
     def __init__(self, settings: NexusSettings):
         self.settings = settings
         self.process: subprocess.Popen[str] | None = None
+        self._log_handle: Any | None = None
         self._started_runtime_signature: str = ""
         self._start_lock = asyncio.Lock()
         self._owned_external_pid: int | None = None
@@ -74,6 +75,21 @@ class ComfyClient:
                 await asyncio.sleep(1)
             raise RuntimeError(f"ComfyUI embedded runtime did not become ready within {int(start_timeout)} seconds.")
 
+    async def start_nowait(self) -> dict[str, Any]:
+        if await self.is_running():
+            if not self._adopt_running_runtime():
+                owner = self.runtime_owner_description()
+                raise RuntimeError(f"Port {self.settings.runtime.comfy_port} is already used by another ComfyUI/runtime process: {owner}")
+            return {"status": "running", "url": self.base_url}
+        async with self._start_lock:
+            if await self.is_running():
+                if not self._adopt_running_runtime():
+                    owner = self.runtime_owner_description()
+                    raise RuntimeError(f"Port {self.settings.runtime.comfy_port} is already used by another ComfyUI/runtime process: {owner}")
+                return {"status": "running", "url": self.base_url}
+            self.start()
+            return {"status": "starting", "url": self.base_url, "log": str(self.settings.project_root / "logs" / "comfyui.log")}
+
     async def restart(self) -> None:
         self.stop()
         await asyncio.sleep(1)
@@ -83,6 +99,7 @@ class ComfyClient:
         if not self.process or self.process.poll() is not None:
             self.process = None
             self._stop_owned_external_runtime()
+            self._close_log_handle()
             return
         pid = self.process.pid
         self._stop_process_tree(pid)
@@ -94,10 +111,12 @@ class ComfyClient:
         finally:
             self.process = None
             self._owned_external_pid = None
+            self._close_log_handle()
 
     def start(self) -> None:
         if self.process and self.process.poll() is None:
             return
+        self._close_log_handle()
         owner_pid = self._runtime_owner_pid()
         if owner_pid:
             if self._adopt_running_runtime():
@@ -170,16 +189,34 @@ class ComfyClient:
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = 0
 
-        self.process = subprocess.Popen(
-            args,
-            cwd=str(self.settings.comfy_root),
-            env=env,
-            text=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            startupinfo=startupinfo,
-        )
+        log_path = self.settings.project_root / "logs" / "comfyui.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._log_handle = log_path.open("a", encoding="utf-8", errors="replace")
+        self._log_handle.write(f"\n\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting ComfyUI: {' '.join(args)}\n")
+        self._log_handle.flush()
+        try:
+            self.process = subprocess.Popen(
+                args,
+                cwd=str(self.settings.comfy_root),
+                env=env,
+                text=True,
+                stdout=self._log_handle,
+                stderr=subprocess.STDOUT,
+                startupinfo=startupinfo,
+            )
+        except Exception:
+            self._close_log_handle()
+            raise
         self._started_runtime_signature = self.runtime_signature()
+
+    def _close_log_handle(self) -> None:
+        handle = self._log_handle
+        self._log_handle = None
+        if handle:
+            try:
+                handle.close()
+            except Exception:
+                pass
 
     def _runtime_owner_pid(self) -> int | None:
         try:

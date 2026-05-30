@@ -1,6 +1,8 @@
 param(
     [string]$ProjectRoot = "D:\NexusBTA",
     [switch]$StartComfy,
+    [switch]$RequireComfy,
+    [int]$ComfyWarmupSeconds = 75,
     [switch]$NoOpen
 )
 
@@ -147,17 +149,17 @@ function Test-NexusComfyHealth {
 }
 
 function Wait-NexusComfyReady {
-    param([int]$Seconds = 360)
+    param([int]$Seconds = 75)
 
     $deadline = (Get-Date).AddSeconds($Seconds)
     $lastError = ""
-    $startTimeout = [Math]::Min(45, [Math]::Max(15, $Seconds - 30))
+    $lastNotice = Get-Date
 
     try {
-        Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/comfy/start" -TimeoutSec $startTimeout | Out-Null
+        Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/comfy/start?wait=false" -TimeoutSec 10 | Out-Null
     } catch {
         $lastError = $_.Exception.Message
-        Write-NexusLine "ComfyUI is still warming up; waiting for runtime readiness..." "Warn"
+        Write-NexusLine "ComfyUI did not accept background warmup yet; continuing with readiness checks..." "Warn"
     }
 
     while ((Get-Date) -lt $deadline) {
@@ -167,12 +169,18 @@ function Wait-NexusComfyReady {
         if (Test-NexusComfyDirect) {
             return $true
         }
+        if (((Get-Date) - $lastNotice).TotalSeconds -ge 15) {
+            Write-NexusLine "ComfyUI is still warming up in the background..." "Info"
+            $lastNotice = Get-Date
+        }
         Start-Sleep -Seconds 2
     }
 
     if (![string]::IsNullOrWhiteSpace($lastError)) {
         Write-NexusLine "Last ComfyUI startup response: $lastError" "Warn"
     }
+    Write-NexusLine "ComfyUI is not ready yet. Nexus will open now; the first generation may wait for ComfyUI or show the detailed error." "Warn"
+    Write-NexusLine "ComfyUI startup log: logs\comfyui.log" "Info"
     return $false
 }
 
@@ -410,8 +418,10 @@ Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/model-tree" -TimeoutSe
 
 if ($StartComfy) {
     Write-NexusLine "Starting embedded ComfyUI..." "Info"
-    if (!(Wait-NexusComfyReady -Seconds 360)) {
-        throw "ComfyUI startup failed: runtime did not become ready after 360 seconds. Open update.bat to repair or refresh dependencies, then run run.bat again."
+    if (!(Wait-NexusComfyReady -Seconds $ComfyWarmupSeconds)) {
+        if ($RequireComfy) {
+            throw "ComfyUI startup failed: runtime did not become ready after $ComfyWarmupSeconds seconds. Open update.bat to repair or refresh dependencies, then run run.bat again."
+        }
     }
 } else {
     Write-NexusLine "ComfyUI will start on demand." "Info"

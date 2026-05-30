@@ -10,7 +10,7 @@ if errorlevel 1 (
   exit /b 1
 )
 if exist "%ROOT%config\nexus_startup_env.cmd" call "%ROOT%config\nexus_startup_env.cmd"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\start_nexus.ps1" -ProjectRoot "%~dp0." -StartComfy
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\start_nexus.ps1" -ProjectRoot "%~dp0." -StartComfy -ComfyWarmupSeconds 75
 if errorlevel 1 (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "& { . '%ROOT%scripts\nexus_terminal.ps1'; Write-NexusLine 'Startup failed.' 'Error' }"
   powershell -NoProfile -ExecutionPolicy Bypass -Command "& { . '%ROOT%scripts\nexus_terminal.ps1'; Write-NexusLine 'Open update.bat to repair or refresh dependencies, then run run.bat again.' 'Warn' }"
@@ -19,7 +19,7 @@ if errorlevel 1 (
 )
 
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& { . '%ROOT%scripts\nexus_terminal.ps1'; Write-NexusLine 'Backend and ComfyUI are running.' 'Ok'; Write-NexusLine 'Keep this window open while using the platform.' 'Info'; Write-NexusLine 'Press any key to close and stop services.' 'Info' }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { . '%ROOT%scripts\nexus_terminal.ps1'; Write-NexusLine 'Backend is running. ComfyUI starts in the background or on first generation.' 'Ok'; Write-NexusLine 'Keep this window open while using the platform.' 'Info'; Write-NexusLine 'Press any key to close and stop services.' 'Info' }"
 pause >nul
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\stop_nexus.ps1" -ProjectRoot "%~dp0."

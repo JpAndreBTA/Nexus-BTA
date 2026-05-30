@@ -4590,9 +4590,11 @@ async def comfy_object_info(start: bool = Query(False)) -> dict[str, Any]:
 
 
 @app.post("/api/comfy/start")
-async def start_comfy() -> dict[str, Any]:
+async def start_comfy(wait: bool = Query(True)) -> dict[str, Any]:
     try:
         cleanup_embedded_comfy_artifacts()
+        if not wait:
+            return await comfy.start_nowait()
         await comfy.ensure_running()
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
