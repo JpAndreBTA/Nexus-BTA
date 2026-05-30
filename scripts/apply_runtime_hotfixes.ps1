@@ -9,6 +9,8 @@ $qwenNodes = Join-Path $root "runtime\ComfyUI\comfy_extras\nodes_qwen.py"
 $ltxDirectorNode = Join-Path $root "custom_nodes\WhatDreamsCost-ComfyUI\ltx_director.py"
 $trellis2Nodes = Join-Path $root "custom_nodes\ComfyUI-Trellis2\nodes.py"
 $trellis2WindowedAttn = Join-Path $root "custom_nodes\ComfyUI-Trellis2\trellis2\modules\sparse\attention\windowed_attn.py"
+$trellis2FlexGemm = Join-Path $root "custom_nodes\ComfyUI-Trellis2\trellis2\modules\sparse\conv\conv_flex_gemm.py"
+$trellis2FlexGemmHotfix = Join-Path $root "scripts\hotfixes\trellis2_conv_flex_gemm_lowvram.py"
 
 if (Test-Path -LiteralPath $qwenNodes) {
     $content = Get-Content -LiteralPath $qwenNodes -Raw
@@ -88,6 +90,15 @@ for _nexus_trellis_intermediate in (
             Set-Content -LiteralPath $trellis2Nodes -Value $patched -Encoding UTF8
             Write-Host "[NEXUS BTA] Applied Trellis2 terminal export output routing hotfix."
         }
+    }
+}
+
+if ((Test-Path -LiteralPath $trellis2FlexGemm) -and (Test-Path -LiteralPath $trellis2FlexGemmHotfix)) {
+    $content = Get-Content -LiteralPath $trellis2FlexGemm -Raw
+    $hotfix = Get-Content -LiteralPath $trellis2FlexGemmHotfix -Raw
+    if ($content -notmatch "NEXUS_TRELLIS_FLEX_GEMM_LOWVRAM_HOTFIX") {
+        Set-Content -LiteralPath $trellis2FlexGemm -Value $hotfix -Encoding UTF8
+        Write-Host "[NEXUS BTA] Applied Trellis2 flex_gemm low-VRAM hotfix."
     }
 }
 

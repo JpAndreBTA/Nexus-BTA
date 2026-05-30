@@ -52,10 +52,51 @@
 
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #09090b;
-            color: #d4d4d8;
+            background-color: var(--nexus-bg, #09090b);
+            color: var(--nexus-text, #d4d4d8);
             overflow: hidden;
             top: 0 !important;
+        }
+
+        :root {
+            --nexus-red: #ff3b3b;
+            --nexus-dark-red: #dc2626;
+            --nexus-bg: #09090b;
+            --nexus-panel: #18181b;
+            --nexus-border: #27272a;
+            --nexus-hover: #27272a;
+            --nexus-text: #d4d4d8;
+            --nexus-muted: #a1a1aa;
+            --nexus-header: #09090b;
+            --nexus-modal: #18181b;
+            --nexus-canvas: #09090b;
+        }
+
+        .bg-nexus-bg { background-color: var(--nexus-bg) !important; }
+        .bg-nexus-panel { background-color: var(--nexus-panel) !important; }
+        .bg-nexus-hover { background-color: var(--nexus-hover) !important; }
+        .bg-nexus-red { background-color: var(--nexus-red) !important; }
+        .hover\:bg-nexus-hover:hover { background-color: var(--nexus-hover) !important; }
+        .hover\:bg-nexus-red:hover { background-color: var(--nexus-red) !important; }
+        .hover\:bg-nexus-darkRed:hover { background-color: var(--nexus-dark-red) !important; }
+        .border-nexus-border { border-color: var(--nexus-border) !important; }
+        .border-nexus-red { border-color: var(--nexus-red) !important; }
+        .hover\:border-nexus-red:hover { border-color: var(--nexus-red) !important; }
+        .text-nexus-red { color: var(--nexus-red) !important; }
+        .text-nexus-text { color: var(--nexus-text) !important; }
+        .text-nexus-muted { color: var(--nexus-muted) !important; }
+        .hover\:text-nexus-red:hover { color: var(--nexus-red) !important; }
+        header, .nexus-header-surface { background-color: var(--nexus-header) !important; }
+        #view-workflow, .dots-bg { background-color: var(--nexus-canvas) !important; }
+        .modal-surface, #templateToolsPanel { background-color: var(--nexus-modal) !important; }
+
+        .theme-customizer-panel {
+            background: color-mix(in srgb, var(--nexus-panel) 94%, #000);
+        }
+
+        .theme-color-cell {
+            background: var(--nexus-bg);
+            border: 1px solid var(--nexus-border);
         }
 
         .goog-te-banner-frame,
@@ -610,7 +651,16 @@
         }
 
         .workflow-node .node-pin-btn {
+            width: 18px;
+            height: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid transparent;
+            border-radius: 2px;
             opacity: 0.45;
+            pointer-events: auto;
+            transition: opacity 140ms ease, color 140ms ease, border-color 140ms ease, background-color 140ms ease;
         }
 
         .workflow-node:hover .node-pin-btn,
@@ -618,15 +668,24 @@
             opacity: 1;
         }
 
+        .workflow-node .node-pin-btn:hover,
+        .workflow-node .node-pin-btn.active {
+            border-color: color-mix(in srgb, var(--nexus-red) 42%, transparent);
+            background: color-mix(in srgb, var(--nexus-red) 10%, transparent);
+        }
+
         .sortable-panel {
             position: relative;
             min-width: 0;
+            transition: transform 140ms ease, background-color 140ms ease, outline-color 140ms ease;
         }
 
         .sortable-panel.dragging,
         .pinned-node-card.dragging {
-            opacity: 0.55;
-            outline: 1px dashed #ff3b3b;
+            opacity: 0.72;
+            outline: 1px dashed var(--nexus-red);
+            background: color-mix(in srgb, var(--nexus-red) 8%, transparent);
+            transform: translateX(6px) scale(0.992);
         }
 
         .panel-drag-handle {
@@ -641,6 +700,111 @@
             background: rgba(255, 255, 255, 0.035);
             border-radius: 2px;
             color: #f4f4f5;
+        }
+
+        .sortable-panel > :first-child:hover {
+            background: color-mix(in srgb, var(--nexus-red) 10%, transparent);
+            outline: 1px solid color-mix(in srgb, var(--nexus-red) 38%, transparent);
+        }
+
+        .sortable-panel.panel-drop-target::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: -4px;
+            height: 2px;
+            background: var(--nexus-red);
+            z-index: 3;
+        }
+
+        .sortable-panel.panel-drop-tail::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -4px;
+            height: 2px;
+            background: var(--nexus-red);
+            z-index: 3;
+        }
+
+        .pinned-node-card {
+            position: relative;
+            transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, outline-color 140ms ease;
+        }
+
+        .pinned-node-titlebar {
+            cursor: grab;
+            margin: -2px -2px 0;
+            padding: 2px;
+            border-radius: 2px;
+        }
+
+        .pinned-node-titlebar:active {
+            cursor: grabbing;
+        }
+
+        .pinned-node-titlebar:hover {
+            background: color-mix(in srgb, var(--nexus-red) 10%, transparent);
+            outline: 1px solid color-mix(in srgb, var(--nexus-red) 36%, transparent);
+        }
+
+        .pinned-node-card.pin-drop-target::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: -4px;
+            height: 2px;
+            background: var(--nexus-red);
+            z-index: 3;
+        }
+
+        .pinned-node-card.pin-drop-tail::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -4px;
+            height: 2px;
+            background: var(--nexus-red);
+            z-index: 3;
+        }
+
+        .pinned-node-card.is-collapsed .pinned-node-body {
+            display: none;
+        }
+
+        .pin-action-btn {
+            width: 18px;
+            height: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid transparent;
+            border-radius: 2px;
+            color: var(--nexus-muted);
+            background: transparent;
+            transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+        }
+
+        .pin-action-btn:hover,
+        .pin-action-btn.active {
+            color: #ffffff;
+            border-color: color-mix(in srgb, var(--nexus-red) 42%, transparent);
+            background: color-mix(in srgb, var(--nexus-red) 10%, transparent);
+        }
+
+        .pin-bypass-toggle {
+            min-width: 28px;
+            height: 18px;
+            justify-content: flex-end;
+            padding: 0 3px;
+        }
+
+        .pin-bypass-toggle i {
+            font-size: 12px;
         }
 
         .inline-number {
@@ -1752,7 +1916,7 @@
         </div>
 
         <!-- Central Container: Presets + Checkpoints -->
-        <div class="flex flex-1 min-w-0 items-center gap-2 overflow-hidden">
+        <div class="flex flex-1 min-w-0 items-center gap-2 overflow-visible">
             <!-- UI Presets (Flat Chips) -->
             <div class="flex w-fit max-w-[48vw] min-w-0 shrink items-center gap-1 bg-nexus-panel border border-nexus-border p-1 rounded-sm overflow-x-auto no-scrollbar">
                 <button data-preset="SD" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'SD')">SD 1.5</button>
@@ -1782,11 +1946,25 @@
                 <i class="fa-solid fa-dumbbell text-[10px] text-nexus-red"></i>
                 <span class="hidden xl:inline text-[10px] font-bold uppercase">Train LoRA</span>
             </button>
+            <div id="templateToolsDropdown" class="relative z-30 shrink-0">
+                <button id="templateToolsButton" type="button" class="h-[30px] px-2 flex items-center gap-1.5 bg-nexus-panel border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm transition-colors" title="Template tools">
+                    <i class="fa-solid fa-layer-group text-[10px] text-nexus-red"></i>
+                    <span class="hidden xl:inline text-[10px] font-bold uppercase">Template</span>
+                    <i class="fa-solid fa-chevron-down text-[8px] text-nexus-muted"></i>
+                </button>
+                <div id="templateToolsPanel" class="hidden absolute right-0 top-full mt-2 w-48 z-50 border border-nexus-border bg-nexus-panel shadow-2xl rounded-sm p-1.5 space-y-1">
+                    <button onclick="applyDefaultTemplate()" class="w-full flat-button h-9 px-3 text-[10px] font-bold uppercase flex items-center gap-2 justify-start" title="Default NexusBTA template"><i class="fa-solid fa-house text-nexus-red w-4"></i><span>Default</span></button>
+                    <button onclick="saveCurrentTemplate()" class="w-full flat-button h-9 px-3 text-[10px] font-bold uppercase flex items-center gap-2 justify-start" title="Save/export template JSON"><i class="fa-solid fa-floppy-disk text-nexus-red w-4"></i><span>Save</span></button>
+                    <button onclick="loadSavedTemplate()" class="w-full flat-button h-9 px-3 text-[10px] font-bold uppercase flex items-center gap-2 justify-start" title="Load template JSON"><i class="fa-solid fa-folder-open text-nexus-red w-4"></i><span>Load</span></button>
+                    <button onclick="openThemeCustomizer()" class="w-full flat-button h-9 px-3 text-[10px] font-bold uppercase flex items-center gap-2 justify-start" title="Customize theme and side-menu boxes"><i class="fa-solid fa-palette text-nexus-red w-4"></i><span>Customize</span></button>
+                </div>
+            </div>
         </div>
 
         <!-- Right System Indicators -->
         <div class="flex items-center gap-2 text-xs text-nexus-muted font-mono shrink-0">
             <input id="workflowFileInput" type="file" accept=".json,application/json" class="hidden" onchange="handleWorkflowFileInput(event)">
+            <input id="templateFileInput" type="file" accept=".json,application/json" class="hidden" onchange="handleTemplateFileInput(event)">
             <button onclick="window.NexusCivitai?.open()" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Civitai downloads">
                 <i class="fa-solid fa-cloud-arrow-down text-nexus-red"></i>
                 <span class="hidden 2xl:inline text-[10px]">Civitai</span>
@@ -1983,7 +2161,7 @@
                             <label class="space-y-1"><span class="mini-label">Texture size</span><select id="model3DTextureSizeSelect" class="flat-input"><option selected>1024</option><option>2048</option><option>4096</option></select></label>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
-                            <label class="space-y-1"><span class="mini-label">Guidance scale</span><input id="model3DGuidanceInput" class="flat-input font-mono text-center" type="number" min="1" max="12" step="0.1" value="8"></label>
+                            <label class="space-y-1"><span class="mini-label">Guidance scale</span><input id="model3DGuidanceInput" class="flat-input font-mono text-center" type="number" min="1" max="12" step="0.1" value="7.5"></label>
                             <label class="space-y-1"><span class="mini-label">Think steps</span><input id="model3DThinkStepsInput" class="flat-input font-mono text-center" type="number" min="1" max="100" step="1" value="14"></label>
                             <label class="space-y-1"><span class="mini-label">Texture sharp</span><input id="model3DTextureSharpInput" class="flat-input font-mono text-center" type="number" min="0" max="10" step="0.1" value="3.0"></label>
                             <label class="space-y-1"><span class="mini-label">Texture details</span><input id="model3DTextureDetailsInput" class="flat-input font-mono text-center" type="number" min="0" max="10" step="0.1" value="1.0"></label>
@@ -2007,8 +2185,8 @@
                                     <div class="text-[10px] font-bold text-white">Stage 1: Sparse Structure Generation</div>
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="space-y-1"><span class="mini-label">Guidance strength</span><input id="model3DSparseGuidance" class="flat-input font-mono text-center" type="number" min="1" max="10" step="0.1" value="7.5"></label>
-                                        <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DSparseRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.01" value="0.01"></label>
-                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DSparseSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="12"></label>
+                                        <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DSparseRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.01" value="0.7"></label>
+                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DSparseSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="14"></label>
                                         <label class="space-y-1"><span class="mini-label">Rescale T</span><input id="model3DSparseRescaleT" class="flat-input font-mono text-center" type="number" min="1" max="6" step="1" value="5"></label>
                                     </div>
                                 </div>
@@ -2016,8 +2194,8 @@
                                     <div class="text-[10px] font-bold text-white">Stage 2: Shape Generation</div>
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="space-y-1"><span class="mini-label">Guidance strength</span><input id="model3DShapeGuidance" class="flat-input font-mono text-center" type="number" min="1" max="10" step="0.1" value="7.5"></label>
-                                        <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DShapeRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.01" value="0.01"></label>
-                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DShapeSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="12"></label>
+                                        <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DShapeRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.01" value="0.5"></label>
+                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DShapeSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="14"></label>
                                         <label class="space-y-1"><span class="mini-label">Rescale T</span><input id="model3DShapeRescaleT" class="flat-input font-mono text-center" type="number" min="1" max="6" step="1" value="3"></label>
                                     </div>
                                 </div>
@@ -2026,7 +2204,7 @@
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="space-y-1"><span class="mini-label">Guidance strength</span><input id="model3DMaterialGuidance" class="flat-input font-mono text-center" type="number" min="1" max="10" step="0.1" value="1"></label>
                                         <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DMaterialRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.05" value="0"></label>
-                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DMaterialSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="12"></label>
+                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DMaterialSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="14"></label>
                                         <label class="space-y-1"><span class="mini-label">Rescale T</span><input id="model3DMaterialRescaleT" class="flat-input font-mono text-center" type="number" min="1" max="6" step="1" value="3"></label>
                                     </div>
                                 </div>
@@ -2902,6 +3080,28 @@
                     </div>
                 </div>
 
+                <div id="themeCustomizerPanel" class="hidden absolute left-5 top-5 z-20 w-[min(620px,calc(100vw-420px))] max-h-[calc(100%-40px)] overflow-y-auto theme-customizer-panel border border-nexus-border rounded-sm p-3">
+                    <div class="flex items-center justify-between gap-3 border-b border-nexus-border pb-2 mb-3">
+                        <div class="min-w-0">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-white"><i class="fa-solid fa-palette text-nexus-red mr-2"></i>NexusBTA Customize</p>
+                            <p class="text-[10px] text-nexus-muted mt-1">Theme colors, canvas color, modal/header surfaces and side-menu box colors.</p>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick="saveCurrentTemplate()" class="h-8 w-8 flex items-center justify-center bg-nexus-red text-white rounded-sm" title="Save/export template"><i class="fa-solid fa-floppy-disk text-[11px]"></i></button>
+                            <button type="button" onclick="applyDefaultTemplate()" class="h-8 w-8 flex items-center justify-center bg-nexus-bg border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Restore NexusBTA default"><i class="fa-solid fa-house text-[11px]"></i></button>
+                            <button type="button" onclick="closeThemeCustomizer()" class="h-8 w-8 flex items-center justify-center bg-nexus-bg border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Close customize"><i class="fa-solid fa-xmark text-[11px]"></i></button>
+                        </div>
+                    </div>
+                    <div id="themeCustomizerColorGrid" class="grid grid-cols-2 md:grid-cols-3 gap-2"></div>
+                    <div class="mt-3 border-t border-nexus-border pt-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="mini-label">Side Menu Boxes</span>
+                            <button type="button" onclick="resetPanelThemeColors()" class="h-7 w-7 flex items-center justify-center bg-nexus-bg border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Reset box colors"><i class="fa-solid fa-rotate-left text-[10px]"></i></button>
+                        </div>
+                        <div id="panelThemeColorGrid" class="grid grid-cols-1 md:grid-cols-2 gap-2"></div>
+                    </div>
+                </div>
+
                 <!-- Main Display Image -->
                 <div class="relative max-w-full max-h-full flex items-center justify-center">
                     <div id="linearEmptyState" class="border border-dashed border-nexus-border bg-nexus-panel/40 px-8 py-10 text-center rounded-sm">
@@ -3039,6 +3239,18 @@
                                 <button id="model3DTextureEnvBtn" type="button" onclick="toggleModel3DTextureEnvironment()" class="model3d-icon-button rounded-full active" title="Environment / HDRI"><i class="fa-solid fa-sun"></i></button>
                                 <button id="model3DTextureGridBtn" type="button" onclick="toggleModel3DTextureGrid()" class="model3d-icon-button rounded-full active" title="Toggle grid"><i class="fa-solid fa-border-all"></i></button>
                                 <button type="button" onclick="resetModel3DTextureCamera()" class="model3d-icon-button rounded-full" title="Reset view"><i class="fa-solid fa-crosshairs"></i></button>
+                            </div>
+                            <div id="model3DTextureViewportCameraPanel" class="bg-nexus-panel/95 border border-nexus-border rounded-sm p-1.5 shadow-2xl space-y-1">
+                                <button id="model3DTextureCameraMenuBtn" type="button" onclick="toggleModel3DTextureCameraMenu()" class="model3d-icon-button h-7 w-7" title="Texture cameras"><i class="fa-solid fa-camera text-[11px]"></i></button>
+                                <div id="model3DTextureCameraMenuBody" class="hidden w-28 space-y-1 pt-1">
+                                    <div class="grid grid-cols-3 gap-1">
+                                        <button type="button" onclick="addModel3DViewportCamera('texture')" class="model3d-icon-button h-7" title="Save current camera"><i class="fa-solid fa-plus text-[10px]"></i></button>
+                                        <button id="model3DTextureSplitViewBtn" type="button" onclick="toggleModel3DTextureSplitView()" class="model3d-icon-button h-7 active" title="Show multiview split"><i class="fa-solid fa-table-cells text-[10px]"></i></button>
+                                        <button type="button" onclick="updateActiveModel3DViewportCamera('texture')" class="model3d-icon-button h-7" title="Update active camera"><i class="fa-solid fa-arrows-rotate text-[10px]"></i></button>
+                                    </div>
+                                    <div id="model3DTextureViewportCameraButtons" class="grid grid-cols-2 gap-1"></div>
+                                    <div id="model3DTextureViewportCameraCount" class="text-[8px] font-mono text-nexus-muted text-center">0 / 4</div>
+                                </div>
                             </div>
                         </div>
                         <div id="model3DTextureEnvironmentPanel" class="model3d-overlay hidden absolute right-16 top-28 w-64 bg-nexus-panel/95 border border-nexus-border rounded-sm p-3 shadow-2xl space-y-3">
@@ -4170,11 +4382,12 @@
                     </section>
                     <section class="data-card p-3 space-y-3">
                         <span class="mini-label">Attention Backend</span>
-                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">SageAttention<span class="toggle-switch"><input id="sageAttentionToggle" class="attention-toggle" value="SageAttention" type="checkbox"><span class="toggle-track"></span></span></label>
+                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">SageAttention<span class="toggle-switch"><input id="sageAttentionToggle" class="attention-toggle" value="SageAttention" type="checkbox" checked><span class="toggle-track"></span></span></label>
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">FlashAttention<span class="toggle-switch"><input id="flashAttentionToggle" class="attention-toggle" value="FlashAttention" type="checkbox"><span class="toggle-track"></span></span></label>
-                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">xFormers<span class="toggle-switch"><input id="xformersToggle" class="attention-toggle" value="xFormers" type="checkbox"><span class="toggle-track"></span></span></label>
+                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">xFormers<span class="toggle-switch"><input id="xformersToggle" class="attention-toggle" value="xFormers" type="checkbox" checked><span class="toggle-track"></span></span></label>
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">PyTorch SDPA<span class="toggle-switch"><input id="pytorchAttentionToggle" class="attention-toggle" value="PyTorch SDPA" type="checkbox" checked><span class="toggle-track"></span></span></label>
-                        <p class="text-[10px] text-nexus-muted leading-4">Priority follows Sage, Flash, xFormers, PyTorch SDPA, Basic. Each backend can be disabled here before reload.</p>
+                        <button type="button" onclick="saveRuntimeSettings()" class="flat-button py-2 text-[10px] font-bold uppercase w-full"><i class="fa-solid fa-floppy-disk mr-1 text-nexus-red"></i> Save Runtime</button>
+                        <p id="settingsRuntimeStatus" class="text-[10px] text-nexus-muted leading-4">Priority follows Sage for supported video nodes, then xFormers, then PyTorch SDPA fallback.</p>
                     </section>
                     <section class="data-card p-3 space-y-3">
                         <span class="mini-label">Model Paths</span>
@@ -4287,6 +4500,14 @@
                                 <button class="flat-button py-2 text-[10px] font-bold" type="button" onclick="setModel3DTextureTool('projection-mask')">Projection</button>
                                 <button class="flat-button py-2 text-[10px] font-bold" type="button" onclick="setModel3DTextureGeneration('Selected mask')">Inpaint</button>
                                 <button class="flat-button py-2 text-[10px] font-bold" type="button" onclick="addModel3DTextureLayer('uv')">Add Layer</button>
+                                <button class="flat-button py-2 text-[10px] font-bold" type="button" onclick="deleteActiveModel3DTextureLayer()">Delete Layer</button>
+                            </div>
+                            <div class="border border-nexus-border bg-nexus-bg p-2 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="mini-label">Texture Cameras</span>
+                                    <button class="model3d-icon-button" type="button" onclick="addModel3DViewportCamera('texture')" title="Save current camera"><i class="fa-solid fa-plus"></i></button>
+                                </div>
+                                <div id="model3DTextureCameraList" class="grid grid-cols-2 gap-1"></div>
                             </div>
                             <div id="model3DTextureLayerList" class="space-y-2"></div>
                         </div>
@@ -4370,25 +4591,6 @@
 
     </div>
 
-    <aside id="templateToolsPanel" class="hidden fixed top-10 right-0 bottom-0 z-40 w-[320px] bg-nexus-panel border-l border-nexus-border shadow-2xl flex-col">
-        <div class="p-3 border-b border-nexus-border flex items-center justify-between">
-            <div>
-                <h3 class="text-xs font-bold text-white uppercase tracking-wider">Template</h3>
-                <p class="text-[10px] text-nexus-muted mt-1">Save UI order, pins, workflow and active settings.</p>
-            </div>
-            <button onclick="closeTemplateTools()" class="text-nexus-muted hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <div class="p-3 space-y-3">
-            <button onclick="applyDefaultTemplate()" class="w-full flat-button px-3 py-2 text-xs font-bold text-left"><i class="fa-solid fa-house text-nexus-red mr-2"></i>Default</button>
-            <button onclick="saveCurrentTemplate()" class="w-full bg-nexus-red hover:bg-nexus-darkRed text-white px-3 py-2 rounded-sm text-xs font-bold text-left"><i class="fa-solid fa-floppy-disk mr-2"></i>Save Template</button>
-            <button onclick="loadSavedTemplate()" class="w-full flat-button px-3 py-2 text-xs font-bold text-left"><i class="fa-solid fa-folder-open text-nexus-red mr-2"></i>Load Template</button>
-            <div class="bg-nexus-bg border border-nexus-border p-2 rounded-sm">
-                <span class="mini-label">Saved Template</span>
-                <p id="templateToolsStatus" class="text-[10px] text-white mt-1 font-mono">Default Nexus BTA</p>
-            </div>
-        </div>
-    </aside>
-
     <script src="/assets/nexus-civitai.js"></script>
 
     <!-- Interface Logic -->
@@ -4410,6 +4612,7 @@
             'nexus_ltx_director_inspector_width',
             'nexus_left_sidebar_collapsed',
             'nexus_extras_mode',
+            'nexus_model3d_preflight_cache_v1',
             'nexus_panel_order'
         ];
         const nexusSafeStorage = {
@@ -4557,11 +4760,43 @@
         let workflowNodeFilter = nexusSafeStorage.get('nexus_workflow_node_filter', '');
         let sideMenuWorkflowSyncTimer = null;
         let workflowCanvasLibraryCollapsed = nexusSafeStorage.get('nexus_workflow_canvas_library_collapsed', '0') === '1';
-        let workflowFolderOpenState = nexusSafeStorage.json('nexus_workflow_folder_open_state', { Default: false, Saved: true, Custom: true, Loaded: true });
+        let workflowFolderOpenState = nexusSafeStorage.json('nexus_workflow_folder_open_state', { Default: true, Saved: true, Custom: true, Loaded: true });
         let templateWorkflowSelections = nexusSafeStorage.json('nexus_template_workflows', {});
         let activeRightSidebarTab = nexusSafeStorage.get('nexus_right_sidebar_tab', 'nodes');
         let savedTemplateState = nexusSafeStorage.json('nexus_saved_template_state', null);
         let presetRuntimeStates = nexusSafeStorage.json('nexus_preset_runtime_states', {});
+        let panelCollapsedState = nexusSafeStorage.json('nexus_panel_collapsed_state', {});
+        const NEXUS_XFORMERS_PRESET_PREFERENCES = new Set(['Flux', 'Qwen', 'ZImageTurbo']);
+        const NEXUS_DEFAULT_THEME = {
+            accent: '#ff3b3b',
+            darkRed: '#dc2626',
+            background: '#09090b',
+            panel: '#18181b',
+            modal: '#18181b',
+            header: '#09090b',
+            border: '#27272a',
+            hover: '#27272a',
+            text: '#d4d4d8',
+            muted: '#a1a1aa',
+            canvas: '#09090b',
+            panelColors: {}
+        };
+        const NEXUS_THEME_FIELDS = [
+            ['accent', 'Accent', '--nexus-red'],
+            ['background', 'Background', '--nexus-bg'],
+            ['panel', 'Panels', '--nexus-panel'],
+            ['modal', 'Modals', '--nexus-modal'],
+            ['header', 'Header', '--nexus-header'],
+            ['border', 'Borders', '--nexus-border'],
+            ['hover', 'Hover', '--nexus-hover'],
+            ['text', 'Title Text', '--nexus-text'],
+            ['muted', 'Description Text', '--nexus-muted'],
+            ['canvas', 'Workflow Canvas', '--nexus-canvas']
+        ];
+        let nexusThemeState = nexusSafeStorage.json('nexus_theme_state', NEXUS_DEFAULT_THEME);
+        let nexusThemePersistTimer = null;
+        let nexusColorInputTimers = {};
+        let workflowGraphPersistTimer = null;
         const MODEL_SOURCE_LABELS = [
             ['checkpoints', 'Checkpoints'],
             ['diffusion_models', 'Diffusion Models'],
@@ -4667,6 +4902,9 @@
         let sidebarResizeDrag = null;
 
         let galleryItems = [];
+        const MODEL3D_PREFLIGHT_CACHE_KEY = 'nexus_model3d_preflight_cache_v1';
+        const model3DGalleryThumbCache = new Map();
+        const model3DGalleryThumbInFlight = new Set();
         function normalizeExtrasMode(mode) {
             return ['image', 'video', 'remove_bg'].includes(mode) ? mode : 'image';
         }
@@ -5164,11 +5402,34 @@
             try {
                 platformSettings = await nexusFetch('/config');
                 renderModelPathSettings(platformSettings);
+                renderRuntimeSettings(platformSettings);
             } catch (error) {
                 const status = document.getElementById('settingsModelPathsStatus');
                 if (status) {
                     status.classList.add('text-nexus-red');
                     status.innerText = `Could not load backend settings: ${error.message}`;
+                }
+            }
+        }
+
+        async function saveRuntimeSettings() {
+            const status = document.getElementById('settingsRuntimeStatus');
+            try {
+                if (status) {
+                    status.classList.remove('text-nexus-red');
+                    status.innerText = 'Saving runtime acceleration settings...';
+                }
+                platformSettings = await nexusFetch('/config', {
+                    method: 'PATCH',
+                    body: JSON.stringify({ runtime: captureRuntimeSettings() })
+                });
+                renderRuntimeSettings(platformSettings);
+                if (status) status.innerText = 'Runtime saved. Restart happens automatically when generation needs it.';
+                showToast('Runtime Saved', 'SageAttention and xFormers preferences are synced with the backend.');
+            } catch (error) {
+                if (status) {
+                    status.classList.add('text-nexus-red');
+                    status.innerText = `Runtime save failed: ${error.message}`;
                 }
             }
         }
@@ -5651,13 +5912,18 @@
             const fileCards = galleryItems.map((item, index) => {
                 const selected = index === activeGalleryIndex ? 'border-nexus-red' : 'border-nexus-border';
                 const url = escapeHtml(item.thumb || item.image || '');
+                const modelUrl = item.url || item.image || item.thumb || '';
+                const cachedModelThumb = is3DOutput(item) ? model3DGalleryThumbCache.get(modelUrl) : '';
                 const media = is3DOutput(item)
-                    ? `<div class="w-full h-full flex flex-col items-center justify-center gap-2 text-nexus-muted"><i class="fa-solid fa-cube text-2xl text-nexus-red"></i><span class="text-[9px] font-mono">GLB</span></div><span class="absolute bottom-1 right-1 bg-nexus-panel/90 border border-nexus-border px-1 text-[9px] text-white"><i class="fa-solid fa-cube"></i></span>`
+                    ? `${cachedModelThumb
+                        ? `<img src="${escapeHtml(cachedModelThumb)}" draggable="false" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover">`
+                        : `<canvas data-model3d-gallery-thumb="${index}" class="w-full h-full block bg-black"></canvas><div class="absolute inset-0 model3d-thumb-placeholder flex flex-col items-center justify-center gap-2 text-nexus-muted pointer-events-none"><i class="fa-solid fa-cube text-2xl text-nexus-red"></i><span class="text-[9px] font-mono">Loading preview</span></div>`}
+                        <span class="absolute bottom-1 right-1 bg-nexus-panel/90 border border-nexus-border px-1 text-[9px] text-white"><i class="fa-solid fa-cube"></i></span>`
                     : item.mediaType === 'video'
                     ? `<video src="${url}" muted playsinline class="w-full h-full object-cover"></video><span class="absolute bottom-1 right-1 bg-nexus-panel/90 border border-nexus-border px-1 text-[9px] text-white"><i class="fa-solid fa-film"></i></span>`
                     : `<img src="${url}" draggable="false" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover">`;
                 const dragAttrs = `draggable="true" ondragstart="handleGalleryDragStart(event, ${index})" ondragend="handleGalleryDragEnd()"`;
-                const clickAction = isModel3DTemplateActive() && is3DOutput(item)
+                const clickAction = activePreset === 'Model3D' && is3DOutput(item)
                     ? `loadGallery3DItemIntoPreview(${index})`
                     : `openGalleryModal(${index})`;
                 return `
@@ -5667,6 +5933,82 @@
                 `;
             }).join('');
             panel.innerHTML = folderCards + fileCards;
+            requestAnimationFrame(renderModel3DGalleryThumbnails);
+        }
+
+        async function renderModel3DGalleryThumbnails() {
+            const canvases = [...document.querySelectorAll('canvas[data-model3d-gallery-thumb]')];
+            if (!canvases.length) return;
+            let THREE;
+            try {
+                THREE = await import('https://esm.sh/three@0.164.1');
+            } catch (error) {
+                return;
+            }
+            for (const canvas of canvases) {
+                const index = Number(canvas.dataset.model3dGalleryThumb);
+                const item = galleryItems[index];
+                const url = item?.url || item?.image || item?.thumb || '';
+                if (!item || !url || model3DGalleryThumbInFlight.has(url)) continue;
+                if (model3DGalleryThumbCache.has(url)) {
+                    renderGallerySidebar();
+                    continue;
+                }
+                model3DGalleryThumbInFlight.add(url);
+                try {
+                    await drawModel3DGalleryThumbnail(canvas, url, THREE);
+                    const preview = canvas.toDataURL('image/webp', 0.82);
+                    model3DGalleryThumbCache.set(url, preview);
+                    canvas.parentElement?.querySelector('.model3d-thumb-placeholder')?.classList.add('hidden');
+                } catch (error) {
+                    canvas.parentElement?.querySelector('.model3d-thumb-placeholder span')?.replaceChildren(document.createTextNode('Preview failed'));
+                } finally {
+                    model3DGalleryThumbInFlight.delete(url);
+                }
+            }
+        }
+
+        async function drawModel3DGalleryThumbnail(canvas, url, THREE) {
+            const cleanUrl = String(url || '').split('?')[0].toLowerCase();
+            const width = 220;
+            const height = 220;
+            canvas.width = width;
+            canvas.height = height;
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+            renderer.setSize(width, height, false);
+            renderer.setClearColor(0x050506, 1);
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(35, width / height, 0.01, 100);
+            camera.position.set(2.2, 1.4, 2.6);
+            scene.add(new THREE.HemisphereLight(0xffffff, 0x202025, 1.4));
+            const key = new THREE.DirectionalLight(0xffffff, 2.2);
+            key.position.set(3, 4, 5);
+            scene.add(key);
+            let loaded;
+            if (cleanUrl.endsWith('.obj')) {
+                const { OBJLoader } = await import('https://esm.sh/three@0.164.1/examples/jsm/loaders/OBJLoader.js');
+                loaded = await new OBJLoader().loadAsync(url);
+            } else {
+                const { GLTFLoader } = await import('https://esm.sh/three@0.164.1/examples/jsm/loaders/GLTFLoader.js');
+                const gltf = await new GLTFLoader().loadAsync(url);
+                loaded = gltf.scene;
+            }
+            loaded.traverse?.(child => {
+                if (child.isMesh && !child.material) child.material = new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness: 0.55 });
+            });
+            scene.add(loaded);
+            const box = new THREE.Box3().setFromObject(loaded);
+            const size = new THREE.Vector3();
+            const center = new THREE.Vector3();
+            box.getSize(size);
+            box.getCenter(center);
+            loaded.position.sub(center);
+            loaded.rotation.y = -0.45;
+            const maxAxis = Math.max(size.x, size.y, size.z) || 1;
+            loaded.scale.multiplyScalar(1.6 / maxAxis);
+            camera.lookAt(0, 0.15, 0);
+            renderer.render(scene, camera);
+            renderer.dispose();
         }
 
         function normalizeGalleryFolder(folder) {
@@ -5828,7 +6170,7 @@
         function is3DOutput(item) {
             const kind = String(item.media_type || item.mediaType || item.kind || '').toLowerCase();
             const filename = String(item.filename || item.title || item.image || item.url || '').toLowerCase();
-            return kind.includes('3d') || kind.includes('model') || /\.(glb|gltf|obj|fbx|stl)$/.test(filename);
+            return kind.includes('3d') || kind.includes('model') || /\.(glb|gltf|obj|fbx|stl|ply|usdz)$/.test(filename);
         }
 
         function isVideoFile(file) {
@@ -6989,7 +7331,7 @@
                 video: item.video || {},
                 director: item.director || {},
                 metadata: item.metadata || item.workflow_metadata || {},
-                mediaType: isVideoOutput(item) ? 'video' : 'image',
+                mediaType: is3DOutput(item) ? '3d' : (isVideoOutput(item) ? 'video' : 'image'),
                 modified
             };
         }
@@ -7006,7 +7348,7 @@
             const previousKey = galleryItemKey(galleryItems[activeGalleryIndex]);
             const hadItems = galleryItems.length > 0;
             galleryAllItems = normalized;
-            if (options.preferNewest && normalized[0]) {
+            if (options.preferNewest && normalized[0] && options.focusNewest !== false) {
                 resetGalleryHistoryToFolder(galleryFolderFromItem(normalized[0]));
             }
             galleryItems = filteredGalleryItems();
@@ -7018,7 +7360,7 @@
                 activeGalleryIndex = preservedIndex >= 0 ? preservedIndex : 0;
             }
             renderGallerySidebar();
-            if (options.preferNewest || !hadItems) setLinearOutput(galleryItems[activeGalleryIndex] || null, { force: true });
+            if (options.updateLinearOutput !== false && (options.preferNewest || !hadItems)) setLinearOutput(galleryItems[activeGalleryIndex] || null, { force: true });
             if (document.getElementById('galleryModal') && !document.getElementById('galleryModal').classList.contains('hidden')) {
                 renderGalleryModal();
             }
@@ -7039,12 +7381,41 @@
             }
         }
 
-        async function maybeDownloadTrellis2Model() {
-            if (activePreset !== 'Model3D') return false;
+        function model3DPreflightCache() {
+            return nexusSafeStorage.json(MODEL3D_PREFLIGHT_CACHE_KEY, {}) || {};
+        }
+
+        function saveModel3DPreflightCache(update = {}) {
+            const next = {
+                ...model3DPreflightCache(),
+                ...update,
+                savedAt: new Date().toISOString()
+            };
+            nexusSafeStorage.set(MODEL3D_PREFLIGHT_CACHE_KEY, JSON.stringify(next));
+            return next;
+        }
+
+        function model3DPreflightAccepted() {
+            const cache = model3DPreflightCache();
+            return cache.accepted === true || cache.requirementsReady === true;
+        }
+
+        function model3DPreflightSummary(report) {
+            const gpu = report?.runtime?.torch?.cuda_name || 'CUDA unavailable';
+            const attention = report?.runtime?.recommended?.attention_backend || 'auto';
+            const trellis = report?.trellis2?.installed ? 'TRELLIS ready' : 'TRELLIS missing';
+            const dino = report?.dinov3?.installed ? 'DINOv3 ready' : 'DINOv3 missing';
+            const registry = report?.object_registry_checked ? 'nodes checked' : 'quick check';
+            const loaded = report?.preloaded?.matches_last_loaded_signature ? 'model already warm' : 'model will load on demand';
+            return `${trellis}; ${dino}; ${gpu}; ${attention}; ${registry}; ${loaded}.`;
+        }
+
+        async function maybeDownloadTrellis2Model(options = {}) {
+            if (activePreset !== 'Model3D' && !options.force) return false;
             try {
                 const status = await nexusFetch('/model3d/trellis2/status');
                 if (!status?.installed) {
-                    const ok = window.confirm(`TRELLIS.2-4B is not installed in ${status?.path || './models/3d/trellis2'}. Download it now? This is a large Hugging Face model.`);
+                    const ok = window.confirm(`TRELLIS.2-4B is not installed in ${status?.path || './models/3d/trellis2'}.\n\nDownload it now? This is a large Hugging Face model.`);
                     if (!ok) return false;
                     showToast('TRELLIS.2 Download', 'Downloading model files into ./models/3d/trellis2.');
                     const started = await nexusFetch('/model3d/trellis2/download/start', { method: 'POST' });
@@ -7052,15 +7423,15 @@
                     await refreshModelCatalog();
                     showToast('TRELLIS.2 Ready', '3D model checkpoint is installed.');
                 }
-                return await maybeDownloadDinoV3Model();
+                return true;
             } catch (error) {
                 showToast('TRELLIS.2 Check Failed', String(error?.message || error).slice(0, 160));
                 return false;
             }
         }
 
-        async function maybeDownloadDinoV3Model() {
-            if (activePreset !== 'Model3D') return false;
+        async function maybeDownloadDinoV3Model(options = {}) {
+            if (activePreset !== 'Model3D' && !options.force) return false;
             try {
                 const status = await nexusFetch('/model3d/dinov3/status');
                 if (status?.installed) return true;
@@ -7077,6 +7448,125 @@
                 showToast('DINOv3 Check Failed', String(error?.message || error).slice(0, 180));
                 return false;
             }
+        }
+
+        async function installModel3DWorkflowRequirements() {
+            const ok = window.confirm('Model 3D custom node requirements can be installed now. Continue?');
+            if (!ok) return false;
+            try {
+                showToast('Model 3D Requirements', 'Installing workflow requirements for TRELLIS.2 nodes.');
+                const analysis = await nexusFetch('/workflows/model3d-trellis2-meshwithvoxel-texturing-multiview/install-dependencies?restart_comfy=true', {
+                    method: 'POST'
+                });
+                const installed = analysis.dependencies_installed || [];
+                const errors = Object.keys(analysis.dependency_errors || {});
+                await refreshManagerPanel();
+                showToast('Model 3D Requirements', `${installed.length} target(s), ${errors.length} error(s).`);
+                return !errors.length;
+            } catch (error) {
+                showToast('Model 3D Requirements Failed', String(error?.message || error).slice(0, 180));
+                return false;
+            }
+        }
+
+        async function runModel3DPreflight(options = {}) {
+            const params = new URLSearchParams();
+            if (options.full) params.set('full', 'true');
+            if (options.startComfy) params.set('start_comfy', 'true');
+            if (options.requestedModel) params.set('requested_model', options.requestedModel);
+            const report = await nexusFetch(`/model3d/preflight${params.toString() ? `?${params}` : ''}`);
+            if (report?.blocking?.length) {
+                showToast('Model 3D Check', report.blocking.join(' ').slice(0, 220));
+            } else {
+                showToast('Model 3D Check', model3DPreflightSummary(report).slice(0, 220));
+            }
+            return report;
+        }
+
+        async function ensureModel3DTemplateRequirements(options = {}) {
+            if (!backendOnline) return false;
+            if (!options.force && model3DPreflightAccepted()) return true;
+            const ok = window.confirm('Model 3D uses optional TRELLIS.2/DINOv3 requirements. Check and download/install missing requirements now? This full check is saved after you accept it.');
+            if (!ok) return false;
+            saveModel3DPreflightCache({ accepted: true });
+            let report = await runModel3DPreflight({ full: true, startComfy: true, requestedModel: 'microsoft/TRELLIS.2-4B' });
+            if (!report?.trellis2?.installed) {
+                const downloaded = await maybeDownloadTrellis2Model({ force: true });
+                if (!downloaded) return false;
+            }
+            if (!report?.dinov3?.installed) {
+                const downloaded = await maybeDownloadDinoV3Model({ force: true });
+                if (!downloaded) return false;
+            }
+            const dependencyErrors = Object.keys(report?.workflow?.analysis?.dependency_errors || {});
+            const missingNodes = report?.required_nodes?.missing || report?.workflow?.analysis?.missing_nodes || [];
+            if (missingNodes.length || dependencyErrors.length) {
+                await installModel3DWorkflowRequirements();
+            }
+            report = await runModel3DPreflight({ full: true, startComfy: true, requestedModel: 'microsoft/TRELLIS.2-4B' });
+            const ready = !report?.blocking?.length && !report?.required_nodes?.missing?.length;
+            saveModel3DPreflightCache({
+                accepted: true,
+                requirementsReady: ready,
+                lastSummary: model3DPreflightSummary(report),
+                trellisPath: report?.trellis2?.path || '',
+                dinoPath: report?.dinov3?.path || ''
+            });
+            return ready;
+        }
+
+        async function ensureModel3DGenerationPreflight(payload) {
+            if (payload?.preset !== 'Model3D') return true;
+            if (!model3DPreflightAccepted()) {
+                const ready = await ensureModel3DTemplateRequirements({ force: true });
+                if (!ready) return false;
+            }
+            const report = await runModel3DPreflight({
+                full: false,
+                startComfy: false,
+                requestedModel: payload?.model3d?.model || 'microsoft/TRELLIS.2-4B'
+            });
+            if (report?.trellis2 && !report.trellis2.installed) {
+                if (!await maybeDownloadTrellis2Model({ force: true })) return false;
+            }
+            if (report?.dinov3 && !report.dinov3.installed) {
+                if (!await maybeDownloadDinoV3Model({ force: true })) return false;
+            }
+            if (report?.runtime?.torch && !report.runtime.torch.cuda_available) {
+                showToast('GPU Required', 'Model 3D generation requires CUDA GPU. Check your PyTorch/CUDA runtime.');
+                return false;
+            }
+            if (report?.blocking?.length) {
+                showToast('Model 3D Not Ready', report.blocking.join(' ').slice(0, 220));
+                return false;
+            }
+            saveModel3DPreflightCache({
+                accepted: true,
+                lastQuickCheck: new Date().toISOString(),
+                lastSummary: model3DPreflightSummary(report)
+            });
+            return true;
+        }
+
+        async function handleModel3DGenerationError(error) {
+            const message = String(error?.message || error || '');
+            if (/required custom nodes|workflow requirements|missing node/i.test(message)) {
+                const ok = await installModel3DWorkflowRequirements();
+                if (ok) {
+                    saveModel3DPreflightCache({ accepted: true, requirementsReady: true });
+                    showToast('Model 3D Requirements Ready', 'Try the generation again.');
+                }
+                return true;
+            }
+            if (/TRELLIS\.?2|DINOv3|checkpoint|model is missing/i.test(message)) {
+                const ok = window.confirm(`${message.slice(0, 260)}\n\nTry downloading missing Model 3D model files now?`);
+                if (!ok) return true;
+                const trellis = await maybeDownloadTrellis2Model({ force: true });
+                const dino = await maybeDownloadDinoV3Model({ force: true });
+                saveModel3DPreflightCache({ accepted: true, requirementsReady: trellis && dino });
+                return true;
+            }
+            return false;
         }
 
         async function refreshNewestGalleryPreview(options = {}) {
@@ -7135,7 +7625,7 @@
                     await loadTemplateWorkflow(activePreset, { quiet: true });
                 }
                 setBootState('Nexus ready.', true);
-                syncGalleryFromBackend({ quiet: true, preferNewest: true, force: true }).catch(error => {
+                syncGalleryFromBackend({ quiet: true, preferNewest: true, focusNewest: false, updateLinearOutput: false, force: true }).catch(error => {
                     console.warn('Deferred gallery sync failed.', error);
                 });
                 if (backendRetryTimer) clearTimeout(backendRetryTimer);
@@ -11973,6 +12463,65 @@
             }
         }
 
+        function workflowModelValueOptions() {
+            const profile = modelProfiles[activePreset] || {};
+            const fromBackend = (profile.backendModels || []).map(model => model.name || model.value).filter(Boolean);
+            const fromSelect = [...(document.getElementById('modelSelect')?.options || [])]
+                .map(option => option.dataset?.model || option.textContent?.trim() || option.value)
+                .filter(Boolean);
+            return uniqueOptions([...fromBackend, ...fromSelect]);
+        }
+
+        function workflowVaeValueOptions() {
+            const profile = modelProfiles[activePreset] || {};
+            const fromSelect = [...(document.getElementById('vaeSelect')?.options || [])].map(option => option.value).filter(Boolean);
+            return uniqueOptions([...(profile.vae || []), ...fromSelect]).filter(value => value && !/^(automatic|auto)$/i.test(String(value)));
+        }
+
+        function workflowTextEncoderValueOptions() {
+            const profile = modelProfiles[activePreset] || {};
+            const fromSelect = [...(document.getElementById('textEncoderSelect')?.options || [])].map(option => option.value).filter(Boolean);
+            return uniqueOptions([...(profile.encoder || []), ...fromSelect]).filter(value => value && !/^(automatic|auto)$/i.test(String(value)));
+        }
+
+        function workflowLoraValueOptions() {
+            const catalogNames = (backendCatalog?.categories?.loras || [])
+                .filter(asset => modelMatchesPreset(asset, activePreset) || isConceptLoraNameForPreset(asset.name || asset.relative_path || '', activePreset))
+                .map(asset => asset.name || asset.relative_path)
+                .filter(Boolean);
+            const libraryNames = (loraLibrary || [])
+                .filter(lora => isConceptLoraNameForPreset(lora.relativeName || lora.name || lora.path || '', activePreset))
+                .map(lora => lora.relativeName || lora.name || lora.path)
+                .filter(Boolean);
+            return uniqueOptions([...catalogNames, ...libraryNames]).sort((a, b) => a.localeCompare(b));
+        }
+
+        function workflowWidgetOptionValues(node, widget) {
+            const key = String(widget?.name || '').toLowerCase().replace(/\s+/g, '_');
+            const text = `${node?.title || ''} ${node?.class_type || ''} ${key}`.toLowerCase();
+            if (['ckpt_name', 'checkpoint', 'checkpoint_name', 'model_name', 'model', 'unet_name', 'diffusion_model_name'].includes(key) || /checkpoint|unet|diffusion.*model/.test(text)) {
+                return workflowModelValueOptions();
+            }
+            if (['vae', 'vae_name'].includes(key)) return workflowVaeValueOptions();
+            if (['clip_name', 'clip_name1', 'clip_name2', 'text_encoder', 'encoder'].includes(key)) return workflowTextEncoderValueOptions();
+            if (['lora_name', 'lora'].includes(key) || /lora/.test(text)) return workflowLoraValueOptions();
+            return [];
+        }
+
+        function workflowWidgetControlHtml(node, widget, index, options = {}) {
+            const compact = !!options.compact;
+            const values = workflowWidgetOptionValues(node, widget);
+            const current = String(widget?.value ?? '');
+            const classes = compact
+                ? 'min-w-0 bg-nexus-bg border border-nexus-border text-[9px] text-white font-mono px-1 py-0.5'
+                : 'w-24 bg-nexus-bg border border-nexus-border text-[9px] text-white font-mono px-1 py-0.5';
+            if (values.length) {
+                const choices = uniqueOptions([current, ...values]).filter(Boolean);
+                return `<select onchange='updateWorkflowWidget(${jsString(node.id)}, ${index}, this.value)' class="${classes} appearance-none cursor-pointer" title="${escapeHtml(widget?.name || 'model')}">${choices.map(value => `<option value="${escapeHtml(value)}" ${String(value) === current ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select>`;
+            }
+            return `<input onchange='updateWorkflowWidget(${jsString(node.id)}, ${index}, this.value)' value="${escapeHtml(current)}" class="${classes}">`;
+        }
+
         function syncWorkflowPrompt(value) {
             const prompt = document.getElementById('posPrompt');
             if (prompt) prompt.value = value;
@@ -12219,6 +12768,10 @@
                 return;
             }
             const targetId = targetMap[key];
+            if (['ckpt_name', 'checkpoint', 'checkpoint_name', 'model_name', 'model', 'unet_name', 'diffusion_model_name'].includes(key)) {
+                syncWorkflowModelWidgetToSide(value);
+                return;
+            }
             const target = targetId ? document.getElementById(targetId) : null;
             if (target && document.activeElement !== target) {
                 target.value = targetId === 'samplingMethodSelect'
@@ -12258,6 +12811,22 @@
                 option.textContent = String(value);
                 select.appendChild(option);
             }
+        }
+
+        function syncWorkflowModelWidgetToSide(value) {
+            const select = document.getElementById('modelSelect');
+            if (!select || !value) return;
+            const raw = String(value);
+            const option = [...select.options].find(item =>
+                item.value === raw
+                || item.dataset?.model === raw
+                || item.textContent?.trim() === raw
+                || item.value.endsWith(`/${raw}`)
+                || item.value.endsWith(`\\${raw}`)
+            );
+            if (!option) return;
+            select.value = option.value;
+            applyModelFromSelect(false);
         }
 
         function syncWorkflowLoraNodeToSideMenu(node) {
@@ -12343,6 +12912,32 @@
             localStorage.setItem('nexus_pinned_workflow_nodes', JSON.stringify(pinnedWorkflowNodes));
         }
 
+        function setWorkflowNodePin(nodeId, side = 'right') {
+            const node = workflowNodeById(nodeId);
+            if (!node) return false;
+            const existing = workflowPinnedRecord(nodeId);
+            if (existing) {
+                existing.side = side;
+                existing.collapsed = !!existing.collapsed;
+            } else {
+                pinnedWorkflowNodes.push({ nodeId: String(nodeId), side, collapsed: false });
+            }
+            persistPinnedWorkflowNodes();
+            return true;
+        }
+
+        function pinWorkflowNodeToSide(event, nodeId, side = 'right') {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            const node = workflowNodeById(nodeId);
+            if (!node) return;
+            setWorkflowNodePin(nodeId, side);
+            if (side === 'right') openNodesPanel();
+            renderPinnedNodes();
+            renderWorkflowGraph(activeWorkflowGraph, false);
+            showToast('Node Pinned', `${node.title || node.class_type} pinned to ${side === 'left' ? 'left side menu' : 'right Nodes'}.`);
+        }
+
         function toggleWorkflowNodePin(event, nodeId, side = 'right') {
             event?.stopPropagation?.();
             const node = workflowNodeById(nodeId);
@@ -12358,7 +12953,7 @@
                     showToast("Node Unpinned", `${node.title || node.class_type} removed from adjusts.`);
                 }
             } else {
-                pinnedWorkflowNodes.push({ nodeId: String(nodeId), side, collapsed: false });
+                setWorkflowNodePin(nodeId, side);
                 showToast("Node Pinned", `${node.title || node.class_type} pinned to ${side === 'left' ? 'side menu' : 'Adjusts'}.`);
             }
             persistPinnedWorkflowNodes();
@@ -12366,11 +12961,83 @@
             renderWorkflowGraph(activeWorkflowGraph, false);
         }
 
+        function toggleWorkflowNodesBypass(nodeIds, event = null) {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            const ids = (Array.isArray(nodeIds) ? nodeIds : [nodeIds]).map(String);
+            const nodes = ids.map(id => workflowNodeById(id)).filter(Boolean);
+            if (!nodes.length) return;
+            nodes.forEach(node => { node.bypassed = !node.bypassed; });
+            persistWorkflowGraphMutation();
+            renderPinnedNodes();
+            renderWorkflowGraph(activeWorkflowGraph, false);
+        }
+
+        function toggleWorkflowNodeBypass(nodeId, event = null) {
+            toggleWorkflowNodesBypass([nodeId], event);
+        }
+
+        function persistWorkflowGraphMutation(debounce = false) {
+            if (activeWorkflowAnalysis) activeWorkflowAnalysis.visual_graph = JSON.parse(JSON.stringify(activeWorkflowGraph));
+            if (!debounce) {
+                persistActiveWorkflowGraphSnapshot();
+                return;
+            }
+            clearTimeout(workflowGraphPersistTimer);
+            workflowGraphPersistTimer = setTimeout(() => persistActiveWorkflowGraphSnapshot(), 140);
+        }
+
+        function updateNodeColorDom(node) {
+            if (!node) return;
+            const nodeColor = safeCssColor(node.color, '#27272a');
+            const nodeBg = safeCssColor(node.bgcolor, '#09090b');
+            const graphNode = document.getElementById(workflowDomId(node.id));
+            if (graphNode) {
+                graphNode.style.setProperty('background', nodeBg, 'important');
+                graphNode.querySelector('.comfy-node-header')?.style.setProperty('background', nodeColor, 'important');
+            }
+            document.querySelectorAll('.pinned-node-card').forEach(card => {
+                if (String(card.dataset.pinNodeId) !== String(node.id)) return;
+                card.style.setProperty('background', nodeBg, 'important');
+                card.style.setProperty('border-color', nodeColor, 'important');
+                card.querySelectorAll('[data-node-color-swatch]').forEach(swatch => { swatch.style.background = nodeColor; });
+            });
+        }
+
+        function setWorkflowNodeColor(nodeId, color, options = {}) {
+            const node = workflowNodeById(nodeId);
+            if (!node) return;
+            const next = safeCssColor(color, node.color || '#27272a');
+            node.color = next;
+            node.bgcolor = `${next}22`;
+            persistWorkflowGraphMutation(true);
+            updateNodeColorDom(node);
+            if (options.render) {
+                renderPinnedNodes();
+                renderWorkflowGraph(activeWorkflowGraph, false);
+            }
+        }
+
+        function commitWorkflowNodeColor(nodeId) {
+            persistWorkflowGraphMutation();
+            renderPinnedNodes();
+            renderWorkflowGraph(activeWorkflowGraph, false);
+        }
+
+        function togglePinnedNodeCollapsed(nodeId) {
+            const item = workflowPinnedRecord(nodeId);
+            if (!item) return;
+            item.collapsed = !item.collapsed;
+            persistPinnedWorkflowNodes();
+            renderPinnedNodes();
+        }
+
         function movePinnedNode(nodeId, side) {
             const item = workflowPinnedRecord(nodeId);
             if (!item) return;
             item.side = side;
             persistPinnedWorkflowNodes();
+            if (side === 'right') openNodesPanel();
             renderPinnedNodes();
         }
 
@@ -12509,23 +13176,33 @@
             const widgets = (node.widgets || []).slice(0, 5).map((widget, index) => `
                 <label class="grid grid-cols-[minmax(0,1fr)_88px] items-center gap-2 border-t border-nexus-border pt-1 min-w-0">
                     <span class="text-[9px] text-nexus-muted truncate">${escapeHtml(widget.name)}</span>
-                    <input onchange="updateWorkflowWidget(${jsString(node.id)}, ${index}, this.value)" value="${escapeHtml(widget.value)}" class="min-w-0 bg-nexus-bg border border-nexus-border text-[9px] text-white font-mono px-1 py-0.5">
+                    ${workflowWidgetControlHtml(node, widget, index, { compact: true })}
                 </label>
             `).join('');
-            const moveTarget = side === 'left' ? 'right' : 'left';
+            const nodeColor = safeCssColor(node.color, '#27272a');
+            const nodeBg = safeCssColor(node.bgcolor, '#09090b');
+            const collapsed = !!pin.collapsed;
             return `
-                <div class="pinned-node-card bg-nexus-bg border border-nexus-border rounded-sm p-2 space-y-2" draggable="true" data-pin-node-id="${escapeHtml(pin.nodeId)}">
-                    <div class="flex items-center justify-between gap-2">
-                        <div class="min-w-0">
-                            <p class="text-[10px] text-white font-bold truncate"><i class="fa-solid fa-grip-vertical panel-drag-handle text-nexus-muted mr-1"></i>${escapeHtml(node.title || node.class_type)}</p>
+                <div class="pinned-node-card ${collapsed ? 'is-collapsed' : ''} bg-nexus-bg border border-nexus-border rounded-sm p-2 space-y-2" draggable="false" data-pin-node-id="${escapeHtml(pin.nodeId)}" style="background:${nodeBg} !important; border-color:${nodeColor} !important;">
+                    <div class="pinned-node-titlebar flex items-start justify-between gap-2" data-pin-title="true" data-pin-inline-drag="true" onmousedown="startPinnedNodeDrag(event)" title="Drag to reorder. Click title to collapse.">
+                        <div role="button" tabindex="0" class="min-w-0 text-left" data-pin-action="collapse">
+                            <p class="text-[10px] text-white font-bold truncate"><i class="fa-solid fa-grip-vertical text-nexus-muted mr-1"></i>${escapeHtml(node.title || node.class_type)}</p>
                             <p class="text-[8px] text-nexus-muted font-mono truncate">${escapeHtml(node.class_type)}</p>
                         </div>
                         <div class="flex items-center gap-1">
-                            <button onclick="movePinnedNode(${jsString(pin.nodeId)}, '${moveTarget}')" class="text-nexus-muted hover:text-white" title="Move to ${moveTarget === 'left' ? 'left side menu' : 'right Nodes'}"><i class="fa-solid fa-arrow-${moveTarget === 'left' ? 'left' : 'right'} text-[10px]"></i></button>
-                            <button onclick="removePinnedNode(${jsString(pin.nodeId)})" class="text-nexus-muted hover:text-nexus-red" title="Unpin"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+                            <button type="button" data-pin-action="bypass" class="pin-action-btn pin-bypass-toggle ${node.bypassed ? 'active text-nexus-red' : ''}" title="${node.bypassed ? 'Enable node' : 'Bypass node'}"><i class="fa-solid ${node.bypassed ? 'fa-toggle-off' : 'fa-toggle-on'}"></i></button>
+                            <label data-node-color-swatch class="h-[18px] w-[18px] overflow-hidden border border-nexus-border rounded-sm cursor-pointer shrink-0" style="background:${nodeColor};" title="Node color">
+                                <input type="color" value="${escapeHtml(nodeColor)}" data-pin-node-color="${escapeHtml(pin.nodeId)}" class="opacity-0 h-[18px] w-[18px] cursor-pointer">
+                            </label>
+                            <button type="button" data-pin-action="pin-left" class="pin-action-btn ${side === 'left' ? 'active text-nexus-red' : ''}" title="Pin to left side menu"><i class="fa-solid fa-table-columns text-[10px]"></i></button>
+                            <button type="button" data-pin-action="pin-right" class="pin-action-btn ${side !== 'left' ? 'active text-nexus-red' : ''}" title="Pin to right Nodes"><i class="fa-solid fa-thumbtack text-[10px]"></i></button>
+                            <button type="button" data-pin-action="unpin" class="pin-action-btn" title="Unpin"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+                            <button type="button" data-pin-action="collapse" class="pin-action-btn" title="${collapsed ? 'Expand node' : 'Collapse node'}"><i class="fa-solid fa-chevron-${collapsed ? 'down' : 'up'} text-[9px]"></i></button>
                         </div>
                     </div>
-                    ${widgets || '<p class="text-[9px] text-nexus-muted">No editable widgets exposed.</p>'}
+                    <div class="pinned-node-body space-y-2">
+                        ${widgets || '<p class="text-[9px] text-nexus-muted">No editable widgets exposed.</p>'}
+                    </div>
                 </div>
             `;
         }
@@ -12577,9 +13254,10 @@
             const widgets = (node.widgets || []).map((widget, index) => `
                 <label class="workflow-widget-row grid grid-cols-[minmax(0,1fr)_96px] items-center gap-2 border-t border-nexus-border pt-1 min-w-0">
                     <span class="text-[9px] text-nexus-muted truncate">${escapeHtml(widget.name || `widget_${index}`)}</span>
-                    <input onchange="updateWorkflowWidget(${jsString(node.id)}, ${index}, this.value)" value="${escapeHtml(widget.value)}" class="min-w-0 bg-nexus-bg border border-nexus-border text-[9px] text-white font-mono px-1 py-0.5">
+                    ${workflowWidgetControlHtml(node, widget, index, { compact: true })}
                 </label>
             `).join('');
+            const nodeColor = safeCssColor(node.color, '#27272a');
             return `
                 <div class="bg-nexus-bg border border-nexus-red rounded-sm p-2 space-y-2">
                     <div class="flex items-start justify-between gap-2">
@@ -12588,8 +13266,12 @@
                             <p class="text-[8px] text-nexus-muted font-mono truncate">${escapeHtml(node.class_type)}</p>
                         </div>
                         <div class="flex items-center gap-1">
-                            <button onclick="toggleWorkflowNodePin(event, ${jsString(node.id)}, 'left')" class="text-nexus-muted hover:text-white" title="Pin left"><i class="fa-solid fa-arrow-left text-[10px]"></i></button>
-                            <button onclick="toggleWorkflowNodePin(event, ${jsString(node.id)}, 'right')" class="${workflowPinnedRecord(node.id)?.side === 'right' ? 'text-nexus-red' : 'text-nexus-muted'} hover:text-nexus-red" title="Pin right"><i class="fa-solid fa-thumbtack text-[10px]"></i></button>
+                            <button onclick='toggleWorkflowNodeBypass(${jsString(node.id)}, event)' class="pin-action-btn ${node.bypassed ? 'active text-nexus-red' : ''}" title="${node.bypassed ? 'Enable node' : 'Bypass node'}"><i class="fa-solid ${node.bypassed ? 'fa-toggle-off' : 'fa-toggle-on'} text-[11px]"></i></button>
+                            <label class="h-5 w-5 overflow-hidden border border-nexus-border rounded-sm cursor-pointer" style="background:${nodeColor};" title="Node color">
+                                <input type="color" value="${escapeHtml(nodeColor)}" onchange='setWorkflowNodeColor(${jsString(node.id)}, this.value); commitWorkflowNodeColor(${jsString(node.id)})' class="opacity-0 h-5 w-5 cursor-pointer">
+                            </label>
+                            <button onclick='pinWorkflowNodeToSide(event, ${jsString(node.id)}, "left")' class="pin-action-btn ${workflowPinnedRecord(node.id)?.side === 'left' ? 'active text-nexus-red' : ''}" title="Pin left"><i class="fa-solid fa-arrow-left text-[10px]"></i></button>
+                            <button onclick='pinWorkflowNodeToSide(event, ${jsString(node.id)}, "right")' class="pin-action-btn ${workflowPinnedRecord(node.id)?.side === 'right' ? 'active text-nexus-red' : ''}" title="Pin right"><i class="fa-solid fa-thumbtack text-[10px]"></i></button>
                         </div>
                     </div>
                     ${widgets || '<p class="text-[9px] text-nexus-muted">No editable widgets exposed.</p>'}
@@ -12611,7 +13293,10 @@
                             <span class="block text-white font-bold truncate">${escapeHtml(node.title || node.class_type)}</span>
                             <span class="block text-[8px] text-nexus-muted font-mono truncate">${escapeHtml(node.class_type)} · ${(node.widgets || []).length} widgets</span>
                         </button>
-                        <button type="button" onclick="toggleWorkflowNodePin(event, ${jsString(node.id)}, 'right')" class="text-nexus-muted hover:text-nexus-red" title="Pin node"><i class="fa-solid fa-thumbtack text-[10px]"></i></button>
+                        <div class="flex items-center gap-1 shrink-0">
+                            <button type="button" onclick='pinWorkflowNodeToSide(event, ${jsString(node.id)}, "left")' class="pin-action-btn ${workflowPinnedRecord(node.id)?.side === 'left' ? 'active text-nexus-red' : ''}" title="Pin left"><i class="fa-solid fa-table-columns text-[10px]"></i></button>
+                            <button type="button" onclick='pinWorkflowNodeToSide(event, ${jsString(node.id)}, "right")' class="pin-action-btn ${workflowPinnedRecord(node.id)?.side === 'right' ? 'active text-nexus-red' : ''}" title="Pin right"><i class="fa-solid fa-thumbtack text-[10px]"></i></button>
+                        </div>
                     </div>
                 </div>
             `).join('');
@@ -12664,11 +13349,11 @@
                 `;
             }
             if (rightList) {
-                const pinnedHtml = rightPins.length ? `<div class="pt-2 space-y-2">${rightPins.map(pin => renderPinnedNodeCard(pin, 'right')).join('')}</div>` : '';
+                const pinnedHtml = rightPins.length ? rightPins.map(pin => renderPinnedNodeCard(pin, 'right')).join('') : '';
                 if (activeSideNode) {
                     const selectedIsRightPinned = rightPins.some(pin => String(pin.nodeId) === String(activeSideNode.id));
                     const visiblePinnedHtml = rightPins.length
-                        ? `<div class="pt-2 space-y-2">${rightPins.filter(pin => !selectedIsRightPinned || String(pin.nodeId) !== String(activeSideNode.id)).map(pin => renderPinnedNodeCard(pin, 'right')).join('')}</div>`
+                        ? rightPins.filter(pin => !selectedIsRightPinned || String(pin.nodeId) !== String(activeSideNode.id)).map(pin => renderPinnedNodeCard(pin, 'right')).join('')
                         : '';
                     rightList.innerHTML = `${renderWorkflowNodeSideEditor(activeSideNode)}${visiblePinnedHtml}`;
                 } else {
@@ -12755,7 +13440,7 @@
             const widgets = (node.widgets || []).slice(0, 6).map((widget, index) => `
                 <div class="flex justify-between gap-2 border-t border-nexus-border pt-1">
                     <span class="text-[9px] text-nexus-muted truncate">${escapeHtml(widget.name)}</span>
-                    <input onchange="updateWorkflowWidget(${jsString(node.id)}, ${index}, this.value)" value="${escapeHtml(widget.value)}" class="w-24 bg-nexus-bg border border-nexus-border text-[9px] text-white font-mono px-1 py-0.5">
+                    ${workflowWidgetControlHtml(node, widget, index)}
                 </div>
             `).join('');
             const inputs = (node.inputs || []).slice(0, 6).map(input => `
@@ -12830,8 +13515,13 @@
                                 <span class="text-[10px] font-bold text-white tracking-wide truncate">${escapeHtml(node.title || node.class_type)}</span>
                             </div>
                             <div class="flex items-center gap-1 shrink-0">
-                                ${node.bypassed ? '<span class="text-[8px] font-bold text-white">BYPASS</span>' : ''}
-                                <button onclick="toggleWorkflowNodePin(event, ${jsString(node.id)})" class="node-pin-btn ${pinned ? 'active text-nexus-red' : 'text-nexus-muted'} hover:text-white" title="${pinned ? 'Unpin node' : 'Pin node'}">
+                                <button onclick='toggleWorkflowNodeBypass(${jsString(node.id)}, event)' class="node-pin-btn ${node.bypassed ? 'active text-nexus-red' : 'text-nexus-muted'} hover:text-white" title="${node.bypassed ? 'Enable node' : 'Bypass node'}">
+                                    <i class="fa-solid ${node.bypassed ? 'fa-toggle-off' : 'fa-toggle-on'} text-[10px]"></i>
+                                </button>
+                                <button onclick='pinWorkflowNodeToSide(event, ${jsString(node.id)}, "left")' class="node-pin-btn ${workflowPinnedRecord(node.id)?.side === 'left' ? 'active text-nexus-red' : 'text-nexus-muted'} hover:text-white" title="Pin to left side menu">
+                                    <i class="fa-solid fa-table-columns text-[10px]"></i>
+                                </button>
+                                <button onclick='pinWorkflowNodeToSide(event, ${jsString(node.id)}, "right")' class="node-pin-btn ${workflowPinnedRecord(node.id)?.side === 'right' ? 'active text-nexus-red' : 'text-nexus-muted'} hover:text-white" title="Pin to right nodes">
                                     <i class="fa-solid fa-thumbtack text-[10px]"></i>
                                 </button>
                             </div>
@@ -13441,21 +14131,18 @@
                 setWorkflowNodeSelection(clones.map(item => item.id));
                 rerenderWorkflowGraphAfterEdit();
             }
-            if (action === 'pin-right' && node && !isWorkflowNodePinned(node.id)) {
-                pinnedWorkflowNodes.push({ nodeId: String(node.id), side: 'right', collapsed: false });
-                persistPinnedWorkflowNodes();
+            if (action === 'pin-right' && node) {
+                setWorkflowNodePin(node.id, 'right');
                 renderPinnedNodes();
                 rerenderWorkflowGraphAfterEdit();
             }
-            if (action === 'pin-left' && node && !isWorkflowNodePinned(node.id)) {
-                pinnedWorkflowNodes.push({ nodeId: String(node.id), side: 'left', collapsed: false });
-                persistPinnedWorkflowNodes();
+            if (action === 'pin-left' && node) {
+                setWorkflowNodePin(node.id, 'left');
                 renderPinnedNodes();
                 rerenderWorkflowGraphAfterEdit();
             }
             if (action === 'bypass' && node) {
-                actionNodes.forEach(item => { item.bypassed = !item.bypassed; });
-                rerenderWorkflowGraphAfterEdit();
+                toggleWorkflowNodesBypass(actionNodeIds);
             }
             if (action === 'enable' && node) {
                 actionNodes.forEach(item => {
@@ -16011,6 +16698,7 @@
             grid: null,
             lights: [],
             demoModel: null,
+            sourceModel: null,
             paintTarget: null,
             maskTexture: null,
             maskDisplayCanvas: null,
@@ -16320,6 +17008,77 @@
             });
         }
 
+        function visibleModel3DViewportCameras() {
+            return model3DViewportCameraState.cameras
+                .filter(camera => camera.visible !== false)
+                .slice(0, 4);
+        }
+
+        function model3DTextureSplitCells(width, height, count) {
+            if (count <= 1) return [{ x: 0, y: 0, width, height }];
+            if (count === 2) {
+                const half = Math.floor(width / 2);
+                return [
+                    { x: 0, y: 0, width: half, height },
+                    { x: half, y: 0, width: width - half, height }
+                ];
+            }
+            const halfW = Math.floor(width / 2);
+            const halfH = Math.floor(height / 2);
+            return [
+                { x: 0, y: halfH, width: halfW, height: height - halfH },
+                { x: halfW, y: halfH, width: width - halfW, height: height - halfH },
+                { x: 0, y: 0, width: halfW, height: halfH },
+                { x: halfW, y: 0, width: width - halfW, height: halfH }
+            ].slice(0, count);
+        }
+
+        function model3DTextureCameraFromSnapshot(snapshot, aspect) {
+            const source = model3DTextureViewport.camera;
+            const THREE = model3DTextureViewport.modules?.THREE;
+            if (!source || !THREE || !snapshot) return source;
+            const viewCamera = source.clone();
+            const [px, py, pz] = snapshot.position || [];
+            const [tx, ty, tz] = snapshot.target || [];
+            const [ux, uy, uz] = snapshot.up || [];
+            viewCamera.position.set(Number(px || 0), Number(py || 0), Number(pz || 0));
+            if (snapshot.up) viewCamera.up.set(Number(ux || 0), Number(uy || 1), Number(uz || 0));
+            viewCamera.aspect = aspect || source.aspect || 1;
+            if (Number.isFinite(Number(snapshot.zoom))) viewCamera.zoom = Number(snapshot.zoom);
+            if (Number.isFinite(Number(snapshot.fov)) && 'fov' in viewCamera) viewCamera.fov = Number(snapshot.fov);
+            viewCamera.lookAt(new THREE.Vector3(Number(tx || 0), Number(ty || 0), Number(tz || 0)));
+            viewCamera.updateProjectionMatrix?.();
+            return viewCamera;
+        }
+
+        function renderModel3DTextureViewportScene(width, height) {
+            const { renderer, scene, camera } = model3DTextureViewport;
+            if (!renderer || !scene || !camera) return;
+            const splitCameras = visibleModel3DViewportCameras();
+            const useSplit = model3DViewportCameraState.splitView && splitCameras.length > 1;
+            model3DTextureViewport.lastSplitRenderCount = useSplit ? splitCameras.length : 1;
+            if (!useSplit) {
+                renderer.setScissorTest(false);
+                renderer.setViewport(0, 0, width, height);
+                renderer.render(scene, camera);
+                return;
+            }
+            renderer.setScissorTest(true);
+            renderer.clear();
+            const cells = model3DTextureSplitCells(width, height, splitCameras.length);
+            splitCameras.forEach((snapshot, index) => {
+                const cell = cells[index];
+                if (!cell) return;
+                renderer.setViewport(cell.x, cell.y, cell.width, cell.height);
+                renderer.setScissor(cell.x, cell.y, cell.width, cell.height);
+                const viewCamera = model3DTextureCameraFromSnapshot(snapshot, cell.width / Math.max(1, cell.height));
+                renderer.render(scene, viewCamera || camera);
+            });
+            renderer.setScissorTest(false);
+            renderer.setViewport(0, 0, width, height);
+            renderer.setScissor(0, 0, width, height);
+        }
+
         async function initModel3DTextureViewport() {
             if (!isModel3DTemplateActive() || model3DTextureViewport.initialized || model3DTextureViewport.loading) return;
             const canvas = document.getElementById('model3DTexture3DCanvas');
@@ -16371,6 +17130,7 @@
                 model3DTextureViewport.demoModel = group;
                 model3DTextureViewport.paintTarget = body;
                 model3DTextureViewport.initialized = true;
+                syncLoadedModel3DToTextureViewport();
                 document.getElementById('model3DTexturePlaceholder')?.classList.add('hidden');
                 toggleModel3DTextureGrid(model3DTextureViewport.gridVisible);
                 setModel3DTextureEnvironmentStrength(model3DTextureViewport.environmentStrength);
@@ -16384,12 +17144,13 @@
                     renderer.setSize(width, height, false);
                     camera.aspect = width / height;
                     camera.updateProjectionMatrix();
+                    return { width, height };
                 };
                 const animate = () => {
                     if (!model3DTextureViewport.initialized) return;
-                    resize();
+                    const { width, height } = resize();
                     controls.update();
-                    renderer.render(scene, camera);
+                    renderModel3DTextureViewportScene(width, height);
                     requestAnimationFrame(animate);
                 };
                 animate();
@@ -16408,7 +17169,8 @@
             generation: 'Current camera',
             undoStack: [],
             redoStack: [],
-            spaceTool: null
+            spaceTool: null,
+            contextCloseInstalled: false
         };
         const model3DUvState = {
             initialized: false,
@@ -16432,6 +17194,13 @@
             nextId: 1,
             activeId: null,
             layers: []
+        };
+        const model3DViewportCameraState = {
+            nextId: 1,
+            activeId: null,
+            cameras: [],
+            menuOpen: false,
+            splitView: true
         };
 
         function createModel3DTextureLayerCanvas() {
@@ -16531,6 +17300,7 @@
                         <div class="flex flex-col gap-1">
                             <button class="model3d-icon-button" type="button" onclick="toggleModel3DTextureLayerVisible('${escapeHtml(layer.id)}')" title="Visibility"><i class="fa-regular ${layer.visible ? 'fa-eye' : 'fa-eye-slash'}"></i></button>
                             <button class="model3d-icon-button ${layer.locked ? 'active' : ''}" type="button" onclick="toggleModel3DTextureLayerLocked('${escapeHtml(layer.id)}')" title="Lock"><i class="fa-solid ${layer.locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
+                            <button class="model3d-icon-button" type="button" onclick="deleteModel3DTextureLayer('${escapeHtml(layer.id)}')" title="Delete layer"><i class="fa-solid fa-trash-can"></i></button>
                         </div>
                     </div>
                 `;
@@ -16563,6 +17333,32 @@
             showToast('Texture Layer', `${layer.name} added.`);
         }
 
+        function deleteModel3DTextureLayer(id) {
+            ensureModel3DTextureLayers();
+            const index = model3DTextureLayerState.layers.findIndex(item => item.id === id);
+            if (index < 0) return;
+            const layer = model3DTextureLayerState.layers[index];
+            if (layer.locked) {
+                showToast('Layer Locked', `${layer.name} is locked.`);
+                return;
+            }
+            if (model3DTextureLayerState.layers.length <= 1) {
+                showToast('Texture Layer', 'At least one layer must remain.');
+                return;
+            }
+            model3DTextureLayerState.layers.splice(index, 1);
+            if (model3DTextureLayerState.activeId === id) {
+                const next = model3DTextureLayerState.layers[Math.min(index, model3DTextureLayerState.layers.length - 1)];
+                model3DTextureLayerState.activeId = next?.id || null;
+            }
+            compositeModel3DTextureLayers();
+            showToast('Texture Layer', `${layer.name} deleted.`);
+        }
+
+        function deleteActiveModel3DTextureLayer() {
+            if (model3DTextureLayerState.activeId) deleteModel3DTextureLayer(model3DTextureLayerState.activeId);
+        }
+
         function toggleModel3DTextureLayerVisible(id) {
             const layer = model3DTextureLayerState.layers.find(item => item.id === id);
             if (!layer) return;
@@ -16582,6 +17378,214 @@
             if (!layer) return;
             layer.opacity = Math.max(0, Math.min(1, Number(value) || 0));
             compositeModel3DTextureLayers();
+        }
+
+        function activeModel3DViewportForCamera(source = 'texture') {
+            if (source === 'viewer') return model3DViewer;
+            return model3DTextureViewport.camera ? model3DTextureViewport : model3DViewer;
+        }
+
+        function vectorToCameraArray(vector) {
+            return vector ? [Number(vector.x || 0), Number(vector.y || 0), Number(vector.z || 0)] : [0, 0, 0];
+        }
+
+        function captureModel3DViewportCamera(source = 'texture') {
+            const viewport = activeModel3DViewportForCamera(source);
+            const camera = viewport?.camera;
+            const controls = viewport?.controls;
+            if (!camera || !controls) return null;
+            return {
+                position: vectorToCameraArray(camera.position),
+                target: vectorToCameraArray(controls.target),
+                up: vectorToCameraArray(camera.up),
+                zoom: Number(camera.zoom || 1),
+                fov: Number(camera.fov || 45)
+            };
+        }
+
+        function applyModel3DViewportCamera(cameraData, target = 'both') {
+            const applyTo = viewport => {
+                if (!viewport?.camera || !viewport?.controls || !cameraData) return;
+                const THREE = viewport.modules?.THREE || model3DViewer.modules?.THREE || model3DTextureViewport.modules?.THREE;
+                const [px, py, pz] = cameraData.position || [];
+                const [tx, ty, tz] = cameraData.target || [];
+                const [ux, uy, uz] = cameraData.up || [];
+                viewport.camera.position.set(Number(px || 0), Number(py || 0), Number(pz || 0));
+                if (cameraData.up) viewport.camera.up.set(Number(ux || 0), Number(uy || 1), Number(uz || 0));
+                viewport.controls.target.set(Number(tx || 0), Number(ty || 0), Number(tz || 0));
+                if (Number.isFinite(Number(cameraData.zoom))) viewport.camera.zoom = Number(cameraData.zoom);
+                if (Number.isFinite(Number(cameraData.fov)) && 'fov' in viewport.camera) viewport.camera.fov = Number(cameraData.fov);
+                viewport.camera.updateProjectionMatrix?.();
+                viewport.controls.update?.();
+                if (THREE && viewport === model3DTextureViewport && viewport.renderer && viewport.scene) {
+                    const size = viewport.renderer.getSize(new THREE.Vector2());
+                    renderModel3DTextureViewportScene(Math.max(1, Math.floor(size.x || 1)), Math.max(1, Math.floor(size.y || 1)));
+                } else if (THREE && viewport.renderer && viewport.scene) {
+                    viewport.renderer.render(viewport.scene, viewport.camera);
+                }
+            };
+            if (target === 'viewer' || target === 'both') applyTo(model3DViewer);
+            if (target === 'texture' || target === 'both') applyTo(model3DTextureViewport);
+        }
+
+        function addModel3DViewportCamera(source = 'texture') {
+            const snapshot = captureModel3DViewportCamera(source);
+            if (!snapshot) {
+                showToast('Texture Camera', 'Open the 3D viewport before saving a camera.');
+                return;
+            }
+            if (model3DViewportCameraState.cameras.length >= 4) {
+                showToast('Texture Cameras', 'Maximum of 4 cameras for multiview generation.');
+                return;
+            }
+            const camera = {
+                id: `camera-${model3DViewportCameraState.nextId++}`,
+                name: `Camera ${model3DViewportCameraState.nextId - 1}`,
+                selected: true,
+                visible: true,
+                ...snapshot
+            };
+            model3DViewportCameraState.cameras.push(camera);
+            model3DViewportCameraState.activeId = camera.id;
+            renderModel3DViewportCameras();
+            showToast('Texture Camera', `${camera.name} saved.`);
+        }
+
+        function setModel3DViewportCamera(id, target = 'both') {
+            const camera = model3DViewportCameraState.cameras.find(item => item.id === id);
+            if (!camera) return;
+            model3DViewportCameraState.activeId = id;
+            applyModel3DViewportCamera(camera, target);
+            renderModel3DViewportCameras();
+        }
+
+        function updateModel3DViewportCamera(id, source = 'texture') {
+            const camera = model3DViewportCameraState.cameras.find(item => item.id === id);
+            const snapshot = captureModel3DViewportCamera(source);
+            if (!camera || !snapshot) return;
+            Object.assign(camera, snapshot);
+            model3DViewportCameraState.activeId = id;
+            renderModel3DViewportCameras();
+            showToast('Texture Camera', `${camera.name} updated.`);
+        }
+
+        function updateActiveModel3DViewportCamera(source = 'texture') {
+            if (model3DViewportCameraState.activeId) {
+                updateModel3DViewportCamera(model3DViewportCameraState.activeId, source);
+                return;
+            }
+            addModel3DViewportCamera(source);
+        }
+
+        function toggleModel3DViewportCameraSelected(id) {
+            const camera = model3DViewportCameraState.cameras.find(item => item.id === id);
+            if (!camera) return;
+            camera.selected = !camera.selected;
+            if (camera.selected && model3DViewportCameraState.cameras.filter(item => item.selected).length > 4) camera.selected = false;
+            renderModel3DViewportCameras();
+        }
+
+        function toggleModel3DViewportCameraVisible(id) {
+            const camera = model3DViewportCameraState.cameras.find(item => item.id === id);
+            if (!camera) return;
+            camera.visible = camera.visible === false;
+            if (!camera.visible && model3DViewportCameraState.activeId === id) {
+                model3DViewportCameraState.activeId = visibleModel3DViewportCameras().find(item => item.id !== id)?.id || null;
+            }
+            renderModel3DViewportCameras();
+        }
+
+        function deleteModel3DViewportCamera(id) {
+            const index = model3DViewportCameraState.cameras.findIndex(item => item.id === id);
+            if (index < 0) return;
+            const [removed] = model3DViewportCameraState.cameras.splice(index, 1);
+            if (model3DViewportCameraState.activeId === id) {
+                model3DViewportCameraState.activeId = model3DViewportCameraState.cameras[Math.min(index, model3DViewportCameraState.cameras.length - 1)]?.id || null;
+            }
+            renderModel3DViewportCameras();
+            showToast('Texture Camera', `${removed.name} removed.`);
+        }
+
+        function generateModel3DTextureCamera(id) {
+            const camera = model3DViewportCameraState.cameras.find(item => item.id === id);
+            if (!camera) return;
+            setModel3DViewportCamera(id, 'texture');
+            setModel3DTextureGeneration('Current camera');
+            addModel3DTextureLayer('projected', camera.name);
+            showToast('Texture Camera', `${camera.name} selected for the next texture pass.`);
+        }
+
+        function selectedModel3DViewportCameras() {
+            return model3DViewportCameraState.cameras
+                .filter(camera => camera.selected && camera.visible !== false)
+                .slice(0, 4)
+                .map(camera => ({
+                    id: camera.id,
+                    name: camera.name,
+                    active: camera.id === model3DViewportCameraState.activeId,
+                    visible: camera.visible !== false,
+                    position: camera.position,
+                    target: camera.target,
+                    up: camera.up,
+                    zoom: camera.zoom,
+                    fov: camera.fov
+                }));
+        }
+
+        function toggleModel3DTextureCameraMenu(force = null) {
+            model3DViewportCameraState.menuOpen = typeof force === 'boolean' ? force : !model3DViewportCameraState.menuOpen;
+            renderModel3DViewportCameras();
+        }
+
+        function toggleModel3DTextureSplitView(force = null) {
+            model3DViewportCameraState.splitView = typeof force === 'boolean' ? force : !model3DViewportCameraState.splitView;
+            renderModel3DViewportCameras();
+        }
+
+        function renderModel3DViewportCameras() {
+            const list = document.getElementById('model3DTextureCameraList');
+            const mini = document.getElementById('model3DTextureViewportCameraButtons');
+            const count = document.getElementById('model3DTextureViewportCameraCount');
+            const body = document.getElementById('model3DTextureCameraMenuBody');
+            const menuButton = document.getElementById('model3DTextureCameraMenuBtn');
+            const splitButton = document.getElementById('model3DTextureSplitViewBtn');
+            const selectedCount = selectedModel3DViewportCameras().length;
+            if (count) count.innerText = `${selectedCount} / 4`;
+            body?.classList.toggle('hidden', !model3DViewportCameraState.menuOpen);
+            menuButton?.classList.toggle('active', model3DViewportCameraState.menuOpen);
+            splitButton?.classList.toggle('active', model3DViewportCameraState.splitView);
+            if (mini) {
+                mini.innerHTML = [0, 1, 2, 3].map(index => {
+                    const camera = model3DViewportCameraState.cameras[index];
+                    if (!camera) {
+                        return `<button type="button" class="model3d-icon-button opacity-40 h-7" onclick="addModel3DViewportCamera('texture')" title="Save camera ${index + 1}"><span class="text-[9px] font-bold">${index + 1}</span></button>`;
+                    }
+                    const active = camera.id === model3DViewportCameraState.activeId;
+                    const muted = camera.visible === false ? 'opacity-40' : '';
+                    return `<button type="button" class="model3d-icon-button h-7 ${camera.selected && camera.visible !== false ? 'active' : ''} ${active ? 'border-white' : ''} ${muted}" onclick="setModel3DViewportCamera('${escapeHtml(camera.id)}', 'texture')" title="${escapeHtml(camera.name)}"><span class="text-[9px] font-bold">${index + 1}</span></button>`;
+                }).join('');
+            }
+            if (!list) return;
+            if (!model3DViewportCameraState.cameras.length) {
+                list.innerHTML = '<div class="col-span-2 text-[9px] font-mono text-nexus-muted border border-dashed border-nexus-border p-2">Save up to 4 cameras from the current viewport.</div>';
+                return;
+            }
+            list.innerHTML = model3DViewportCameraState.cameras.map(camera => {
+                const active = camera.id === model3DViewportCameraState.activeId;
+                return `
+                    <div class="border ${active ? 'border-nexus-red' : 'border-nexus-border'} bg-nexus-panel p-1.5 space-y-1">
+                        <button type="button" class="w-full text-left text-[9px] font-bold text-white truncate" onclick="setModel3DViewportCamera('${escapeHtml(camera.id)}', 'texture')">${escapeHtml(camera.name)}</button>
+                        <div class="grid grid-cols-6 gap-1">
+                            <button class="model3d-icon-button ${camera.selected ? 'active' : ''}" type="button" onclick="toggleModel3DViewportCameraSelected('${escapeHtml(camera.id)}')" title="Use in multiview"><i class="fa-solid fa-check"></i></button>
+                            <button class="model3d-icon-button ${camera.visible !== false ? 'active' : ''}" type="button" onclick="toggleModel3DViewportCameraVisible('${escapeHtml(camera.id)}')" title="Show camera in split view"><i class="fa-regular ${camera.visible !== false ? 'fa-eye' : 'fa-eye-slash'}"></i></button>
+                            <button class="model3d-icon-button" type="button" onclick="generateModel3DTextureCamera('${escapeHtml(camera.id)}')" title="Use for single texture pass"><i class="fa-solid fa-wand-magic-sparkles"></i></button>
+                            <button class="model3d-icon-button" type="button" onclick="updateModel3DViewportCamera('${escapeHtml(camera.id)}', 'texture')" title="Update camera position"><i class="fa-solid fa-arrows-rotate"></i></button>
+                            <button class="model3d-icon-button" type="button" onclick="setModel3DViewportCamera('${escapeHtml(camera.id)}', 'both')" title="Apply to both views"><i class="fa-solid fa-video"></i></button>
+                            <button class="model3d-icon-button" type="button" onclick="deleteModel3DViewportCamera('${escapeHtml(camera.id)}')" title="Delete camera"><i class="fa-solid fa-trash-can"></i></button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         function setModel3DTextureTool(tool) {
@@ -17161,6 +18165,7 @@
             };
             canvas.addEventListener('pointerdown', event => {
                 if (event.button !== 0) return;
+                toggleModel3DTextureContextMenu(false);
                 if (['move-camera', 'rotate'].includes(model3DTextureCanvasState.tool)) return;
                 if (model3DTextureCanvasState.tool === 'patch') {
                     setModel3DTextureGeneration('Selected mask');
@@ -17194,6 +18199,27 @@
                 event.preventDefault();
                 toggleModel3DTextureContextMenu(true, event);
             });
+            [model3DTextureViewMaskCanvas(), model3DTextureViewportElement()].filter(Boolean).forEach(surface => {
+                surface.addEventListener('contextmenu', event => {
+                    event.preventDefault();
+                    toggleModel3DTextureContextMenu(true, event);
+                });
+            });
+            if (!model3DTextureCanvasState.contextCloseInstalled) {
+                model3DTextureCanvasState.contextCloseInstalled = true;
+                document.addEventListener('contextmenu', event => {
+                    if (!document.getElementById('model3DTexturePaintPanel')?.contains(event.target)) return;
+                    event.preventDefault();
+                    toggleModel3DTextureContextMenu(true, event);
+                }, true);
+                document.addEventListener('pointerdown', event => {
+                    if (event.button !== 0) return;
+                    const menu = document.getElementById('model3DTextureContextMenu');
+                    if (!menu || menu.classList.contains('hidden')) return;
+                    if (menu.contains(event.target)) return;
+                    toggleModel3DTextureContextMenu(false);
+                }, true);
+            }
             updateModel3DTextureHistoryButtons();
         }
 
@@ -17342,6 +18368,51 @@
             model3DViewer.controls.update();
         }
 
+        function fitModel3DTextureViewportModel(model) {
+            const THREE = model3DTextureViewport.modules?.THREE;
+            if (!THREE || !model || !model3DTextureViewport.controls || !model3DTextureViewport.camera) return;
+            const box = new THREE.Box3().setFromObject(model);
+            const size = new THREE.Vector3();
+            const center = new THREE.Vector3();
+            box.getSize(size);
+            box.getCenter(center);
+            model.position.sub(center);
+            const maxAxis = Math.max(size.x, size.y, size.z) || 1;
+            model.scale.multiplyScalar(1.55 / maxAxis);
+            const nextBox = new THREE.Box3().setFromObject(model);
+            const nextCenter = new THREE.Vector3();
+            nextBox.getCenter(nextCenter);
+            model3DTextureViewport.controls.target.copy(nextCenter);
+            model3DTextureViewport.camera.position.set(2.15, 1.35, 2.6);
+            model3DTextureViewport.controls.update();
+        }
+
+        function syncLoadedModel3DToTextureViewport() {
+            if (!model3DViewer.model || !model3DTextureViewport.scene || !model3DTextureViewport.modules?.THREE) return;
+            if (model3DTextureViewport.sourceModel === model3DViewer.model) return;
+            if (model3DTextureViewport.demoModel) {
+                model3DTextureViewport.scene.remove(model3DTextureViewport.demoModel);
+            }
+            const clone = model3DViewer.model.clone(true);
+            let firstMesh = null;
+            let firstUvMesh = null;
+            clone.traverse?.(child => {
+                if (!child?.isMesh) return;
+                child.userData.texturePaintTarget = true;
+                if (!firstMesh) firstMesh = child;
+                if (!firstUvMesh && child.geometry?.attributes?.uv) firstUvMesh = child;
+                if (child.material?.clone) child.material = child.material.clone();
+            });
+            model3DTextureViewport.demoModel = clone;
+            model3DTextureViewport.paintTarget = firstUvMesh || firstMesh;
+            model3DTextureViewport.sourceModel = model3DViewer.model;
+            model3DTextureViewport.scene.add(clone);
+            fitModel3DTextureViewportModel(clone);
+            setModel3DTextureViewMode(model3DTextureViewport.mode);
+            updateModel3DTextureMaskMaterial();
+            renderModel3DUvPreview();
+        }
+
         async function loadModel3DPreviewFromUrl(url, label = '3D model') {
             await initModel3DViewer();
             const THREE = model3DViewer.modules?.THREE;
@@ -17367,6 +18438,7 @@
                 model3DViewer.model = loaded;
                 fitModel3DPreviewModel(loaded);
                 setModel3DViewMode(model3DViewer.mode);
+                syncLoadedModel3DToTextureViewport();
                 document.getElementById('model3DPlaceholder')?.classList.add('hidden');
                 if (status) status.innerText = `${label} loaded`;
             } catch (error) {
@@ -17448,7 +18520,7 @@
                 toggleLeftSidebar(false);
             }
             applyModelProfile(presetName);
-            if (presetName === 'Model3D') maybeDownloadTrellis2Model();
+            if (presetName === 'Model3D') ensureModel3DTemplateRequirements().catch(error => showToast('Model 3D Check Failed', String(error?.message || error).slice(0, 160)));
             if (currentActivity === 'txt2img' || currentActivity === 'img2img') {
                 if (presetName === 'Model3D') {
                     currentActivity = 'img2img';
@@ -17845,6 +18917,13 @@
             if (selector && !selector.contains(event.target)) document.getElementById('languageMenu')?.classList.add('hidden');
             const donateSelector = document.getElementById('donateSelector');
             if (donateSelector && !donateSelector.contains(event.target)) document.getElementById('donateMenu')?.classList.add('hidden');
+            const templateSelector = document.getElementById('templateToolsDropdown');
+            if (templateSelector && !templateSelector.contains(event.target)) closeTemplateTools();
+        });
+        document.getElementById('templateToolsButton')?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleTemplateTools();
         });
         renderLanguageMenu();
         if (nexusLanguage !== 'en') loadGoogleTranslateScript();
@@ -17936,7 +19015,8 @@
             sidebar.classList.add('lg:flex');
             switchSidebarTab('gallery');
             applySidebarLayout();
-            syncGalleryFromBackend({ quiet: true });
+            renderGallerySidebar();
+            syncGalleryFromBackend({ quiet: true, force: true, focusNewest: false, updateLinearOutput: false });
         }
 
         function switchSidebarTab(tab) {
@@ -17978,7 +19058,10 @@
             });
             if (tab === 'nodes' && !model3DActive) renderPinnedNodes();
             if (tab === 'nodes' && model3DActive) syncModel3DWorkspaceSidebars();
-            if (tab === 'gallery') syncGalleryFromBackend({ quiet: true });
+            if (tab === 'gallery') {
+                renderGallerySidebar();
+                syncGalleryFromBackend({ quiet: true, force: true, focusNewest: false, updateLinearOutput: false });
+            }
         }
 
         function sortableContainers() {
@@ -18014,6 +19097,108 @@
             localStorage.setItem('nexus_panel_order', JSON.stringify(capturePanelOrder()));
         }
 
+        function persistPanelCollapsedState() {
+            localStorage.setItem('nexus_panel_collapsed_state', JSON.stringify(panelCollapsedState));
+        }
+
+        function panelTitleRegion(panel) {
+            return panel?.firstElementChild || null;
+        }
+
+        function setPanelCollapsed(panel, collapsed) {
+            if (!panel?.dataset?.panelKey) return;
+            panelCollapsedState[panel.dataset.panelKey] = !!collapsed;
+            [...panel.children].forEach((child, index) => {
+                if (index > 0) child.classList.toggle('hidden', !!collapsed);
+            });
+            const icon = panel.querySelector('[data-panel-collapse-icon]');
+            if (icon) icon.className = `fa-solid ${collapsed ? 'fa-chevron-right' : 'fa-chevron-down'} text-[9px] text-nexus-muted`;
+            persistPanelCollapsedState();
+        }
+
+        function togglePanelCollapsed(panel) {
+            if (!panel?.dataset?.panelKey) return;
+            setPanelCollapsed(panel, !panelCollapsedState[panel.dataset.panelKey]);
+        }
+
+        function ensurePanelTitleControls(panel) {
+            const title = panelTitleRegion(panel);
+            if (!title || title.dataset.panelTitleReady === '1') return;
+            title.dataset.panelTitleReady = '1';
+            title.classList.add('cursor-grab', 'select-none');
+            title.title = title.title || 'Drag to reorder. Click to expand or hide.';
+            const hasNativeAccordion = !!title.querySelector('[id$="AccordionIcon"]');
+            if (hasNativeAccordion) {
+                title.querySelectorAll('[data-panel-collapse-icon]').forEach(icon => {
+                    const button = icon.closest('button');
+                    const holder = button?.parentElement?.classList?.contains('float-right') ? button.parentElement : button;
+                    holder?.remove();
+                });
+            }
+            if (!hasNativeAccordion) {
+                const iconWrap = document.createElement('button');
+                iconWrap.type = 'button';
+                iconWrap.className = 'ml-2 h-5 w-5 shrink-0 inline-flex items-center justify-center text-nexus-muted hover:text-white';
+                iconWrap.title = 'Expand or hide panel';
+                iconWrap.innerHTML = '<i data-panel-collapse-icon class="fa-solid fa-chevron-down text-[9px] text-nexus-muted"></i>';
+                if (title.classList.contains('flex')) {
+                    title.appendChild(iconWrap);
+                } else {
+                    const holder = document.createElement('span');
+                    holder.className = 'float-right';
+                    holder.appendChild(iconWrap);
+                    title.appendChild(holder);
+                }
+                iconWrap.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    togglePanelCollapsed(panel);
+                });
+                title.addEventListener('click', event => {
+                    if (panel.dataset.dragJustEnded === '1' || event.target.closest('input, textarea, select, button, a')) return;
+                    event.preventDefault();
+                    togglePanelCollapsed(panel);
+                });
+            }
+            title.addEventListener('pointerdown', event => {
+                if (event.button !== 0 || event.target.closest('input, textarea, select, button, a')) return;
+                const container = panel.parentElement;
+                if (!container || !sortableContainers().includes(container)) return;
+                const startX = event.clientX;
+                const startY = event.clientY;
+                let dragging = false;
+                const onMove = moveEvent => {
+                    const moved = Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY);
+                    if (!dragging && moved < 5) return;
+                    if (!dragging) {
+                        dragging = true;
+                        sortableDrag = { type: 'panel', element: panel };
+                        panel.classList.add('dragging');
+                        panel.dataset.dragJustEnded = '1';
+                    }
+                    moveEvent.preventDefault();
+                    const afterElement = getDragAfterElement(container, moveEvent.clientY, '[data-panel-key][draggable="true"]');
+                    showPanelDropIndicator(container, afterElement);
+                    if (afterElement) container.insertBefore(panel, afterElement);
+                    else container.appendChild(panel);
+                };
+                const onUp = () => {
+                    document.removeEventListener('pointermove', onMove);
+                    document.removeEventListener('pointerup', onUp);
+                    if (dragging) {
+                        panel.classList.remove('dragging');
+                        clearPanelDropIndicators(container);
+                        sortableDrag = null;
+                        savePanelOrder();
+                        setTimeout(() => { delete panel.dataset.dragJustEnded; }, 180);
+                    }
+                };
+                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointerup', onUp, { once: true });
+            });
+            setPanelCollapsed(panel, !!panelCollapsedState[panel.dataset.panelKey]);
+        }
+
         function getDragAfterElement(container, y, selector) {
             const elements = [...container.querySelectorAll(selector)].filter(element => element !== sortableDrag?.element && element.parentElement === container);
             return elements.reduce((closest, child) => {
@@ -18024,20 +19209,46 @@
             }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
         }
 
+        function clearPanelDropIndicators(container = document) {
+            container.querySelectorAll?.('.panel-drop-target, .panel-drop-tail').forEach(element => {
+                element.classList.remove('panel-drop-target', 'panel-drop-tail');
+            });
+        }
+
+        function showPanelDropIndicator(container, afterElement) {
+            clearPanelDropIndicators(container);
+            if (afterElement) {
+                afterElement.classList.add('panel-drop-target');
+                return;
+            }
+            const last = [...container.querySelectorAll('[data-panel-key][draggable="true"]')]
+                .filter(element => element !== sortableDrag?.element && element.parentElement === container)
+                .at(-1);
+            last?.classList.add('panel-drop-tail');
+        }
+
         function initSortablePanels() {
             applyPanelOrder(nexusSafeStorage.json('nexus_panel_order', {}));
             document.querySelectorAll('[data-panel-key][draggable="true"]').forEach(panel => {
+                ensurePanelTitleControls(panel);
                 panel.ondragstart = event => {
-                    if (!event.target.closest('.panel-drag-handle') || event.target.closest('input, textarea, select, button')) {
+                    const title = panelTitleRegion(panel);
+                    const titleDrag = title?.contains(event.target);
+                    const handleDrag = event.target.closest('.panel-drag-handle');
+                    if ((!handleDrag && !titleDrag) || event.target.closest('input, textarea, select, button, a')) {
                         event.preventDefault();
                         return;
                     }
                     sortableDrag = { type: 'panel', element: panel };
                     panel.classList.add('dragging');
                     event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', panel.dataset.panelKey || 'panel');
                 };
                 panel.ondragend = () => {
                     panel.classList.remove('dragging');
+                    clearPanelDropIndicators(panel.parentElement || document);
+                    panel.dataset.dragJustEnded = '1';
+                    setTimeout(() => { delete panel.dataset.dragJustEnded; }, 160);
                     sortableDrag = null;
                     savePanelOrder();
                 };
@@ -18047,28 +19258,127 @@
                     if (sortableDrag?.type !== 'panel' || sortableDrag.element.parentElement !== container) return;
                     event.preventDefault();
                     const afterElement = getDragAfterElement(container, event.clientY, '[data-panel-key][draggable="true"]');
+                    showPanelDropIndicator(container, afterElement);
                     if (afterElement) container.insertBefore(sortableDrag.element, afterElement);
                     else container.appendChild(sortableDrag.element);
                 };
+                container.ondragleave = () => clearPanelDropIndicators(container);
+                container.ondrop = () => clearPanelDropIndicators(container);
             });
         }
 
-        function initPinnedNodeSorting() {
-            document.querySelectorAll('.pinned-node-card[draggable="true"]').forEach(card => {
-                card.ondragstart = event => {
-                    if (!event.target.closest('.panel-drag-handle') || event.target.closest('input, textarea, select, button')) {
-                        event.preventDefault();
-                        return;
-                    }
+        function clearPinDropIndicators(container = document) {
+            container.querySelectorAll?.('.pin-drop-target, .pin-drop-tail').forEach(element => {
+                element.classList.remove('pin-drop-target', 'pin-drop-tail');
+            });
+        }
+
+        function showPinDropIndicator(container, afterElement) {
+            clearPinDropIndicators(container);
+            if (afterElement) {
+                afterElement.classList.add('pin-drop-target');
+                return;
+            }
+            const last = [...container.querySelectorAll('.pinned-node-card')]
+                .filter(element => element !== sortableDrag?.element && element.parentElement === container)
+                .at(-1);
+            last?.classList.add('pin-drop-tail');
+        }
+
+        function startPinnedNodeDrag(event) {
+            const title = event?.currentTarget?.closest?.('.pinned-node-titlebar[data-pin-title]') || event?.target?.closest?.('.pinned-node-titlebar[data-pin-title]');
+            if (!title || event.button !== 0 || event.target.closest('input, textarea, select, button, a')) return;
+            const card = title.closest('.pinned-node-card[data-pin-node-id]');
+            const container = card?.parentElement;
+            if (!card || !container || !['leftPinnedNodesList', 'nodesPanel'].includes(container.id)) return;
+            const startX = event.clientX;
+            const startY = event.clientY;
+            let dragging = false;
+            const onMove = moveEvent => {
+                const moved = Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY);
+                if (!dragging && moved < 5) return;
+                if (!dragging) {
+                    dragging = true;
                     sortableDrag = { type: 'pin', element: card, nodeId: card.dataset.pinNodeId };
                     card.classList.add('dragging');
-                    event.dataTransfer.effectAllowed = 'move';
-                };
-                card.ondragend = () => {
+                    card.dataset.pinDragJustEnded = '1';
+                }
+                moveEvent.preventDefault();
+                const nextContainer = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest('#leftPinnedNodesList, #nodesPanel') || container;
+                const afterElement = getDragAfterElement(nextContainer, moveEvent.clientY, '.pinned-node-card');
+                showPinDropIndicator(nextContainer, afterElement);
+                if (afterElement) nextContainer.insertBefore(card, afterElement);
+                else nextContainer.appendChild(card);
+            };
+            const onUp = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                if (dragging) {
                     card.classList.remove('dragging');
+                    clearPinDropIndicators(document);
                     sortableDrag = null;
                     savePinnedOrderFromDom();
-                };
+                    setTimeout(() => { delete card.dataset.pinDragJustEnded; }, 180);
+                    return;
+                }
+                if (event.target.closest('[data-pin-action="collapse"]')) {
+                    card.dataset.pinDragJustEnded = '1';
+                    togglePinnedNodeCollapsed(card.dataset.pinNodeId);
+                    setTimeout(() => { delete card.dataset.pinDragJustEnded; }, 180);
+                }
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp, { once: true });
+        }
+
+        function initPinnedNodeSorting() {
+            document.querySelectorAll('.pinned-node-card').forEach(card => {
+                const title = card.querySelector('[data-pin-title]');
+                if (title?.dataset.pinDragReady === '1') return;
+                if (title) title.dataset.pinDragReady = '1';
+                title?.addEventListener('mousedown', event => {
+                    if (title.dataset.pinInlineDrag === 'true') return;
+                    if (event.button !== 0 || event.target.closest('input, textarea, select, button, a')) return;
+                    const container = card.parentElement;
+                    if (!container || !['leftPinnedNodesList', 'nodesPanel'].includes(container.id)) return;
+                    const startX = event.clientX;
+                    const startY = event.clientY;
+                    let dragging = false;
+                    const onMove = moveEvent => {
+                        const moved = Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY);
+                        if (!dragging && moved < 5) return;
+                        if (!dragging) {
+                            dragging = true;
+                            sortableDrag = { type: 'pin', element: card, nodeId: card.dataset.pinNodeId };
+                            card.classList.add('dragging');
+                            card.dataset.pinDragJustEnded = '1';
+                        }
+                        moveEvent.preventDefault();
+                        const nextContainer = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest('#leftPinnedNodesList, #nodesPanel') || container;
+                        if (!nextContainer) return;
+                        const afterElement = getDragAfterElement(nextContainer, moveEvent.clientY, '.pinned-node-card');
+                        showPinDropIndicator(nextContainer, afterElement);
+                        if (afterElement) nextContainer.insertBefore(card, afterElement);
+                        else nextContainer.appendChild(card);
+                    };
+                    const onUp = () => {
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
+                        if (dragging) {
+                            card.classList.remove('dragging');
+                            clearPinDropIndicators(document);
+                            sortableDrag = null;
+                            savePinnedOrderFromDom();
+                            setTimeout(() => { delete card.dataset.pinDragJustEnded; }, 180);
+                        } else if (event.target.closest('[data-pin-action="collapse"]')) {
+                            card.dataset.pinDragJustEnded = '1';
+                            togglePinnedNodeCollapsed(card.dataset.pinNodeId);
+                            setTimeout(() => { delete card.dataset.pinDragJustEnded; }, 180);
+                        }
+                    };
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp, { once: true });
+                });
             });
             ['leftPinnedNodesList', 'nodesPanel'].forEach(id => {
                 const container = document.getElementById(id);
@@ -18076,11 +19386,16 @@
                 container.ondragover = event => {
                     if (sortableDrag?.type !== 'pin') return;
                     event.preventDefault();
-                    const afterElement = getDragAfterElement(container, event.clientY, '.pinned-node-card[draggable="true"]');
+                    const afterElement = getDragAfterElement(container, event.clientY, '.pinned-node-card');
+                    showPinDropIndicator(container, afterElement);
                     if (afterElement) container.insertBefore(sortableDrag.element, afterElement);
                     else container.appendChild(sortableDrag.element);
                 };
-                container.ondrop = () => savePinnedOrderFromDom();
+                container.ondragleave = () => clearPinDropIndicators(container);
+                container.ondrop = () => {
+                    clearPinDropIndicators(container);
+                    savePinnedOrderFromDom();
+                };
             });
         }
 
@@ -18224,6 +19539,8 @@
                 loras: activeLoras,
                 pinnedWorkflowNodes,
                 panelOrder: capturePanelOrder(),
+                panelCollapsedState,
+                theme: normalizedThemeState(nexusThemeState),
                 workflowGraph: activeWorkflowGraph,
                 workflowAnalysis: activeWorkflowAnalysis ? {
                     workflow: activeWorkflowAnalysis.workflow,
@@ -18251,6 +19568,11 @@
             workflowTabs = Array.isArray(state.workflowTabs) ? state.workflowTabs : workflowTabs;
             activeWorkflowGraph = state.workflowGraph || activeWorkflowGraph;
             activeWorkflowAnalysis = state.workflowAnalysis || activeWorkflowAnalysis;
+            if (state.theme) applyNexusTheme(state.theme, { persist: true });
+            if (state.panelCollapsedState) {
+                panelCollapsedState = { ...state.panelCollapsedState };
+                localStorage.setItem('nexus_panel_collapsed_state', JSON.stringify(panelCollapsedState));
+            }
             if (state.panelOrder) applyPanelOrder(state.panelOrder);
             if (state.currentActivity) currentActivity = state.currentActivity;
             if (state.activeWorkspace) activeWorkspace = state.activeWorkspace;
@@ -18268,16 +19590,174 @@
             if (activeWorkflowGraph?.nodes?.length) renderWorkflowGraph(activeWorkflowGraph, true);
             renderPinnedNodes();
             initSortablePanels();
-            document.getElementById('templateToolsStatus').innerText = `Loaded ${new Date(state.savedAt || Date.now()).toLocaleString()}`;
+            const status = document.getElementById('templateToolsStatus');
+            if (status) status.innerText = `Loaded ${new Date(state.savedAt || Date.now()).toLocaleString()}`;
+        }
+
+        function normalizedThemeState(theme = {}) {
+            return {
+                ...NEXUS_DEFAULT_THEME,
+                ...(theme || {}),
+                panelColors: { ...(theme?.panelColors || {}) }
+            };
+        }
+
+        function persistNexusThemeSoon() {
+            clearTimeout(nexusThemePersistTimer);
+            nexusThemePersistTimer = setTimeout(() => {
+                localStorage.setItem('nexus_theme_state', JSON.stringify(normalizedThemeState(nexusThemeState)));
+            }, 140);
+        }
+
+        function setReadoutText(selector, dataKey, key, value) {
+            document.querySelectorAll(selector).forEach(readout => {
+                if (readout.dataset?.[dataKey] === key) readout.innerText = value;
+            });
+        }
+
+        function nexusThemeVariable(key) {
+            return NEXUS_THEME_FIELDS.find(([field]) => field === key)?.[2] || null;
+        }
+
+        function queueNexusThemeColor(key, value) {
+            clearTimeout(nexusColorInputTimers[`theme:${key}`]);
+            nexusColorInputTimers[`theme:${key}`] = setTimeout(() => setNexusThemeColor(key, value), 90);
+        }
+
+        function queuePanelThemeColor(panelKey, value) {
+            clearTimeout(nexusColorInputTimers[`panel:${panelKey}`]);
+            nexusColorInputTimers[`panel:${panelKey}`] = setTimeout(() => setPanelThemeColor(panelKey, value), 90);
+        }
+
+        function commitNexusThemeColor(key, value) {
+            clearTimeout(nexusColorInputTimers[`theme:${key}`]);
+            setNexusThemeColor(key, value);
+        }
+
+        function commitPanelThemeColor(panelKey, value) {
+            clearTimeout(nexusColorInputTimers[`panel:${panelKey}`]);
+            setPanelThemeColor(panelKey, value);
+        }
+
+        function applyNexusTheme(theme = nexusThemeState, options = {}) {
+            nexusThemeState = normalizedThemeState(theme);
+            const root = document.documentElement;
+            const variables = {
+                '--nexus-red': nexusThemeState.accent,
+                '--nexus-dark-red': nexusThemeState.darkRed || nexusThemeState.accent,
+                '--nexus-bg': nexusThemeState.background,
+                '--nexus-panel': nexusThemeState.panel,
+                '--nexus-modal': nexusThemeState.modal,
+                '--nexus-header': nexusThemeState.header,
+                '--nexus-border': nexusThemeState.border,
+                '--nexus-hover': nexusThemeState.hover,
+                '--nexus-text': nexusThemeState.text,
+                '--nexus-muted': nexusThemeState.muted,
+                '--nexus-canvas': nexusThemeState.canvas
+            };
+            Object.entries(variables).forEach(([name, value]) => root.style.setProperty(name, safeCssColor(value, NEXUS_DEFAULT_THEME.background)));
+            document.querySelectorAll('[data-panel-key]').forEach(panel => {
+                const color = nexusThemeState.panelColors?.[panel.dataset.panelKey];
+                if (color) {
+                    panel.style.setProperty('background-color', safeCssColor(color, ''), 'important');
+                    panel.style.setProperty('border-color', safeCssColor(nexusThemeState.border, '#27272a'), 'important');
+                    panel.classList.add('p-2', 'rounded-sm');
+                } else {
+                    panel.style.removeProperty('background-color');
+                    panel.style.removeProperty('border-color');
+                }
+            });
+            if (options.persist !== false) localStorage.setItem('nexus_theme_state', JSON.stringify(nexusThemeState));
+            if (options.render !== false) renderThemeCustomizer();
+        }
+
+        function setNexusThemeColor(key, value) {
+            nexusThemeState = normalizedThemeState(nexusThemeState);
+            nexusThemeState[key] = safeCssColor(value, NEXUS_DEFAULT_THEME[key] || '#09090b');
+            const variable = nexusThemeVariable(key);
+            if (variable) document.documentElement.style.setProperty(variable, nexusThemeState[key]);
+            if (key === 'accent') document.documentElement.style.setProperty('--nexus-dark-red', nexusThemeState.darkRed || nexusThemeState[key]);
+            if (key === 'border') {
+                document.querySelectorAll('[data-panel-key]').forEach(panel => {
+                    if (nexusThemeState.panelColors?.[panel.dataset.panelKey]) panel.style.setProperty('border-color', nexusThemeState[key], 'important');
+                });
+            }
+            setReadoutText('[data-theme-readout]', 'themeReadout', key, nexusThemeState[key]);
+            persistNexusThemeSoon();
+        }
+
+        function setPanelThemeColor(panelKey, value) {
+            nexusThemeState = normalizedThemeState(nexusThemeState);
+            nexusThemeState.panelColors[panelKey] = safeCssColor(value, '#18181b');
+            document.querySelectorAll('[data-panel-key]').forEach(panel => {
+                if (panel.dataset.panelKey !== panelKey) return;
+                panel.style.setProperty('background-color', nexusThemeState.panelColors[panelKey], 'important');
+                panel.style.setProperty('border-color', safeCssColor(nexusThemeState.border, '#27272a'), 'important');
+                panel.classList.add('p-2', 'rounded-sm');
+            });
+            setReadoutText('[data-panel-theme-readout]', 'panelThemeReadout', panelKey, nexusThemeState.panelColors[panelKey]);
+            persistNexusThemeSoon();
+        }
+
+        function resetPanelThemeColors() {
+            nexusThemeState = normalizedThemeState(nexusThemeState);
+            nexusThemeState.panelColors = {};
+            applyNexusTheme(nexusThemeState);
+        }
+
+        function renderThemeCustomizer() {
+            const colorGrid = document.getElementById('themeCustomizerColorGrid');
+            if (colorGrid) {
+                colorGrid.innerHTML = NEXUS_THEME_FIELDS.map(([key, label]) => `
+                    <label class="theme-color-cell rounded-sm p-2 flex items-center justify-between gap-2">
+                        <span class="min-w-0">
+                            <span class="block text-[10px] font-bold uppercase tracking-wider text-white truncate">${escapeHtml(label)}</span>
+                            <span data-theme-readout="${escapeHtml(key)}" class="block text-[8px] font-mono text-nexus-muted truncate">${escapeHtml(nexusThemeState[key] || '')}</span>
+                        </span>
+                        <input type="color" value="${escapeHtml(nexusThemeState[key] || NEXUS_DEFAULT_THEME[key] || '#09090b')}" oninput='queueNexusThemeColor(${jsString(key)}, this.value)' onchange='commitNexusThemeColor(${jsString(key)}, this.value)' class="h-8 w-10 bg-transparent border border-nexus-border rounded-sm cursor-pointer" title="${escapeHtml(label)}">
+                    </label>
+                `).join('');
+            }
+            const panelGrid = document.getElementById('panelThemeColorGrid');
+            if (panelGrid) {
+                const panels = [...document.querySelectorAll('[data-panel-key]')].map(panel => ({
+                    key: panel.dataset.panelKey,
+                    title: panel.dataset.panelTitle || panel.dataset.panelKey
+                })).filter((panel, index, all) => panel.key && all.findIndex(item => item.key === panel.key) === index);
+                panelGrid.innerHTML = panels.map(panel => `
+                    <label class="theme-color-cell rounded-sm p-2 flex items-center justify-between gap-2">
+                        <span class="min-w-0">
+                            <span class="block text-[10px] font-bold uppercase tracking-wider text-white truncate">${escapeHtml(panel.title)}</span>
+                            <span data-panel-theme-readout="${escapeHtml(panel.key)}" class="block text-[8px] font-mono text-nexus-muted truncate">${escapeHtml(nexusThemeState.panelColors?.[panel.key] || panel.key)}</span>
+                        </span>
+                        <input type="color" value="${escapeHtml(nexusThemeState.panelColors?.[panel.key] || nexusThemeState.panel || '#18181b')}" oninput='queuePanelThemeColor(${jsString(panel.key)}, this.value)' onchange='commitPanelThemeColor(${jsString(panel.key)}, this.value)' class="h-8 w-10 bg-transparent border border-nexus-border rounded-sm cursor-pointer" title="${escapeHtml(panel.title)}">
+                    </label>
+                `).join('');
+            }
+        }
+
+        function openThemeCustomizer() {
+            closeTemplateTools();
+            switchActivity('txt2img', getActivityButton('txt2img'));
+            switchView('viewer');
+            document.getElementById('themeCustomizerPanel')?.classList.remove('hidden');
+            renderThemeCustomizer();
+        }
+
+        function closeThemeCustomizer() {
+            document.getElementById('themeCustomizerPanel')?.classList.add('hidden');
         }
 
         function openTemplateTools() {
             const panel = document.getElementById('templateToolsPanel');
+            if (!panel) return;
             panel.classList.remove('hidden');
-            panel.classList.add('flex');
-            document.getElementById('templateToolsStatus').innerText = savedTemplateState?.savedAt
-                ? `Saved ${new Date(savedTemplateState.savedAt).toLocaleString()}`
-                : 'Default Nexus BTA';
+        }
+
+        function toggleTemplateTools() {
+            const panel = document.getElementById('templateToolsPanel');
+            if (!panel || panel.classList.contains('hidden')) openTemplateTools();
+            else closeTemplateTools();
         }
 
         async function openTrainLoraTab(btn = null) {
@@ -18677,55 +20157,90 @@
 
         function closeTemplateTools() {
             const panel = document.getElementById('templateToolsPanel');
+            if (!panel) return;
             panel.classList.add('hidden');
-            panel.classList.remove('flex');
         }
 
         function saveCurrentTemplate() {
             savedTemplateState = captureTemplateState();
             localStorage.setItem('nexus_saved_template_state', JSON.stringify(savedTemplateState));
-            document.getElementById('templateToolsStatus').innerText = `Saved ${new Date(savedTemplateState.savedAt).toLocaleString()}`;
-            showToast("Template Saved", "Settings, pins, order and workflow layout saved.");
+            localStorage.setItem('nexus_theme_state', JSON.stringify(normalizedThemeState(nexusThemeState)));
+            const blob = new Blob([JSON.stringify(savedTemplateState, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            anchor.href = url;
+            anchor.download = `NexusBTA_template_${stamp}.json`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(url);
+            const status = document.getElementById('templateToolsStatus');
+            if (status) status.innerText = `Saved ${new Date(savedTemplateState.savedAt).toLocaleString()}`;
+            showToast("Template Exported", "Template JSON saved with settings, pins, order, workflow layout and theme.");
         }
 
         function loadSavedTemplate() {
-            savedTemplateState = nexusSafeStorage.json('nexus_saved_template_state', null);
-            if (!savedTemplateState) {
-                showToast("No Template", "Save a template before loading.");
-                return;
+            document.getElementById('templateFileInput')?.click();
+        }
+
+        async function handleTemplateFileInput(event) {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file) return;
+            try {
+                const state = JSON.parse(await file.text());
+                savedTemplateState = state;
+                localStorage.setItem('nexus_saved_template_state', JSON.stringify(savedTemplateState));
+                applyTemplateState(savedTemplateState);
+                showToast("Template Loaded", `${file.name} restored.`);
+            } catch (error) {
+                showToast("Template Load Failed", String(error?.message || error).slice(0, 160));
             }
-            applyTemplateState(savedTemplateState);
-            showToast("Template Loaded", "Saved layout and controls restored.");
         }
 
         function applyDefaultTemplate() {
+            const ok = window.confirm('Restore the default NexusBTA template, theme colors, pinned nodes and panel order?');
+            if (!ok) return;
             activePreset = 'Anima';
             pinnedWorkflowNodes = [];
             workflowTabs = [];
+            panelCollapsedState = {};
+            nexusThemeState = normalizedThemeState(NEXUS_DEFAULT_THEME);
             localStorage.removeItem('nexus_panel_order');
             localStorage.removeItem('nexus_pinned_workflow_nodes');
+            localStorage.removeItem('nexus_panel_collapsed_state');
+            localStorage.removeItem('nexus_theme_state');
+            applyNexusTheme(nexusThemeState, { persist: false });
             applyModelProfile('Anima');
             applyPanelOrder({
                 leftParamsStack: ['prompt', 'leftPins', 'concepts', 'vae', 'distilledLora', 'dimensions', 'imageGuidance', 'generation'],
                 generationSubStack: ['videoMotion', 'refiner', 'advanced']
             });
+            initSortablePanels();
             renderPinnedNodes();
             renderWorkflowTabs();
+            closeThemeCustomizer();
             showToast("Default Template", "Nexus BTA default template restored.");
         }
 
         function setAttentionBackendSelection(backend = 'auto', options = {}) {
             const normalized = String(backend || 'auto').toLowerCase();
             const xformersAvailable = !!options.xformersAvailable;
+            const sageAvailable = !!options.sageAvailable;
+            const flashAvailable = !!options.flashAvailable;
+            const enableSage = options.enableSage !== false && sageAvailable;
+            const enableFlash = !!options.enableFlash && flashAvailable;
+            const disableXformers = !!options.disableXformers || !xformersAvailable;
             document.querySelectorAll('.attention-toggle').forEach(input => {
                 const value = input.value;
                 input.checked =
-                    (normalized === 'sage' && value === 'SageAttention') ||
-                    (normalized === 'flash' && value === 'FlashAttention') ||
-                    (normalized === 'pytorch' && value === 'PyTorch SDPA') ||
-                    (normalized === 'auto' && value === 'xFormers' && xformersAvailable);
+                    (value === 'SageAttention' && (normalized === 'sage' || enableSage)) ||
+                    (value === 'FlashAttention' && (normalized === 'flash' || enableFlash)) ||
+                    (value === 'xFormers' && !disableXformers) ||
+                    (value === 'PyTorch SDPA');
             });
-            if (normalized === 'auto' && !xformersAvailable) {
+            if (![...document.querySelectorAll('.attention-toggle')].some(input => input.checked)) {
                 const sdpa = [...document.querySelectorAll('.attention-toggle')].find(input => input.value === 'PyTorch SDPA');
                 if (sdpa) sdpa.checked = true;
             }
@@ -18739,6 +20254,48 @@
             if (recommended === 'flash') return 'FlashAttention';
             if (recommended === 'pytorch') return 'PyTorch SDPA';
             return 'Auto';
+        }
+
+        function shouldPreferXformersForPreset(presetName = activePreset) {
+            return NEXUS_XFORMERS_PRESET_PREFERENCES.has(presetName);
+        }
+
+        function captureRuntimeSettings() {
+            const runtime = {
+                vram_policy: document.getElementById('vramPolicySelect')?.value || 'VRAM Shared',
+                gpu_memory_gb: syncGpuMemoryLimit(document.getElementById('gpuMemoryInput')?.value || null),
+                attention_backend: selectedAttentionBackend(),
+                disable_xformers: !document.getElementById('xformersToggle')?.checked,
+                enable_sage_attention: !!document.getElementById('sageAttentionToggle')?.checked,
+                enable_flash_attention: !!document.getElementById('flashAttentionToggle')?.checked,
+                acceleration_profile_version: 2,
+                precision: document.getElementById('precisionSelect')?.value || 'Auto'
+            };
+            if (shouldPreferXformersForPreset(activePreset) && document.getElementById('xformersToggle')?.checked) {
+                runtime.attention_backend = 'auto';
+                runtime.disable_xformers = false;
+                runtime.enable_sage_attention = false;
+            }
+            return runtime;
+        }
+
+        function renderRuntimeSettings(settings = platformSettings || {}) {
+            const runtime = settings.runtime || {};
+            const modules = runtimeCapabilities?.attention_modules || {};
+            setAttentionBackendSelection(runtime.attention_backend || 'auto', {
+                xformersAvailable: modules.xformers?.available !== false,
+                sageAvailable: modules.sageattention?.available !== false,
+                flashAvailable: !!modules.flash_attn?.available,
+                disableXformers: !!runtime.disable_xformers,
+                enableSage: runtime.enable_sage_attention !== false,
+                enableFlash: !!runtime.enable_flash_attention
+            });
+            if (runtime.vram_policy) {
+                const label = { shared: 'VRAM Shared', gpu_only: 'GPU Only' }[runtime.vram_policy] || runtime.vram_policy;
+                setSelectValue('vramPolicySelect', label);
+            }
+            if (runtime.gpu_memory_gb) syncGpuMemoryLimit(runtime.gpu_memory_gb);
+            syncRuntimeBadges();
         }
 
         function syncGpuMemoryLimit(value, fromInput = false) {
@@ -18796,7 +20353,14 @@
                         modules.flash_attn?.available ? 'Flash OK' : ''
                     ].filter(Boolean).join(' | ');
                     document.getElementById('deviceBadge').innerText = vendor;
-                    setAttentionBackendSelection(recommended.attention_backend || 'auto', { xformersAvailable: !!modules.xformers?.available });
+                    setAttentionBackendSelection(recommended.attention_backend || 'auto', {
+                        xformersAvailable: !!modules.xformers?.available,
+                        sageAvailable: !!modules.sageattention?.available,
+                        flashAvailable: !!modules.flash_attn?.available,
+                        disableXformers: !!recommended.disable_xformers,
+                        enableSage: recommended.enable_sage_attention !== false,
+                        enableFlash: !!recommended.enable_flash_attention
+                    });
                     const vramSelect = document.getElementById('vramPolicySelect');
                     if (vramSelect && recommended.vram_policy) {
                         const label = {
@@ -18836,6 +20400,8 @@
             if (xformers) {
                 xformers.checked = vendor === 'NVIDIA' && !lower.includes('rtx 50');
             }
+            const sage = document.getElementById('sageAttentionToggle');
+            if (sage) sage.checked = vendor === 'NVIDIA';
             syncGpuMemoryLimit(document.getElementById('gpuMemoryInput')?.value || 10);
             syncRuntimeBadges();
             showToast("Device Detected", `${vendor} runtime profile selected.`);
@@ -18858,6 +20424,7 @@
             const enabled = new Set([...document.querySelectorAll('.attention-toggle:checked')].map(input => input.value));
             if (enabled.has('SageAttention')) return 'sage';
             if (enabled.has('FlashAttention')) return 'flash';
+            if (enabled.has('xFormers')) return 'auto';
             if (enabled.has('PyTorch SDPA')) return 'pytorch';
             return 'auto';
         }
@@ -18875,10 +20442,14 @@
             if (!label) return;
             const comfy = snapshot.comfy_process || {};
             const backend = snapshot.backend_process || {};
+            const gpu = snapshot.nvidia_smi || {};
             const state = snapshot.comfy_running ? 'Comfy ON' : 'Comfy OFF';
-            const comfyMem = comfy.memory_bytes ? `GPU host ${formatBytes(comfy.memory_bytes)}` : 'no Comfy memory';
+            const vram = gpu.available && gpu.total_mb
+                ? `VRAM ${gpu.used_mb || 0}/${gpu.total_mb} MB free ${gpu.free_mb || 0} MB`
+                : '';
+            const comfyMem = comfy.memory_bytes ? `Comfy RAM ${formatBytes(comfy.memory_bytes)}` : 'no Comfy RAM';
             const backendMem = backend.memory_bytes ? `Nexus ${formatBytes(backend.memory_bytes)}` : '';
-            label.innerText = [state, comfyMem, backendMem].filter(Boolean).join(' | ');
+            label.innerText = [state, vram, comfyMem, backendMem].filter(Boolean).join(' | ');
         }
 
         async function refreshRuntimeMemory(options = {}) {
@@ -18977,7 +20548,7 @@
                 const open = !!workflowFolderOpenState[group];
                 return `
                     <div class="col-span-2 pt-1">
-                        <button type="button" onclick="toggleWorkflowFolderGroup(${jsString(group)})" class="w-full flex items-center justify-between gap-2 border-b border-nexus-border pb-1 mb-2 text-left">
+                        <button type="button" data-workflow-folder-group="${escapeHtml(group)}" class="w-full flex items-center justify-between gap-2 border-b border-nexus-border pb-1 mb-2 text-left">
                             <span class="flex items-center gap-2 min-w-0">
                             <i class="fa-solid ${group === 'Default' ? 'fa-house' : group === 'Custom' ? 'fa-folder-plus' : 'fa-folder'} text-nexus-red text-[10px]"></i>
                                 <span class="text-[10px] font-bold uppercase tracking-wider text-white truncate">${escapeHtml(group)}</span>
@@ -18987,7 +20558,7 @@
                         </button>
                     </div>
                     ${open ? groupItems.map(workflow => `
-                        <button type="button" onclick="openWorkflowFromLibrary(${jsString(workflow.id)})" class="text-left border border-nexus-border bg-nexus-panel hover:border-nexus-red p-2 rounded-sm min-w-0">
+                        <button type="button" data-workflow-open-id="${escapeHtml(workflow.id)}" class="text-left border border-nexus-border bg-nexus-panel hover:border-nexus-red p-2 rounded-sm min-w-0">
                             <span class="block text-[11px] text-white font-bold truncate">${escapeHtml(workflow.name || workflow.id)}</span>
                             <span class="block text-[8px] text-nexus-muted font-mono truncate">${escapeHtml(workflow.format)} · ${Number(workflow.node_count || 0)} nodes</span>
                         </button>
@@ -20507,7 +22078,7 @@
                     })).filter(item => item.image),
                     voxel_resolution: parseInt(document.getElementById('model3DVoxelSelect')?.value || '1024', 10),
                     mesh_faces_k: parseInt(document.getElementById('model3DFacesInput')?.value || '250', 10),
-                    guidance: parseFloat(document.getElementById('model3DGuidanceInput')?.value || '8'),
+                    guidance: parseFloat(document.getElementById('model3DGuidanceInput')?.value || '7.5'),
                     think_steps: parseInt(document.getElementById('model3DThinkStepsInput')?.value || '14', 10),
                     texture_sharp: parseFloat(document.getElementById('model3DTextureSharpInput')?.value || '3'),
                     texture_details: parseFloat(document.getElementById('model3DTextureDetailsInput')?.value || '1'),
@@ -20515,15 +22086,15 @@
                     decimation_target: parseInt(document.getElementById('model3DFacesInput')?.value || '250000', 10),
                     sparse_guidance: parseFloat(document.getElementById('model3DSparseGuidance')?.value || '7.5'),
                     sparse_rescale: parseFloat(document.getElementById('model3DSparseRescale')?.value || '0.7'),
-                    sparse_steps: parseInt(document.getElementById('model3DSparseSteps')?.value || '12', 10),
+                    sparse_steps: parseInt(document.getElementById('model3DSparseSteps')?.value || '14', 10),
                     sparse_rescale_t: parseInt(document.getElementById('model3DSparseRescaleT')?.value || '5', 10),
                     shape_guidance: parseFloat(document.getElementById('model3DShapeGuidance')?.value || '7.5'),
                     shape_rescale: parseFloat(document.getElementById('model3DShapeRescale')?.value || '0.5'),
-                    shape_steps: parseInt(document.getElementById('model3DShapeSteps')?.value || '12', 10),
+                    shape_steps: parseInt(document.getElementById('model3DShapeSteps')?.value || '14', 10),
                     shape_rescale_t: parseInt(document.getElementById('model3DShapeRescaleT')?.value || '3', 10),
                     material_guidance: parseFloat(document.getElementById('model3DMaterialGuidance')?.value || '1'),
                     material_rescale: parseFloat(document.getElementById('model3DMaterialRescale')?.value || '0'),
-                    material_steps: parseInt(document.getElementById('model3DMaterialSteps')?.value || '12', 10),
+                    material_steps: parseInt(document.getElementById('model3DMaterialSteps')?.value || '14', 10),
                     material_rescale_t: parseInt(document.getElementById('model3DMaterialRescaleT')?.value || '3', 10),
                     apply_texture: !!document.getElementById('model3DApplyTextureToggle')?.checked,
                     texture_model: document.getElementById('model3DTextureModelSelect')?.value || 'sd15',
@@ -20543,6 +22114,8 @@
                     texture_view_mask_image: model3DTextureActiveMaskSpace() === 'viewpoint' ? exportModel3DTextureViewMaskDataUrl() : null,
                     texture_mask_space: model3DTextureActiveMaskSpace(),
                     texture_selected_reference_images: selectedModel3DTextureReferences(),
+                    texture_cameras: selectedModel3DViewportCameras(),
+                    texture_active_camera: model3DViewportCameraState.activeId,
                     texture_active_tool: model3DTextureCanvasState.tool,
                     texture_active_layer: document.getElementById('model3DTextureActiveLayerLabel')?.innerText || 'Projected',
                     texture_layers: model3DTextureLayerState.layers.map(layer => ({
@@ -20559,13 +22132,7 @@
                     texture_size: parseInt(document.getElementById('model3DTextureSizeSelect')?.value || '1024', 10),
                     output_dir: 'output/3D/DATE_HOUR_MINUTE'
                 },
-                runtime: {
-                    vram_policy: document.getElementById('vramPolicySelect')?.value || 'VRAM Shared',
-                    gpu_memory_gb: syncGpuMemoryLimit(document.getElementById('gpuMemoryInput')?.value || null),
-                    attention_backend: selectedAttentionBackend(),
-                    disable_xformers: !document.getElementById('xformersToggle')?.checked,
-                    precision: document.getElementById('precisionSelect')?.value || 'Auto'
-                }
+                runtime: captureRuntimeSettings()
             };
             if (ltxTransitionRoute) {
                 payload.cfg = Number(payload.cfg || 1);
@@ -20607,8 +22174,6 @@
                 payload.img2img.batch_count = 1;
                 payload.distilled_loras = payload.distilled_loras.filter(item => /qwen.*edit.*lightning/i.test(String(item.name || '')));
                 payload.video.qwen_auto_edit_lora = payload.distilled_loras.length > 0;
-                payload.runtime.attention_backend = 'PyTorch SDPA';
-                payload.runtime.disable_xformers = true;
             }
             if (activePreset === 'LTX' && payload.video.omnicine_enabled && isOmnicineLoraName(payload.video.omnicine_lora)) {
                 const existingOmni = payload.distilled_loras.some(item => ltxDirectorNormalizeLoraName(item.name).toLowerCase() === ltxDirectorNormalizeLoraName(payload.video.omnicine_lora).toLowerCase());
@@ -20621,7 +22186,7 @@
             if (activePreset === 'Model3D') {
                 payload.activity = 'img2img';
                 payload.workspace = activeWorkspace === 'canvas' ? 'texture_paint' : (activeWorkspace === 'workflow' ? 'uv_map' : 'viewer');
-                payload.workflow_id = 'model3d-trellis2-meshwithtexturing-multiview';
+                payload.workflow_id = 'model3d-trellis2-meshwithvoxel-texturing-multiview';
                 payload.workflow_override = null;
                 if (document.getElementById('model3DRandomSeedToggle')?.checked) payload.seed = -1;
             } else if (generatingDirectorWorkflow) {
@@ -20995,6 +22560,10 @@
             }
             const payload = collectGenerationPayload();
             try {
+                if (payload.preset === 'Model3D' && !await ensureModel3DGenerationPreflight(payload)) {
+                    showToast("Queue Cancelled", "Model 3D requirements are not ready.");
+                    return;
+                }
                 const job = await startGenerationJob(payload);
                 showToast("Queued", `Job ${job.job_id} added to generation queue.`);
                 if (!generationUiActive) {
@@ -21015,6 +22584,7 @@
                         });
                 }
             } catch (error) {
+                if (payload.preset === 'Model3D' && await handleModel3DGenerationError(error)) return;
                 showToast("Queue Failed", error.message.slice(0, 180));
             }
         }
@@ -21072,6 +22642,10 @@
                     return;
                 }
                 try {
+                    if (payload.preset === 'Model3D' && !await ensureModel3DGenerationPreflight(payload)) {
+                        setGenerationUiActive(false);
+                        return;
+                    }
                     const job = await startGenerationJob(payload);
                     if (generationCancelRequested) {
                         await requestGenerationCancel(job.job_id);
@@ -21082,6 +22656,7 @@
                     showToast("Generation Complete", response.message || "Output generated by Nexus backend.");
                 } catch (error) {
                     if (!/cancelled/i.test(error.message || '')) {
+                        if (payload.preset === 'Model3D' && await handleModel3DGenerationError(error)) return;
                         showToast("Generation Failed", error.message.slice(0, 180));
                     }
                 } finally {
@@ -21685,6 +23260,76 @@
             document.getElementById('modelSelect').value = event.target.value;
             applyModelFromSelect();
         });
+        document.addEventListener('click', event => {
+            const actionButton = event.target.closest('[data-pin-action]');
+            if (!actionButton) return;
+            const card = actionButton.closest('.pinned-node-card[data-pin-node-id]');
+            if (!card) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (card.dataset.pinDragJustEnded === '1') return;
+            const nodeId = card.dataset.pinNodeId;
+            const action = actionButton.dataset.pinAction;
+            if (action === 'collapse') togglePinnedNodeCollapsed(nodeId);
+            if (action === 'bypass') toggleWorkflowNodeBypass(nodeId);
+            if (action === 'pin-left') pinWorkflowNodeToSide(event, nodeId, 'left');
+            if (action === 'pin-right') pinWorkflowNodeToSide(event, nodeId, 'right');
+            if (action === 'move-left') movePinnedNode(nodeId, 'left');
+            if (action === 'move-right') movePinnedNode(nodeId, 'right');
+            if (action === 'unpin') removePinnedNode(nodeId);
+        });
+        document.addEventListener('mousedown', event => {
+            const title = event.target.closest('.pinned-node-titlebar[data-pin-title]');
+            if (!title || event.button !== 0 || event.target.closest('input, textarea, select, button, a')) return;
+            if (title.dataset.pinInlineDrag === 'true') return;
+            const card = title.closest('.pinned-node-card[data-pin-node-id]');
+            const container = card?.parentElement;
+            if (!card || !container || !['leftPinnedNodesList', 'nodesPanel'].includes(container.id)) return;
+            const startX = event.clientX;
+            const startY = event.clientY;
+            let dragging = false;
+            const onMove = moveEvent => {
+                const moved = Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY);
+                if (!dragging && moved < 5) return;
+                if (!dragging) {
+                    dragging = true;
+                    sortableDrag = { type: 'pin', element: card, nodeId: card.dataset.pinNodeId };
+                    card.classList.add('dragging');
+                    card.dataset.pinDragJustEnded = '1';
+                }
+                moveEvent.preventDefault();
+                const nextContainer = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest('#leftPinnedNodesList, #nodesPanel') || container;
+                const afterElement = getDragAfterElement(nextContainer, moveEvent.clientY, '.pinned-node-card');
+                showPinDropIndicator(nextContainer, afterElement);
+                if (afterElement) nextContainer.insertBefore(card, afterElement);
+                else nextContainer.appendChild(card);
+            };
+            const onUp = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                if (dragging) {
+                    card.classList.remove('dragging');
+                    clearPinDropIndicators(document);
+                    sortableDrag = null;
+                    savePinnedOrderFromDom();
+                    setTimeout(() => { delete card.dataset.pinDragJustEnded; }, 180);
+                    return;
+                }
+                if (event.target.closest('[data-pin-action="collapse"]')) {
+                    card.dataset.pinDragJustEnded = '1';
+                    togglePinnedNodeCollapsed(card.dataset.pinNodeId);
+                    setTimeout(() => { delete card.dataset.pinDragJustEnded; }, 180);
+                }
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp, { once: true });
+        }, true);
+        document.addEventListener('change', event => {
+            const input = event.target.closest('[data-pin-node-color]');
+            if (!input) return;
+            setWorkflowNodeColor(input.dataset.pinNodeColor, input.value);
+            commitWorkflowNodeColor(input.dataset.pinNodeColor);
+        });
         document.getElementById('workflowContextMenu')?.addEventListener('click', event => {
             const categoryId = event.target.closest('[data-workflow-menu-category]')?.dataset.workflowMenuCategory;
             if (categoryId) {
@@ -21718,6 +23363,22 @@
             }
             const tabId = event.target.closest('[data-workflow-tab-id]')?.dataset.workflowTabId;
             if (tabId) activateWorkflowTab(tabId);
+        });
+        document.addEventListener('click', event => {
+            const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+            const groupButton = target?.closest?.('[data-workflow-folder-group]');
+            if (groupButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                toggleWorkflowFolderGroup(groupButton.dataset.workflowFolderGroup || 'Default');
+                return;
+            }
+            const workflowButton = target?.closest?.('[data-workflow-open-id]');
+            if (workflowButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                openWorkflowFromLibrary(workflowButton.dataset.workflowOpenId || '');
+            }
         });
         document.getElementById('referenceImagePanel')?.addEventListener('click', event => {
             const target = event.target instanceof Element ? event.target : event.target?.parentElement;
@@ -21969,14 +23630,11 @@
         });
         document.querySelectorAll('.attention-toggle').forEach(input => {
             input.addEventListener('change', event => {
-                if (event.currentTarget.checked) {
-                    document.querySelectorAll('.attention-toggle').forEach(other => {
-                        if (other !== event.currentTarget) other.checked = false;
-                    });
-                }
                 if (![...document.querySelectorAll('.attention-toggle')].some(item => item.checked)) {
-                    const sdpa = [...document.querySelectorAll('.attention-toggle')].find(item => item.value === 'PyTorch SDPA');
-                    if (sdpa) sdpa.checked = true;
+                    const xformers = document.getElementById('xformersToggle');
+                    const sdpa = document.getElementById('pytorchAttentionToggle');
+                    if (xformers) xformers.checked = true;
+                    else if (sdpa) sdpa.checked = true;
                 }
                 syncRuntimeBadges();
             });
@@ -22025,6 +23683,7 @@
         initPanZoomSurface('canvas');
         initPanZoomSurface('workflow');
         initWorkflowNodeDragging();
+        applyNexusTheme(nexusThemeState, { persist: false });
         applyViewportTransform('canvas');
         applyViewportTransform('workflow');
         updateWorkflowWires();

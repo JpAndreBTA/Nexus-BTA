@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
 import signal
@@ -14,6 +15,17 @@ from urllib.parse import quote, urlparse
 import httpx
 
 from .config import NexusSettings, runtime_python
+
+
+def _module_available(module_name: str) -> bool:
+    try:
+        if module_name == "xformers":
+            import xformers.ops  # noqa: F401
+
+            return importlib.util.find_spec("xformers._C") is not None
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ValueError):
+        return False
 
 
 class ComfyExecutionError(RuntimeError):
@@ -146,6 +158,11 @@ class ComfyClient:
         env = os.environ.copy()
         env["PYTHONUTF8"] = "1"
         env["NEXUS_BTA"] = "1"
+        env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True,garbage_collection_threshold:0.65")
+        env.setdefault("SPARSE_CONV_BACKEND", "flex_gemm")
+        flex_chunk_mb, flex_offload_mb = self._trellis_flex_gemm_profile()
+        env.setdefault("NEXUS_TRELLIS_FLEX_GEMM_CHUNK_MB", str(flex_chunk_mb))
+        env.setdefault("NEXUS_TRELLIS_FLEX_GEMM_OFFLOAD_OUTPUT_MB", str(flex_offload_mb))
 
         startupinfo = None
         if os.name == "nt":
@@ -275,12 +292,15 @@ class ComfyClient:
         elif precision == "fp8":
             flags.append("--fp8_e4m3fn-unet")
 
-        if runtime.disable_xformers:
+        if runtime.disable_xformers or not _module_available("xformers"):
             flags.append("--disable-xformers")
         attention = runtime.attention_backend.lower().replace(" ", "").replace("_", "").replace("-", "")
-        if attention in {"sage", "sageattention"} or (attention == "auto" and runtime.enable_sage_attention):
+        if (
+            (attention in {"sage", "sageattention"} or (attention == "auto" and runtime.enable_sage_attention))
+            and _module_available("sageattention")
+        ):
             flags.append("--use-sage-attention")
-        elif attention in {"flash", "flashattention"} or runtime.enable_flash_attention:
+        elif (attention in {"flash", "flashattention"} or runtime.enable_flash_attention) and _module_available("flash_attn"):
             flags.append("--use-flash-attention")
         elif attention in {"pytorch", "pytorchsdpa", "sdpa"}:
             flags.append("--use-pytorch-cross-attention")
@@ -300,6 +320,17 @@ class ComfyClient:
         if reserve >= total:
             reserve = max(0.25, total - 1.0)
         return round(reserve, 2)
+
+    def _trellis_flex_gemm_profile(self) -> tuple[int, int]:
+        try:
+            requested = float(self.settings.runtime.gpu_memory_gb or 0)
+        except (TypeError, ValueError):
+            requested = 0
+        if requested and requested <= 8:
+            return (128, 768)
+        if requested and requested <= 12:
+            return (256, 1536)
+        return (384, 2048)
 
     @staticmethod
     def _cuda_total_vram_gb() -> float | None:
@@ -383,6 +414,9 @@ class ComfyClient:
             progress_callback({"status": "queued", "progress": 10, "message": "Queued in ComfyUI", "prompt_id": prompt_id})
         try:
             await self.watch_prompt_progress(prompt_id, client_id, progress_callback, timeout_seconds=timeout_seconds)
+        except (TimeoutError, asyncio.TimeoutError):
+            await self.interrupt(prompt_id)
+            raise TimeoutError(f"ComfyUI job timed out after {timeout_seconds}s: {prompt_id}")
         except ComfyExecutionError:
             raise
         except Exception as exc:
@@ -397,12 +431,16 @@ class ComfyClient:
                         "prompt_id": prompt_id,
                     }
                 )
-        outputs = await self.wait_for_outputs(
-            prompt_id,
-            timeout_seconds=timeout_seconds,
-            progress_callback=progress_callback,
-            started_at=started_at,
-        )
+        try:
+            outputs = await self.wait_for_outputs(
+                prompt_id,
+                timeout_seconds=timeout_seconds,
+                progress_callback=progress_callback,
+                started_at=started_at,
+            )
+        except (TimeoutError, asyncio.TimeoutError):
+            await self.interrupt(prompt_id)
+            raise TimeoutError(f"ComfyUI output wait timed out after {timeout_seconds}s: {prompt_id}")
         if progress_callback:
             progress_callback(
                 {
@@ -432,9 +470,12 @@ class ComfyClient:
         ws_url = f"{scheme}://{parsed.netloc}/ws?clientId={quote(client_id)}"
         deadline = time.time() + timeout_seconds
         sampling_started_at: float | None = None
-        async with websockets.connect(ws_url, max_size=None) as websocket:
+        async with websockets.connect(ws_url, max_size=None, ping_interval=None, ping_timeout=None) as websocket:
             while time.time() < deadline:
-                message = await asyncio.wait_for(websocket.recv(), timeout=min(5, max(1, deadline - time.time())))
+                try:
+                    message = await asyncio.wait_for(websocket.recv(), timeout=min(5, max(1, deadline - time.time())))
+                except asyncio.TimeoutError:
+                    continue
                 if isinstance(message, bytes):
                     continue
                 event = json.loads(message)
@@ -485,6 +526,7 @@ class ComfyClient:
                     if progress_callback:
                         progress_callback({"status": "failed", "progress": 100, "message": message_text, "prompt_id": prompt_id})
                     raise ComfyExecutionError(message_text)
+        raise TimeoutError(f"ComfyUI progress timed out after {timeout_seconds}s: {prompt_id}")
 
     def _output_record_from_path(self, path: Path) -> dict[str, Any] | None:
         try:

@@ -335,7 +335,89 @@ def _write_input_data_image(value: str, prefix: str) -> str:
     filename = f"{prefix}_{uuid.uuid4().hex[:10]}.{ext}"
     target = settings.input_dir / filename
     target.write_bytes(base64.b64decode(match.group(2)))
+    _normalize_input_image_file(target)
     return filename
+
+
+def _normalize_input_image_file(path: Path) -> None:
+    if path.suffix.lower() != ".png":
+        return
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            bands = image.getbands()
+            alpha_like = "A" in bands or image.mode == "LA" or (image.mode == "P" and "transparency" in image.info)
+            target_mode = "RGBA" if alpha_like else "RGB"
+            if not alpha_like and image.mode == target_mode:
+                return
+            converted = image.convert(target_mode)
+            if alpha_like:
+                alpha = converted.getchannel("A")
+                alpha_min, alpha_max = alpha.getextrema()
+                if alpha_min == 255 and alpha_max == 255:
+                    try:
+                        import numpy as np
+
+                        rgba = np.array(converted)
+                        rgb = rgba[:, :, :3].astype(np.int16)
+                        border = np.concatenate(
+                            [
+                                rgb[:3, :, :].reshape(-1, 3),
+                                rgb[-3:, :, :].reshape(-1, 3),
+                                rgb[:, :3, :].reshape(-1, 3),
+                                rgb[:, -3:, :].reshape(-1, 3),
+                            ],
+                            axis=0,
+                        )
+                        background = np.median(border, axis=0).astype(np.int16)
+                        candidate = np.max(np.abs(rgb - background), axis=2) <= 36
+                        visited = np.zeros(candidate.shape, dtype=bool)
+                        stack: list[tuple[int, int]] = []
+                        height, width = candidate.shape
+                        for x in range(width):
+                            if candidate[0, x]:
+                                stack.append((0, x))
+                            if candidate[height - 1, x]:
+                                stack.append((height - 1, x))
+                        for y in range(height):
+                            if candidate[y, 0]:
+                                stack.append((y, 0))
+                            if candidate[y, width - 1]:
+                                stack.append((y, width - 1))
+                        while stack:
+                            y, x = stack.pop()
+                            if y < 0 or x < 0 or y >= height or x >= width or visited[y, x] or not candidate[y, x]:
+                                continue
+                            visited[y, x] = True
+                            stack.append((y - 1, x))
+                            stack.append((y + 1, x))
+                            stack.append((y, x - 1))
+                            stack.append((y, x + 1))
+                        if visited.any() and visited.mean() > 0.05:
+                            cleaned_alpha = Image.fromarray(np.where(visited, 0, 255).astype("uint8"), mode="L")
+                        else:
+                            cleaned_alpha = alpha
+                    except Exception:
+                        cleaned_alpha = alpha
+                else:
+                    cleaned_alpha = alpha.point(lambda value: 0 if value < 48 else 255)
+                bbox = cleaned_alpha.getbbox()
+                if bbox:
+                    pad = 8
+                    left = max(0, bbox[0] - pad)
+                    top = max(0, bbox[1] - pad)
+                    right = min(converted.width, bbox[2] + pad)
+                    bottom = min(converted.height, bbox[3] + pad)
+                    crop_box = (left, top, right, bottom)
+                    converted = converted.crop(crop_box)
+                    cleaned_alpha = cleaned_alpha.crop(crop_box)
+                    converted.putalpha(cleaned_alpha)
+                else:
+                    converted.putalpha(cleaned_alpha)
+            converted.save(path, format="PNG")
+    except Exception:
+        return
 
 
 def _write_input_data_audio(value: str, prefix: str) -> str:
@@ -735,6 +817,7 @@ def _prepare_reference_value(value: str, prefix: str = "nexus_reference") -> str
     filename = f"{prefix}_{uuid.uuid4().hex[:10]}{suffix}"
     target = settings.input_dir / filename
     shutil.copy2(source, target)
+    _normalize_input_image_file(target)
     return filename
 
 
@@ -1855,6 +1938,10 @@ def _annotate_output_metadata(outputs: list[dict[str, Any]], request: GenerateRe
         if quality_report:
             output["quality"] = quality_report
             file_metadata["model3d_quality"] = quality_report
+            if quality_report.get("checked") and not quality_report.get("passed", True):
+                issues = ", ".join(str(item) for item in quality_report.get("issues") or []) or str(quality_report.get("reason") or "quality_check_failed")
+                output["warning"] = f"Model3D mesh QC flagged: {issues}"
+                print(f"NEXUS BTA WARN Model3D mesh QC flagged {path.name}: {issues}")
         try:
             path.with_suffix(path.suffix + ".nexus.json").write_text(json.dumps(file_metadata, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -3572,29 +3659,47 @@ def _apply_runtime_options(options: RuntimeOptions | None) -> bool:
     next_attention = _canonical_attention_backend(options.attention_backend)
     next_precision = _canonical_precision(options.precision)
     next_disable_xformers = bool(options.disable_xformers)
+    next_enable_sage = bool(getattr(options, "enable_sage_attention", True))
+    next_enable_flash = bool(getattr(options, "enable_flash_attention", False))
+    next_profile_version = max(2, int(getattr(options, "acceleration_profile_version", 2) or 2))
     changed = (
         _canonical_vram_policy(settings.runtime.vram_policy) != next_vram
         or _canonical_gpu_memory_gb(settings.runtime.gpu_memory_gb) != next_gpu_memory_gb
         or _canonical_attention_backend(settings.runtime.attention_backend) != next_attention
         or _canonical_precision(settings.runtime.precision) != next_precision
         or bool(settings.runtime.disable_xformers) != next_disable_xformers
+        or bool(settings.runtime.enable_sage_attention) != next_enable_sage
+        or bool(settings.runtime.enable_flash_attention) != next_enable_flash
+        or int(getattr(settings.runtime, "acceleration_profile_version", 0) or 0) != next_profile_version
     )
     settings.runtime.vram_policy = next_vram
     settings.runtime.gpu_memory_gb = next_gpu_memory_gb
     settings.runtime.attention_backend = next_attention
     settings.runtime.precision = next_precision
     settings.runtime.disable_xformers = next_disable_xformers
-    settings.runtime.enable_sage_attention = next_attention == "sage"
-    settings.runtime.enable_flash_attention = next_attention == "flash"
+    settings.runtime.enable_sage_attention = next_enable_sage or next_attention == "sage"
+    settings.runtime.enable_flash_attention = next_enable_flash or next_attention == "flash"
+    settings.runtime.acceleration_profile_version = next_profile_version
     if changed:
         save_settings(settings)
     return changed
 
 
 def _prepare_runtime_for_generation(request: GenerateRequest) -> None:
-    if request.preset.lower() == "qwen" and request.activity == "img2img":
-        request.runtime.attention_backend = "pytorch"
-        request.runtime.disable_xformers = True
+    if request.runtime.attention_backend in {"", None}:
+        request.runtime.attention_backend = "auto"
+
+
+def _generation_timeout_seconds(request: GenerateRequest) -> int:
+    if request.preset.lower() != "model3d":
+        return 3600
+    options = request.model3d if isinstance(request.model3d, dict) else {}
+    value = options.get("timeout_seconds") or options.get("max_runtime_seconds")
+    try:
+        parsed = int(float(value)) if value not in (None, "") else 600
+    except (TypeError, ValueError):
+        parsed = 600
+    return max(180, min(parsed, 1800))
 
 
 async def _optional_comfy_object_info() -> dict[str, Any]:
@@ -3718,6 +3823,54 @@ def _process_snapshot(pid: int | None) -> dict[str, Any]:
         return {"pid": pid}
 
 
+def _nvidia_smi_memory_snapshot() -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu,temperature.gpu,pstate",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=6,
+            check=False,
+        )
+    except Exception as exc:
+        return {"available": False, "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+
+    if completed.returncode != 0:
+        return {"available": False, "error": (completed.stderr or completed.stdout or "").strip()[:240]}
+
+    lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    if not lines:
+        return {"available": False, "error": "nvidia-smi returned no GPU rows."}
+
+    parts = [part.strip() for part in lines[0].split(",")]
+    if len(parts) < 7:
+        return {"available": False, "error": f"Unexpected nvidia-smi output: {lines[0][:160]}"}
+
+    def as_int(value: str) -> int | None:
+        try:
+            return int(float(value))
+        except Exception:
+            return None
+
+    return {
+        "available": True,
+        "name": parts[0],
+        "total_mb": as_int(parts[1]),
+        "used_mb": as_int(parts[2]),
+        "free_mb": as_int(parts[3]),
+        "utilization_gpu_percent": as_int(parts[4]),
+        "temperature_c": as_int(parts[5]),
+        "pstate": parts[6],
+        "note": "Per-process VRAM may be unavailable on Windows WDDM; this is the GPU total snapshot.",
+    }
+
+
 def _comfy_port_owner_pid() -> int | None:
     try:
         import psutil
@@ -3736,6 +3889,7 @@ async def _runtime_memory_snapshot() -> dict[str, Any]:
     return {
         "comfy_running": bool(stats),
         "comfy_url": comfy.base_url,
+        "nvidia_smi": _nvidia_smi_memory_snapshot(),
         "comfy_process": _process_snapshot(comfy_pid),
         "backend_process": _process_snapshot(os.getpid()),
         "comfy_system_stats": stats,
@@ -3754,6 +3908,12 @@ def _runtime_attention_capabilities() -> dict[str, Any]:
         try:
             module = __import__(module_name)
             result["version"] = str(getattr(module, "__version__", "") or "")
+            if module_name == "xformers":
+                import xformers.ops  # noqa: F401
+
+                if importlib.util.find_spec("xformers._C") is None:
+                    result["available"] = False
+                    result["error"] = "xFormers CUDA/C++ extension is not available."
         except Exception as exc:
             result["available"] = False
             result["error"] = f"{type(exc).__name__}: {str(exc)[:180]}"
@@ -3788,13 +3948,13 @@ def _runtime_attention_capabilities() -> dict[str, Any]:
     }
     vram_gb = float(torch_info.get("cuda_total_vram_bytes") or 0) / (1024**3)
     recommended_attention = "auto"
-    if modules["xformers"]["available"]:
-        recommended_attention = "auto"
-    elif modules["sageattention"]["available"]:
+    if modules["sageattention"]["available"]:
         recommended_attention = "sage"
+    elif modules["xformers"]["available"]:
+        recommended_attention = "auto"
     elif modules["flash_attn"]["available"]:
         recommended_attention = "flash"
-    elif not modules["xformers"]["available"]:
+    else:
         recommended_attention = "pytorch"
 
     recommended_vram = "shared"
@@ -3808,6 +3968,9 @@ def _runtime_attention_capabilities() -> dict[str, Any]:
         "recommended": {
             "attention_backend": recommended_attention,
             "disable_xformers": not modules["xformers"]["available"],
+            "enable_sage_attention": modules["sageattention"]["available"],
+            "enable_flash_attention": modules["flash_attn"]["available"],
+            "acceleration_profile_version": 2,
             "vram_policy": recommended_vram,
             "gpu_memory_gb": recommended_gpu_memory_gb,
             "precision": "auto",
@@ -4068,6 +4231,141 @@ async def model3d_dinov3_status() -> dict[str, Any]:
         "token_file": str(HF_TOKEN_PATH),
         "token_configured": bool(_huggingface_token()),
     }
+
+
+MODEL3D_REQUIRED_NODE_CLASSES = {
+    "trellis2loadmodel",
+    "trellis2loadimagewithtransparency",
+    "trellis2preprocessimage",
+    "trellis2imagecondmultiviewgenerator",
+    "trellis2sparsemultiviewgenerator",
+    "trellis2shapemultiviewgenerator",
+    "trellis2shapecascademultiviewgenerator",
+    "trellis2texslatmultiviewgenerator",
+    "trellis2reconstructmeshwithquad",
+    "trellis2simplifymesh",
+    "trellis2fillholesnicelywithmeshlib",
+    "trellis2fillholeswithcumesh",
+    "trellis2decodelatents",
+    "trellis2unwrapandrasterizer",
+    "trellis2exportmesh",
+    "preview3d",
+}
+
+
+def _model3d_node_status(object_info: dict[str, Any]) -> dict[str, Any]:
+    if not object_info:
+        return {"checked": False, "available": [], "missing": []}
+    available = {str(key).lower() for key in (object_info or {}).keys()}
+    missing = sorted(name for name in MODEL3D_REQUIRED_NODE_CLASSES if name not in available)
+    return {
+        "checked": bool(object_info),
+        "available": sorted(MODEL3D_REQUIRED_NODE_CLASSES - set(missing)),
+        "missing": missing,
+    }
+
+
+async def _model3d_preflight_report(
+    *,
+    start_comfy: bool = False,
+    full: bool = False,
+    requested_model: str = "",
+) -> dict[str, Any]:
+    trellis2 = await model3d_trellis2_status()
+    dinov3 = await model3d_dinov3_status()
+    capabilities = _runtime_attention_capabilities()
+    comfy_running = await comfy.is_running()
+    object_info: dict[str, Any] = {}
+    workflow_analysis: dict[str, Any] = {}
+    object_info_error = ""
+
+    if full or start_comfy:
+        try:
+            if start_comfy:
+                await comfy.ensure_running()
+                comfy_running = True
+            if comfy_running:
+                object_info = await comfy.object_info()
+        except Exception as exc:
+            object_info_error = f"{type(exc).__name__}: {str(exc)[:240]}"
+
+    node_status = _model3d_node_status(object_info)
+    workflow_path = workflow_registry.find("model3d-trellis2-meshwithvoxel-texturing-multiview", "Model3D")
+    workflow_id = "model3d-trellis2-meshwithvoxel-texturing-multiview"
+    if workflow_path is None:
+        workflow_path = workflow_registry.find("model3d-trellis2-meshwithtexturing-multiview", "Model3D")
+        workflow_id = "model3d-trellis2-meshwithtexturing-multiview"
+    if workflow_path and object_info:
+        try:
+            workflow = workflow_registry.summarize(workflow_path)
+            workflow_analysis = workflow_registry.analyze_workflow(workflow, object_info=object_info).model_dump(mode="json")
+        except Exception as exc:
+            workflow_analysis = {"error": f"{type(exc).__name__}: {str(exc)[:240]}"}
+
+    blocking: list[str] = []
+    warnings: list[str] = []
+    if not trellis2.get("installed"):
+        blocking.append("TRELLIS.2-4B checkpoint is missing.")
+    if not dinov3.get("installed"):
+        blocking.append("DINOv3 ViT-L/16 model is missing.")
+    if not capabilities.get("torch", {}).get("cuda_available"):
+        blocking.append("CUDA GPU is not available for 3D generation.")
+    if node_status.get("checked") and node_status.get("missing"):
+        blocking.append("Required TRELLIS.2 custom nodes are missing: " + ", ".join(node_status["missing"][:6]) + ".")
+    if object_info_error:
+        warnings.append(f"ComfyUI object registry could not be read: {object_info_error}")
+    if not node_status.get("checked") and not full:
+        warnings.append("Custom node registry was not checked in quick mode.")
+    if not comfy_running:
+        warnings.append("ComfyUI is not running; it will start on demand.")
+
+    active_signature = list(last_generation_model_signature) if last_generation_model_signature else []
+    requested = requested_model.strip()
+    preloaded_match = bool(active_signature and requested and requested in active_signature[-1])
+    return {
+        "ok": not blocking,
+        "mode": "full" if full or start_comfy else "quick",
+        "blocking": blocking,
+        "warnings": warnings,
+        "trellis2": trellis2,
+        "dinov3": dinov3,
+        "runtime": capabilities,
+        "comfy_running": comfy_running,
+        "object_registry_checked": bool(object_info),
+        "object_registry_error": object_info_error,
+        "required_nodes": node_status,
+        "workflow": {
+            "id": workflow_id,
+            "path": str(workflow_path) if workflow_path else "",
+            "analysis": workflow_analysis,
+        },
+        "preloaded": {
+            "last_generation_model_signature": active_signature,
+            "requested_model": requested,
+            "matches_last_loaded_signature": preloaded_match,
+            "will_clear_previous_model": bool(active_signature and requested and not preloaded_match),
+        },
+    }
+
+
+@app.get("/api/model3d/preflight")
+async def model3d_preflight(
+    start_comfy: bool = Query(False),
+    full: bool = Query(False),
+    requested_model: str = Query(""),
+) -> dict[str, Any]:
+    report = await _model3d_preflight_report(
+        start_comfy=start_comfy,
+        full=full,
+        requested_model=requested_model,
+    )
+    if report.get("blocking"):
+        detail = " ".join(str(item) for item in report.get("blocking", []))
+        print(f"NEXUS BTA WARN Model 3D preflight: {detail}", flush=True)
+    if report.get("required_nodes", {}).get("missing") and (full or start_comfy):
+        missing = ", ".join(report["required_nodes"]["missing"][:8])
+        print(f"NEXUS BTA WARN Model 3D custom node check: missing {missing}", flush=True)
+    return report
 
 
 @app.get("/api/loras")
@@ -5106,6 +5404,13 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         _ensure_ltx_default_distilled_loras(request, assets)
         _ensure_wan_4step_loras(request, assets)
         _ensure_qwen_edit_lightning_lora(request, assets)
+        if request.preset.lower() == "model3d":
+            requested_model = str((request.model3d or {}).get("model") or request.model_name or "microsoft/TRELLIS.2-4B")
+            model3d_preflight = await _model3d_preflight_report(requested_model=requested_model)
+            if model3d_preflight.get("blocking"):
+                detail = " ".join(str(item) for item in model3d_preflight.get("blocking", []))
+                print(f"NEXUS BTA WARN Model 3D preflight blocked before generation: {detail}", flush=True)
+                raise ValueError(f"Model 3D is not ready: {detail}")
         if request.preset.lower() == "ltx":
             missing_ltx_assets: list[str] = []
             if not assets.get("text_encoder"):
@@ -5223,6 +5528,12 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if job_id:
             _update_generation_job(job_id, {"status": "preparing", "progress": 7, "message": "Reading Comfy object registry"})
         object_info = await comfy.object_info()
+        if request.preset.lower() == "model3d":
+            node_status = _model3d_node_status(object_info)
+            if node_status.get("missing"):
+                missing = ", ".join(node_status["missing"][:8])
+                print(f"NEXUS BTA WARN Model 3D required custom nodes missing: {missing}", flush=True)
+                raise ValueError(f"Model 3D required custom nodes are missing: {missing}. Install Model 3D workflow requirements or open update.bat.")
         director_segment_response = await _run_ltx_director_segment_render(request, assets, object_info, job_id=job_id)
         if director_segment_response:
             _cleanup_generation_temp()
@@ -5498,7 +5809,11 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 _update_generation_job(job_id, update)
 
         generation_started_at = datetime.now().timestamp()
-        prompt_id, outputs = await comfy.run_workflow(prompt, progress_callback=progress_callback)
+        prompt_id, outputs = await comfy.run_workflow(
+            prompt,
+            progress_callback=progress_callback,
+            timeout_seconds=_generation_timeout_seconds(request),
+        )
         if not outputs:
             outputs = await _recover_outputs_from_history(prompt_id, generation_started_at)
         outputs = _cleanup_video_sidecar_images(outputs, generation_started_at)
@@ -5511,11 +5826,16 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         _apply_ltx_reference_frame_lock(outputs, request, reference_image_names)
         _annotate_output_metadata(outputs, request, assets)
         _cleanup_generation_temp()
+        quality_warnings = [
+            str(item.get("warning"))
+            for item in outputs
+            if str(item.get("warning") or "").strip()
+        ]
         response = GenerateResponse(
             job_id=prompt_id,
             prompt_id=prompt_id,
             status="completed",
-            message="Generation completed.",
+            message=quality_warnings[0] if quality_warnings else "Generation completed.",
             outputs=outputs,
         )
         await _release_comfy_memory_if_idle()
@@ -5523,6 +5843,11 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         return response
     except Exception as exc:
         _cleanup_generation_temp()
+        if request.preset.lower() == "model3d" and isinstance(exc, TimeoutError):
+            try:
+                await comfy.stop()
+            except Exception:
+                pass
         await _release_comfy_memory_if_idle()
         _schedule_comfy_idle_release()
         if job_id and generation_jobs.get(job_id, {}).get("status") != "cancelled":

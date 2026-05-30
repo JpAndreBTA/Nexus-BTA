@@ -56,8 +56,9 @@ class RuntimeSettings(BaseModel):
     gpu_memory_gb: float | None = None
     precision: str = "auto"
     disable_xformers: bool = False
-    enable_sage_attention: bool = False
+    enable_sage_attention: bool = True
     enable_flash_attention: bool = False
+    acceleration_profile_version: int = 2
     idle_unload_seconds: int = 90
     idle_stop_seconds: int = 300
 
@@ -185,6 +186,16 @@ def load_settings() -> NexusSettings:
             migrated = True
     elif settings.runtime.vram_policy != "shared":
         settings.runtime.vram_policy = "shared"
+    if int(getattr(settings.runtime, "acceleration_profile_version", 0) or 0) < 2:
+        attention = str(settings.runtime.attention_backend or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+        old_forced_sdpa = attention in {"pytorch", "pytorchsdpa", "sdpa"} and bool(settings.runtime.disable_xformers)
+        old_empty_auto = attention in {"", "auto"} and bool(settings.runtime.disable_xformers) and not bool(settings.runtime.enable_sage_attention)
+        if old_forced_sdpa or old_empty_auto:
+            settings.runtime.attention_backend = "sage"
+            settings.runtime.disable_xformers = False
+            settings.runtime.enable_sage_attention = True
+            settings.runtime.enable_flash_attention = False
+        settings.runtime.acceleration_profile_version = 2
         migrated = True
 
     for key, value in DEFAULT_MODEL_SOURCES.items():

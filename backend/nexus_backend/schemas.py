@@ -114,6 +114,9 @@ class RuntimeOptions(BaseModel):
     gpu_memory_gb: float | None = None
     attention_backend: str = "auto"
     disable_xformers: bool = False
+    enable_sage_attention: bool = True
+    enable_flash_attention: bool = False
+    acceleration_profile_version: int = 2
     precision: str = "auto"
 
 

@@ -4715,47 +4715,113 @@ def _model3d_bool(options: dict[str, Any], key: str, default: bool = False) -> b
     return str(value).strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
 
+def _model3d_low_vram_enabled(options: dict[str, Any], request: GenerateRequest) -> bool:
+    if "low_vram" in options:
+        return _model3d_bool(options, "low_vram", True)
+    runtime = getattr(request, "runtime", None)
+    policy = str(getattr(runtime, "vram_policy", "") or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+    limit = _number_or_none(getattr(runtime, "gpu_memory_gb", None))
+    if policy not in {"gpu", "gpuonly", "onlygpu", "cudaonly"}:
+        return True
+    if limit is not None and limit <= 14:
+        return True
+    return False
+
+
+def _model3d_keep_models_loaded(options: dict[str, Any], request: GenerateRequest) -> bool:
+    if "keep_models_loaded" in options:
+        return _model3d_bool(options, "keep_models_loaded", False)
+    runtime = getattr(request, "runtime", None)
+    policy = str(getattr(runtime, "vram_policy", "") or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+    limit = _number_or_none(getattr(runtime, "gpu_memory_gb", None))
+    if policy in {"gpu", "gpuonly", "onlygpu", "cudaonly"} and limit is not None and limit >= 16:
+        return True
+    return False
+
+
 def _model3d_sparse_resolution(options: dict[str, Any]) -> int:
     explicit = _number_or_none(options.get("sparse_structure_resolution"))
     if explicit is not None:
         return max(32, min(128, int(round(explicit))))
     voxel = _model3d_int(options, "voxel_resolution", 1024)
-    return max(32, min(64, int(round(voxel / 16))))
+    return 32 if voxel <= 1024 else 64
+
+
+def _model3d_max_tokens(options: dict[str, Any], request: GenerateRequest) -> int:
+    explicit = _number_or_none(options.get("max_num_tokens") or options.get("max_tokens"))
+    if explicit is not None:
+        return max(50000, min(999999, int(round(explicit))))
+    runtime = getattr(request, "runtime", None)
+    limit = _number_or_none(getattr(runtime, "gpu_memory_gb", None))
+    target_faces = _model3d_int(options, "decimation_target", 250000)
+    if limit is not None and limit <= 12:
+        return 49152
+    if limit is not None and limit <= 16:
+        return max(49152, min(98304, int(target_faces)))
+    return 999999
+
+
+def _model3d_skip_shape_cascade(options: dict[str, Any], request: GenerateRequest) -> bool:
+    if "skip_shape_cascade" in options:
+        return _model3d_bool(options, "skip_shape_cascade", False)
+    runtime = getattr(request, "runtime", None)
+    limit = _number_or_none(getattr(runtime, "gpu_memory_gb", None))
+    if limit is not None and limit <= 12 and _trellis2_attention_backend(options, request) == "sdpa":
+        return True
+    return False
+
+
+def _model3d_sampler(options: dict[str, Any], key: str, default: str = "euler") -> str:
+    value = str(options.get(key) or default).strip().lower()
+    return value if value in {"euler", "heun", "rk4", "rk5"} else default
 
 
 def _module_available(name: str) -> bool:
     try:
+        if name == "xformers":
+            import xformers.ops  # noqa: F401
+
+            return importlib.util.find_spec("xformers._C") is not None
         return importlib.util.find_spec(name) is not None
     except (ImportError, ValueError):
         return False
 
 
-def _trellis2_attention_backend(options: dict[str, Any]) -> str:
+def _trellis2_attention_backend(options: dict[str, Any], request: GenerateRequest | None = None) -> str:
     requested = str(options.get("trellis_backend") or options.get("attention_backend") or "").lower()
+    runtime = getattr(request, "runtime", None) if request is not None else None
+    runtime_attention = str(getattr(runtime, "attention_backend", "") or "").lower().replace("_", "").replace("-", "").replace(" ", "")
+    xformers_disabled = bool(getattr(runtime, "disable_xformers", False))
     if requested in {"flash_attn", "xformers", "sdpa", "flash_attn_3"}:
         if requested == "flash_attn" and not _module_available("flash_attn"):
             return "sdpa"
         if requested == "flash_attn_3" and not _module_available("flash_attn_interface"):
             return "sdpa"
-        if requested == "xformers" and not _module_available("xformers"):
+        if requested == "xformers" and (xformers_disabled or not _module_available("xformers")):
             return "sdpa"
         return requested
+    if runtime_attention in {"pytorch", "pytorchsdpa", "sdpa"}:
+        return "sdpa"
+    if runtime_attention in {"flash", "flashattention"} and _module_available("flash_attn"):
+        return "flash_attn"
+    if not xformers_disabled and _module_available("xformers"):
+        return "xformers"
     if _module_available("flash_attn"):
         return "flash_attn"
     if _module_available("flash_attn_interface"):
         return "flash_attn_3"
-    if _module_available("xformers"):
-        return "xformers"
     return "sdpa"
 
 
-def _trellis2_sparse_backend(options: dict[str, Any]) -> str:
+def _trellis2_sparse_backend(options: dict[str, Any], request: GenerateRequest | None = None) -> str:
     requested = str(options.get("trellis_sparse_backend") or options.get("sparse_backend") or "").lower()
-    if requested == "xformers" and _module_available("xformers"):
+    runtime = getattr(request, "runtime", None) if request is not None else None
+    xformers_disabled = bool(getattr(runtime, "disable_xformers", False))
+    if requested == "xformers" and not xformers_disabled and _module_available("xformers"):
         return "xformers"
     if requested == "flash_attn" and _module_available("flash_attn"):
         return "flash_attn"
-    if _module_available("xformers"):
+    if not xformers_disabled and _module_available("xformers"):
         return "xformers"
     return "flash_attn"
 
@@ -4800,6 +4866,46 @@ def _find_trellis_loader(api: dict[str, Any], title_token: str) -> str | None:
     return fallback if wanted == "front" else None
 
 
+def _replace_model3d_refs(value: Any, node_id: str, replacements: dict[int, list[Any]]) -> Any:
+    if isinstance(value, list):
+        if len(value) == 2 and str(value[0]) == node_id and isinstance(value[1], int) and value[1] in replacements:
+            return list(replacements[value[1]])
+        return [_replace_model3d_refs(item, node_id, replacements) for item in value]
+    if isinstance(value, dict):
+        return {key: _replace_model3d_refs(item, node_id, replacements) for key, item in value.items()}
+    return value
+
+
+def _bypass_model3d_shape_cascade(api: dict[str, Any]) -> None:
+    cascade_id: str | None = None
+    shape_source_id: str | None = None
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("class_type", "")).lower() != "trellis2shapecascademultiviewgenerator":
+            continue
+        shape_ref = node.get("inputs", {}).get("shape_slat") if isinstance(node.get("inputs"), dict) else None
+        if isinstance(shape_ref, list) and shape_ref:
+            cascade_id = str(node_id)
+            shape_source_id = str(shape_ref[0])
+            break
+    if not cascade_id or not shape_source_id:
+        return
+    replacements = {
+        0: [shape_source_id, 0],
+        1: [shape_source_id, 1],
+        2: [shape_source_id, 2],
+        3: [shape_source_id, 3],
+    }
+    for node_id, node in list(api.items()):
+        if str(node_id) == cascade_id or not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if isinstance(inputs, dict):
+            node["inputs"] = _replace_model3d_refs(inputs, cascade_id, replacements)
+    api.pop(cascade_id, None)
+
+
 def _ensure_trellis_reference_preprocess(api: dict[str, Any], image_name: str, view: str) -> list[Any]:
     loader_id = _find_trellis_loader(api, view)
     if not loader_id:
@@ -4821,13 +4927,14 @@ def _ensure_trellis_reference_preprocess(api: dict[str, Any], image_name: str, v
         if str(node.get("class_type", "")).lower() != "trellis2preprocessimage":
             continue
         inputs = node.setdefault("inputs", {})
-        if isinstance(inputs, dict) and inputs.get("image") == [str(loader_id), 2]:
+        if isinstance(inputs, dict) and inputs.get("image") in ([str(loader_id), 0], [str(loader_id), 2]):
+            inputs["image"] = [str(loader_id), 2]
             return [str(node_id), 0]
 
     preprocess_id = str(_next_api_node_id(api))
     api[preprocess_id] = {
         "class_type": "Trellis2PreProcessImage",
-        "inputs": {"image": [str(loader_id), 2], "padding": 10, "remove_background": False, "max_size": 1024},
+        "inputs": {"image": [str(loader_id), 2], "padding": 25, "remove_background": True, "max_size": 1024},
         "_meta": {"title": f"Preprocess {view.title()} Image"},
     }
     return [preprocess_id, 0]
@@ -4846,15 +4953,24 @@ def _ensure_model3d_trellis_route(api: dict[str, Any], request: GenerateRequest,
     if not refs:
         return
 
+    skip_shape_cascade = _model3d_skip_shape_cascade(options, request)
+    low_vram_profile = _model3d_low_vram_enabled(options, request)
     think_steps = max(1, _model3d_int(options, "think_steps", 14))
-    guidance = _model3d_number(options, "guidance", 8.0)
-    sparse_steps = max(_model3d_int(options, "sparse_steps", think_steps), think_steps)
-    shape_steps = max(_model3d_int(options, "shape_steps", think_steps), think_steps)
-    material_steps = max(_model3d_int(options, "material_steps", 12), min(think_steps, 16))
-    sparse_guidance = max(_model3d_number(options, "sparse_guidance", guidance), guidance)
-    shape_guidance = max(_model3d_number(options, "shape_guidance", guidance), guidance)
+    guidance = _model3d_number(options, "guidance", 7.5)
+    sparse_steps = max(1, _model3d_int(options, "sparse_steps", think_steps))
+    shape_steps = max(1, _model3d_int(options, "shape_steps", think_steps))
+    material_steps = max(1, _model3d_int(options, "material_steps", min(think_steps, 16)))
+    if (skip_shape_cascade or low_vram_profile) and _model3d_bool(options, "fast_low_vram", False):
+        sparse_steps = min(sparse_steps, 8)
+        shape_steps = min(shape_steps, 8)
+        material_steps = min(material_steps, 8)
+    sparse_guidance = _model3d_number(options, "sparse_guidance", guidance)
+    shape_guidance = _model3d_number(options, "shape_guidance", guidance)
     target_faces = max(100000, _model3d_int(options, "decimation_target", 250000))
-    remesh_resolution = 1024 if _model3d_int(options, "voxel_resolution", 1024) <= 1024 else 2048
+    max_num_tokens = _model3d_max_tokens(options, request)
+    requested_resolution = _model3d_int(options, "voxel_resolution", 1024)
+    shape_resolution = 512 if skip_shape_cascade else requested_resolution
+    remesh_resolution = 512 if skip_shape_cascade else (1024 if requested_resolution <= 1024 else 2048)
 
     view_order = ["front", "left", "right", "back"]
     image_refs: dict[str, list[Any]] = {}
@@ -4881,59 +4997,61 @@ def _ensure_model3d_trellis_route(api: dict[str, Any], request: GenerateRequest,
             model_name = str(options.get("model") or inputs.get("modelname") or "microsoft/TRELLIS.2-4B")
             inputs["modelname"] = model_name
             inputs.pop("model", None)
-            inputs["backend"] = _trellis2_attention_backend(options)
+            inputs["backend"] = _trellis2_attention_backend(options, request)
             inputs["device"] = "cuda"
-            inputs.setdefault("low_vram", True)
-            inputs.setdefault("keep_models_loaded", False)
+            inputs["low_vram"] = _model3d_low_vram_enabled(options, request)
+            inputs["keep_models_loaded"] = _model3d_keep_models_loaded(options, request)
             inputs.setdefault("conv_backend", "flex_gemm")
-            inputs["sparse_backend"] = _trellis2_sparse_backend(options)
+            inputs["sparse_backend"] = _trellis2_sparse_backend(options, request)
             inputs.setdefault("use_reconviagen", False)
         elif class_lower == "trellis2preprocessimage":
-            inputs["max_size"] = _model3d_int(options, "voxel_resolution", 1024)
+            inputs["padding"] = _model3d_int(options, "preprocess_padding", 25)
+            inputs["remove_background"] = _model3d_bool(options, "remove_background", True)
+            inputs["max_size"] = requested_resolution
             _set_existing_model3d_inputs(inputs, ["mask", "texture_mask", "inpaint_mask"], assets.get("mask_image"))
         elif class_lower == "trellis2sparsemultiviewgenerator":
             inputs["seed"] = _trellis2_seed(request.seed)
             inputs["sparse_structure_steps"] = sparse_steps
             inputs["sparse_structure_guidance_strength"] = sparse_guidance
-            inputs["sparse_structure_guidance_rescale"] = _model3d_number(options, "sparse_rescale", 0.01)
+            inputs["sparse_structure_guidance_rescale"] = _model3d_number(options, "sparse_rescale", 0.7)
             inputs["sparse_structure_rescale_t"] = _model3d_number(options, "sparse_rescale_t", 5)
             inputs["sparse_structure_resolution"] = _model3d_sparse_resolution(options)
             inputs["fill_holes"] = True
             inputs["hole_fill_algorithm"] = "flood_fill"
             inputs["keep_only_shell"] = True
-            _set_existing_model3d_inputs(inputs, ["dino_lock"], _model3d_number(options, "dino_lock", 0.92))
+            _set_model3d_inputs(inputs, ["sparse_structure_sampler", "sampler"], _model3d_sampler(options, "sparse_sampler"))
+            _set_existing_model3d_inputs(inputs, ["dino_lock"], _model3d_number(options, "dino_lock", 0.0))
             _set_existing_model3d_inputs(inputs, ["dino_substeps"], _model3d_int(options, "dino_substeps", 4))
-            _set_existing_model3d_inputs(inputs, ["dino_foundation_cap"], _model3d_number(options, "dino_foundation_cap", 0.92))
+            _set_existing_model3d_inputs(inputs, ["dino_foundation_cap"], _model3d_number(options, "dino_foundation_cap", 1.0))
         elif class_lower == "trellis2shapemultiviewgenerator":
-            resolution = _model3d_int(options, "voxel_resolution", 1024)
-            _set_model3d_inputs(inputs, ["resolution"], resolution)
+            _set_model3d_inputs(inputs, ["resolution"], shape_resolution)
             _set_model3d_inputs(inputs, ["shape_steps", "steps"], shape_steps)
             _set_model3d_inputs(inputs, ["shape_guidance_strength", "guidance_strength"], shape_guidance)
-            _set_model3d_inputs(inputs, ["shape_guidance_rescale", "guidance_rescale"], _model3d_number(options, "shape_rescale", 0.01))
+            _set_model3d_inputs(inputs, ["shape_guidance_rescale", "guidance_rescale"], _model3d_number(options, "shape_rescale", 0.5))
             _set_model3d_inputs(inputs, ["shape_rescale_t", "rescale_t"], _model3d_number(options, "shape_rescale_t", 3))
-            _set_model3d_inputs(inputs, ["shape_sampler", "sampler"], "heun")
+            _set_model3d_inputs(inputs, ["shape_sampler", "sampler"], _model3d_sampler(options, "shape_sampler"))
             _set_model3d_inputs(inputs, ["shape_guidance_interval_start", "threshold"], 0.1)
             _set_model3d_inputs(inputs, ["shape_guidance_interval_end", "batch_size"], 1)
         elif class_lower == "trellis2shapecascademultiviewgenerator":
             if "seed" in inputs:
                 inputs["seed"] = _trellis2_seed(request.seed)
-            resolution = _model3d_int(options, "voxel_resolution", 1024)
-            _set_model3d_inputs(inputs, ["to_resolution", "resolution"], resolution)
+            _set_model3d_inputs(inputs, ["to_resolution", "resolution"], shape_resolution)
             inputs["sparse_structure_resolution"] = _model3d_sparse_resolution(options)
+            _set_model3d_inputs(inputs, ["max_num_tokens"], max_num_tokens)
             _set_model3d_inputs(inputs, ["shape_steps", "steps"], shape_steps)
             _set_model3d_inputs(inputs, ["shape_guidance_strength", "guidance_strength"], shape_guidance)
-            _set_model3d_inputs(inputs, ["shape_guidance_rescale", "guidance_rescale"], _model3d_number(options, "shape_rescale", 0.01))
+            _set_model3d_inputs(inputs, ["shape_guidance_rescale", "guidance_rescale"], _model3d_number(options, "shape_rescale", 0.5))
             _set_model3d_inputs(inputs, ["shape_rescale_t", "rescale_t"], _model3d_number(options, "shape_rescale_t", 3))
-            _set_model3d_inputs(inputs, ["shape_sampler", "sampler"], "heun")
+            _set_model3d_inputs(inputs, ["shape_sampler", "sampler"], _model3d_sampler(options, "shape_sampler"))
             _set_model3d_inputs(inputs, ["shape_guidance_interval_start"], 0.1)
             _set_model3d_inputs(inputs, ["shape_guidance_interval_end"], 1)
         elif class_lower == "trellis2texslatmultiviewgenerator":
-            inputs["resolution"] = 1024 if _model3d_int(options, "texture_size", 1024) >= 1024 else 512
+            inputs["resolution"] = 512 if skip_shape_cascade else (1024 if _model3d_int(options, "texture_size", 1024) >= 1024 else 512)
             _set_model3d_inputs(inputs, ["texture_steps", "steps"], material_steps)
             inputs["texture_guidance_strength"] = _model3d_number(options, "material_guidance", 1.0)
             inputs["texture_guidance_rescale"] = _model3d_number(options, "material_rescale", 0.0)
             inputs["texture_rescale_t"] = _model3d_number(options, "material_rescale_t", 3)
-            _set_model3d_inputs(inputs, ["texture_sampler", "sampler"], "heun")
+            _set_model3d_inputs(inputs, ["texture_sampler", "sampler"], _model3d_sampler(options, "texture_sampler"))
             _set_existing_model3d_inputs(inputs, ["texture_sharp", "sharp", "sharpness"], _model3d_number(options, "texture_sharp", 3.0))
             _set_existing_model3d_inputs(inputs, ["texture_details", "details", "detail"], _model3d_number(options, "texture_details", 1.0))
             _set_existing_model3d_inputs(inputs, ["prompt", "positive", "text", "texture_prompt"], str(options.get("texture_positive") or request.prompt or ""))
@@ -4953,14 +5071,99 @@ def _ensure_model3d_trellis_route(api: dict[str, Any], request: GenerateRequest,
                 "mask_space": str(options.get("texture_mask_space") or "uv"),
                 "active_tool": str(options.get("texture_active_tool") or ""),
                 "active_layer": str(options.get("texture_active_layer") or ""),
+                "active_camera": str(options.get("texture_active_camera") or ""),
+                "cameras": options.get("texture_cameras") if isinstance(options.get("texture_cameras"), list) else [],
                 "layers": options.get("texture_layers") if isinstance(options.get("texture_layers"), list) else [],
                 "mask_image": bool(assets.get("mask_image")),
             }
+        elif class_lower == "trellis2meshwithvoxelmultiviewgenerator":
+            for view in view_order:
+                key = f"{view}_image"
+                if view in image_refs:
+                    inputs[key] = image_refs[view]
+                elif key != "front_image":
+                    inputs.pop(key, None)
+            inputs["seed"] = _trellis2_seed(request.seed)
+            if skip_shape_cascade:
+                default_pipeline_type = "512"
+            elif low_vram_profile and not _model3d_bool(options, "high_quality_low_vram", False):
+                default_pipeline_type = "1024" if requested_resolution >= 1024 else "512"
+            else:
+                default_pipeline_type = "1024_cascade" if requested_resolution >= 1024 else "512"
+            inputs["pipeline_type"] = str(options.get("pipeline_type") or default_pipeline_type)
+            inputs["sparse_structure_steps"] = sparse_steps
+            inputs["sparse_structure_guidance_strength"] = sparse_guidance
+            inputs["sparse_structure_guidance_rescale"] = _model3d_number(options, "sparse_rescale", 0.7)
+            inputs["sparse_structure_rescale_t"] = _model3d_number(options, "sparse_rescale_t", 5)
+            inputs["shape_steps"] = shape_steps
+            inputs["shape_guidance_strength"] = shape_guidance
+            inputs["shape_guidance_rescale"] = _model3d_number(options, "shape_rescale", 0.5)
+            inputs["shape_rescale_t"] = _model3d_number(options, "shape_rescale_t", 3)
+            inputs["texture_steps"] = 1
+            inputs["texture_guidance_strength"] = 1
+            inputs["texture_guidance_rescale"] = 0
+            inputs["texture_rescale_t"] = 3
+            inputs["max_num_tokens"] = max_num_tokens
+            inputs["sparse_structure_resolution"] = _model3d_sparse_resolution(options)
+            inputs["generate_texture_slat"] = False
+            inputs["sparse_structure_guidance_interval_start"] = 0.1
+            inputs["sparse_structure_guidance_interval_end"] = 1
+            inputs["shape_guidance_interval_start"] = 0.1
+            inputs["shape_guidance_interval_end"] = 1
+            inputs["texture_guidance_interval_start"] = 0
+            inputs["texture_guidance_interval_end"] = 0.9
+            inputs["use_tiled_decoder"] = True
+            inputs["front_axis"] = str(options.get("front_axis") or "z")
+            inputs["blend_temperature"] = _model3d_number(options, "blend_temperature", 1)
+            inputs["sampler"] = _model3d_sampler(options, "shape_sampler")
+            inputs["fill_holes"] = True
+            inputs["hole_iterations"] = _model3d_int(options, "hole_iterations", 1)
+            inputs["hole_fill_algorithm"] = "flood_fill"
+            inputs["keep_only_shell"] = True
+            inputs["verbose"] = False
+            inputs["dino_lock"] = _model3d_number(options, "dino_lock", 0.0)
+            inputs["dino_substeps"] = _model3d_int(options, "dino_substeps", 4)
+            inputs["dino_foundation_cap"] = _model3d_number(options, "dino_foundation_cap", 1.0)
+        elif class_lower == "trellis2meshtexturingmultiview":
+            for view in view_order:
+                key = f"{view}_image"
+                if view in image_refs:
+                    inputs[key] = image_refs[view]
+                elif key != "front_image":
+                    inputs.pop(key, None)
+            inputs["seed"] = _trellis2_seed(request.seed)
+            inputs["texture_steps"] = material_steps
+            inputs["texture_guidance_strength"] = _model3d_number(options, "material_guidance", 3.0)
+            inputs["texture_guidance_rescale"] = _model3d_number(options, "material_rescale", 0.2)
+            inputs["texture_rescale_t"] = _model3d_number(options, "material_rescale_t", 3)
+            inputs["resolution"] = 512 if _model3d_low_vram_enabled(options, request) else min(1536, max(512, _model3d_int(options, "texture_projection_resolution", 1024)))
+            inputs["texture_size"] = _model3d_int(options, "texture_size", 1024)
+            inputs["texture_alpha_mode"] = "OPAQUE"
+            inputs["double_side_material"] = _model3d_bool(options, "double_side_material", False)
+            inputs["texture_guidance_interval_start"] = 0
+            inputs["texture_guidance_interval_end"] = 0.9
+            inputs["bake_on_vertices"] = _model3d_bool(options, "bake_on_vertices", False)
+            inputs["use_custom_normals"] = _model3d_bool(options, "use_custom_normals", False)
+            inputs["mesh_cluster_threshold_cone_half_angle_rad"] = _model3d_number(options, "mesh_cluster_angle", 60)
+            inputs["front_axis"] = str(options.get("front_axis") or "z")
+            inputs["blend_temperature"] = _model3d_number(options, "blend_temperature", 1)
+            inputs["sampler"] = _model3d_sampler(options, "texture_sampler")
+            inputs["inpainting"] = str(options.get("texture_inpainting") or "telea")
+            inputs["verbose"] = False
+            inputs["dino_lock"] = _model3d_number(options, "dino_lock", 0.0)
+            inputs["dino_substeps"] = _model3d_int(options, "dino_substeps", 4)
+            inputs["dino_foundation_cap"] = _model3d_number(options, "dino_foundation_cap", 1.0)
         elif class_lower == "trellis2exportmesh":
             inputs["file_format"] = "glb"
         elif class_lower == "trellis2reconstructmeshwithquad":
             inputs["remesh_band"] = _model3d_number(options, "remesh_band", 1.0)
             inputs["resolution"] = remesh_resolution
+            inputs["remove_floaters"] = True
+            inputs["remove_inner_faces"] = True
+        elif class_lower == "trellis2remeshwithquad":
+            inputs["remesh_band"] = _model3d_number(options, "remesh_band", 1.0)
+            inputs["remesh_project"] = _model3d_number(options, "remesh_project", 0.0)
+            inputs["dual_contouring_resolution"] = str(remesh_resolution)
             inputs["remove_floaters"] = True
             inputs["remove_inner_faces"] = True
         elif class_lower == "trellis2fillholeswithcumesh":
@@ -4970,6 +5173,8 @@ def _ensure_model3d_trellis_route(api: dict[str, Any], request: GenerateRequest,
             _set_existing_model3d_inputs(inputs, ["target_face_num"], target_faces)
         elif class_lower == "trellis2unwrapandrasterizer":
             inputs.setdefault("reorient_vertices", "90 degrees")
+        elif class_lower == "trellis2meshwithvoxeltotrimesh":
+            inputs["reorient_vertices"] = "90 degrees"
         elif class_lower == "primitiveint":
             if "target face" in title:
                 inputs["value"] = target_faces
@@ -4981,6 +5186,8 @@ def _ensure_model3d_trellis_route(api: dict[str, Any], request: GenerateRequest,
             _set_existing_model3d_inputs(inputs, ["mask", "texture_mask", "inpaint_mask"], assets.get("mask_image"))
             _set_existing_model3d_inputs(inputs, ["denoise", "denoise_strength", "strength"], _model3d_number(options, "texture_denoise", 0.45))
             _set_existing_model3d_inputs(inputs, ["albedo", "albedo_mode"], _model3d_bool(options, "texture_albedo_mode", True))
+    if skip_shape_cascade:
+        _bypass_model3d_shape_cascade(api)
 
 
 def _ensure_ltx_director_frame_trim(api: dict[str, Any], request: GenerateRequest) -> None:
