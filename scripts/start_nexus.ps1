@@ -192,7 +192,7 @@ function Get-NexusDependencySignature {
     $parts.Add("python=$comfyPython")
     $parts.Add("models=$modelsDir")
     $parts.Add("custom_nodes=$customNodesDir")
-    foreach ($pathValue in @($settingsPath, $customNodeDeps, $ltxDirectorDeps, $wan22Deps, $dinov3Deps)) {
+    foreach ($pathValue in @($customNodeDeps, $ltxDirectorDeps, $wan22Deps, $dinov3Deps)) {
         $parts.Add((Get-NexusFileFingerprint $pathValue))
     }
     if (Test-Path -LiteralPath $customNodesDir) {
@@ -223,9 +223,15 @@ function Test-NexusDependencyCheckRequired([string]$Signature) {
     }
     try {
         $state = Get-Content -LiteralPath $dependencyStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-        return [string]$state.signature -ne $Signature
+        if ([string]$state.signature -ne $Signature) {
+            Write-NexusLine "Dependency cache changed; run.bat will skip install scans. Open update.bat to repair or refresh dependencies if startup fails." "Warn"
+            Save-NexusDependencyState $Signature
+        }
+        return $false
     } catch {
-        return $true
+        Write-NexusLine "Dependency cache could not be read; run.bat will skip install scans. Open update.bat to repair or refresh dependencies if startup fails." "Warn"
+        Save-NexusDependencyState $Signature
+        return $false
     }
 }
 
@@ -396,7 +402,7 @@ if (!(Test-NexusHealth)) {
 
 Write-NexusLine "Waiting for API..." "Info"
 if (!(Wait-NexusHealth -Seconds 180)) {
-    throw "Backend did not become ready at http://127.0.0.1:7861/api/health"
+    throw "Backend did not become ready at http://127.0.0.1:7861/api/health. Open update.bat to repair or refresh dependencies, then run run.bat again."
 }
 
 Write-NexusLine "Model folders and catalog are ready." "Info"
@@ -405,7 +411,7 @@ Invoke-RestMethod -Method Post "http://127.0.0.1:7861/api/model-tree" -TimeoutSe
 if ($StartComfy) {
     Write-NexusLine "Starting embedded ComfyUI..." "Info"
     if (!(Wait-NexusComfyReady -Seconds 360)) {
-        throw "ComfyUI startup failed: runtime did not become ready after 360 seconds."
+        throw "ComfyUI startup failed: runtime did not become ready after 360 seconds. Open update.bat to repair or refresh dependencies, then run run.bat again."
     }
 } else {
     Write-NexusLine "ComfyUI will start on demand." "Info"
