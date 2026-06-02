@@ -246,12 +246,17 @@ def custom_nodes_for_workflow(
             targets.add(match)
 
     for repos in (suggestions or {}).values():
+        fallback_repo = ""
         for repo in repos:
             match = _match_repo_to_installed_node(repo, installed_by_key)
             if match:
                 targets.add(match)
-            elif repo.lower().startswith(("http://", "https://", "git@")):
-                targets.add(repo)
+                fallback_repo = ""
+                break
+            if not fallback_repo and repo.lower().startswith(("http://", "https://", "git@")):
+                fallback_repo = repo
+        if fallback_repo:
+            targets.add(fallback_repo)
 
     requirements = custom_node_requirements(settings)
     return sorted(
@@ -360,6 +365,20 @@ def _canonical_repo_for_missing_node(class_type: str) -> str | None:
         return "https://github.com/yolain/ComfyUI-Easy-Use"
     if "melbandroformer" in value or "roformer" in value:
         return "https://github.com/kijai/ComfyUI-MelBandRoFormer"
+    if "ltx" in value:
+        return "https://github.com/Lightricks/ComfyUI-LTXVideo"
+    if "vhs_" in value or "loadvideo" in value or "getvideocomponents" in value or "createvideo" in value or "savevideo" in value or "videocombine" in value:
+        return "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite"
+    if "dwpreprocessor" in value or "openposepreprocessor" in value or "cannyedgepreprocessor" in value:
+        return "https://github.com/Fannovel16/comfyui_controlnet_aux"
+    if "seedvr2" in value:
+        return "https://github.com/numz/seedvr2_videoupscaler"
+    if "flashvsr" in value:
+        return "https://github.com/ClownsharkBatwing/ComfyUI-FlashVSR"
+    if "rtxvideosuperresolution" in value:
+        return "https://github.com/ClownsharkBatwing/comfyui-rtx-simple"
+    if value.startswith("pid") or "pidprepare" in value or "pidsample" in value or "pidfinalize" in value:
+        return "https://github.com/Merserk/ComfyUI-PiD"
     if "lanpaint" in value:
         return "https://github.com/scraed/LanPaint"
     if "qwenmultiangle" in value:

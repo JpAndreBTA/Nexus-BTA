@@ -28,7 +28,13 @@ from .asset_resolver import resolve_generation_assets
 from .civitai import download_civitai_asset, resolve_civitai_asset, search_civitai_models
 from .comfy_client import ComfyClient, extract_outputs
 from .config import DEFAULT_MODEL_SOURCES, coerce_path_list, load_settings, save_settings, sync_startup_model_path
-from .dependencies import custom_node_dependency_status, custom_node_requirements, install_custom_node_dependencies
+from .dependencies import (
+    custom_node_dependency_status,
+    custom_node_requirements,
+    custom_nodes_for_workflow,
+    install_custom_node_dependencies,
+    manager_suggestions_for_nodes,
+)
 from .importer import import_resource
 from .lora_training import (
     build_train_lora_catalog,
@@ -5485,6 +5491,71 @@ async def install_dependencies(request: DependencyInstallRequest) -> dict[str, A
         all_enabled=request.all_enabled,
     )
     return {"installed": installed, "errors": errors}
+
+
+@app.post("/api/custom-nodes/install-missing")
+async def install_missing_custom_nodes(
+    request: DependencyInstallRequest,
+    restart_comfy: bool = Query(True),
+) -> dict[str, Any]:
+    missing_nodes = [str(item).strip() for item in request.node_names if str(item).strip()]
+    if not missing_nodes:
+        raise HTTPException(status_code=400, detail="Missing node class list is empty.")
+
+    suggestions = manager_suggestions_for_nodes(settings, missing_nodes)
+    targets = custom_nodes_for_workflow(settings, missing_nodes, suggestions)
+    if not targets:
+        return {
+            "installed": [],
+            "updated": [],
+            "errors": {},
+            "targets": [],
+            "suggestions": suggestions,
+            "message": "No install target was found for the missing nodes. Open Manager and install the suggested custom node manually.",
+        }
+
+    updated: list[dict[str, Any]] = []
+    update_errors: dict[str, str] = {}
+    installed_node_names = {node.name.lower(): node for node in scan_custom_nodes(settings)}
+    for target in targets:
+        if str(target).lower().startswith(("http://", "https://", "git@")):
+            continue
+        node = installed_node_names.get(str(target).lower())
+        if not node:
+            continue
+        node_path = Path(node.path)
+        if not (node_path / ".git").exists():
+            continue
+        try:
+            updated.append(_update_custom_node(node_path, ""))
+        except Exception as exc:
+            update_errors[str(target)] = str(getattr(exc, "detail", exc))[-1200:]
+
+    installed, errors = install_custom_node_dependencies(
+        settings,
+        node_names=targets,
+        all_enabled=False,
+    )
+    errors.update(update_errors)
+
+    restarted = False
+    if restart_comfy and (installed or updated) and await comfy.is_running():
+        cleanup_embedded_comfy_artifacts()
+        await comfy.restart()
+        restarted = True
+
+    object_info = await _optional_comfy_object_info()
+    still_missing = [node for node in missing_nodes if not _available_comfy_node(object_info, node)]
+    return {
+        "installed": installed,
+        "updated": updated,
+        "errors": errors,
+        "targets": targets,
+        "suggestions": suggestions,
+        "restarted_comfy": restarted,
+        "missing_after_install": still_missing,
+        "status": custom_node_dependency_status(settings),
+    }
 
 
 @app.post("/api/png-info")

@@ -340,7 +340,8 @@ def download_civitai_asset(
                 "speed_bps": 0,
             }
         )
-    _download_file(download_url, target, token, progress_callback=progress_callback)
+    expected_bytes = int(float(resolved.get("file_size_kb") or 0) * 1024)
+    _download_file(download_url, target, token, progress_callback=progress_callback, expected_bytes=expected_bytes)
 
     preview_path = _save_civitai_preview(target, resolved, token, save_preview, progress_callback)
 
@@ -444,6 +445,7 @@ def _download_file(
     target: Path,
     token: str | None,
     progress_callback: ProgressCallback | None = None,
+    expected_bytes: int = 0,
 ) -> None:
     urls = _download_candidates(url, token)
     last_error: Exception | None = None
@@ -461,7 +463,7 @@ def _download_file(
                     if resume_from and status_code == 200:
                         resume_from = 0
                         part.unlink(missing_ok=True)
-                    total = _response_total_bytes(response, resume_from)
+                    total = _response_total_bytes(response, resume_from) or expected_bytes
                     downloaded = resume_from
                     started = monotonic()
                     last_emit = started
@@ -491,8 +493,12 @@ def _download_file(
                                     }
                                 )
                                 last_emit = now
+                    if expected_bytes and downloaded <= 0:
+                        raise ValueError("Civitai returned an empty response for a non-empty model file. Check token permissions and retry.")
                     if total and downloaded < total:
                         raise ValueError(f"Download interrupted at {downloaded}/{total} bytes.")
+                    if expected_bytes and downloaded < max(1024, int(expected_bytes * 0.98)):
+                        raise ValueError(f"Civitai download finished too small: {downloaded}/{expected_bytes} bytes.")
                     target.unlink(missing_ok=True)
                     part.replace(target)
                     if progress_callback:
@@ -510,7 +516,6 @@ def _download_file(
                 last_error = exc
                 if attempt < 3:
                     continue
-        part.unlink(missing_ok=True)
         if target.exists():
             target.unlink(missing_ok=True)
     raise ValueError(str(last_error) if last_error else "Download failed.")

@@ -126,6 +126,24 @@ function Get-ComfyPythonCandidate([string]$ComfyRoot) {
     return $defaultComfyPython
 }
 
+function Get-DefaultCustomNodesDir([string]$ComfyRoot) {
+    if (Test-SamePath $ComfyRoot $defaultComfyRoot) {
+        return Join-Path $root "custom_nodes"
+    }
+    return Join-Path $ComfyRoot "custom_nodes"
+}
+
+function Resolve-CustomNodesPath([string]$PathValue) {
+    if ([string]::IsNullOrWhiteSpace($PathValue)) { return "" }
+    $resolved = $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($PathValue)
+    if ((Split-Path -Leaf $resolved) -ieq "ComfyUI" -or (Test-Path -LiteralPath (Join-Path $resolved "main.py"))) {
+        $resolved = Join-Path $resolved "custom_nodes"
+    } elseif ((Split-Path -Leaf $resolved) -ine "custom_nodes") {
+        $resolved = Join-Path $resolved "custom_nodes"
+    }
+    return $resolved
+}
+
 function Test-SamePath([string]$Left, [string]$Right) {
     if ([string]::IsNullOrWhiteSpace($Left) -or [string]::IsNullOrWhiteSpace($Right)) { return $false }
     return [System.IO.Path]::GetFullPath($Left).TrimEnd("\") -eq [System.IO.Path]::GetFullPath($Right).TrimEnd("\")
@@ -205,17 +223,39 @@ if (!$comfyRootValid -or !$comfyPathPrompted) {
     $startupState["selected_comfy_root"] = $configuredComfyRoot
 }
 
-$isEmbeddedComfy = Test-SamePath $configuredComfyRoot $defaultComfyRoot
 $configuredComfyPython = if ($settings.Contains("comfy_python") -and ![string]::IsNullOrWhiteSpace([string]$settings["comfy_python"]) -and (Test-Path -LiteralPath ([string]$settings["comfy_python"]))) {
     $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath([string]$settings["comfy_python"])
 } else {
     Get-ComfyPythonCandidate $configuredComfyRoot
 }
-$configuredCustomNodesDir = if ($isEmbeddedComfy) {
-    Join-Path $root "custom_nodes"
+$defaultCustomNodesDir = Get-DefaultCustomNodesDir $configuredComfyRoot
+$configuredCustomNodesDir = if ($settings.Contains("custom_nodes_dir") -and ![string]::IsNullOrWhiteSpace([string]$settings["custom_nodes_dir"])) {
+    Resolve-CustomNodesPath ([string]$settings["custom_nodes_dir"])
 } else {
-    Join-Path $configuredComfyRoot "custom_nodes"
+    $defaultCustomNodesDir
 }
+$customNodesPathPrompted = $startupState.Contains("custom_nodes_path_prompted")
+if (!$customNodesPathPrompted -or [string]::IsNullOrWhiteSpace($configuredCustomNodesDir)) {
+    Write-NexusLine "Choose where Nexus should install and validate ComfyUI custom nodes." "Info"
+    Write-NexusLine "Default: $defaultCustomNodesDir" "Info"
+    $choice = Read-Host "Use default custom_nodes path? [Y/default, C/custom]"
+    if ($choice -match '^(c|custom)$') {
+        $customPath = Read-Host "Custom nodes folder path (folder named custom_nodes, or a ComfyUI folder)"
+        if (![string]::IsNullOrWhiteSpace($customPath)) {
+            $configuredCustomNodesDir = Resolve-CustomNodesPath $customPath
+            Write-NexusLine "Custom nodes path selected: $configuredCustomNodesDir" "Ok"
+        }
+    } else {
+        $configuredCustomNodesDir = $defaultCustomNodesDir
+        Write-NexusLine "Default custom nodes path selected." "Ok"
+    }
+    $startupState["custom_nodes_path_prompted"] = $true
+    $startupState["selected_custom_nodes_dir"] = $configuredCustomNodesDir
+    $startupState["custom_nodes_choice_saved_at"] = (Get-Date).ToString("s")
+} else {
+    Write-NexusLine "Using configured custom nodes path: $configuredCustomNodesDir" "Ok"
+}
+New-Item -ItemType Directory -Force -Path $configuredCustomNodesDir | Out-Null
 
 $settings["comfy_root"] = $configuredComfyRoot
 $settings["comfy_python"] = $configuredComfyPython
@@ -305,6 +345,8 @@ if ($missingStartupModels.Count -gt 0) {
     $startupState["selected_models_dir"] = $configuredModelsDir
 }
 
+$startupState["selected_comfy_root"] = $configuredComfyRoot
+$startupState["selected_custom_nodes_dir"] = $configuredCustomNodesDir
 $startupState["last_checked_at"] = (Get-Date).ToString("s")
 $startupJson = $startupState | ConvertTo-Json -Depth 10
 [System.IO.File]::WriteAllText($startupPath, $startupJson, [System.Text.UTF8Encoding]::new($false))

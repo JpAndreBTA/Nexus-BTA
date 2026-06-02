@@ -32,6 +32,66 @@ class ComfyExecutionError(RuntimeError):
     pass
 
 
+def _workflow_required_classes(workflow: dict[str, Any]) -> list[tuple[str, str]]:
+    required: list[tuple[str, str]] = []
+    for node in (workflow or {}).values():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type") or "").strip()
+        if not class_type:
+            continue
+        title = ""
+        meta = node.get("_meta")
+        if isinstance(meta, dict):
+            title = str(meta.get("title") or "").strip()
+        required.append((class_type, title))
+    return required
+
+
+def _format_missing_workflow_nodes(
+    workflow: dict[str, Any],
+    object_info: dict[str, Any],
+    *,
+    custom_nodes_dir: Path,
+    comfy_root: Path,
+) -> str:
+    available = set(object_info or {})
+    missing: dict[str, set[str]] = {}
+    for class_type, title in _workflow_required_classes(workflow):
+        if class_type not in available:
+            missing.setdefault(class_type, set())
+            if title:
+                missing[class_type].add(title)
+    if not missing:
+        return ""
+
+    parts: list[str] = []
+    for class_type, titles in sorted(missing.items()):
+        if titles:
+            parts.append(f"{class_type} ({', '.join(sorted(titles)[:3])})")
+        else:
+            parts.append(class_type)
+    shown = ", ".join(parts[:16])
+    if len(parts) > 16:
+        shown += f", +{len(parts) - 16} more"
+
+    hints: list[str] = []
+    if "LTXVTiledVAEDecode" in missing or "LTXVAudioVAEDecode" in missing:
+        hints.append("LTX Decode Frames/Audio Decode comes from ComfyUI-LTXVideo; run update.bat and restart Nexus after repair.")
+    if {"LoadVideo", "GetVideoComponents", "CreateVideo", "SaveVideo", "VHS_LoadVideo", "VHS_VideoCombine"} & set(missing):
+        hints.append("Video load/save/combine nodes require the video helper custom nodes installed in the active custom_nodes folder.")
+    if {"VAEDecode", "VAEEncode", "VAELoader"} & set(missing):
+        hints.append("Core VAE nodes are missing from ComfyUI's registry; check ComfyUI startup/import errors.")
+
+    message = (
+        "ComfyUI did not load required workflow nodes: "
+        f"{shown}. Active custom_nodes folder: {custom_nodes_dir}. Comfy root: {comfy_root}."
+    )
+    if hints:
+        message += " " + " ".join(hints)
+    return message
+
+
 class ComfyClient:
     def __init__(self, settings: NexusSettings):
         self.settings = settings
@@ -138,13 +198,7 @@ class ComfyClient:
         database_path = self.settings.user_dir / "comfyui.db"
         database_path.parent.mkdir(parents=True, exist_ok=True)
         extra_model_paths = self.settings.project_root / "config" / "nexus_extra_model_paths.yaml"
-
-        embedded_comfy_root = self.settings.project_root / "runtime" / "ComfyUI"
-        try:
-            use_project_base = self.settings.comfy_root.resolve() == embedded_comfy_root.resolve()
-        except OSError:
-            use_project_base = str(self.settings.comfy_root).strip().rstrip("\\/").lower() == str(embedded_comfy_root).strip().rstrip("\\/").lower()
-        comfy_base_dir = self.settings.project_root if use_project_base else self.settings.comfy_root
+        comfy_base_dir = self._comfy_base_directory()
 
         args = [
             str(python_exe),
@@ -193,6 +247,7 @@ class ComfyClient:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         self._log_handle = log_path.open("a", encoding="utf-8", errors="replace")
         self._log_handle.write(f"\n\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting ComfyUI: {' '.join(args)}\n")
+        self._log_handle.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Nexus custom nodes: {self.settings.custom_nodes_dir}\n")
         self._log_handle.flush()
         try:
             self.process = subprocess.Popen(
@@ -208,6 +263,22 @@ class ComfyClient:
             self._close_log_handle()
             raise
         self._started_runtime_signature = self.runtime_signature()
+
+    def _comfy_base_directory(self) -> Path:
+        custom_nodes_dir = self.settings.custom_nodes_dir
+        try:
+            if custom_nodes_dir.name.lower() == "custom_nodes":
+                custom_nodes_dir.mkdir(parents=True, exist_ok=True)
+                return custom_nodes_dir.parent
+        except Exception:
+            pass
+
+        embedded_comfy_root = self.settings.project_root / "runtime" / "ComfyUI"
+        try:
+            use_project_base = self.settings.comfy_root.resolve() == embedded_comfy_root.resolve()
+        except OSError:
+            use_project_base = str(self.settings.comfy_root).strip().rstrip("\\/").lower() == str(embedded_comfy_root).strip().rstrip("\\/").lower()
+        return self.settings.project_root if use_project_base else self.settings.comfy_root
 
     def _close_log_handle(self) -> None:
         handle = self._log_handle
@@ -232,14 +303,18 @@ class ComfyClient:
     def _pid_belongs_to_runtime(self, pid: int | None) -> bool:
         if not pid:
             return False
+        if self.process and self.process.pid == pid:
+            return True
         try:
             import psutil
 
             process = psutil.Process(pid)
             command = " ".join(process.cmdline())
-            root = str(self.settings.project_root).lower()
+            project_root = str(self.settings.project_root).replace("/", "\\").lower()
+            comfy_root = str(self.settings.comfy_root).replace("/", "\\").lower()
             normalized = command.replace("/", "\\").lower()
-            return root in normalized and "comfyui\\main.py" in normalized
+            main_py = str(self.settings.comfy_root / "main.py").replace("/", "\\").lower()
+            return (project_root in normalized or comfy_root in normalized or main_py in normalized) and "main.py" in normalized
         except Exception:
             return False
 
@@ -286,6 +361,9 @@ class ComfyClient:
     def runtime_signature(self) -> str:
         runtime = self.settings.runtime
         payload = {
+            "comfy_python": str(self.settings.comfy_python.resolve() if self.settings.comfy_python.exists() else self.settings.comfy_python),
+            "comfy_root": str(self.settings.comfy_root.resolve() if self.settings.comfy_root.exists() else self.settings.comfy_root),
+            "custom_nodes_dir": str(self.settings.custom_nodes_dir.resolve() if self.settings.custom_nodes_dir.exists() else self.settings.custom_nodes_dir),
             "vram_policy": runtime.vram_policy.lower(),
             "gpu_memory_gb": runtime.gpu_memory_gb,
             "precision": runtime.precision.lower(),
@@ -386,7 +464,13 @@ class ComfyClient:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(f"{self.base_url}/object_info")
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            if isinstance(data, str):
+                try:
+                    data = json.loads(data)
+                except json.JSONDecodeError:
+                    data = {}
+            return data if isinstance(data, dict) else {}
 
     async def system_stats(self) -> dict[str, Any]:
         if not await self.is_running():
@@ -427,6 +511,15 @@ class ComfyClient:
 
     async def queue_prompt(self, workflow: dict[str, Any], client_id: str | None = None) -> str:
         await self.ensure_running()
+        object_info = await self.object_info()
+        missing_message = _format_missing_workflow_nodes(
+            workflow,
+            object_info,
+            custom_nodes_dir=self.settings.custom_nodes_dir,
+            comfy_root=self.settings.comfy_root,
+        )
+        if missing_message:
+            raise RuntimeError(missing_message)
         payload = {"prompt": workflow, "client_id": client_id or str(uuid.uuid4())}
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(f"{self.base_url}/prompt", json=payload)
