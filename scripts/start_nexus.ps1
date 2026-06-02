@@ -231,6 +231,27 @@ function Get-NexusDependencySignature {
     }
 }
 
+function Invoke-NexusPythonProbe {
+    param(
+        [string]$PythonExe,
+        [string[]]$Arguments
+    )
+    $stdoutPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nexus_probe_stdout_{0}.txt" -f ([System.Guid]::NewGuid().ToString("N")))
+    $stderrPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nexus_probe_stderr_{0}.txt" -f ([System.Guid]::NewGuid().ToString("N")))
+    try {
+        $quotedArguments = @($Arguments | ForEach-Object { '"' + ([string]$_).Replace('"', '\"') + '"' })
+        $process = Start-Process -FilePath $PythonExe -ArgumentList $quotedArguments -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+        $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue } else { "" }
+        $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue } else { "" }
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            Output = (($stdout, $stderr) -join "`n").Trim()
+        }
+    } finally {
+        Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-NexusLtxVideoDecodeNode {
     $ltxVideoPath = Join-Path $customNodesDir "ComfyUI-LTXVideo"
     $decodeFile = Join-Path $ltxVideoPath "tiled_vae_decode.py"
@@ -287,11 +308,11 @@ except Exception:
     $probePath = Join-Path ([System.IO.Path]::GetTempPath()) ("nexus_ltx_import_probe_{0}.py" -f ([System.Guid]::NewGuid().ToString("N")))
     try {
         [System.IO.File]::WriteAllText($probePath, $probe, [System.Text.UTF8Encoding]::new($false))
-        $output = & $comfyPython $probePath $comfyRoot $customNodesDir $ltxVideoPath 2>&1
-        if ($LASTEXITCODE -eq 0) {
+        $result = Invoke-NexusPythonProbe $comfyPython @($probePath, $comfyRoot, $customNodesDir, $ltxVideoPath)
+        if ($result.ExitCode -eq 0) {
             return $true
         }
-        $text = ($output | Out-String).Trim()
+        $text = [string]$result.Output
         if (![string]::IsNullOrWhiteSpace($text)) {
             Write-NexusLine "ComfyUI-LTXVideo import failed: $text" "Warn"
         }
