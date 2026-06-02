@@ -285,8 +285,10 @@ def _normalize_model_item(item: dict[str, Any], settings: NexusSettings | None =
             version_data = _with_installed_state({**version_data, "model_type": item.get("type"), "target_folder": str(_target_dir(settings, kind, target_preset))}, settings)
         normalized_versions.append(version_data)
     preview = ""
-    if normalized_versions:
-        preview = normalized_versions[0].get("preview", "")
+    for candidate in normalized_versions:
+        if candidate.get("preview"):
+            preview = str(candidate.get("preview") or "")
+            break
     normalized = {
         "id": item.get("id"),
         "name": item.get("name") or "Civitai model",

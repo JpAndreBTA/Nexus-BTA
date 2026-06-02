@@ -13,6 +13,7 @@
   let suppressExplorerScrollCapture = false;
   let activeSearchController = null;
   let searchRunId = 0;
+  let lastSearchSignature = "";
   let searchDebounceTimer = null;
   const tokenStorageKey = "nexus_civitai_api_key";
   const downloadJobs = new Map();
@@ -98,13 +99,20 @@
     if (input) input.value = normalizeTagValue(value);
     const searchInput = el("civitaiUrlInput");
     if (searchInput && String(searchInput.value || "").trim().startsWith("#")) searchInput.value = "";
+    clearUrlInputForBrowse();
     renderTagChips();
-    search(false).catch(() => status("Search failed."));
+    startFreshSearch().catch(() => status("Search failed."));
   }
 
   function submitSearchInput() {
     const rawInput = el("civitaiUrlInput")?.value?.trim() || "";
-    return isCivitaiUrl(rawInput) ? resolve() : search(false);
+    clearTimeout(searchDebounceTimer);
+    return isCivitaiUrl(rawInput) ? resolve() : startFreshSearch();
+  }
+
+  function clearUrlInputForBrowse() {
+    const searchInput = el("civitaiUrlInput");
+    if (searchInput && isCivitaiUrl(searchInput.value)) searchInput.value = "";
   }
 
   function activeSearchQuery() {
@@ -138,7 +146,7 @@
   function queueSearch() {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = setTimeout(() => {
-      search(false).catch((error) => {
+      startFreshSearch().catch((error) => {
         if (error?.name === "AbortError") return;
         status("Search failed.");
       });
@@ -193,7 +201,7 @@
       show.dataset.nexusWired = "1";
       show.addEventListener("change", () => {
         if (viewMode === "detail" && currentDetail) renderResult(currentDetail.data, currentDetail.downloaded);
-        else search(false).catch(() => status("Search failed."));
+        else startFreshSearch().catch(() => status("Search failed."));
         if (el("civitaiMediaModal") && !el("civitaiMediaModal").classList.contains("hidden")) closeMediaModal();
       });
     }
@@ -208,8 +216,9 @@
       if (!control || control.dataset.nexusWired) return;
       control.dataset.nexusWired = "1";
       control.addEventListener("change", () => {
+        clearUrlInputForBrowse();
         if (control === type) renderTagChips();
-        search(false).catch(() => status("Search failed."));
+        startFreshSearch().catch(() => status("Search failed."));
       });
     });
     updateTypeButtons();
@@ -253,9 +262,10 @@
   function setTypeFilter(value) {
     const select = el("civitaiTypeFilter");
     if (select) select.value = value;
+    clearUrlInputForBrowse();
     updateTypeButtons();
     renderTagChips();
-    search(false).catch(() => status("Search failed."));
+    startFreshSearch().catch(() => status("Search failed."));
   }
 
   async function post(path, body, signal = null) {
@@ -322,9 +332,19 @@
     return item?.versions?.[0] || null;
   }
 
+  function versionHasPreview(version) {
+    return !!(version?.previews?.length || version?.preview);
+  }
+
+  function previewVersion(item) {
+    return (item?.versions || []).find(versionHasPreview) || firstVersion(item);
+  }
+
   function previewList(item, version = firstVersion(item)) {
     const previews = version?.previews?.length ? version.previews : [];
     if (previews.length) return previews;
+    const fallbackVersion = versionHasPreview(version) ? null : (item?.versions || []).find(versionHasPreview);
+    if (fallbackVersion) return previewList(item, fallbackVersion);
     const preview = version?.preview || item?.preview;
     return preview ? [{ url: preview, type: mediaType(preview), nsfw: item?.nsfw }] : [];
   }
@@ -588,7 +608,7 @@
     if (searchInput && !isCivitaiUrl(searchInput.value)) searchInput.value = "";
     updateTypeButtons();
     renderTagChips();
-    search(false).catch(() => status("Search failed."));
+    startFreshSearch().catch(() => status("Search failed."));
   }
 
   function visiblePreviews(data) {
@@ -598,6 +618,15 @@
         ? [{ url: data.preview, type: mediaType(data.preview), nsfw: data.nsfw }]
         : [];
     return showMatureEnabled() ? source : source.filter((preview) => !mediaIsMature(preview, data));
+  }
+
+  function noPreviewMessage(data) {
+    if (showMatureEnabled()) {
+      return data?.nsfw || data?.nsfw_level || data?.nsfwLevel
+        ? "Civitai returned no preview media for this mature model."
+        : "Civitai returned no preview media for this model.";
+    }
+    return "No visible preview with current mature filter.";
   }
 
   function previewTile(preview, index, data, shape = "aspect-square") {
@@ -819,7 +848,7 @@
       </div>
       <div class="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5">
         <div class="space-y-3">
-          ${previews[0] ? previewTile(previews[0], 0, data, "aspect-[3/4]") : `<div class="aspect-[3/4] bg-nexus-bg border border-nexus-border flex items-center justify-center text-center text-nexus-muted p-4">No visible preview with current mature filter.</div>`}
+          ${previews[0] ? previewTile(previews[0], 0, data, "aspect-[3/4]") : `<div class="aspect-[3/4] bg-nexus-bg border border-nexus-border flex items-center justify-center text-center text-nexus-muted p-4">${html(noPreviewMessage(data))}</div>`}
           <div class="bg-nexus-bg border border-nexus-border p-2 text-[10px] text-nexus-muted font-mono">${installed ? "Installed" : "Resolved"}</div>
         </div>
         <div class="space-y-4">
@@ -857,7 +886,8 @@
 
   function searchCardHtml(item, index, blurMature) {
     const version = firstVersion(item) || {};
-    const preview = previewList(item, version)[0];
+    const displayVersion = previewVersion(item) || version;
+    const preview = previewList(item, displayVersion)[0];
     const mature = mediaIsMature(preview, item);
     const matureClass = mature && blurMature ? "blur-xl scale-110" : "";
     const installed = isInstalled(version, isInstalled(item));
@@ -881,6 +911,15 @@
           </div>
         </button>
       </article>
+    `;
+  }
+
+  function searchLoadingHtml(label = "Searching Civitai...") {
+    return `
+      <div class="h-full min-h-[360px] flex flex-col items-center justify-center text-center text-nexus-muted gap-3">
+        <i class="fa-solid fa-spinner fa-spin text-nexus-red text-xl"></i>
+        <p class="font-mono text-[11px]">${html(label)}</p>
+      </div>
     `;
   }
 
@@ -940,15 +979,51 @@
     wireTileVideoLazyload();
   }
 
+  function currentSearchSignature() {
+    const rawInput = el("civitaiUrlInput")?.value?.trim() || "";
+    const tagFromInput = rawInput.startsWith("#") ? normalizeTagValue(rawInput) : "";
+    const query = isCivitaiUrl(rawInput) || tagFromInput ? "" : normalizedCivitaiQuery(rawInput);
+    return JSON.stringify({
+      query,
+      tag: tagFromInput || selectedTag(),
+      types: el("civitaiTypeFilter")?.value || "",
+      base_model: el("civitaiBaseModelFilter")?.value || "",
+      sort: el("civitaiSortFilter")?.value || "Newest",
+      nsfw: !!el("civitaiNsfwToggle")?.checked,
+      installed: installedOnlyEnabled(),
+    });
+  }
+
+  async function startFreshSearch() {
+    clearTimeout(searchDebounceTimer);
+    const panel = el("civitaiResultPanel");
+    if (panel) panel.innerHTML = searchLoadingHtml("Searching Civitai...");
+    viewMode = "explorer";
+    currentDetail = null;
+    searchCursor = null;
+    explorerScrollTop = 0;
+    return search(false);
+  }
+
   async function resolve() {
     const payload = formPayload();
     if (!payload.url) {
-      return search(false);
+      return startFreshSearch();
     }
-    status("Resolving...");
-    resolved = await post("/civitai/resolve", payload);
-    renderResult(resolved, false);
-    status("Resolved.");
+    if (activeSearchController) activeSearchController.abort();
+    const runId = ++searchRunId;
+    activeSearchController = new AbortController();
+    try {
+      status("Resolving...");
+      const panel = el("civitaiResultPanel");
+      if (panel) panel.innerHTML = searchLoadingHtml("Resolving Civitai model...");
+      resolved = await post("/civitai/resolve", payload, activeSearchController.signal);
+      if (runId !== searchRunId) return;
+      renderResult(resolved, false);
+      status("Resolved.");
+    } finally {
+      if (runId === searchRunId) activeSearchController = null;
+    }
   }
 
   async function download(urlOverride) {
@@ -969,6 +1044,8 @@
     if (append && loadingMore) return;
     if (!append && activeSearchController) activeSearchController.abort();
     const runId = ++searchRunId;
+    const signature = currentSearchSignature();
+    lastSearchSignature = signature;
     activeSearchController = new AbortController();
     loadingMore = true;
     status(append ? "Loading more..." : "Searching Civitai...");
@@ -990,7 +1067,7 @@
     };
     try {
       const result = await post("/civitai/search", payload, activeSearchController.signal);
-      if (runId !== searchRunId) return;
+      if (runId !== searchRunId || (!append && signature !== lastSearchSignature)) return;
       searchCursor = result.metadata?.nextCursor || null;
       renderSearch(result.items || [], append);
       if (!append) {
@@ -999,12 +1076,20 @@
       }
       status(`${currentItems.length} model(s) loaded.`);
     } catch (error) {
-      if (error?.name === "AbortError") return;
+      if (error?.name === "AbortError") {
+        if (runId === searchRunId) {
+          const panel = el("civitaiResultPanel");
+          if (panel && viewMode === "explorer" && !currentItems.length) panel.innerHTML = searchLoadingHtml("Updating Civitai filters...");
+        }
+        return;
+      }
       throw error;
     } finally {
       if (runId === searchRunId) {
         loadingMore = false;
         activeSearchController = null;
+      } else if (!append) {
+        loadingMore = false;
       }
     }
   }
@@ -1019,11 +1104,11 @@
       syncDownloadJobs();
       status("Idle");
       if (!currentItems.length) {
-        search(false).catch(() => status("Browse unavailable."));
+        startFreshSearch().catch(() => status("Browse unavailable."));
       } else if (visibleSearchEntries().length) {
         renderSearch(currentItems, false);
       } else {
-        search(false).catch(() => status("Browse unavailable."));
+        startFreshSearch().catch(() => status("Browse unavailable."));
       }
     },
     close() {
@@ -1051,7 +1136,7 @@
       });
     },
     search() {
-      return search(false).catch((error) => {
+      return startFreshSearch().catch((error) => {
         status("Search failed.");
         window.showToast?.("Civitai Search Failed", String(error.message || error).slice(0, 180));
       });

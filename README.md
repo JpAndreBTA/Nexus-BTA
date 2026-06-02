@@ -123,15 +123,17 @@ For the full LTX 2.3 video stack, use an NVIDIA GPU with CUDA. LTX's own open-so
 
 ### Linux
 
-Linux can run the backend and static UI manually. The bundled `.bat` and `.ps1` launchers are not portable yet, so create the runtime yourself:
+Linux can run the backend and static UI manually. The Windows `.bat` and `.ps1` launchers now infer the project root from their own location, so they no longer depend on `D:\NexusBTA`, but they are still Windows launchers. On Linux, create the runtime yourself or use the Docker/RunPod path below:
 
 ```bash
 python3.11 -m venv runtime/.venv
 source runtime/.venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 git clone https://github.com/comfyanonymous/ComfyUI.git runtime/ComfyUI
-pip install -r runtime/ComfyUI/requirements.txt
+python -m pip install -r runtime/ComfyUI/requirements.txt
+export NEXUS_BACKEND_HOST=127.0.0.1
+export NEXUS_BACKEND_PORT=7861
 python backend/run_backend.py
 ```
 

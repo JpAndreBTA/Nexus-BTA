@@ -232,8 +232,28 @@ function Get-NexusDependencySignature {
     }
 }
 
+function Test-NexusLtxVideoDecodeNode {
+    $ltxVideoPath = Join-Path $customNodesDir "ComfyUI-LTXVideo"
+    $decodeFile = Join-Path $ltxVideoPath "tiled_vae_decode.py"
+    $initFile = Join-Path $ltxVideoPath "__init__.py"
+    if (!(Test-Path -LiteralPath $decodeFile) -or !(Test-Path -LiteralPath $initFile)) {
+        return $false
+    }
+    try {
+        $decodeText = Get-Content -LiteralPath $decodeFile -Raw -ErrorAction Stop
+        $initText = Get-Content -LiteralPath $initFile -Raw -ErrorAction Stop
+        return $decodeText -match "class\s+LTXVTiledVAEDecode\b" -and $initText -match '"LTXVTiledVAEDecode"'
+    } catch {
+        return $false
+    }
+}
+
 function Test-NexusDependencyCheckRequired([string]$Signature) {
     if ([string]$env:NEXUS_FORCE_DEP_CHECK -match '^(1|true|yes|y)$') {
+        return $true
+    }
+    if (!(Test-NexusLtxVideoDecodeNode)) {
+        Write-NexusLine "LTXVideo Decode Frames node is missing or stale; dependency repair is required." "Warn"
         return $true
     }
     if (!(Test-Path -LiteralPath $dependencyStatePath)) {

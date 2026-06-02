@@ -147,6 +147,63 @@ function Test-NexusModelFile([string]$PathValue, [long]$MinBytes) {
     return (Get-Item -LiteralPath $PathValue).Length -ge $MinBytes
 }
 
+function Test-NexusLtxVideoDecodeNode([string]$NodePath) {
+    $decodeFile = Join-Path $NodePath "tiled_vae_decode.py"
+    $initFile = Join-Path $NodePath "__init__.py"
+    if (!(Test-Path -LiteralPath $decodeFile) -or !(Test-Path -LiteralPath $initFile)) { return $false }
+    $decodeText = Get-Content -LiteralPath $decodeFile -Raw -ErrorAction SilentlyContinue
+    $initText = Get-Content -LiteralPath $initFile -Raw -ErrorAction SilentlyContinue
+    return $decodeText -match "class\s+LTXVTiledVAEDecode\b" -and $initText -match '"LTXVTiledVAEDecode"'
+}
+
+function Repair-NexusRepoFolder([hashtable]$Repo) {
+    if ($Repo.Name -ne "ComfyUI-LTXVideo") { return $false }
+    if (Test-NexusLtxVideoDecodeNode $Repo.Path) { return $false }
+    if (Test-Path -LiteralPath $Repo.Path) {
+        $backup = "$($Repo.Path).stale_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        Write-NexusWarn "$($Repo.Name) is present but missing LTXVTiledVAEDecode. Moving stale copy to $backup."
+        Move-Item -LiteralPath $Repo.Path -Destination $backup -Force
+    }
+    Write-NexusLine "Reinstalling $($Repo.Name) with required Decode Frames node..." "Info"
+    git clone --depth 1 $Repo.Url $Repo.Path
+    if ($LASTEXITCODE -ne 0) {
+        throw "git clone failed for $($Repo.Name)"
+    }
+    return $true
+}
+
+function Update-NexusGitRepo([hashtable]$Repo) {
+    if (!$Repo.AutoUpdate) { return }
+    $gitDir = Join-Path $Repo.Path ".git"
+    if (!(Test-Path -LiteralPath $gitDir)) { return }
+    if ($Repo.Commit) { return }
+    Push-Location $Repo.Path
+    try {
+        $dirty = [string]::IsNullOrWhiteSpace((git status --porcelain)) -eq $false
+        if ($dirty) {
+            Write-NexusWarn "$($Repo.Name) has local changes; update skipped to avoid overwriting user edits."
+            return
+        }
+        Write-NexusLine "Updating $($Repo.Name)..." "Info"
+        git fetch --depth 1 origin
+        if ($LASTEXITCODE -ne 0) {
+            Write-NexusWarn "$($Repo.Name) fetch failed; keeping existing checkout."
+            return
+        }
+        $branch = (git rev-parse --abbrev-ref HEAD).Trim()
+        if ($branch -eq "HEAD" -or [string]::IsNullOrWhiteSpace($branch)) {
+            git checkout --detach FETCH_HEAD
+        } else {
+            git merge --ff-only "origin/$branch"
+            if ($LASTEXITCODE -ne 0) {
+                git checkout --detach FETCH_HEAD
+            }
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
 function Skip-NexusModelDownload([string]$Label, [string]$PathValue) {
     if ($allowModelDownloads) { return $false }
     Write-NexusWarn "$Label is missing at $PathValue. Skipping download because startup model downloads were not approved."
@@ -165,6 +222,7 @@ $repos = @(
         Name = "ComfyUI-LTXVideo"
         Url = "https://github.com/Lightricks/ComfyUI-LTXVideo.git"
         Path = Join-Path $customNodesDir "ComfyUI-LTXVideo"
+        AutoUpdate = $true
     },
     @{
         Name = "ComfyUI-VideoHelperSuite"
@@ -223,9 +281,14 @@ foreach ($repo in $repos) {
         if (!(Test-Path -LiteralPath $repo.Path)) {
             Write-NexusLine "Installing $($repo.Name)..." "Info"
             git clone --depth 1 $repo.Url $repo.Path
+            if ($LASTEXITCODE -ne 0) {
+                throw "git clone failed for $($repo.Name)"
+            }
         } else {
             Write-NexusLine "$($repo.Name) is present." "Ok"
         }
+
+        Repair-NexusRepoFolder $repo | Out-Null
 
         if ($repo.Commit -and (Test-Path -LiteralPath (Join-Path $repo.Path ".git"))) {
             Push-Location $repo.Path
@@ -244,6 +307,8 @@ foreach ($repo in $repos) {
             } finally {
                 Pop-Location
             }
+        } else {
+            Update-NexusGitRepo $repo
         }
 
         $requirements = Join-Path $repo.Path "requirements.txt"
@@ -252,6 +317,14 @@ foreach ($repo in $repos) {
             Invoke-NexusPipInstallIfNeeded $repo.Name @("-r", $requirements)
         }
     }
+}
+
+Invoke-NexusStep -Label "Validating LTXVideo Decode Frames node" -Step {
+    $ltxVideoPath = Join-Path $customNodesDir "ComfyUI-LTXVideo"
+    if (!(Test-NexusLtxVideoDecodeNode $ltxVideoPath)) {
+        throw "ComfyUI-LTXVideo is missing LTXVTiledVAEDecode. This causes ComfyUI to report Node 'Decode Frames' not found. Run update.bat or rerun this installer with internet access."
+    }
+    Write-NexusLine "ComfyUI-LTXVideo Decode Frames node is available." "Ok"
 }
 
 Invoke-NexusStep -Label "Downloading MelBandRoFormer model" -Step {
