@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from packaging.version import Version
+
 from .config import NexusSettings, runtime_python
 from .scanner import scan_custom_nodes
 
@@ -15,6 +17,10 @@ from .scanner import scan_custom_nodes
 _OPTIONAL_REQUIREMENT_FALLBACKS = {
     "onnxruntime-gpu": "onnxruntime>=1.18",
     "imath": "OpenEXR>=3.2.0",
+}
+
+_REQUIREMENT_VERSION_FLOORS = {
+    "kornia": "kornia>=0.8.2",
 }
 
 _OPTIONAL_REQUIREMENT_SKIPS = {
@@ -53,9 +59,16 @@ def _installed_requirement(package: str) -> bool:
     normalized = _normalize_package_name(package)
     if normalized in _OPTIONAL_REQUIREMENT_SKIPS:
         return True
+    floor = _REQUIREMENT_VERSION_FLOORS.get(normalized)
     for candidate in dict.fromkeys((package, normalized)):
         try:
-            metadata.version(candidate)
+            installed_version = metadata.version(candidate)
+            if floor:
+                floor_package = _requirement_package_name(floor)
+                if floor_package and _normalize_package_name(floor_package) == normalized:
+                    floor_match = re.search(r">=\s*([A-Za-z0-9_.!+-]+)", floor)
+                    if floor_match and Version(installed_version) < Version(floor_match.group(1)):
+                        return False
             return True
         except metadata.PackageNotFoundError:
             pass
@@ -80,8 +93,12 @@ def _sanitized_requirements_file(requirements_path: Path, temp_dir: Path) -> Pat
         package = _requirement_package_name(line)
         normalized = _normalize_package_name(package or "")
         fallback = _OPTIONAL_REQUIREMENT_FALLBACKS.get(normalized)
+        floor = _REQUIREMENT_VERSION_FLOORS.get(normalized)
         if fallback:
             sanitized.append(f"{fallback}  # Nexus fallback for optional {package}")
+            changed = True
+        elif floor:
+            sanitized.append(f"{floor}  # Nexus minimum for current Comfy/Nexus runtime")
             changed = True
         elif normalized in _OPTIONAL_REQUIREMENT_SKIPS:
             sanitized.append(f"# {line}  # Nexus skip: optional Roboflow inference package conflicts with current Comfy/Nexus runtime")

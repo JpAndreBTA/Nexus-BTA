@@ -63,7 +63,7 @@ defusedxml>=0.7.1
 # The KJNodes repo below provides LTXVAddGuideMulti / LTXV Img To Video Inplace KJ,
 # which are required by Cameraman + end-frame / latent-upscale guide reapplication.
 onnxruntime>=1.18
-kornia>=0.8
+kornia>=0.8.2
 ninja~=1.11.1.4
 timm>=0.6.13
 importlib_metadata>=8.0

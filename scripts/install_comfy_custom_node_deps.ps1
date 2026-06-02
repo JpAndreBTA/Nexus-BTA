@@ -58,6 +58,9 @@ function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
                 } elseif ($line.Trim() -match '^Imath([<>=!~].*)?(\s*(#.*)?)?$') {
                     $sanitized += "OpenEXR>=3.2.0 # Nexus fallback for Imath module"
                     $changed = $true
+                } elseif ($line.Trim() -match '^kornia(\s*(#.*)?)?$') {
+                    $sanitized += "kornia>=0.8.2 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
                 } elseif ($line.Trim() -match '^inference-(cli|gpu)(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
                     $sanitized += "# $line # Nexus skip: optional Roboflow inference package conflicts with current Comfy/Nexus runtime"
                     $changed = $true
