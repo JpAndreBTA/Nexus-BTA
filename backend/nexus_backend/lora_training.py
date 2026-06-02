@@ -605,6 +605,186 @@ def _trainer_config_args(trainer: str, config_path: Path) -> list[str]:
     return ["--config_file", str(config_path)]
 
 
+def _parse_ltx_size(value: Any, default: tuple[int, int] = (768, 768)) -> tuple[int, int]:
+    text = str(value or "").strip().lower()
+    match = re.search(r"(\d+)\s*x\s*(\d+)", text)
+    if match:
+        width = int(match.group(1))
+        height = int(match.group(2))
+    else:
+        number_match = re.search(r"\d+", text)
+        if not number_match:
+            return default
+        width = height = int(number_match.group(0))
+    width = max(32, (width // 32) * 32)
+    height = max(32, (height // 32) * 32)
+    return width, height
+
+
+def _ltx_frame_count(value: Any) -> int:
+    frames = _int(value, 1, 1, 257)
+    if frames == 1:
+        return 1
+    return max(9, ((frames - 1) // 8) * 8 + 1)
+
+
+def _ltx_target_modules(training_mode: str, control_type: str) -> list[str]:
+    if training_mode == "audio_video_lora":
+        return ["to_k", "to_q", "to_v", "to_out.0"]
+    if training_mode == "ic_lora" or control_type != "none":
+        return [
+            "attn1.to_k",
+            "attn1.to_q",
+            "attn1.to_v",
+            "attn1.to_out.0",
+            "attn2.to_k",
+            "attn2.to_q",
+            "attn2.to_v",
+            "attn2.to_out.0",
+            "ff.net.0.proj",
+            "ff.net.2",
+        ]
+    return [
+        "attn1.to_k",
+        "attn1.to_q",
+        "attn1.to_v",
+        "attn1.to_out.0",
+        "attn2.to_k",
+        "attn2.to_q",
+        "attn2.to_v",
+        "attn2.to_out.0",
+    ]
+
+
+def _ltx_trainer_config(config: dict[str, Any], dataset_dir: Path, output_dir: Path) -> dict[str, Any]:
+    ltx = dict(config.get("ltx") or {})
+    training_mode = str(ltx.get("training_mode") or "lora").lower()
+    control_type = str(ltx.get("control_type") or "none").lower()
+    text_encoder_path = str(ltx.get("text_encoder_path") or "").strip()
+    sample_width, sample_height = _parse_ltx_size(ltx.get("sample_size") or config.get("resolution"))
+    frames = _ltx_frame_count(config.get("frames"))
+    precision = str(config.get("precision") or "bf16").lower()
+    if precision not in {"no", "fp16", "bf16"}:
+        precision = "bf16"
+    optimizer = str(config.get("optimizer") or "adamw").lower()
+    if optimizer not in {"adamw", "adamw8bit"}:
+        optimizer = "adamw8bit" if "8" in optimizer else "adamw"
+    strategy: dict[str, Any]
+    if training_mode == "ic_lora" or control_type != "none":
+        strategy = {
+            "name": "video_to_video",
+            "first_frame_conditioning_p": 0.2,
+            "reference_latents_dir": "reference_latents",
+        }
+    else:
+        strategy = {
+            "name": "text_to_video",
+            "first_frame_conditioning_p": 0.5 if frames > 1 else 0.1,
+            "with_audio": training_mode == "audio_video_lora" or str(ltx.get("dataset_mode") or "") == "audio_video_pairs",
+            "audio_latents_dir": "audio_latents",
+        }
+    model_config: dict[str, Any] = {
+        "model_path": str(config.get("base_model_path") or ""),
+        "training_mode": "lora",
+        "load_checkpoint": str(config.get("resume_from") or "") or None,
+    }
+    if text_encoder_path:
+        model_config["text_encoder_path"] = text_encoder_path
+    return {
+        "model": model_config,
+        "lora": {
+            "rank": int(config["rank"]),
+            "alpha": int(config["alpha"]),
+            "dropout": 0.0,
+            "target_modules": _ltx_target_modules(training_mode, control_type),
+        },
+        "training_strategy": strategy,
+        "optimization": {
+            "learning_rate": float(config["learning_rate"]),
+            "steps": int(config["steps"]),
+            "batch_size": int(config["batch_size"]),
+            "gradient_accumulation_steps": int(config["gradient_accumulation"]),
+            "max_grad_norm": 1.0,
+            "optimizer_type": optimizer,
+            "scheduler_type": "linear",
+            "scheduler_params": {},
+            "enable_gradient_checkpointing": bool(config.get("gradient_checkpointing", True)),
+        },
+        "acceleration": {
+            "mixed_precision_mode": precision,
+            "quantization": None,
+            "load_text_encoder_in_8bit": bool(config.get("low_vram", False)),
+        },
+        "data": {
+            "preprocessed_data_root": str(dataset_dir),
+            "num_dataloader_workers": 0 if bool(config.get("low_vram", False)) else 2,
+        },
+        "validation": {
+            "prompts": [str(config.get("caption") or config.get("trigger_word") or "A video of the training subject.")],
+            "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+            "images": None,
+            "reference_videos": None,
+            "video_dims": [sample_width, sample_height, frames],
+            "frame_rate": float(ltx.get("target_fps") or 24),
+            "seed": 42,
+            "inference_steps": int(ltx.get("sample_steps") or 25),
+            "interval": None
+            if strategy["name"] == "video_to_video"
+            else int(ltx.get("sample_every") or config.get("save_every_n_steps") or 250),
+            "videos_per_prompt": 1,
+            "guidance_scale": float(ltx.get("sample_guidance_scale") or 3.0),
+            "stg_scale": 1.0,
+            "stg_blocks": [29],
+            "stg_mode": "stg_av" if training_mode == "audio_video_lora" else "stg_v",
+            "generate_audio": training_mode == "audio_video_lora",
+            "skip_initial_validation": True,
+            "include_reference_in_output": False,
+        },
+        "checkpoints": {
+            "interval": int(config["save_every_n_steps"]),
+            "keep_last_n": -1,
+        },
+        "hub": {
+            "push_to_hub": False,
+            "hub_model_id": None,
+        },
+        "flow_matching": {
+            "timestep_sampling_mode": "shifted_logit_normal",
+            "timestep_sampling_params": {},
+        },
+        "wandb": {
+            "enabled": False,
+            "project": "ltx-2-trainer",
+            "entity": None,
+            "tags": ["nexus-bta", "ltx2", "lora"],
+            "log_validation_videos": False,
+        },
+        "seed": 42,
+        "output_dir": str(output_dir),
+    }
+
+
+def _ltx_launch_issue(config: dict[str, Any]) -> str:
+    model_path = str(config.get("base_model_path") or "").strip()
+    if not model_path:
+        return "Select a local LTX-2.3 model checkpoint (.safetensors) before launching the LTX-2 trainer."
+    model_file = Path(model_path)
+    if not model_file.exists():
+        return f"LTX-2 trainer model checkpoint does not exist: {model_path}"
+    model_name = model_file.name.lower()
+    if any(token in model_name for token in ("vae", "upscaler", "lora", "text_encoder", "gemma")):
+        return (
+            "The selected LTX base model looks like an auxiliary file, not the main model checkpoint: "
+            f"{model_file.name}. Select the LTX-2.3 22B model checkpoint, not a VAE, LoRA, upscaler, or text encoder."
+        )
+    text_encoder_path = str((config.get("ltx") or {}).get("text_encoder_path") or "").strip()
+    if not text_encoder_path:
+        return "Set the Gemma Text Encoder folder for LTX-2.3 training before launching the LTX-2 trainer."
+    if not Path(text_encoder_path).exists():
+        return f"LTX-2.3 Gemma Text Encoder path does not exist: {text_encoder_path}"
+    return ""
+
+
 def resolve_trainer_runner(settings: NexusSettings, preset: dict[str, Any], config_path: Path) -> dict[str, Any]:
     trainer = str(preset.get("trainer") or "")
     script = str(preset.get("script") or "") or None
@@ -784,7 +964,8 @@ def build_train_lora_job(
     config["output_dir"] = str(output_dir)
     config["uploaded_files"] = saved_files
     config_path = job_root / "train_lora_config.json"
-    config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    trainer_config = _ltx_trainer_config(config, dataset_dir, output_dir) if is_ltx_trainer else config
+    config_path.write_text(json.dumps(trainer_config, indent=2), encoding="utf-8")
 
     dataset_toml = None
     if config["trainer"] == "kohya_ss":
@@ -794,6 +975,9 @@ def build_train_lora_job(
     readme_path.write_text(_job_readme(config, config_path, dataset_toml), encoding="utf-8")
     runner_preset = {**preset, "trainer": config["trainer"], "trainer_label": config["trainer_label"], "script": ""}
     runner = resolve_trainer_runner(settings, runner_preset, config_path)
+    ltx_launch_issue = _ltx_launch_issue(config) if is_ltx_trainer else ""
+    if ltx_launch_issue:
+        runner = {**runner, "available": False, "install_hint": ltx_launch_issue}
     terminal_log_path = job_root / "train_lora_terminal.log"
     terminal_log_path.write_text(_job_terminal_log(config, runner, saved_files), encoding="utf-8")
     status = "prepared"
