@@ -1,105 +1,17 @@
 # NexusBTA v0.2.22
 
-Suggested tag: `v0.2.22`
-
-Release title:
-
 `NexusBTA v0.2.22 - Qwen, WAN/LTX Video, Extras, Civitai and Runtime Update`
 
-Release text:
+Short release summary:
 
-NexusBTA v0.2.22 rolls up the work completed after v0.2.21. It includes image/video workflow fixes, Qwen MultiView and inpaint improvements, WAN/LTX loop work, Extras upscale/refine routes, Civitai browser fixes, dependency/path synchronization and new LAN/RunPod startup options.
+- Qwen: inpaint, MultiView, Lightning LoRA and camera sync between frontend/backend.
+- Flux: multiple references, inpaint and route isolation.
+- WAN 2.2: loop cycle/start-end frame mode while keeping normal workflows isolated.
+- LTX 2.3: loop cycle/FLF2V, start/end frame, motion transfer and compatibility with Omnicine, latent upscale and detailer LoRA.
+- Extras: RTX upscale, PiD image upscale, FlashVSR, SeedVR2, refine/denoise/detail and face restoration.
+- Civitai: search, filters, mature/blur, installed, previews, autofolder and custom folders fixed.
+- Runtime: bootstrap without fixed `D:\NexusBTA`, `StartLAN`, `StartTunnel`, Docker/RunPod and `Decode Frames` fix.
 
-## Startup And Runtime
+Complete version:
 
-- Carried forward the v0.2.21 startup hotfixes that stop the launcher from blocking while ComfyUI warms up.
-- Fixed bootstrap scripts so users are not forced into `D:\NexusBTA`; scripts now infer the project root from their own location.
-- Improved model path, ComfyUI root, Comfy Python and custom node path synchronization between UI settings, backend and startup scripts.
-- Fixed dependency setup around custom nodes so optional requirement failures do not break normal startup.
-- Fixed the LTX/Comfy `Node 'Decode Frames' not found` class of errors by tightening LTXVideo/custom-node dependency handling.
-- Added `StartLAN.bat` for direct local-network access with no external tunnel.
-- Added `StartTunnel.bat` with explicit user choice for Tailscale Funnel, Cloudflare Quick Tunnel, ngrok or a custom command.
-- Tunnel clients are optional dependencies; when missing, Nexus asks whether to install them with `winget`.
-- Added Docker/RunPod support files with exposed-port mode and no automatic external tunnel.
-- Aligned the Docker base with the validated Torch/CUDA stack: `torch 2.10.0+cu130`.
-
-## Qwen Image Edit
-
-- Added and stabilized Qwen inpaint route support.
-- Fixed Qwen image edit route isolation so Qwen, Flux and inpaint workflows do not inherit the wrong workflow/template state.
-- Added Qwen Lightning LoRA side-menu synchronization and backend fallback discovery for custom model folders.
-- Added Qwen MultiView workflow support using `jtydhr88/ComfyUI-qwenmultiangle` as the reference.
-- Fixed Qwen MultiView payload sync for horizontal angle, vertical angle and zoom.
-- Locked/disabled positive and negative prompt interference in MultiView so camera controls drive the prompt.
-- Aligned Qwen MultiView prompt format to the official LoRA format: `<sks> {azimuth} {elevation} {distance}`.
-- Aligned Qwen MultiView angle convention to the reference node: `90=right side`, `180=back view`, `270=left side`.
-- Removed over-preserving reference latent conditioning from the Qwen MultiView route so camera changes are less pinned to the source composition.
-- Validated Qwen MultiView with contract checks and real visual batteries.
-
-## Flux And Image Routes
-
-- Validated Flux multi-reference routes.
-- Fixed Flux/Qwen route isolation with inpaint/canvas workflows.
-- Improved img2img route isolation so Qwen, Flux, WAN, LTX and SDXL do not leak incompatible workflow overrides.
-- Rechecked Flux/Qwen route behavior with real visual batteries.
-
-## WAN 2.2
-
-- Added WAN 2.2 loop cycle/start-end-frame integration.
-- Added WAN loop cycle contract and real visual batteries.
-- Kept WAN loop cycle isolated from normal WAN routes.
-- Verified WAN loop cycle remains the stable seamless-loop reference route while LTX loop work continues separately.
-
-## LTX 2.3
-
-- Added LTX 2.3 loop cycle / FLF2V work using first/last-frame conditioning.
-- Fixed start/end-frame handling and removed the mid-frame guide path that was breaking motion.
-- Added compatibility work for latent upscale, IC/detailer LoRA, concept LoRA and Omnicine controls.
-- Blocked incompatible motion-transfer/loop-cycle combinations where needed.
-- Improved LTX 2.3 motion transfer and Director route handling.
-- Added LTX audio compatibility checks for loop-cycle generation.
-- Rechecked LTX workflow routes with real batteries for linear/start-end/motion paths.
-- Kept LTX loop-cycle changes scoped so they do not contaminate WAN, Qwen, Flux or normal LTX workflows.
-
-## Extras, Upscale And Refine
-
-- Added Extras side-menu integration as a postprocess step for generated image/video outputs.
-- Added image/video upscale controls, model selection and path-aware model organization.
-- Added NVIDIA RTX Video Super Resolution / RTX upscale route support where the compatible node is available.
-- Added NVIDIA PiD image-upscale integration and intentionally limited PiD to image upscale while video remains disabled due visual distortion.
-- Added FlashVSR and SeedVR2 route support plus timeout/quality diagnostics.
-- Added LTX IC Detailer / refine compatibility with Extras upscale flows.
-- Added denoise/detail/refine and face restoration controls with optional model download prompts.
-- Added GFPGAN/face restoration model selection so users are not locked to one model.
-- Improved bitrate/duration checks for video upscale routes and added visual/timeout batteries.
-
-## Civitai Browser
-
-- Fixed Civitai modal lag around tags, search box and filters.
-- Added installed-model filter support.
-- Fixed model type/base model/tag search interaction so search works inside selected filters and also in all-model/all-type mode.
-- Fixed mature/NSFW media preview handling so images/videos respect the selected mature/blur toggles.
-- Fixed model detail previews after clicking a model card.
-- Restored preview image downloads beside model files using `.preview.jpg` / `.preview.png` naming.
-- Fixed auto-folder routing so checkpoints, LoRAs, concept LoRAs and custom user folders are organized correctly.
-- Improved custom folder recognition so user-selected LoRAs and ControlNet paths are recognized by frontend and backend.
-
-## ControlNet And Models
-
-- Added DWPose compatibility for image-model ControlNet routes.
-- Improved ControlNet model path recognition for custom user paths.
-- Improved model scanning and source synchronization across checkpoints, LoRAs, ControlNet, upscale/refine and custom folders.
-
-## Validation Notes
-
-- Ran contract and real visual batteries for Qwen, Flux, WAN, LTX, Extras and Civitai routes during the update cycle.
-- Compared Qwen MultiView angle behavior visually against the source image.
-- Used timeout-aware upscale batteries for expensive routes so long-running failures are caught during validation.
-- Rechecked route isolation so workflows do not leak between tabs, templates or presets.
-
-## Known Notes
-
-- Qwen MultiView is prompt/LoRA driven by the upstream reference. The `back view` route is now clearly functional; side views can still preserve some source composition depending on the input image and 4-step Lightning setup.
-- LTX 2.3 loop-cycle quality is improved but still being iterated separately from the stable WAN 2.2 loop-cycle route.
-- NVIDIA PiD video upscale remains disabled for now because current outputs distort the image; PiD stays available for image upscale only.
-- RunPod/Docker uses exposed ports by default and does not start a third-party tunnel automatically.
+[docs/releases/v0.2.22.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.22/docs/releases/v0.2.22.md)
