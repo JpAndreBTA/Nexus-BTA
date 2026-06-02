@@ -248,6 +248,60 @@ function Test-NexusLtxVideoDecodeNode {
     }
 }
 
+function Test-NexusLtxVideoRuntimeImport {
+    $ltxVideoPath = Join-Path $customNodesDir "ComfyUI-LTXVideo"
+    if (!(Test-NexusLtxVideoDecodeNode)) {
+        return $false
+    }
+    if (!(Test-Path -LiteralPath $comfyPython)) {
+        Write-NexusLine "Comfy Python was not found at $comfyPython; dependency repair is required." "Warn"
+        return $false
+    }
+    if (!(Test-Path -LiteralPath (Join-Path $comfyRoot "main.py"))) {
+        Write-NexusLine "ComfyUI was not found at $comfyRoot; dependency repair is required." "Warn"
+        return $false
+    }
+    $probe = @'
+import importlib
+import pathlib
+import sys
+import traceback
+
+comfy_root = pathlib.Path(sys.argv[1])
+custom_nodes_dir = pathlib.Path(sys.argv[2])
+node_path = pathlib.Path(sys.argv[3])
+
+sys.path.insert(0, str(comfy_root))
+sys.path.insert(0, str(custom_nodes_dir))
+
+try:
+    module = importlib.import_module(node_path.name)
+    mappings = getattr(module, "NODE_CLASS_MAPPINGS", {})
+    if "LTXVTiledVAEDecode" not in mappings:
+        print("ComfyUI-LTXVideo imported, but NODE_CLASS_MAPPINGS does not expose LTXVTiledVAEDecode.")
+        sys.exit(2)
+    sys.exit(0)
+except Exception:
+    traceback.print_exc()
+    sys.exit(1)
+'@
+    $probePath = Join-Path ([System.IO.Path]::GetTempPath()) ("nexus_ltx_import_probe_{0}.py" -f ([System.Guid]::NewGuid().ToString("N")))
+    try {
+        [System.IO.File]::WriteAllText($probePath, $probe, [System.Text.UTF8Encoding]::new($false))
+        $output = & $comfyPython $probePath $comfyRoot $customNodesDir $ltxVideoPath 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            return $true
+        }
+        $text = ($output | Out-String).Trim()
+        if (![string]::IsNullOrWhiteSpace($text)) {
+            Write-NexusLine "ComfyUI-LTXVideo import failed: $text" "Warn"
+        }
+        return $false
+    } finally {
+        Remove-Item -LiteralPath $probePath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-NexusDependencyCheckRequired([string]$Signature) {
     if ([string]$env:NEXUS_FORCE_DEP_CHECK -match '^(1|true|yes|y)$') {
         return $true
@@ -262,14 +316,16 @@ function Test-NexusDependencyCheckRequired([string]$Signature) {
     try {
         $state = Get-Content -LiteralPath $dependencyStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ([string]$state.signature -ne $Signature) {
-            Write-NexusLine "Dependency cache changed; run.bat will skip install scans. Open update.bat to repair or refresh dependencies if startup fails." "Warn"
-            Save-NexusDependencyState $Signature
+            Write-NexusLine "Dependency cache changed; dependency repair is required." "Warn"
+            return $true
+        } elseif ($state.ltx_decode_runtime_import -ne $true) {
+            Write-NexusLine "LTXVideo Decode Frames import has not been validated in this runtime; dependency repair is required." "Warn"
+            return $true
         }
         return $false
     } catch {
-        Write-NexusLine "Dependency cache could not be read; run.bat will skip install scans. Open update.bat to repair or refresh dependencies if startup fails." "Warn"
-        Save-NexusDependencyState $Signature
-        return $false
+        Write-NexusLine "Dependency cache could not be read; dependency repair is required." "Warn"
+        return $true
     }
 }
 
@@ -278,8 +334,10 @@ function Save-NexusDependencyState([string]$Signature) {
         signature = $Signature
         checked_at = (Get-Date).ToUniversalTime().ToString("o")
         comfy_python = $comfyPython
+        comfy_root = $comfyRoot
         models_dir = $modelsDir
         custom_nodes_dir = $customNodesDir
+        ltx_decode_runtime_import = (Test-NexusLtxVideoRuntimeImport)
     }
     $json = $state | ConvertTo-Json -Depth 4
     $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
@@ -368,7 +426,7 @@ if ($dependencyCheckRequired -and (Test-Path -LiteralPath $ltxDirectorDeps)) {
     if (Test-Path -LiteralPath $customNodeDeps) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $customNodeDeps -ProjectRoot $root -RuntimePython $comfyPython -CustomNodesDir $customNodesDir
     }
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -CustomNodesDir $customNodesDir -Strict
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -CustomNodesDir $customNodesDir -ComfyRoot $comfyRoot -Strict
 }
 
 if ($dependencyCheckRequired -and (Test-Path -LiteralPath $wan22Deps)) {

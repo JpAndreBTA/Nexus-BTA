@@ -4839,6 +4839,62 @@
                                  </label>
                                  <p id="trainLoraLtxNotes" class="text-[10px] leading-4 text-nexus-muted font-mono">LTX standard LoRA uses video clips plus captions. IC-LoRA expects paired target/control signals for Comfy LTX guide nodes.</p>
                              </div>
+                             <div id="trainLoraPerceptualPanel" class="hidden bg-zinc-950/70 border border-nexus-border rounded-sm p-3 space-y-2">
+                                 <div class="flex items-center justify-between gap-2">
+                                     <span class="mini-label"><i class="fa-solid fa-eye text-nexus-red mr-1"></i>AI Toolkit Perceptual</span>
+                                     <span id="trainLoraPerceptualBadge" class="text-[9px] font-mono text-nexus-red uppercase">compatible</span>
+                                 </div>
+                                 <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
+                                     <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">
+                                         Use Perceptual
+                                         <span class="toggle-switch"><input id="trainLoraPerceptualToggle" type="checkbox" onchange="syncTrainLoraTemplateUi()"><span class="toggle-track"></span></span>
+                                     </label>
+                                     <label class="space-y-1 min-w-0">
+                                         <span class="mini-label">Anchor</span>
+                                         <select id="trainLoraPerceptualAnchor" class="flat-input">
+                                             <option value="depth">Depth</option>
+                                             <option value="none">Weight noise only</option>
+                                         </select>
+                                     </label>
+                                     <label class="space-y-1 min-w-0">
+                                         <span class="mini-label">Dataset</span>
+                                         <select id="trainLoraPerceptualImageMode" class="flat-input" onchange="syncTrainLoraPerceptualDefaults()">
+                                             <option value="auto">Auto</option>
+                                             <option value="single">1 image</option>
+                                             <option value="multi">Several images</option>
+                                         </select>
+                                     </label>
+                                     <label class="space-y-1 min-w-0">
+                                         <span class="mini-label">Depth Weight</span>
+                                         <input id="trainLoraPerceptualDepthWeight" type="number" min="0" max="1" step="0.001" class="flat-input" value="0.1">
+                                     </label>
+                                     <label class="space-y-1 min-w-0">
+                                         <span class="mini-label">Depth Mask</span>
+                                         <select id="trainLoraPerceptualMask" class="flat-input">
+                                             <option value="subject">Subject</option>
+                                             <option value="body">Body</option>
+                                             <option value="none">None</option>
+                                         </select>
+                                     </label>
+                                     <label class="space-y-1 min-w-0">
+                                         <span class="mini-label">Noise Sigma</span>
+                                         <input id="trainLoraPerceptualSigma" type="number" min="0" max="0.1" step="0.0005" class="flat-input" value="0.0125">
+                                     </label>
+                                     <label class="space-y-1 min-w-0">
+                                         <span class="mini-label">Depth Model</span>
+                                         <select id="trainLoraPerceptualDepthModel" class="flat-input">
+                                             <option value="depth-anything/Depth-Anything-V2-Small-hf">DA2 Small</option>
+                                             <option value="depth-anything/Depth-Anything-V2-Base-hf">DA2 Base</option>
+                                             <option value="depth-anything/Depth-Anything-V2-Large-hf">DA2 Large</option>
+                                         </select>
+                                     </label>
+                                     <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">
+                                         Weight Noise
+                                         <span class="toggle-switch"><input id="trainLoraPerceptualNoiseToggle" type="checkbox" checked><span class="toggle-track"></span></span>
+                                     </label>
+                                 </div>
+                                 <p id="trainLoraPerceptualNotes" class="text-[10px] leading-4 text-nexus-muted font-mono">Depth anchor preserves structure while weight noise helps tiny datasets avoid overcooking.</p>
+                             </div>
                              <textarea id="trainLoraCaption" class="hidden"></textarea>
                          </div>
                         <div class="data-card p-3 space-y-3">
@@ -5272,9 +5328,33 @@
             sources: [
                 { label: 'LTX-2 Trainer', url: 'https://github.com/Lightricks/LTX-2/tree/main/packages/ltx-trainer', note: 'Official LTX trainer package for LoRA, full tuning and IC-LoRA.' },
                 { label: 'LTX-2 Training Docs', url: 'https://docs.ltx.video/open-source-model/ltx-2-trainer/ltx-2-training', note: 'Requirements include local LTX-2.3 checkpoint, Gemma text encoder and CUDA Linux runtime.' },
-                { label: 'LTX IC-LoRA Docs', url: 'https://docs.ltx.video/open-source-model/usage-guides/ic-lo-ra', note: 'IC-LoRA uses paired control signals such as depth, pose, edges or sparse tracks.' }
+                { label: 'LTX IC-LoRA Docs', url: 'https://docs.ltx.video/open-source-model/usage-guides/ic-lo-ra', note: 'IC-LoRA uses paired control signals such as depth, pose, edges or sparse tracks.' },
+                { label: 'RunComfy LTX 2.3 LoRA baseline', url: 'https://www.runcomfy.com/trainer/ai-toolkit/ltx-2-3-lora-training-guide', note: 'Start with rank 32, LR 1e-4, 3000 steps, 512/768/1024 datasets and fixed validation samples.' },
+                { label: 'AI Toolkit Perceptual', url: 'https://github.com/BuffaloBuffaloBuffaloBuffalo/ai-toolkit-perceptual', note: 'Depth anchors and weight noising for compatible small/single-image LoRA jobs.' }
             ]
         };
+        const TRAIN_LORA_PERCEPTUAL_SUPPORT = {
+            XL: { compatible: true, support_level: 'supported', recommended_for: ['character', 'style'], notes: 'Use the perceptual AI Toolkit fork for SDXL depth anchors or small/single-image regularization.' },
+            Flux2Klein: { compatible: true, support_level: 'supported', recommended_for: ['character', 'style'], notes: 'Best-documented target for weight noising and depth anchors in the perceptual fork.' },
+            ZImageTurbo: { compatible: true, support_level: 'experimental', recommended_for: ['character'], notes: 'Z-Image Turbo is experimental in ai-toolkit-perceptual; keep depth/noise conservative.' },
+            LTX: { compatible: true, support_level: 'experimental', recommended_for: ['character', 'style', 'motion'], notes: 'LTX-2.3 video is experimental in ai-toolkit-perceptual, including depth consistency across frames.' }
+        };
+        Object.entries(TRAIN_LORA_PERCEPTUAL_SUPPORT).forEach(([key, support]) => {
+            if (TRAIN_LORA_FALLBACK_CATALOG.templates[key]) TRAIN_LORA_FALLBACK_CATALOG.templates[key].perceptual = support;
+        });
+        const RUNCOMFY_LTX23_BASELINE = {
+            resolution: '512+768+1024',
+            frames: 1,
+            caption: "Use RunComfy's LTX-2.3 baseline: T2V first, rank 32, LR 1e-4, 3000 steps, 512+768+1024 datasets and fixed validation. Character/style can start with frames=1; IC-LoRA needs paired target/control signals.",
+            templates: {
+                character: { mode_label: 'Character LoRA', training_mode: 'lora', rank: 32, alpha: 32, learning_rate: 0.0001, steps: 3000, repeats: 1, batch_size: 1, frames: 1, dataset_mode: 'clip_caption', dataset_resolutions: [512, 768, 1024], control_type: 'none', attention_strength: 1.0, target_fps: 24, caption_dropout: 0.05, weight_decay: 0.0001, timestep_type: 'weighted', timestep_bias: 'balanced', loss_type: 'mse', sample_every: 250, sample_sampler: 'flowmatch', sample_guidance_scale: 4, sample_steps: 25, sample_size: '768x768', cache_text_embeddings: false },
+                style: { mode_label: 'Style LoRA', training_mode: 'lora', rank: 32, alpha: 32, learning_rate: 0.0001, steps: 3000, repeats: 1, batch_size: 1, frames: 1, dataset_mode: 'clip_caption', dataset_resolutions: [512, 768, 1024], control_type: 'none', attention_strength: 1.0, target_fps: 24, caption_dropout: 0.05, weight_decay: 0.0001, timestep_type: 'weighted', timestep_bias: 'balanced', loss_type: 'mse', sample_every: 250, sample_sampler: 'flowmatch', sample_guidance_scale: 4, sample_steps: 25, sample_size: '768x768', cache_text_embeddings: false },
+                motion: { mode_label: 'Motion LoRA', training_mode: 'lora', rank: 32, alpha: 32, learning_rate: 0.0001, steps: 3000, repeats: 1, batch_size: 1, frames: 49, dataset_mode: 'clip_caption', dataset_resolutions: [512, 768, 1024], control_type: 'none', attention_strength: 1.0, target_fps: 24, caption_dropout: 0.05, weight_decay: 0.0001, timestep_type: 'weighted', timestep_bias: 'balanced', loss_type: 'mse', sample_every: 250, sample_sampler: 'flowmatch', sample_guidance_scale: 4, sample_steps: 25, sample_size: '768x768', cache_text_embeddings: false },
+                audio_video: { mode_label: 'Audio-Video LoRA', training_mode: 'audio_video_lora', rank: 16, alpha: 8, learning_rate: 0.000015, steps: 2400, repeats: 3, batch_size: 1, dataset_mode: 'audio_video_pairs', control_type: 'none', attention_strength: 1.0, target_fps: 24 },
+                ic_lora: { mode_label: 'IC-LoRA', training_mode: 'ic_lora', rank: 32, alpha: 32, learning_rate: 0.0001, steps: 3000, repeats: 1, batch_size: 1, frames: 49, dataset_mode: 'paired_control_video', dataset_resolutions: [512, 768, 1024], control_type: 'union', attention_strength: 1.0, target_fps: 24, caption_dropout: 0.05, weight_decay: 0.0001, timestep_type: 'weighted', timestep_bias: 'balanced', loss_type: 'mse', sample_every: 250, sample_sampler: 'flowmatch', sample_guidance_scale: 4, sample_steps: 25, sample_size: '768x768', cache_text_embeddings: false }
+            }
+        };
+        Object.assign(TRAIN_LORA_FALLBACK_CATALOG.templates.LTX, RUNCOMFY_LTX23_BASELINE);
         let activeLoraFolderFilter = 'All';
         let activeGalleryIndex = 0;
         let activeGalleryFolder = '';
@@ -22416,6 +22496,14 @@
             return trainer.includes('ltx') || trainer.includes('musubi') || Number(preset?.frames || 1) > 1 || String(preset?.base || '').toLowerCase().includes('video');
         }
 
+        function syncTrainLoraPerceptualDefaults() {
+            const mode = document.getElementById('trainLoraPerceptualImageMode')?.value || 'auto';
+            const sigma = document.getElementById('trainLoraPerceptualSigma');
+            const depthWeight = document.getElementById('trainLoraPerceptualDepthWeight');
+            if (sigma) sigma.value = mode === 'single' ? '0.04' : '0.0125';
+            if (depthWeight && mode === 'single') depthWeight.value = '0.1';
+        }
+
         function syncTrainLoraTemplateUi() {
             const preset = trainLoraSelectedPreset();
             const mode = document.getElementById('trainLoraModeSelect')?.value || 'character';
@@ -22423,6 +22511,19 @@
             const isVideo = trainLoraIsVideoPreset(preset);
             const isLtx = String(preset?.trainer || '').toLowerCase().includes('ltx');
             const isIcLora = mode === 'ic_lora' || String(defaults.training_mode || '').toLowerCase().includes('ic');
+            const perceptual = preset?.perceptual || {};
+            const perceptualCompatible = !!perceptual.compatible;
+            document.getElementById('trainLoraPerceptualPanel')?.classList.toggle('hidden', !perceptualCompatible);
+            const perceptualToggle = document.getElementById('trainLoraPerceptualToggle');
+            const perceptualOn = perceptualCompatible && !!perceptualToggle?.checked;
+            const perceptualBadge = document.getElementById('trainLoraPerceptualBadge');
+            if (perceptualBadge) perceptualBadge.innerText = perceptualOn ? 'perceptual on' : `${perceptual.support_level || 'compatible'}`;
+            const perceptualNotes = document.getElementById('trainLoraPerceptualNotes');
+            if (perceptualNotes) {
+                perceptualNotes.innerText = perceptualCompatible
+                    ? `${perceptual.notes || 'Compatible with ai-toolkit-perceptual.'} Depth is best for shape/composition; 1-image mode raises weight-noise sigma to avoid overcooking.`
+                    : 'This preset is not advertised as compatible by ai-toolkit-perceptual.';
+            }
             document.getElementById('trainLoraFramesField')?.classList.toggle('hidden', !isVideo);
             document.getElementById('trainLoraLtxPanel')?.classList.toggle('hidden', !isLtx);
             const input = document.getElementById('trainLoraDatasetFiles');
@@ -22485,7 +22586,10 @@
             if (profile.gradient_accumulation) document.getElementById('trainLoraGradAccum').value = profile.gradient_accumulation;
             if (profile.max_rank) {
                 const rank = document.getElementById('trainLoraRank');
-                if (rank) rank.value = Math.min(parseInt(rank.value || profile.max_rank, 10), profile.max_rank);
+                const { preset, defaults } = trainLoraTemplateDefaults();
+                const isLtx = String(preset?.trainer || '').toLowerCase().includes('ltx');
+                const rankCap = isLtx ? Math.max(profile.max_rank, parseInt(defaults.rank || 32, 10), 64) : profile.max_rank;
+                if (rank) rank.value = Math.min(parseInt(rank.value || rankCap, 10), rankCap);
             }
             document.getElementById('trainLoraCacheLatents').checked = profile.cache_latents !== false;
             document.getElementById('trainLoraGradCheckpoint').checked = profile.gradient_checkpointing !== false;
@@ -22522,8 +22626,8 @@
             document.getElementById('trainLoraTrigger').value = `nexus_${safeKey}_${mode}`;
             const selectedModel = document.getElementById('modelSelect')?.value || '';
             document.getElementById('trainLoraBaseModelPath').value = selectedModel;
-            document.getElementById('trainLoraResolution').value = preset.resolution || 1024;
-            document.getElementById('trainLoraFrames').value = preset.frames || 1;
+            document.getElementById('trainLoraResolution').value = defaults.resolution || preset.resolution || 1024;
+            document.getElementById('trainLoraFrames').value = defaults.frames || preset.frames || 1;
             document.getElementById('trainLoraSteps').value = defaults.steps || 1200;
             document.getElementById('trainLoraSaveSteps').value = defaults.save_every_n_steps || 250;
             document.getElementById('trainLoraRank').value = defaults.rank || 16;
@@ -22535,9 +22639,19 @@
             document.getElementById('trainLoraLtxDatasetMode').value = defaults.dataset_mode || (mode === 'ic_lora' ? 'paired_control_video' : (mode === 'audio_video' ? 'audio_video_pairs' : 'clip_caption'));
             document.getElementById('trainLoraLtxAttentionStrength').value = defaults.attention_strength ?? (mode === 'ic_lora' ? 1 : 1);
             document.getElementById('trainLoraLtxFps').value = defaults.target_fps || 24;
+            const perceptual = preset.perceptual || {};
+            const perceptualToggle = document.getElementById('trainLoraPerceptualToggle');
+            if (perceptualToggle) perceptualToggle.checked = false;
+            document.getElementById('trainLoraPerceptualAnchor').value = 'depth';
+            document.getElementById('trainLoraPerceptualImageMode').value = mode === 'style' ? 'single' : 'auto';
+            document.getElementById('trainLoraPerceptualDepthWeight').value = '0.1';
+            document.getElementById('trainLoraPerceptualMask').value = mode === 'style' ? 'none' : 'subject';
+            document.getElementById('trainLoraPerceptualDepthModel').value = 'depth-anything/Depth-Anything-V2-Small-hf';
+            document.getElementById('trainLoraPerceptualNoiseToggle').checked = true;
+            syncTrainLoraPerceptualDefaults();
             document.getElementById('trainLoraCaption').value = preset.caption || '';
             const notes = document.getElementById('trainLoraPresetNotes');
-            if (notes) notes.innerText = preset.caption || '';
+            if (notes) notes.innerText = [preset.caption || '', perceptual.compatible ? `Perceptual: ${perceptual.support_level || 'compatible'} - ${perceptual.notes || ''}` : ''].filter(Boolean).join('\n');
             document.getElementById('trainLoraTrainerBadge').innerText = preset.trainer_label || preset.trainer || 'trainer';
             applyTrainLoraDeviceProfile();
             syncTrainLoraMemoryHint();
@@ -22647,6 +22761,8 @@
             const mode = document.getElementById('trainLoraModeSelect')?.value || 'character';
             const defaults = preset?.templates?.[mode] || {};
             const isLtx = String(preset?.trainer || '').toLowerCase().includes('ltx');
+            const perceptual = preset?.perceptual || {};
+            const perceptualEnabled = !!perceptual.compatible && !!document.getElementById('trainLoraPerceptualToggle')?.checked;
             return {
                 preset: document.getElementById('trainLoraPresetSelect')?.value || activePreset,
                 mode,
@@ -22675,6 +22791,16 @@
                     memory_policy: document.getElementById('trainLoraMemoryPolicy')?.value || 'auto',
                     cache_latents: !!document.getElementById('trainLoraCacheLatents')?.checked,
                     gradient_checkpointing: !!document.getElementById('trainLoraGradCheckpoint')?.checked
+                },
+                perceptual: {
+                    enabled: perceptualEnabled,
+                    anchor: document.getElementById('trainLoraPerceptualAnchor')?.value || 'depth',
+                    image_mode: document.getElementById('trainLoraPerceptualImageMode')?.value || 'auto',
+                    depth_loss_weight: parseFloat(document.getElementById('trainLoraPerceptualDepthWeight')?.value || '0.1'),
+                    depth_mask_source: document.getElementById('trainLoraPerceptualMask')?.value || 'subject',
+                    depth_model_id: document.getElementById('trainLoraPerceptualDepthModel')?.value || 'depth-anything/Depth-Anything-V2-Small-hf',
+                    weight_noise_enabled: !!document.getElementById('trainLoraPerceptualNoiseToggle')?.checked,
+                    weight_noise_sigma: parseFloat(document.getElementById('trainLoraPerceptualSigma')?.value || '0.0125')
                 },
                 ltx: isLtx ? {
                     training_mode: defaults.training_mode || (mode === 'ic_lora' ? 'ic_lora' : (mode === 'audio_video' ? 'audio_video_lora' : 'lora')),

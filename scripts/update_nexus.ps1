@@ -138,7 +138,7 @@ if (Test-Path -LiteralPath $python) {
     }
 
     if (Test-Path -LiteralPath $ltxDirectorDeps) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -CustomNodesDir $customNodesDir -Strict
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -CustomNodesDir $customNodesDir -ComfyRoot $comfyRoot -Strict
     }
 
     if (Test-Path -LiteralPath $wan22Deps) {

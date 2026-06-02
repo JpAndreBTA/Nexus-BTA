@@ -77,7 +77,11 @@ def _format_missing_workflow_nodes(
 
     hints: list[str] = []
     if "LTXVTiledVAEDecode" in missing or "LTXVAudioVAEDecode" in missing:
-        hints.append("LTX Decode Frames/Audio Decode comes from ComfyUI-LTXVideo; run update.bat and restart Nexus after repair.")
+        hints.append(
+            "LTX Decode Frames/Audio Decode comes from ComfyUI-LTXVideo. "
+            "If the folder is already installed, ComfyUI is still failing to import/register it in the configured runtime; "
+            "run update.bat or restart with run.bat to force dependency/import repair."
+        )
     if {"LoadVideo", "GetVideoComponents", "CreateVideo", "SaveVideo", "VHS_LoadVideo", "VHS_VideoCombine"} & set(missing):
         hints.append("Video load/save/combine nodes require the video helper custom nodes installed in the active custom_nodes folder.")
     if {"VAEDecode", "VAEEncode", "VAELoader"} & set(missing):

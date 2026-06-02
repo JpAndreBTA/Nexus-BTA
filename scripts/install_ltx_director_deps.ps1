@@ -3,6 +3,7 @@ param(
     [string]$RuntimePython = "",
     [string]$ModelsDir = "",
     [string]$CustomNodesDir = "",
+    [string]$ComfyRoot = "",
     [switch]$Strict
 )
 
@@ -94,6 +95,24 @@ $customNodesDir = if (![string]::IsNullOrWhiteSpace($CustomNodesDir)) {
     Join-Path $root "custom_nodes"
 }
 $settingsPath = Join-Path $root "config\nexus_settings.json"
+$comfyRoot = if (![string]::IsNullOrWhiteSpace($ComfyRoot)) {
+    Get-AbsolutePath $ComfyRoot
+} elseif (![string]::IsNullOrWhiteSpace($env:NEXUS_COMFY_ROOT)) {
+    Get-AbsolutePath $env:NEXUS_COMFY_ROOT
+} elseif (Test-Path -LiteralPath $settingsPath) {
+    try {
+        $settingsJson = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+        if (![string]::IsNullOrWhiteSpace([string]$settingsJson.comfy_root)) {
+            Get-AbsolutePath ([string]$settingsJson.comfy_root)
+        } else {
+            Join-Path $root "runtime\ComfyUI"
+        }
+    } catch {
+        Join-Path $root "runtime\ComfyUI"
+    }
+} else {
+    Join-Path $root "runtime\ComfyUI"
+}
 $modelsDir = if (![string]::IsNullOrWhiteSpace($ModelsDir)) {
     Get-AbsolutePath $ModelsDir
 } elseif (![string]::IsNullOrWhiteSpace($env:NEXUS_MODELS_DIR)) {
@@ -154,6 +173,56 @@ function Test-NexusLtxVideoDecodeNode([string]$NodePath) {
     $decodeText = Get-Content -LiteralPath $decodeFile -Raw -ErrorAction SilentlyContinue
     $initText = Get-Content -LiteralPath $initFile -Raw -ErrorAction SilentlyContinue
     return $decodeText -match "class\s+LTXVTiledVAEDecode\b" -and $initText -match '"LTXVTiledVAEDecode"'
+}
+
+function Test-NexusLtxVideoRuntimeImport([string]$NodePath) {
+    if ([string]::IsNullOrWhiteSpace($RuntimePython) -or !(Test-Path -LiteralPath $RuntimePython)) {
+        Write-NexusWarn "Cannot validate LTXVideo runtime import because Comfy Python was not found at $RuntimePython."
+        return $false
+    }
+    if (!(Test-Path -LiteralPath (Join-Path $comfyRoot "main.py"))) {
+        Write-NexusWarn "Cannot validate LTXVideo runtime import because ComfyUI was not found at $comfyRoot."
+        return $false
+    }
+    $probe = @'
+import importlib
+import pathlib
+import sys
+import traceback
+
+comfy_root = pathlib.Path(sys.argv[1])
+custom_nodes_dir = pathlib.Path(sys.argv[2])
+node_path = pathlib.Path(sys.argv[3])
+
+sys.path.insert(0, str(comfy_root))
+sys.path.insert(0, str(custom_nodes_dir))
+
+try:
+    module = importlib.import_module(node_path.name)
+    mappings = getattr(module, "NODE_CLASS_MAPPINGS", {})
+    if "LTXVTiledVAEDecode" not in mappings:
+        print("ComfyUI-LTXVideo imported, but NODE_CLASS_MAPPINGS does not expose LTXVTiledVAEDecode.")
+        sys.exit(2)
+    sys.exit(0)
+except Exception:
+    traceback.print_exc()
+    sys.exit(1)
+'@
+    $probePath = Join-Path ([System.IO.Path]::GetTempPath()) ("nexus_ltx_import_probe_{0}.py" -f ([System.Guid]::NewGuid().ToString("N")))
+    try {
+        [System.IO.File]::WriteAllText($probePath, $probe, [System.Text.UTF8Encoding]::new($false))
+        $output = & $RuntimePython $probePath $comfyRoot $customNodesDir $NodePath 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            return $true
+        }
+        $text = ($output | Out-String).Trim()
+        if (![string]::IsNullOrWhiteSpace($text)) {
+            Write-NexusWarn "ComfyUI-LTXVideo runtime import failed: $text"
+        }
+        return $false
+    } finally {
+        Remove-Item -LiteralPath $probePath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Repair-NexusRepoFolder([hashtable]$Repo) {
@@ -324,7 +393,10 @@ Invoke-NexusStep -Label "Validating LTXVideo Decode Frames node" -Step {
     if (!(Test-NexusLtxVideoDecodeNode $ltxVideoPath)) {
         throw "ComfyUI-LTXVideo is missing LTXVTiledVAEDecode. This causes ComfyUI to report Node 'Decode Frames' not found. Run update.bat or rerun this installer with internet access."
     }
-    Write-NexusLine "ComfyUI-LTXVideo Decode Frames node is available." "Ok"
+    if (!(Test-NexusLtxVideoRuntimeImport $ltxVideoPath)) {
+        throw "ComfyUI-LTXVideo is installed at $ltxVideoPath, but ComfyUI Python could not import it from the configured runtime. Check the import error above, install/repair dependencies, then restart Nexus."
+    }
+    Write-NexusLine "ComfyUI-LTXVideo Decode Frames node is available and importable by ComfyUI." "Ok"
 }
 
 Invoke-NexusStep -Label "Downloading MelBandRoFormer model" -Step {
