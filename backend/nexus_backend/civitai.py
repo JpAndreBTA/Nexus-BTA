@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from time import monotonic
+from time import sleep
 from typing import Any, Callable
 
 from .config import NexusSettings
@@ -68,12 +69,6 @@ def search_civitai_models(
             items = data.get("items") or []
             if items:
                 break
-    if not items and (types or base_model):
-        for relaxed_params in _relaxed_search_params(params):
-            data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(relaxed_params)}", token)
-            items = data.get("items") or []
-            if items:
-                break
     visible_items = [item for item in items if isinstance(item, dict)]
     if not nsfw:
         visible_items = [item for item in visible_items if _item_visible_when_mature_hidden(item)]
@@ -119,13 +114,6 @@ def _tag_fallback_search_params(tag: str, params: dict[str, Any]) -> list[dict[s
     fallback = {key: value for key, value in params.items() if key != "tag"}
     fallback["query"] = query
     return [fallback]
-
-
-def _relaxed_search_params(params: dict[str, Any]) -> list[dict[str, Any]]:
-    fallbacks: list[dict[str, Any]] = []
-    if params.get("baseModels"):
-        fallbacks.append({key: value for key, value in params.items() if key != "baseModels"})
-    return fallbacks
 
 
 MATURE_TAGS = {
@@ -387,15 +375,57 @@ def _ids_from_url(url: str) -> tuple[int | None, int | None]:
 
 def _get_json_any_host(path: str, token: str | None) -> dict[str, Any]:
     errors: list[str] = []
-    api_path = _api_path_with_token(path, token)
-    for host in API_HOSTS:
-        try:
-            request = urllib.request.Request(host + api_path, headers={**_headers(token), "Accept": "application/json,*/*"})
-            with urllib.request.urlopen(request, timeout=30) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except Exception as exc:
-            errors.append(str(exc))
-    raise ValueError("; ".join(errors) or "Civitai request failed.")
+    api_paths = [_api_path_with_token(path, token)]
+    if token and api_paths[0] != path:
+        # Some Civitai endpoints intermittently 500 with token in the query string.
+        # Keep the Authorization header and retry the original path before failing.
+        api_paths.append(path)
+    for api_path in dict.fromkeys(api_paths):
+        for host in API_HOSTS:
+            for attempt in range(2):
+                try:
+                    request = urllib.request.Request(host + api_path, headers={**_headers(token), "Accept": "application/json,*/*"})
+                    with urllib.request.urlopen(request, timeout=30) as response:
+                        return json.loads(response.read().decode("utf-8"))
+                except urllib.error.HTTPError as exc:
+                    detail = _http_error_detail(exc)
+                    errors.append(f"{urllib.parse.urlparse(host).netloc}: HTTP {exc.code}{f' - {detail}' if detail else ''}")
+                    if exc.code < 500:
+                        break
+                    if attempt == 0:
+                        sleep(0.35)
+                        continue
+                    break
+                except Exception as exc:
+                    errors.append(f"{urllib.parse.urlparse(host).netloc}: {type(exc).__name__}")
+                    break
+    raise ValueError(_friendly_civitai_error(errors))
+
+
+def _http_error_detail(error: urllib.error.HTTPError) -> str:
+    try:
+        payload = error.read(600).decode("utf-8", errors="ignore").strip()
+    except Exception:
+        return ""
+    if not payload:
+        return ""
+    try:
+        data = json.loads(payload)
+        payload = str(data.get("message") or data.get("detail") or payload)
+    except Exception:
+        pass
+    return re.sub(r"\s+", " ", payload)[:180]
+
+
+def _friendly_civitai_error(errors: list[str]) -> str:
+    text = "; ".join(error for error in errors if error)
+    if "HTTP 401" in text or "HTTP 403" in text:
+        return "Civitai blocked this request. Check the API key/token permissions and mature-content settings."
+    if "HTTP 429" in text:
+        return "Civitai rate-limited the request. Wait a moment and retry."
+    if "HTTP 500" in text or "HTTP 502" in text or "HTTP 503" in text or "HTTP 504" in text:
+        return "Civitai is temporarily unstable for this search/filter. Retry, or adjust the filter if it keeps happening."
+    return text[:300] or "Civitai request failed."
 
 
 def _api_path_with_token(path: str, token: str | None) -> str:

@@ -285,6 +285,19 @@
     startFreshSearch().catch(() => status("Search failed."));
   }
 
+  function apiErrorMessage(responseText, fallback = "Civitai request failed.") {
+    const text = String(responseText || "").trim();
+    if (!text) return fallback;
+    try {
+      const data = JSON.parse(text);
+      const detail = data?.detail || data?.message || data?.error;
+      if (detail) return String(detail).slice(0, 220);
+    } catch {
+      // Keep the raw text fallback below for non-JSON responses.
+    }
+    return text.slice(0, 220);
+  }
+
   async function post(path, body, signal = null, timeoutMs = 25000) {
     const controller = new AbortController();
     let timedOut = false;
@@ -304,7 +317,7 @@
         body: JSON.stringify(body),
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) throw new Error(apiErrorMessage(await response.text()));
       return response.json();
     } catch (error) {
       if (timedOut) throw new Error("Civitai request timed out. Try again or reduce filters.");
@@ -692,7 +705,7 @@
         <div class="w-full h-full transition-transform duration-300 group-hover:scale-[1.03] ${blurClass}">
           ${mediaHtml(preview, "w-full h-full", data.model_name, { playVideo })}
         </div>
-        ${mature ? `<span class="absolute top-1 right-1 bg-yellow-400 text-black text-[7px] font-bold px-1 py-0.5 uppercase">Mature</span>` : ""}
+        ${mature ? `<span class="absolute z-30 top-1 right-1 bg-yellow-400 text-black text-[7px] font-bold px-1 py-0.5 uppercase">Mature</span>` : ""}
       </button>
     `;
   }
@@ -953,10 +966,10 @@
             <div class="w-full h-full transition-transform duration-300 group-hover:scale-[1.03] ${matureClass}">
               ${mediaHtml(preview || "", "w-full h-full", item.name, { playVideo })}
             </div>
-            <span class="absolute top-2 left-2 bg-nexus-red text-white text-[7px] font-mono font-bold px-1.5 py-0.5 uppercase">${html(item.type)}</span>
-            ${mature ? `<span class="absolute top-2 right-2 bg-yellow-400 text-black text-[7px] font-bold px-1.5 py-0.5 uppercase">Mature</span>` : ""}
-            ${installed ? `<span class="absolute bottom-7 left-2 bg-emerald-500 text-black text-[7px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-circle-check mr-1"></i>Installed</span>` : ""}
-            <span class="absolute bottom-2 right-2 bg-black/80 text-zinc-300 text-[8px] font-mono px-1.5 py-0.5 rounded-sm">${html(version.base_model || "Base")}</span>
+            <span class="absolute z-30 top-2 left-2 bg-nexus-red text-white text-[7px] font-mono font-bold px-1.5 py-0.5 uppercase">${html(item.type)}</span>
+            ${mature ? `<span class="absolute z-30 top-2 right-2 bg-yellow-400 text-black text-[7px] font-bold px-1.5 py-0.5 uppercase">Mature</span>` : ""}
+            ${installed ? `<span class="absolute z-30 bottom-7 left-2 bg-emerald-500 text-black text-[7px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-circle-check mr-1"></i>Installed</span>` : ""}
+            <span class="absolute z-30 bottom-2 right-2 bg-black/80 text-zinc-300 text-[8px] font-mono px-1.5 py-0.5 rounded-sm">${html(version.base_model || "Base")}</span>
           </div>
           <div class="p-2 space-y-1">
             <h4 class="text-xs font-bold text-white truncate group-hover:text-nexus-red">${html(item.name)}</h4>
