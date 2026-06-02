@@ -283,6 +283,7 @@ function Test-NexusLtxVideoRuntimeImport {
     }
     $probe = @'
 import importlib
+import logging
 import pathlib
 import sys
 import traceback
@@ -293,6 +294,7 @@ node_path = pathlib.Path(sys.argv[3])
 
 sys.path.insert(0, str(comfy_root))
 sys.path.insert(0, str(custom_nodes_dir))
+logging.getLogger("xformers").setLevel(logging.ERROR)
 
 try:
     module = importlib.import_module(node_path.name)
