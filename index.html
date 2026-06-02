@@ -134,6 +134,10 @@
             background-color: color-mix(in srgb, var(--nexus-modal) 82%, transparent) !important;
         }
 
+        #embeddingModal {
+            z-index: 230 !important;
+        }
+
         #loraModal > div,
         #embeddingModal > div,
         #galleryModal > div,
@@ -6227,7 +6231,7 @@
         }
 
         function modelMatchesPreset(model, presetName) {
-            const haystack = [model.name, model.folder, model.relative_path, model.category, ...(model.tags || [])].join(' ').toLowerCase();
+            const haystack = catalogAssetText(model).toLowerCase();
             const preset = presetName.toLowerCase();
             const rules = {
                 sd: ['sd15', 'sd-1', 'dreamshaper', 'anything', 'realisticvision'],
@@ -6242,6 +6246,17 @@
                 model3d: ['trellis', '3d', 'glb', 'mesh']
             };
             return (rules[preset] || [preset]).some(token => haystack.includes(token));
+        }
+
+        function catalogAssetText(asset) {
+            return [
+                asset?.name,
+                asset?.folder,
+                asset?.relative_path,
+                asset?.path,
+                asset?.category,
+                ...(asset?.tags || [])
+            ].filter(Boolean).join(' ');
         }
 
         function backendModelsForPreset(presetName) {
@@ -6497,7 +6512,7 @@
             const encoders = sortedAssetNamesForPreset(['text_encoders', 'clip'], presetName, asset => presetName !== 'LTX' || !/projection|proj/i.test(asset.name));
             const distilled = (backendCatalog?.categories?.loras || [])
                 .filter(asset => modelMatchesPreset(asset, presetName))
-                .filter(asset => /distill|distilled|lightning|turbo|lcm|latent|motion/i.test(asset.name))
+                .filter(asset => /distill|distilled|lightning|turbo|lcm|latent|motion/i.test(catalogAssetText(asset)))
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map(asset => String(asset.relative_path || asset.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\'));
             const latentUpscale = sortedAssetNamesForPreset(['latent_upscale_models', 'upscale_models'], presetName, asset => /latent|upscale|spatial|ltx/i.test(asset.name));
@@ -6982,12 +6997,51 @@
             return [
                 activePreset,
                 profile.type,
+                profile.template,
+                profile.folder,
                 profile.checkpoint,
+                profile.summary,
+                ...(profile.chips || []),
                 option?.textContent,
                 option?.dataset?.model,
                 option?.dataset?.preset,
                 option?.dataset?.category
             ].filter(Boolean).join(' ').toLowerCase();
+        }
+
+        const EMBEDDING_FAMILY_PATTERNS = {
+            sd15: /(^|[\s/\\_.-])(sd|sd15|sd1|sd1[_.\s-]?5|sd[_.\s-]?1|1\.5|stable[_.\s-]?diffusion|dreamshaper|anything|realistic[_.\s-]?vision|easynegative|badhand|bad[_.\s-]?hands?|bad[_.\s-]?prompt)($|[\s/\\_.-])/i,
+            sdxl: /(^|[\s/\\_.-])(sdxl|sd[_.\s-]?xl|xl|pony|illustrious|illustrous|illoustrous|illust|wai|noobai|noob[_.\s-]?ai|animagine)($|[\s/\\_.-])/i,
+            anima: /(^|[\s/\\_.-])(anima)($|[\s/\\_.-])/i
+        };
+
+        function embeddingFamiliesFromText(text) {
+            const normalized = ` ${String(text || '').toLowerCase()} `;
+            return Object.entries(EMBEDDING_FAMILY_PATTERNS)
+                .filter(([, pattern]) => pattern.test(normalized))
+                .map(([family]) => family);
+        }
+
+        function embeddingItemHaystack(item) {
+            return [
+                item?.name,
+                item?.folder,
+                item?.relative_path,
+                item?.category,
+                ...(item?.tags || [])
+            ].filter(Boolean).join(' ');
+        }
+
+        function embeddingItemFamilies(item) {
+            return embeddingFamiliesFromText(embeddingItemHaystack(item));
+        }
+
+        function embeddingItemKey(item) {
+            return [
+                item?.relative_path,
+                item?.path,
+                item?.name
+            ].filter(Boolean).join('::');
         }
 
         function embeddingSupportForActiveRoute() {
@@ -6999,6 +7053,13 @@
                     label: 'WAN/LTX video encoders do not use classic textual inversion embeddings.'
                 };
             }
+            if (activePreset === 'Flux' || /(^|[\s/\\_.-])flux($|[\s/\\_.-])/.test(haystack)) {
+                return {
+                    supported: false,
+                    family: 'flux',
+                    label: 'Flux routes use T5/CLIP text encoders; classic SD textual inversion embeddings stay disabled.'
+                };
+            }
             if (activePreset === 'ZImageTurbo' || /z.?image/.test(haystack)) {
                 return {
                     supported: false,
@@ -7006,24 +7067,52 @@
                     label: 'Z-Image Turbo uses the Qwen3/Lumina2 text route; classic SD textual inversion embeddings stay disabled.'
                 };
             }
-            if (activePreset === 'XL' || /sdxl|pony|illustrious|illustrous|illust/i.test(haystack)) {
+            if (activePreset === 'Lumina' || /(^|[\s/\\_.-])lumina($|[\s/\\_.-])/.test(haystack)) {
+                return {
+                    supported: false,
+                    family: 'lumina',
+                    label: 'Lumina uses a non-SD text route; classic textual inversion embeddings stay disabled.'
+                };
+            }
+            if (activePreset === 'Model3D' || /trellis|model3d|3d model/.test(haystack)) {
+                return {
+                    supported: false,
+                    family: 'model3d',
+                    label: '3D model routes do not use classic textual inversion embeddings.'
+                };
+            }
+            if (activePreset === 'Anima' || embeddingFamiliesFromText(haystack).includes('anima')) {
+                return {
+                    supported: true,
+                    family: 'anima',
+                    label: 'Anima-compatible embeddings enabled.'
+                };
+            }
+            if (activePreset === 'Qwen' || /(^|[\s/\\_.-])qwen($|[\s/\\_.-])/.test(haystack)) {
+                return {
+                    supported: false,
+                    family: 'qwen',
+                    label: 'Qwen routes use Qwen/VL text encoders; classic SD textual inversion embeddings stay disabled.'
+                };
+            }
+            if (activePreset === 'XL' || embeddingFamiliesFromText(haystack).includes('sdxl')) {
                 return {
                     supported: true,
                     family: 'sdxl',
                     label: /pony/i.test(haystack)
                         ? 'Pony is treated as SDXL-compatible.'
-                        : /illust/i.test(haystack)
+                        : /illust|illoustr/i.test(haystack)
                             ? 'Illustrious is treated as SDXL-compatible.'
                             : 'SDXL-compatible embeddings enabled.'
                 };
             }
-            if (activePreset === 'SD' || /sd15|sd 1|sd-1|1\.5|realisticvision|dreamshaper|anything/i.test(haystack)) {
+            if (activePreset === 'SD' || embeddingFamiliesFromText(haystack).includes('sd15')) {
                 return { supported: true, family: 'sd15', label: 'SD 1.5-compatible embeddings enabled.' };
             }
             return {
                 supported: false,
                 family: 'other',
-                label: 'Embeddings are enabled only for SD 1.5, SDXL, Pony and Illustrious routes.'
+                label: 'Embeddings are enabled only for SD 1.5, SDXL, Pony, Illustrious and Anima routes.'
             };
         }
 
@@ -7034,18 +7123,12 @@
 
         function embeddingMatchesActiveRoute(item, support = embeddingSupportForActiveRoute()) {
             if (!support.supported) return false;
-            const haystack = [
-                item.name,
-                item.folder,
-                item.relative_path,
-                item.category,
-                ...(item.tags || [])
-            ].join(' ').toLowerCase();
-            const isSdxlHint = /sdxl|xl|pony|illustrious|illustrous|illust/.test(haystack);
-            const isSd15Hint = /sd15|sd-?1|1\.5|easynegative|badhand/.test(haystack);
-            if (support.family === 'sdxl' && isSd15Hint && !isSdxlHint) return false;
-            if (support.family === 'sd15' && isSdxlHint) return false;
-            return true;
+            const families = embeddingItemFamilies(item);
+            if (!families.length) return true;
+            if (support.family === 'anima') {
+                return families.includes('anima') && !families.some(family => family === 'sd15' || family === 'sdxl');
+            }
+            return families.includes(support.family);
         }
 
         function filteredEmbeddings() {
@@ -7105,11 +7188,12 @@
             }
             grid.innerHTML = items.map(item => {
                 const token = embeddingTokenFor(item);
+                const itemKey = embeddingItemKey(item);
                 const tags = [item.folder, item.extension?.replace('.', ''), ...(item.tags || [])]
                     .filter(Boolean)
                     .slice(0, 4);
                 return `
-                    <button type="button" onclick="insertEmbeddingToken(${jsString(token)})" class="text-left border border-nexus-border bg-nexus-panel hover:border-nexus-red hover:bg-zinc-900 rounded-sm p-3 transition-colors">
+                    <button type="button" data-embedding-token="${escapeHtml(token)}" data-embedding-key="${escapeHtml(itemKey)}" class="text-left border border-nexus-border bg-nexus-panel hover:border-nexus-red hover:bg-zinc-900 rounded-sm p-3 transition-colors">
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0">
                                 <p class="text-xs font-bold text-white truncate">${escapeHtml(item.name || token)}</p>
@@ -7168,12 +7252,40 @@
             textarea.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
-        function insertEmbeddingToken(token) {
+        function insertEmbeddingTokenFromButton(button) {
+            insertEmbeddingToken(button?.dataset?.embeddingToken || '', button?.dataset?.embeddingKey || '');
+        }
+
+        function handleEmbeddingGridClick(event) {
+            const button = event.target?.closest?.('#embeddingGrid [data-embedding-token]');
+            if (!button) return;
+            event.preventDefault();
+            event.stopPropagation();
+            insertEmbeddingTokenFromButton(button);
+        }
+
+        function insertEmbeddingToken(token, itemKey = '') {
+            const support = embeddingSupportForActiveRoute();
+            if (!support.supported) {
+                renderEmbeddingModal();
+                showToast('Embedding Not Compatible', support.label);
+                return;
+            }
+            const matchingItem = filteredEmbeddings().find(item => {
+                return embeddingTokenFor(item) === token && (!itemKey || embeddingItemKey(item) === itemKey);
+            });
+            if (!matchingItem) {
+                renderEmbeddingModal();
+                showToast('Embedding Not Compatible', 'This embedding no longer matches the active model family.');
+                return;
+            }
             const textarea = document.getElementById(activeEmbeddingTarget === 'negative' ? 'negPrompt' : 'posPrompt');
             if (!textarea) return;
             insertTextAtCursor(textarea, token);
             syncPromptTextWidgetsFromSideMenu();
+            syncSideMenuToWorkflowGraph({ element: textarea, immediate: true });
             updateWorkflowPreview();
+            savePresetRuntimeState(activePreset);
             closeEmbeddingModal();
             showToast('Embedding Added', `${token} inserted into ${activeEmbeddingTarget} prompt.`);
         }
@@ -9141,6 +9253,14 @@
             if (id === 'latentUpscaleSelect' && /x\s*1\.5|x1\.5/i.test(String(value || ''))) {
                 value = 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors';
             }
+            const strictLtxLoraSelects = new Set([
+                'distilledLoraOneSelect',
+                'distilledLoraTwoSelect',
+                'ltxDetailerLoraSelect',
+                'ltxTransitionLoraSelect',
+                'omnicineSelect'
+            ]);
+            if (strictLtxLoraSelects.has(id)) value = ltxResolveKnownLoraName(value);
             if (!('options' in select)) {
                 select.value = value;
                 return;
@@ -9149,6 +9269,12 @@
                 if (id === 'modelSelect') {
                     const first = [...select.options].find(option => !option.disabled);
                     select.value = first?.value || '';
+                    return;
+                }
+                if (strictLtxLoraSelects.has(id)) {
+                    const fallback = [...select.options].find(option => !option.disabled && !/^(automatic|auto)$/i.test(option.value))
+                        || [...select.options].find(option => !option.disabled);
+                    select.value = fallback?.value || '';
                     return;
                 }
                 select.insertAdjacentHTML('afterbegin', `<option>${value}</option>`);
@@ -13195,6 +13321,26 @@
             if (/^ltx2\\/i.test(name)) name = `ltx\\${name.split('\\').slice(1).join('\\')}`;
             if (!name.includes('\\') && /^(ltx|singularity)/i.test(name)) name = `ltx\\${name}`;
             return name;
+        }
+
+        function ltxKnownLoraNames() {
+            return (backendCatalog?.categories?.loras || [])
+                .map(asset => ltxDirectorNormalizeLoraName(asset.relative_path || asset.name || ''))
+                .filter(Boolean);
+        }
+
+        function ltxResolveKnownLoraName(value) {
+            const normalized = ltxDirectorNormalizeLoraName(value);
+            if (!normalized || /^(none|automatic|auto|off|disabled)$/i.test(normalized)) return normalized;
+            const known = ltxKnownLoraNames();
+            if (!known.length) return normalized;
+            const lower = normalized.toLowerCase();
+            const exact = known.find(name => name.toLowerCase() === lower);
+            if (exact) return exact;
+            const base = lower.replace(/\.safetensors$/i, '');
+            const upgraded = known.find(name => name.toLowerCase().replace(/\.safetensors$/i, '').startsWith(`${base}-`));
+            if (upgraded) return upgraded;
+            return normalized;
         }
 
         function ltxDirectorDefaultDistilledLoras() {
@@ -25044,6 +25190,14 @@
             payload.distilled_loras = payload.distilled_loras.filter(item => {
                 const name = String(item?.name || '').trim();
                 return name && !/^(none|off|disabled|automatic|auto)$/i.test(name);
+            }).map(item => {
+                if (activePreset !== 'LTX') return item;
+                return { ...item, name: ltxResolveKnownLoraName(item.name) };
+            }).filter(item => {
+                if (activePreset !== 'LTX') return true;
+                const name = ltxDirectorNormalizeLoraName(item?.name || '');
+                const known = ltxKnownLoraNames();
+                return !known.length || known.some(candidate => candidate.toLowerCase() === name.toLowerCase());
             });
             if (ltxMotionTransferRoute) {
                 payload.distilled_loras = [
@@ -26178,6 +26332,7 @@
             });
         });
         document.getElementById('omnicineSelect')?.addEventListener('change', updateOmnicineStatus);
+        document.getElementById('embeddingGrid')?.addEventListener('click', handleEmbeddingGridClick, true);
         document.getElementById('ltxDetailerStrengthSlider')?.addEventListener('input', event => {
             const label = document.getElementById('ltxDetailerStrengthValue');
             if (label) label.innerText = Number(event.target.value || 1).toFixed(2);
