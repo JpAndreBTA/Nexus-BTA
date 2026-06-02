@@ -10,7 +10,6 @@ $bootstrap = Join-Path $root "scripts\bootstrap_nexus_runtime.ps1"
 $customNodeDeps = Join-Path $root "scripts\install_comfy_custom_node_deps.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
 $wan22Deps = Join-Path $root "scripts\install_wan22_deps.ps1"
-$dinov3Deps = Join-Path $root "scripts\install_dinov3_deps.ps1"
 $terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
 $settingsPath = Join-Path $root "config\nexus_settings.json"
 
@@ -100,6 +99,24 @@ $comfyRoot = Get-NexusConfiguredComfyRoot
 $comfyPython = Get-NexusConfiguredComfyPython
 $customNodesDir = Get-NexusConfiguredCustomNodesDir
 
+function Invoke-NexusPipInstall {
+    param(
+        [string]$Label,
+        [string]$PythonExe,
+        [string[]]$PipArgs
+    )
+
+    $output = & $PythonExe -m pip install --disable-pip-version-check -q @PipArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $text = ($output | Out-String).Trim()
+        if (![string]::IsNullOrWhiteSpace($text)) {
+            Write-NexusLine "$Label pip output:" "Error"
+            Write-Host $text
+        }
+        throw "$Label pip install failed with exit code $LASTEXITCODE"
+    }
+}
+
 Write-NexusLogo
 Write-NexusSection "Updates"
 Invoke-NexusRepositoryUpdate -ProjectRoot $root -Strict
@@ -117,19 +134,19 @@ if (!(Test-Path -LiteralPath (Join-Path $comfyRoot "main.py")) -or !(Test-Path -
 if (Test-Path -LiteralPath $python) {
     Write-NexusSection "Requirements"
     Write-NexusLine "Backend Python..." "Info"
-    & $python -m pip install -q --upgrade pip
+    Invoke-NexusPipInstall "Backend Python pip" $python @("--upgrade", "pip")
     $nexusRequirements = Join-Path $root "requirements.txt"
     if (Test-Path -LiteralPath $nexusRequirements) {
-        & $python -m pip install -q -r $nexusRequirements
+        Invoke-NexusPipInstall "Backend Python requirements" $python @("-r", $nexusRequirements)
     } else {
-        & $python -m pip install -q "uvicorn[standard]>=0.30" fastapi pydantic python-multipart httpx websockets pillow soundfile opencv-contrib-python
+        Invoke-NexusPipInstall "Backend Python requirements" $python @("uvicorn[standard]>=0.30", "fastapi", "pydantic", "python-multipart", "httpx", "websockets", "pillow", "soundfile", "opencv-contrib-python")
     }
     Write-NexusLine "Backend Python requirements satisfied." "Ok"
 
     $comfyRequirements = Join-Path $comfyRoot "requirements.txt"
     if (Test-Path -LiteralPath $comfyRequirements) {
         Write-NexusLine "ComfyUI Python..." "Info"
-        & $comfyPython -m pip install -q -r $comfyRequirements
+        Invoke-NexusPipInstall "ComfyUI Python requirements" $comfyPython @("-r", $comfyRequirements)
         Write-NexusLine "ComfyUI Python requirements satisfied." "Ok"
     }
 
@@ -145,9 +162,6 @@ if (Test-Path -LiteralPath $python) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
     }
 
-    if (Test-Path -LiteralPath $dinov3Deps) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $dinov3Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
-    }
 } else {
     Write-NexusLine "Runtime Python not found; run run.bat after bootstrap." "Warn"
 }

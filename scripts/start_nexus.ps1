@@ -19,7 +19,6 @@ $runtimeHotfixes = Join-Path $root "scripts\apply_runtime_hotfixes.ps1"
 $customNodeDeps = Join-Path $root "scripts\install_comfy_custom_node_deps.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
 $wan22Deps = Join-Path $root "scripts\install_wan22_deps.ps1"
-$dinov3Deps = Join-Path $root "scripts\install_dinov3_deps.ps1"
 $terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
 $settingsPath = Join-Path $root "config\nexus_settings.json"
 $dependencyStatePath = Join-Path $root "config\nexus_dependency_state.json"
@@ -210,7 +209,7 @@ function Get-NexusDependencySignature {
     $parts.Add("python=$comfyPython")
     $parts.Add("models=$modelsDir")
     $parts.Add("custom_nodes=$customNodesDir")
-    foreach ($pathValue in @($customNodeDeps, $ltxDirectorDeps, $wan22Deps, $dinov3Deps)) {
+    foreach ($pathValue in @($customNodeDeps, $ltxDirectorDeps, $wan22Deps)) {
         $parts.Add((Get-NexusFileFingerprint $pathValue))
     }
     if (Test-Path -LiteralPath $customNodesDir) {
@@ -432,11 +431,6 @@ if ($dependencyCheckRequired -and (Test-Path -LiteralPath $ltxDirectorDeps)) {
 if ($dependencyCheckRequired -and (Test-Path -LiteralPath $wan22Deps)) {
     Write-NexusSection "Wan 2.2"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
-}
-
-if ($dependencyCheckRequired -and (Test-Path -LiteralPath $dinov3Deps)) {
-    Write-NexusSection "DINOv3"
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $dinov3Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
 }
 
 if ($dependencyCheckRequired) {

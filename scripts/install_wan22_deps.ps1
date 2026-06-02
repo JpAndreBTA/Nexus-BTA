@@ -36,8 +36,13 @@ function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
         return
     }
 
-    & $RuntimePython -m pip install --disable-pip-version-check -q @PipArgs
+    $installOutput = & $RuntimePython -m pip install --disable-pip-version-check -q @PipArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
+        $installText = ($installOutput | Out-String).Trim()
+        if (![string]::IsNullOrWhiteSpace($installText)) {
+            Write-NexusLine "$Label pip output:" "Warn"
+            Write-Host $installText
+        }
         throw "pip install failed with exit code $LASTEXITCODE"
     }
     Write-NexusLine "$Label requirements satisfied." "Ok"

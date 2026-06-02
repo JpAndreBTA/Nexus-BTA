@@ -105,12 +105,6 @@ function Invoke-NexusRepositoryUpdate {
             throw "git fetch failed"
         }
 
-        $dirty = @(git -C $ProjectRoot status --porcelain | Where-Object { -not (Test-NexusIgnoredLocalChange $_) })
-        if ($dirty) {
-            Write-NexusLine "Local changes detected; automatic pull skipped." "Warn"
-            return
-        }
-
         $upstream = git -C $ProjectRoot rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>$null
         if ($LASTEXITCODE -ne 0 -or !$upstream) {
             Write-NexusLine "No upstream branch configured; automatic pull skipped." "Warn"
@@ -123,6 +117,13 @@ function Invoke-NexusRepositoryUpdate {
 
         if ($behind -eq 0 -and $ahead -eq 0) {
             Write-NexusLine "Repository is up to date." "Ok"
+            return
+        }
+
+        $dirty = @(git -C $ProjectRoot status --porcelain | Where-Object { -not (Test-NexusIgnoredLocalChange $_) })
+        if ($dirty) {
+            Write-NexusLine "GitHub has $behind update(s), but local code changes would block an automatic pull." "Warn"
+            Write-NexusLine "Commit, stash, or remove local edits before running update.bat again." "Info"
             return
         }
         if ($ahead -gt 0 -and $behind -gt 0) {
