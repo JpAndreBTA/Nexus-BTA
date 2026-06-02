@@ -285,6 +285,9 @@ def require_attention_runtime(label, module_name):
             import xformers.ops  # noqa: F401
             if importlib.util.find_spec("xformers._C") is None:
                 raise RuntimeError("xformers._C extension is not available")
+        elif module_name == "sageattention":
+            importlib.import_module("triton")
+            importlib.import_module("sageattention")
         else:
             importlib.import_module(module_name)
     except Exception as exc:
@@ -386,13 +389,28 @@ if (!$RuntimePython) {
 
 New-Item -ItemType Directory -Force -Path $customNodesDir, $diffusionModelsDir, $melDir, $ltxTransitionDir, $ltxIcDir | Out-Null
 
+function Test-NexusIsWindows {
+    return [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
+}
+
 Invoke-NexusStep -Label "Installing Nexus attention runtime" -Step {
-    Invoke-NexusPipInstallIfNeeded "Nexus attention runtime" @(
+    $attentionRuntimeArgs = @(
         "--extra-index-url",
         "https://download.pytorch.org/whl/cu130",
-        "xformers @ https://download.pytorch.org/whl/cu130/xformers-0.0.35-py39-none-win_amd64.whl",
         "sageattention>=1.0.6"
     )
+    if (Test-NexusIsWindows) {
+        $attentionRuntimeArgs += @(
+            "xformers @ https://download.pytorch.org/whl/cu130/xformers-0.0.35-py39-none-win_amd64.whl",
+            "triton-windows>=3.7.0.post26"
+        )
+    } else {
+        $attentionRuntimeArgs += @(
+            "xformers==0.0.35",
+            "triton>=3.0.0"
+        )
+    }
+    Invoke-NexusPipInstallIfNeeded "Nexus attention runtime" $attentionRuntimeArgs
 }
 
 $repos = @(

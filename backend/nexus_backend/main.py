@@ -3940,7 +3940,7 @@ def _build_video_restore_comfy_workflow(input_name: str, plan: dict[str, Any], e
             "4": {"class_type": "CreateVideo", "inputs": {"images": ["3", 0], "audio": ["3", 1], "fps": ["2", 2]}},
             "5": {"class_type": "SaveVideo", "inputs": {"video": ["4", 0], "filename_prefix": "extras/video/flashvsr", "format": "auto", "codec": "auto"}},
         }
-    seed_attention = "sageattn_2" if importlib.util.find_spec("sageattention") else "sdpa"
+    seed_attention = "sageattn_2" if importlib.util.find_spec("sageattention") and importlib.util.find_spec("triton") else "sdpa"
     seed_batch = 5
     return {
         "1": {"class_type": "LoadVideo", "inputs": {"file": input_name}},
@@ -5002,6 +5002,14 @@ def _runtime_attention_capabilities() -> dict[str, Any]:
                 if importlib.util.find_spec("xformers._C") is None:
                     result["available"] = False
                     result["error"] = "xFormers CUDA/C++ extension is not available."
+            elif module_name == "sageattention":
+                if importlib.util.find_spec("triton") is None:
+                    result["available"] = False
+                    result["error"] = "SageAttention requires Triton, but the triton module is not available."
+                else:
+                    import triton
+
+                    result["triton_version"] = str(getattr(triton, "__version__", "") or "")
         except Exception as exc:
             result["available"] = False
             result["error"] = f"{type(exc).__name__}: {str(exc)[:180]}"

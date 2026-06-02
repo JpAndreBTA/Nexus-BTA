@@ -26,8 +26,12 @@ def _module_available(module_name: str) -> bool:
             return importlib.util.find_spec("xformers._C") is not None
         if importlib.util.find_spec(module_name) is None:
             return False
+        if module_name == "sageattention" and importlib.util.find_spec("triton") is None:
+            return False
         if module_name in {"sageattention", "flash_attn"}:
             importlib.import_module(module_name)
+            if module_name == "sageattention":
+                importlib.import_module("triton")
         return True
     except Exception:
         return False
@@ -431,8 +435,9 @@ class ComfyClient:
         ):
             if not _module_available("sageattention"):
                 raise RuntimeError(
-                    "SageAttention is enabled for the Nexus runtime, but the configured Comfy Python cannot import sageattention. "
-                    "Run update.bat to install the current runtime requirements, then restart Nexus."
+                    "SageAttention is enabled for the Nexus runtime, but the configured Comfy Python cannot import "
+                    "sageattention with its Triton runtime. Run update.bat to install the current runtime requirements, "
+                    "then restart Nexus."
                 )
             flags.append("--use-sage-attention")
         elif (attention in {"flash", "flashattention"} or runtime.enable_flash_attention) and _module_available("flash_attn"):

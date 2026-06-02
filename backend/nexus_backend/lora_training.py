@@ -599,13 +599,19 @@ def _trainer_candidates(settings: NexusSettings, trainer: str, script: str | Non
     return candidates
 
 
+def _trainer_config_args(trainer: str, config_path: Path) -> list[str]:
+    if trainer == "ltx_trainer":
+        return [str(config_path)]
+    return ["--config_file", str(config_path)]
+
+
 def resolve_trainer_runner(settings: NexusSettings, preset: dict[str, Any], config_path: Path) -> dict[str, Any]:
     trainer = str(preset.get("trainer") or "")
     script = str(preset.get("script") or "") or None
     for cwd, command in _trainer_candidates(settings, trainer, script):
         executable = Path(command[1]) if len(command) > 1 and command[1].endswith(".py") else cwd
         if cwd.exists() and (not executable.suffix or executable.exists()):
-            final_command = [*command, "--config_file", str(config_path)]
+            final_command = [*command, *_trainer_config_args(trainer, config_path)]
             return {"available": True, "cwd": str(cwd), "command": final_command}
     return {
         "available": False,

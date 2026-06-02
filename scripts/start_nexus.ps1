@@ -302,6 +302,9 @@ def require_attention_runtime(label, module_name):
             import xformers.ops  # noqa: F401
             if importlib.util.find_spec("xformers._C") is None:
                 raise RuntimeError("xformers._C extension is not available")
+        elif module_name == "sageattention":
+            importlib.import_module("triton")
+            importlib.import_module("sageattention")
         else:
             importlib.import_module(module_name)
     except Exception as exc:
