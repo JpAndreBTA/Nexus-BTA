@@ -20,7 +20,23 @@ _OPTIONAL_REQUIREMENT_FALLBACKS = {
 }
 
 _REQUIREMENT_VERSION_FLOORS = {
+    "aiohttp": "aiohttp>=3.14.0",
+    "av": "av>=17.0.1",
+    "diffusers": "diffusers>=0.38.0",
+    "fastapi": "fastapi>=0.136.3",
+    "huggingface-hub": "huggingface-hub>=0.36.2",
     "kornia": "kornia>=0.8.2",
+    "numpy": "numpy>=2.4.6",
+    "opencv-contrib-python": "opencv-contrib-python>=4.10.0.84",
+    "opencv-python": "opencv-python>=4.10.0.84",
+    "pillow": "pillow>=12.2.0",
+    "protobuf": "protobuf>=5.29.6",
+    "scikit-image": "scikit-image>=0.26.0",
+    "tokenizers": "tokenizers>=0.22.2",
+    "torch": "torch==2.10.0+cu130",
+    "torchaudio": "torchaudio==2.10.0+cu130",
+    "torchvision": "torchvision==0.25.0+cu130",
+    "transformers": "transformers>=4.57.6,<5",
 }
 
 _OPTIONAL_REQUIREMENT_SKIPS = {
@@ -66,7 +82,10 @@ def _installed_requirement(package: str) -> bool:
             if floor:
                 floor_package = _requirement_package_name(floor)
                 if floor_package and _normalize_package_name(floor_package) == normalized:
+                    exact_match = re.search(r"==\s*([A-Za-z0-9_.!+-]+)", floor)
                     floor_match = re.search(r">=\s*([A-Za-z0-9_.!+-]+)", floor)
+                    if exact_match and Version(installed_version) != Version(exact_match.group(1)):
+                        return False
                     if floor_match and Version(installed_version) < Version(floor_match.group(1)):
                         return False
             return True

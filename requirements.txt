@@ -1,7 +1,7 @@
 # NEXUS BTA backend dependency baseline.
 # The current UI is static in index.html; these packages are for the next backend step.
 
-fastapi>=0.115
+fastapi>=0.136.3
 uvicorn[standard]>=0.30
 httpx>=0.27
 pydantic>=2.8
@@ -11,14 +11,14 @@ python-multipart>=0.0.9
 comfyui-workflow-templates==0.9.75
 comfyui-embedded-docs==0.5.0
 comfyui-frontend-package>=1.43
-aiohttp>=3.11.8
+aiohttp>=3.14.0
 yarl>=1.18.0
 pyyaml>=6.0
 torchsde>=0.2.6
 SQLAlchemy>=2.0
 alembic>=1.13
 filelock>=3.15
-av>=14.2.0
+av>=17.0.1
 requests>=2.32
 simpleeval>=1.0
 blake3>=1.0
@@ -28,25 +28,26 @@ torch==2.10.0+cu130
 torchvision==0.25.0+cu130
 torchaudio==2.10.0+cu130
 accelerate>=0.33
-diffusers>=0.31
+diffusers>=0.38.0
 transformers>=4.57.6,<5
 safetensors>=0.4.4
 peft>=0.12
 datasets>=2.21
-huggingface-hub>=0.24
+huggingface-hub>=0.36.2
 # Kaggle fallback for gated mirrors such as DINOv3 when Hugging Face access is not authorized.
 kagglehub==0.3.13
 tensorboard>=2.17
 toml>=0.10
 tomlkit>=0.13
 sentencepiece>=0.2
-protobuf>=5.27
+protobuf>=5.29.6
+tokenizers>=0.22.2
 gguf>=0.10
 
-numpy>=1.26
-pillow>=10.4
-opencv-python>=4.10
-opencv-contrib-python>=4.10
+numpy>=2.4.6
+pillow>=12.2.0
+opencv-python>=4.10.0.84
+opencv-contrib-python>=4.10.0.84
 imageio>=2.34
 imageio-ffmpeg>=0.5
 soundfile>=0.13
@@ -79,7 +80,7 @@ ftfy>=6.2
 addict>=2.4
 yacs>=0.1.8
 albumentations>=1.4,<2.1
-scikit-image>=0.24
+scikit-image>=0.26.0
 scikit-learn>=1.5
 matplotlib>=3.8
 

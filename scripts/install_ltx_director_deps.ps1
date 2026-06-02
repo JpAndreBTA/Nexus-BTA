@@ -44,8 +44,56 @@ function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
                 } elseif ($line.Trim() -match '^Imath([<>=!~].*)?(\s*(#.*)?)?$') {
                     $sanitized += "OpenEXR>=3.2.0 # Nexus fallback for Imath module"
                     $changed = $true
-                } elseif ($line.Trim() -match '^kornia(\s*(#.*)?)?$') {
+                } elseif ($line.Trim() -match '^aiohttp(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "aiohttp>=3.14.0 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^av(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "av>=17.0.1 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^diffusers(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "diffusers>=0.38.0 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^fastapi(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "fastapi>=0.136.3 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^huggingface[-_]hub(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "huggingface-hub>=0.36.2 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^kornia(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
                     $sanitized += "kornia>=0.8.2 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^numpy(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "numpy>=2.4.6 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^opencv-contrib-python(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "opencv-contrib-python>=4.10.0.84 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^opencv-python(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "opencv-python>=4.10.0.84 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^pillow(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "pillow>=12.2.0 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^protobuf(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "protobuf>=5.29.6 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^scikit[-_]image(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "scikit-image>=0.26.0 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^tokenizers(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "tokenizers>=0.22.2 # Nexus minimum for current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^torch(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "torch==2.10.0+cu130 # Nexus current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^torchaudio(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "torchaudio==2.10.0+cu130 # Nexus current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^torchvision(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "torchvision==0.25.0+cu130 # Nexus current Comfy/Nexus runtime"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^transformers(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "transformers>=4.57.6,<5 # Nexus minimum for current Comfy/Nexus runtime"
                     $changed = $true
                 } elseif ($line.Trim() -match '^inference-(cli|gpu)(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
                     $sanitized += "# $line # Nexus skip: optional Roboflow inference package conflicts with current Comfy/Nexus runtime"
