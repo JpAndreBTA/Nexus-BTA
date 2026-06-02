@@ -5,7 +5,7 @@ New responsive web app track for Nexus BTA.
 ## Development
 
 ```powershell
-cd D:\NexusBTA\frontend
+cd path\to\NexusBTA\frontend
 npm install
 npm run dev
 ```
@@ -23,7 +23,7 @@ This runs TypeScript checking and a production build.
 With the FastAPI backend running and the React build served at `/app`:
 
 ```powershell
-cd D:\NexusBTA
+cd path\to\NexusBTA
 .\runtime\.venv\Scripts\python.exe .\frontend\scripts\smoke_app.py
 ```
 

@@ -4,11 +4,18 @@ import json
 from importlib import metadata
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from .config import NexusSettings, runtime_python
 from .scanner import scan_custom_nodes
+
+
+_OPTIONAL_REQUIREMENT_FALLBACKS = {
+    "onnxruntime-gpu": "onnxruntime>=1.18",
+    "imath": "OpenEXR>=3.2.0",
+}
 
 
 def custom_node_requirements(settings: NexusSettings) -> dict[str, Path]:
@@ -33,6 +40,49 @@ def _requirement_package_name(line: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _normalize_package_name(value: str) -> str:
+    return value.lower().replace("_", "-")
+
+
+def _installed_requirement(package: str) -> bool:
+    normalized = _normalize_package_name(package)
+    try:
+        metadata.version(package)
+        return True
+    except metadata.PackageNotFoundError:
+        pass
+    fallback = _OPTIONAL_REQUIREMENT_FALLBACKS.get(normalized)
+    if not fallback:
+        return False
+    fallback_package = _requirement_package_name(fallback)
+    if not fallback_package:
+        return False
+    try:
+        metadata.version(fallback_package)
+        return True
+    except metadata.PackageNotFoundError:
+        return False
+
+
+def _sanitized_requirements_file(requirements_path: Path, temp_dir: Path) -> Path:
+    lines = requirements_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    changed = False
+    sanitized: list[str] = []
+    for line in lines:
+        package = _requirement_package_name(line)
+        fallback = _OPTIONAL_REQUIREMENT_FALLBACKS.get(_normalize_package_name(package or ""))
+        if fallback:
+            sanitized.append(f"{fallback}  # Nexus fallback for optional {package}")
+            changed = True
+        else:
+            sanitized.append(line)
+    if not changed:
+        return requirements_path
+    target = temp_dir / f"{requirements_path.parent.name}-requirements.txt"
+    target.write_text("\n".join(sanitized) + "\n", encoding="utf-8")
+    return target
+
+
 def custom_node_dependency_status(settings: NexusSettings) -> dict[str, dict[str, Any]]:
     status: dict[str, dict[str, Any]] = {}
     for name, path in custom_node_requirements(settings).items():
@@ -48,13 +98,11 @@ def custom_node_dependency_status(settings: NexusSettings) -> dict[str, dict[str
             if not package:
                 continue
             packages.append(package)
-            try:
-                metadata.version(package)
-            except metadata.PackageNotFoundError:
+            if not _installed_requirement(package):
                 missing.append(package)
         status[name] = {
             "path": str(path),
-            "installed": bool(packages) and not missing,
+            "installed": not missing,
             "packages": packages,
             "missing": missing,
         }
@@ -90,21 +138,24 @@ def install_custom_node_dependencies(
     installed: list[str] = cloned[:]
     errors: dict[str, str] = dict(clone_errors)
     python_exe = runtime_python(settings)
-    for name, requirements_path in selected.items():
-        try:
-            result = subprocess.run(
-                [str(python_exe), "-m", "pip", "install", "-r", str(requirements_path)],
-                cwd=str(settings.project_root),
-                capture_output=True,
-                text=True,
-                timeout=900,
-            )
-            if result.returncode == 0:
-                installed.append(name)
-            else:
-                errors[name] = (result.stderr or result.stdout or "pip install failed").strip()[-2000:]
-        except Exception as exc:
-            errors[name] = str(exc)
+    with tempfile.TemporaryDirectory(prefix="nexus-node-deps-") as temp_root:
+        temp_dir = Path(temp_root)
+        for name, requirements_path in selected.items():
+            try:
+                install_path = _sanitized_requirements_file(requirements_path, temp_dir)
+                result = subprocess.run(
+                    [str(python_exe), "-m", "pip", "install", "-r", str(install_path)],
+                    cwd=str(settings.project_root),
+                    capture_output=True,
+                    text=True,
+                    timeout=900,
+                )
+                if result.returncode == 0:
+                    installed.append(name)
+                else:
+                    errors[name] = (result.stderr or result.stdout or "pip install failed").strip()[-2000:]
+            except Exception as exc:
+                errors[name] = str(exc)
     return installed, errors
 
 
@@ -282,6 +333,8 @@ def _heuristic_custom_node_name(class_type: str) -> str | None:
         return "comfyui-videohelpersuite"
     if "lanpaint" in value:
         return "LanPaint"
+    if "qwenmultiangle" in value:
+        return "ComfyUI-qwenmultiangle"
     return None
 
 
@@ -309,6 +362,8 @@ def _canonical_repo_for_missing_node(class_type: str) -> str | None:
         return "https://github.com/kijai/ComfyUI-MelBandRoFormer"
     if "lanpaint" in value:
         return "https://github.com/scraed/LanPaint"
+    if "qwenmultiangle" in value:
+        return "https://github.com/jtydhr88/ComfyUI-qwenmultiangle"
     return None
 
 

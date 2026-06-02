@@ -97,8 +97,13 @@ export interface ExtrasPlan {
   upscale?: {
     enabled: boolean;
     model: string;
+    engine?: string;
     scale: string;
     tile?: number;
+    custom_resolution?: { width: number; height: number } | null;
+    runtime_engine?: string;
+    fallback_engine?: string;
+    fallback_reason?: string;
   };
   interpolate?: {
     enabled: boolean;
@@ -118,6 +123,19 @@ export interface ExtrasPlan {
     enabled: boolean;
     strength: number;
   };
+}
+
+export interface NvidiaExtrasStatus {
+  engine: string;
+  label: string;
+  installed: boolean;
+  node_ready: boolean;
+  dependency_ready: boolean;
+  expected_nodes: string[];
+  packages: Record<string, boolean>;
+  model_required: boolean;
+  models_auto_download: boolean;
+  notes?: string;
 }
 
 export interface GalleryItem {

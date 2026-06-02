@@ -1,5 +1,5 @@
 param(
-    [string]$ProjectRoot = "D:\NexusBTA",
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$RuntimePython = "",
     [string]$ModelsDir = "",
     [string]$CustomNodesDir = "",
@@ -28,19 +28,51 @@ function Invoke-NexusStep([scriptblock]$Step, [string]$Label) {
 }
 
 function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
-    $dryArgs = @("-m", "pip", "install", "--dry-run", "--no-input", "--disable-pip-version-check", "-q") + $PipArgs
-    $dryOutput = & $RuntimePython @dryArgs 2>&1
-    $dryText = ($dryOutput | Out-String).Trim()
-    if ($LASTEXITCODE -eq 0 -and [string]::IsNullOrWhiteSpace($dryText)) {
-        Write-NexusLine "$Label requirements already satisfied." "Ok"
-        return
-    }
+    $resolvedArgs = @($PipArgs)
+    $tempRequirements = ""
+    try {
+        if ($PipArgs.Count -eq 2 -and $PipArgs[0] -eq "-r" -and (Test-Path -LiteralPath $PipArgs[1])) {
+            $source = [string]$PipArgs[1]
+            $lines = Get-Content -LiteralPath $source
+            $sanitized = @()
+            $changed = $false
+            foreach ($line in $lines) {
+                if ($line.Trim() -match '^onnxruntime-gpu(\s*(#.*)?)?$') {
+                    $sanitized += "onnxruntime>=1.18 # Nexus fallback for optional onnxruntime-gpu"
+                    $changed = $true
+                } elseif ($line.Trim() -match '^Imath([<>=!~].*)?(\s*(#.*)?)?$') {
+                    $sanitized += "OpenEXR>=3.2.0 # Nexus fallback for Imath module"
+                    $changed = $true
+                } else {
+                    $sanitized += $line
+                }
+            }
+            if ($changed) {
+                $tempRequirements = Join-Path ([System.IO.Path]::GetTempPath()) ("nexus_node_requirements_{0}.txt" -f ([System.Guid]::NewGuid().ToString("N")))
+                Set-Content -LiteralPath $tempRequirements -Value $sanitized -Encoding UTF8
+                $resolvedArgs = @("-r", $tempRequirements)
+                Write-NexusLine "$Label uses Nexus optional dependency fallback." "Info"
+            }
+        }
 
-    & $RuntimePython -m pip install --disable-pip-version-check -q @PipArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "pip install failed with exit code $LASTEXITCODE"
+        $dryArgs = @("-m", "pip", "install", "--dry-run", "--no-input", "--disable-pip-version-check", "-q") + $resolvedArgs
+        $dryOutput = & $RuntimePython @dryArgs 2>&1
+        $dryText = ($dryOutput | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0 -and [string]::IsNullOrWhiteSpace($dryText)) {
+            Write-NexusLine "$Label requirements already satisfied." "Ok"
+            return
+        }
+
+        & $RuntimePython -m pip install --disable-pip-version-check -q @resolvedArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "pip install failed with exit code $LASTEXITCODE"
+        }
+        Write-NexusLine "$Label requirements satisfied." "Ok"
+    } finally {
+        if (![string]::IsNullOrWhiteSpace($tempRequirements)) {
+            Remove-Item -LiteralPath $tempRequirements -Force -ErrorAction SilentlyContinue
+        }
     }
-    Write-NexusLine "$Label requirements satisfied." "Ok"
 }
 
 function Get-AbsolutePath([string]$PathValue) {

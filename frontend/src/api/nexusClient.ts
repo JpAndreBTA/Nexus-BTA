@@ -1,4 +1,4 @@
-import type { CivitaiSearchResponse, ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, LoraAsset, ModelCatalog, WorkflowAnalysis, WorkflowSummary } from './types';
+import type { CivitaiSearchResponse, ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -51,6 +51,7 @@ export const nexusApi = {
       }),
     );
   },
+  nvidiaExtrasStatus: (engine: string) => nexusFetch<NvidiaExtrasStatus>(`/extras/nvidia/${encodeURIComponent(engine)}/status`),
   extrasJob: (jobId: string) => nexusFetch<ExtrasJob>(`/extras/${encodeURIComponent(jobId)}`),
   gallery: () => nexusFetch<GalleryItem[]>('/gallery'),
   workflows: () => nexusFetch<WorkflowSummary[]>('/workflows'),

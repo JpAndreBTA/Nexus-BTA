@@ -102,7 +102,7 @@ function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((model) => ({
         label: (model.relative_path || model.name).replace(/^loras[\\/]/i, ''),
-        value: model.relative_path || model.path,
+        value: (model.relative_path || model.path || model.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\'),
         name: (model.relative_path || model.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\'),
       }));
   }
@@ -123,8 +123,8 @@ function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((model) => ({
         label: model.relative_path || model.name,
-        value: model.relative_path || model.path,
-        name: model.name,
+        value: (model.relative_path || model.path || model.name).replace(/^controlnet[\\/]/i, '').replace(/^model_patches[\\/]/i, '').replaceAll('/', '\\'),
+        name: (model.relative_path || model.name).replace(/^controlnet[\\/]/i, '').replace(/^model_patches[\\/]/i, '').replaceAll('/', '\\'),
       }));
   }
 
@@ -134,22 +134,28 @@ function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>
   const typeTokens: Record<string, string[]> = {
     canny: ['canny'],
     depth: ['depth'],
+    dwpose: ['dwpose', 'dw pose', 'openpose', 'pose'],
     openpose: ['openpose', 'pose'],
     lineart: ['lineart', 'line'],
     tile: ['tile'],
   };
   const tokens = typeTokens[type] || [type];
-  return ((catalog?.categories.controlnet ?? []) as CatalogAsset[])
+  const controlCategories = [
+    ...(((catalog?.categories.controlnet ?? []) as CatalogAsset[])),
+    ...(((catalog?.categories.model_patches ?? []) as CatalogAsset[])),
+  ];
+  return controlCategories
     .filter((model) => {
       const haystack = `${model.name} ${model.folder} ${model.relative_path} ${model.tags?.join(' ')}`.toLowerCase();
-      if (lowerPreset === 'flux' && haystack.includes('union')) return presetTokens.some((token) => haystack.includes(token));
-      return presetTokens.some((token) => haystack.includes(token)) && tokens.some((token) => haystack.includes(token));
+      const customSource = String(model.source || '').toLowerCase() === 'reference';
+      if (lowerPreset === 'flux' && haystack.includes('union')) return customSource || presetTokens.some((token) => haystack.includes(token));
+      return (customSource || presetTokens.some((token) => haystack.includes(token))) && tokens.some((token) => haystack.includes(token));
     })
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((model) => ({
       label: model.relative_path || model.name,
-      value: model.relative_path || model.path,
-      name: model.name,
+      value: (model.relative_path || model.path || model.name).replace(/^controlnet[\\/]/i, '').replace(/^model_patches[\\/]/i, '').replaceAll('/', '\\'),
+      name: (model.relative_path || model.name).replace(/^controlnet[\\/]/i, '').replace(/^model_patches[\\/]/i, '').replaceAll('/', '\\'),
     }));
 }
 
@@ -463,7 +469,7 @@ export function HomePage() {
       controlnet: {
         enabled: controlNetCompatible && generation.controlNetEnabled,
         type: generation.controlNetType,
-        model: generation.controlNetModelName || generation.controlNetModel || 'Automatic',
+        model: generation.controlNetModel || generation.controlNetModelName || 'Automatic',
         image: generation.controlNetImage || generation.referenceImage || null,
         strength: generation.controlNetStrength,
         start_percent: generation.controlNetStart,
@@ -967,6 +973,7 @@ export function HomePage() {
                       <select value={generation.controlNetType} onChange={(event) => generation.setControlNetType(event.currentTarget.value)}>
                         <option value="canny">Canny</option>
                         <option value="depth">Depth</option>
+                        <option value="dwpose">DWPose</option>
                         <option value="openpose">OpenPose</option>
                         <option value="lineart">Lineart</option>
                         <option value="tile">Tile</option>

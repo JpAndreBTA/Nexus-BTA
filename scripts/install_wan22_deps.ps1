@@ -1,5 +1,5 @@
 param(
-    [string]$ProjectRoot = "D:\NexusBTA",
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$RuntimePython = "",
     [string]$ModelsDir = "",
     [switch]$IncludeWanModels,

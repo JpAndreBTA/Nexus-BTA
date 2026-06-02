@@ -54,12 +54,34 @@ piexif>=1.1
 einops>=0.8
 tqdm>=4.66
 psutil>=6.0
+OpenEXR>=3.2.0
+opencolorio>=2.3.0
+colour-science>=0.4.4
+defusedxml>=0.7.1
 
 # LTX 2.3 IC-LoRA motion transfer preprocessors (Pose/DWPose, Canny, Depth, Cameraman).
 # The KJNodes repo below provides LTXVAddGuideMulti / LTXV Img To Video Inplace KJ,
 # which are required by Cameraman + end-frame / latent-upscale guide reapplication.
-controlnet-aux>=0.0.10
 onnxruntime>=1.18
+kornia>=0.8
+ninja~=1.11.1.4
+timm>=0.6.13
+importlib_metadata>=8.0
+python-dateutil>=2.9
+# The ComfyUI controlnet_aux custom node ships its own custom_controlnet_aux code.
+# Do not install the PyPI `controlnet-aux` package by default on Python 3.12:
+# its 0.0.10 MediaPipe wrapper imports the removed `mediapipe.solutions` API.
+mediapipe>=0.10.32
+fvcore>=0.1.5.post20221221
+yapf>=0.40
+omegaconf>=2.3
+ftfy>=6.2
+addict>=2.4
+yacs>=0.1.8
+albumentations>=1.4,<2.1
+scikit-image>=0.24
+scikit-learn>=1.5
+matplotlib>=3.8
 
 # Required ComfyUI custom-node repos for LTX 2.3 IC preprocessors and Cameraman.
 # Installed by scripts/install_ltx_director_deps.ps1:

@@ -14,6 +14,8 @@ const modeOptions = [
   { id: 'remove_bg', label: 'Remove BG', icon: Scissors },
 ] as const;
 
+const nvidiaUpscalers = ['nvidia_pid', 'nvidia_rtx'];
+
 function outputUrl(url: string | undefined) {
   if (!url) return '';
   return url.startsWith('/') ? url : `/${url.replace(/^\/+/, '')}`;
@@ -42,8 +44,8 @@ export function ExtrasPage() {
   const plan = useMemo(() => buildExtrasPlan(extras, catalog), [extras, catalog]);
   const planLabel = useMemo(() => extrasPlanLabel(plan), [plan]);
 
-  const upscalers = useMemo(() => catalogNames(catalog, ['upscale_models'], ['Lanczos']), [catalog]);
-  const videoUpscalers = useMemo(() => catalogNames(catalog, ['upscale_models', 'latent_upscale_models'], ['Lanczos']), [catalog]);
+  const upscalers = useMemo(() => catalogNames(catalog, ['upscale_models'], ['Lanczos', ...nvidiaUpscalers]), [catalog]);
+  const videoUpscalers = useMemo(() => catalogNames(catalog, ['upscale_models', 'latent_upscale_models'], ['Lanczos', ...nvidiaUpscalers]), [catalog]);
   const interpolators = useMemo(() => catalogNames(catalog, ['frame_interpolation'], ['frame_interpolation/rife_v4.26.safetensors']), [catalog]);
   const removeBgModels = useMemo(
     () => catalogNames(catalog, ['background_removal', 'RMBG'], ['BiRefNet'], (name) => /biref|rmbg|bria|inspy|isnet|ben|rembg|background/i.test(name)),
@@ -152,6 +154,26 @@ export function ExtrasPage() {
     if (!extras.files.length && !extras.remoteSource) {
       setLocalError('Load an image, video, or frame sequence first.');
       return;
+    }
+    const nvidiaEngine = plan.upscale?.enabled && nvidiaUpscalers.includes(plan.upscale.engine || '') ? plan.upscale.engine || '' : '';
+    if (nvidiaEngine) {
+      const status = await nexusApi.nvidiaExtrasStatus(nvidiaEngine).catch(() => null);
+      const label = status?.label || (nvidiaEngine === 'nvidia_pid' ? 'NVIDIA PiD Pixel Diffusion' : 'NVIDIA RTX Video Super Resolution');
+      if (status?.installed && nvidiaEngine === 'nvidia_pid' && sessionStorage.getItem('nexus_pid_upscale_ack') !== '1') {
+        const ok = window.confirm(`${label} is installed, but it is a latent decoder/upscaler and its ComfyUI node can download large PiD source/checkpoints/assets when auto_download is enabled. Continue with this PiD plan?`);
+        if (!ok) return;
+        sessionStorage.setItem('nexus_pid_upscale_ack', '1');
+      }
+      if (!status?.installed) {
+        const missing = [
+          status?.node_ready === false ? 'custom node' : '',
+          status?.dependency_ready === false ? 'Python dependencies' : '',
+        ].filter(Boolean).join(' and ') || 'runtime setup';
+        const piDNote = nvidiaEngine === 'nvidia_pid'
+          ? ' PiD is a latent decoder/upscaler and may download large checkpoints/assets only when its ComfyUI node runs with auto_download.'
+          : ' RTX Video Super Resolution needs an RTX GPU plus NVIDIA VFX runtime support.';
+        if (!window.confirm(`${label} is selected but ${missing} is not fully ready.${piDNote} Continue using the standard Lanczos fallback for this run?`)) return;
+      }
     }
     setLocalError('');
     setJobId('');

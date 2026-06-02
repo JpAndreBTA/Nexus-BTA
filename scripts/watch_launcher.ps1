@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [int]$LauncherPid,
-    [string]$ProjectRoot = "D:\NexusBTA"
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -15,4 +15,3 @@ while ($true) {
     }
     Start-Sleep -Seconds 2
 }
-

@@ -1,5 +1,5 @@
 param(
-    [string]$ProjectRoot = "D:\NexusBTA",
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [switch]$StartComfy,
     [switch]$RequireComfy,
     [int]$ComfyWarmupSeconds = 0,
@@ -346,7 +346,7 @@ $dependencyCheckRequired = Test-NexusDependencyCheckRequired $dependencySignatur
 if ($dependencyCheckRequired -and (Test-Path -LiteralPath $ltxDirectorDeps)) {
     Write-NexusSection "Requirements"
     if (Test-Path -LiteralPath $customNodeDeps) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $customNodeDeps -ProjectRoot $root -RuntimePython $comfyPython -CustomNodesDir $customNodesDir -Strict
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $customNodeDeps -ProjectRoot $root -RuntimePython $comfyPython -CustomNodesDir $customNodesDir
     }
     & powershell -NoProfile -ExecutionPolicy Bypass -File $ltxDirectorDeps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -CustomNodesDir $customNodesDir -Strict
 }

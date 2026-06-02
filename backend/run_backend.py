@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -15,8 +16,8 @@ if str(BACKEND) not in sys.path:
 if __name__ == "__main__":
     uvicorn.run(
         "nexus_backend.main:app",
-        host="127.0.0.1",
-        port=7861,
+        host=os.environ.get("NEXUS_BACKEND_HOST", "127.0.0.1"),
+        port=int(os.environ.get("NEXUS_BACKEND_PORT", "7861")),
         reload=False,
         log_level="warning",
         access_log=False,

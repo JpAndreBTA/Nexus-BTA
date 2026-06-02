@@ -1,5 +1,5 @@
 param(
-    [string]$ProjectRoot = "D:\NexusBTA",
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$ModelsSource = "C:\ComfyUpdate\models",
     [switch]$IncludeErosModel,
     [switch]$IncludeSulphurModel,

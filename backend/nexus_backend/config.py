@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -203,10 +204,33 @@ def load_settings() -> NexusSettings:
             settings.model_sources[key] = list(value)
             migrated = True
 
+    _apply_environment_overrides(settings)
     settings.ensure_directories()
     if migrated or not SETTINGS_PATH.exists():
         save_settings(settings)
     return settings
+
+
+def _apply_environment_overrides(settings: NexusSettings) -> None:
+    path_env = {
+        "NEXUS_MODELS_DIR": "models_dir",
+        "NEXUS_COMFY_ROOT": "comfy_root",
+        "NEXUS_COMFY_PYTHON": "comfy_python",
+        "NEXUS_CUSTOM_NODES_DIR": "custom_nodes_dir",
+        "NEXUS_WORKFLOWS_DIR": "workflows_dir",
+        "NEXUS_INPUT_DIR": "input_dir",
+        "NEXUS_OUTPUT_DIR": "output_dir",
+        "NEXUS_TEMP_DIR": "temp_dir",
+        "NEXUS_USER_DIR": "user_dir",
+    }
+    for env_name, attr_name in path_env.items():
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            setattr(settings, attr_name, Path(value))
+
+    port_value = os.environ.get("NEXUS_COMFY_PORT", "").strip()
+    if port_value.isdigit():
+        settings.runtime.comfy_port = int(port_value)
 
 
 def save_settings(settings: NexusSettings) -> None:
@@ -256,6 +280,10 @@ def sync_startup_model_path(settings: NexusSettings, previous_models_dir: Path |
     state["models_dir"] = selected_models_dir
     state["model_sources"] = model_sources
     state["reference_model_sources"] = [str(path) for path in settings.reference_model_sources]
+    state["custom_nodes_dir"] = str(settings.custom_nodes_dir)
+    state["reference_custom_node_sources"] = [str(path) for path in settings.reference_custom_node_sources]
+    state["comfy_root"] = str(settings.comfy_root)
+    state["comfy_python"] = str(settings.comfy_python)
     state["workflows_dir"] = str(settings.workflows_dir)
     state["reference_workflow_sources"] = [str(path) for path in settings.reference_workflow_sources]
     state["model_path_source"] = "ui_settings"
@@ -276,6 +304,9 @@ def sync_startup_model_path(settings: NexusSettings, previous_models_dir: Path |
                 "@echo off",
                 f'set "NEXUS_MODELS_DIR={selected_models_dir}"',
                 f'set "NEXUS_ALLOW_MODEL_DOWNLOADS={allow_downloads}"',
+                f'set "NEXUS_COMFY_ROOT={settings.comfy_root}"',
+                f'set "NEXUS_COMFY_PYTHON={settings.comfy_python}"',
+                f'set "NEXUS_CUSTOM_NODES_DIR={settings.custom_nodes_dir}"',
                 "",
             ]
         ),

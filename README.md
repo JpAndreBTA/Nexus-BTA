@@ -143,6 +143,16 @@ http://127.0.0.1:7861/ui
 
 Linux with an NVIDIA GPU and CUDA is the best non-Windows target for LTX 2.3 local generation, ComfyUI-LTXVideo routes and LTX-2 trainer jobs. Some Windows helper scripts for installing custom nodes still need to be translated to shell commands or handled through ComfyUI Manager.
 
+### RunPod / Online Tunnel
+
+For RunPod custom Docker builds, use the repository `Dockerfile` at the repo root and build context `.`. Nexus is validated against `torch 2.10.0+cu130`, so the default image is `pytorch/pytorch:2.10.0-cuda13.0-cudnn9-devel`. This keeps the Docker runtime aligned with the local Nexus dependency pins instead of downgrading to older RunPod templates.
+
+RunPod templates such as `runpod/pytorch:1.0.3-cu1300-torch291-ubuntu2404` are closer than the PyTorch 2.1/2.8 public templates because they keep CUDA 13.0, but they still use Torch 2.9.1. Treat them as fallback/experimental only. If you use one through a custom build arg, keep Nexus from reinstalling PyTorch by filtering `torch`, `torchvision`, `torchaudio` and Windows-only xFormers wheels during install, as the Dockerfile does.
+
+The Docker entrypoint starts Nexus on port `7861` and starts ComfyUI in the background through the backend. It does not start an external tunnel. On RunPod, expose HTTP port `7861` from the Pod template or use RunPod direct TCP. This keeps RunPod/Docker independent from Cloudflare, Gradio or ngrok.
+
+For local sharing, use `StartLAN.bat` for direct LAN access with no intermediary. It binds Nexus to `0.0.0.0:7861` and prints local network URLs such as `http://192.168.x.x:7861/ui`. Use `StartTunnel.bat` only when the user explicitly wants a third-party tunnel; it asks the user to choose Tailscale Funnel, Cloudflare Quick Tunnel, ngrok or a custom command. If the selected tunnel client is missing, Nexus asks whether to install that optional dependency with `winget` before continuing.
+
 ### macOS
 
 macOS support is partial. The legacy Nexus UI and backend can run, and ComfyUI officially supports Apple Silicon through PyTorch MPS, but the supported LTX 2.3 local video path is still CUDA/NVIDIA-focused. This is true even when you only want LTX 2.3 inference and do not need the LTX Trainer: LTX Desktop supports Apple Silicon Macs, but its current macOS generation path runs through the LTX API rather than local GPU inference. On Mac, expect SD/SDXL-style Comfy workflows to be the practical local target; use LTX API/LTX Desktop API mode or a remote CUDA machine for reliable LTX 2.3 video generation/training.

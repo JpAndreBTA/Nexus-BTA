@@ -28,17 +28,17 @@ Current Implementation
 Backend Commands
 ----------------
 Bootstrap embedded runtime:
-  powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap_nexus_runtime.ps1 -ProjectRoot D:\NexusBTA -CopyPythonEnv -ImportCustomNodes -ImportWorkflows
+  powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap_nexus_runtime.ps1 -CopyPythonEnv -ImportCustomNodes -ImportWorkflows
 
 Import selective LTX 2.3 assets:
-  powershell -ExecutionPolicy Bypass -File .\scripts\import_ltx23_assets.ps1 -ProjectRoot D:\NexusBTA
+  powershell -ExecutionPolicy Bypass -File .\scripts\import_ltx23_assets.ps1
 
 Optional large LTX imports:
-  powershell -ExecutionPolicy Bypass -File .\scripts\import_ltx23_assets.ps1 -ProjectRoot D:\NexusBTA -IncludeErosModel
-  powershell -ExecutionPolicy Bypass -File .\scripts\import_ltx23_assets.ps1 -ProjectRoot D:\NexusBTA -IncludeSulphurModel
+  powershell -ExecutionPolicy Bypass -File .\scripts\import_ltx23_assets.ps1 -IncludeErosModel
+  powershell -ExecutionPolicy Bypass -File .\scripts\import_ltx23_assets.ps1 -IncludeSulphurModel
 
 Start Nexus backend:
-  powershell -ExecutionPolicy Bypass -File .\scripts\run_backend.ps1 -ProjectRoot D:\NexusBTA
+  powershell -ExecutionPolicy Bypass -File .\scripts\run_backend.ps1
 
 Start full app:
   .\run.bat

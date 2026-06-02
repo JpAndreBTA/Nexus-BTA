@@ -23,6 +23,7 @@
     "@rsbuild/plugin-react": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "playwright": "^1.60.0",
     "typescript": "latest"
   }
 }

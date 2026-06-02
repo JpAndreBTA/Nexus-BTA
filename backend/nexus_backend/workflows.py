@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import math
 import random
 import re
 import shutil
@@ -1061,7 +1062,132 @@ def _is_ui_helper_node(class_type: str) -> bool:
     return bool(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", class_type))
 
 
+def _ui_link_tuple(link: Any) -> tuple[int, str, int, str, int, str] | None:
+    if isinstance(link, list) and len(link) >= 6:
+        return int(link[0]), str(link[1]), int(link[2]), str(link[3]), int(link[4]), str(link[5])
+    if isinstance(link, dict):
+        link_id = int(link.get("id") or 0)
+        origin_id = str(link.get("origin_id"))
+        target_id = str(link.get("target_id"))
+        if not link_id or not origin_id or not target_id:
+            return None
+        return (
+            link_id,
+            origin_id,
+            int(link.get("origin_slot") or 0),
+            target_id,
+            int(link.get("target_slot") or 0),
+            str(link.get("type") or "*"),
+        )
+    return None
+
+
+def _expand_ui_subgraphs(data: dict[str, Any]) -> dict[str, Any]:
+    subgraphs = {
+        str(subgraph.get("id")): subgraph
+        for subgraph in data.get("definitions", {}).get("subgraphs", []) or []
+        if isinstance(subgraph, dict) and subgraph.get("id")
+    }
+    if not subgraphs:
+        return data
+
+    wrapper_nodes = [
+        node
+        for node in data.get("nodes", []) or []
+        if isinstance(node, dict) and str(node.get("type") or node.get("class_type") or "") in subgraphs
+    ]
+    if not wrapper_nodes:
+        return data
+
+    expanded = deepcopy(data)
+    top_links = [
+        parsed
+        for parsed in (_ui_link_tuple(link) for link in expanded.get("links", []) or [])
+        if parsed is not None
+    ]
+    wrapper_ids = {str(node.get("id")) for node in wrapper_nodes}
+    incoming: dict[tuple[str, int], list[tuple[int, str, int, str, int, str]]] = {}
+    outgoing: dict[tuple[str, int], list[tuple[int, str, int, str, int, str]]] = {}
+    for link in top_links:
+        _, origin_id, origin_slot, target_id, target_slot, _ = link
+        if target_id in wrapper_ids:
+            incoming.setdefault((target_id, target_slot), []).append(link)
+        if origin_id in wrapper_ids:
+            outgoing.setdefault((origin_id, origin_slot), []).append(link)
+
+    nodes: list[dict[str, Any]] = []
+    link_specs: list[tuple[str, int, str, int, str]] = []
+    for node in expanded.get("nodes", []) or []:
+        if not isinstance(node, dict):
+            continue
+        node_id = str(node.get("id"))
+        class_type = str(node.get("type") or node.get("class_type") or "")
+        subgraph = subgraphs.get(class_type)
+        if not subgraph:
+            nodes.append(node)
+            continue
+
+        nodes.extend(deepcopy(subgraph.get("nodes", []) or []))
+        for link in top_links:
+            _, origin_id, origin_slot, target_id, target_slot, link_type = link
+            if origin_id != node_id and target_id != node_id:
+                link_specs.append((origin_id, origin_slot, target_id, target_slot, link_type))
+        for raw_link in subgraph.get("links", []) or []:
+            parsed = _ui_link_tuple(raw_link)
+            if not parsed:
+                continue
+            _, origin_id, origin_slot, target_id, target_slot, link_type = parsed
+            if origin_id == "-10":
+                for source in incoming.get((node_id, origin_slot), []):
+                    _, top_origin_id, top_origin_slot, _, _, top_type = source
+                    link_specs.append((top_origin_id, top_origin_slot, target_id, target_slot, top_type or link_type))
+            elif target_id == "-20":
+                for target in outgoing.get((node_id, target_slot), []):
+                    _, _, _, top_target_id, top_target_slot, top_type = target
+                    link_specs.append((origin_id, origin_slot, top_target_id, top_target_slot, top_type or link_type))
+            else:
+                link_specs.append((origin_id, origin_slot, target_id, target_slot, link_type))
+
+    # Deduplicate because each wrapper replacement already emits untouched top-level links.
+    seen: set[tuple[str, int, str, int, str]] = set()
+    deduped: list[tuple[str, int, str, int, str]] = []
+    for spec in link_specs:
+        if spec in seen:
+            continue
+        seen.add(spec)
+        deduped.append(spec)
+
+    node_by_id = {str(node.get("id")): node for node in nodes if isinstance(node, dict)}
+    for node in node_by_id.values():
+        for input_info in node.get("inputs", []) or []:
+            if isinstance(input_info, dict):
+                input_info["link"] = None
+        for output_info in node.get("outputs", []) or []:
+            if isinstance(output_info, dict):
+                output_info["links"] = []
+
+    links: list[list[Any]] = []
+    for index, (origin_id, origin_slot, target_id, target_slot, link_type) in enumerate(deduped, start=1):
+        link_id = index
+        links.append([link_id, origin_id, origin_slot, target_id, target_slot, link_type])
+        target = node_by_id.get(str(target_id))
+        target_inputs = target.get("inputs", []) if isinstance(target, dict) else []
+        if 0 <= target_slot < len(target_inputs) and isinstance(target_inputs[target_slot], dict):
+            target_inputs[target_slot]["link"] = link_id
+        origin = node_by_id.get(str(origin_id))
+        origin_outputs = origin.get("outputs", []) if isinstance(origin, dict) else []
+        if 0 <= origin_slot < len(origin_outputs) and isinstance(origin_outputs[origin_slot], dict):
+            origin_outputs[origin_slot].setdefault("links", []).append(link_id)
+
+    expanded["nodes"] = nodes
+    expanded["links"] = links
+    expanded["last_link_id"] = len(links)
+    expanded["last_node_id"] = max((int(node.get("id")) for node in nodes if isinstance(node, dict) and str(node.get("id")).lstrip("-").isdigit()), default=0)
+    return expanded
+
+
 def convert_ui_to_api(data: dict[str, Any], object_info: dict[str, Any]) -> dict[str, Any]:
+    data = _expand_ui_subgraphs(data)
     links: dict[int, tuple[str, int]] = {}
     for link in data.get("links", []):
         if isinstance(link, list) and len(link) >= 6:
@@ -1079,7 +1205,7 @@ def convert_ui_to_api(data: dict[str, Any], object_info: dict[str, Any]) -> dict
         inputs: dict[str, Any] = {}
         linked_widget_names: set[str] = set()
         for input_info in node.get("inputs", []) or []:
-            name = input_info.get("name")
+            name = str(input_info.get("name") or "")
             link = input_info.get("link")
             widget = input_info.get("widget")
             if name and isinstance(widget, dict) and widget.get("name"):
@@ -1116,13 +1242,11 @@ def convert_ui_to_api(data: dict[str, Any], object_info: dict[str, Any]) -> dict
                 if has_value:
                     inputs[name] = value
 
+        _patch_dynamic_ui_widget_values(str(class_type), inputs, widget_values)
+
         if object_info and class_type in object_info:
             node_inputs = object_info.get(class_type, {}).get("input", {})
-            allowed_inputs = set()
-            for group in ("required", "optional", "hidden"):
-                values = node_inputs.get(group, {})
-                if isinstance(values, dict):
-                    allowed_inputs.update(values.keys())
+            allowed_inputs = _allowed_comfy_input_names(node_inputs)
             if allowed_inputs:
                 inputs = {key: value for key, value in inputs.items() if key in allowed_inputs}
 
@@ -1136,8 +1260,78 @@ def convert_ui_to_api(data: dict[str, Any], object_info: dict[str, Any]) -> dict
     return api
 
 
+def _allowed_comfy_input_names(node_inputs: dict[str, Any]) -> set[str]:
+    allowed_inputs: set[str] = set()
+    for group in ("required", "optional", "hidden"):
+        values = node_inputs.get(group, {})
+        if not isinstance(values, dict):
+            continue
+        allowed_inputs.update(values.keys())
+        for parent_name, spec in values.items():
+            if not isinstance(spec, list) or len(spec) < 2 or not isinstance(spec[1], dict):
+                continue
+            meta = spec[1]
+            options = meta.get("options")
+            if isinstance(options, list):
+                for option in options:
+                    if not isinstance(option, dict):
+                        continue
+                    option_inputs = option.get("inputs", {})
+                    if not isinstance(option_inputs, dict):
+                        continue
+                    for option_group in ("required", "optional", "hidden"):
+                        option_values = option_inputs.get(option_group, {})
+                        if isinstance(option_values, dict):
+                            allowed_inputs.update(option_values.keys())
+                            allowed_inputs.update(f"{parent_name}.{key}" for key in option_values.keys())
+            template = meta.get("template")
+            if isinstance(template, dict) and isinstance(template.get("names"), list):
+                allowed_inputs.update(str(name) for name in template["names"])
+                allowed_inputs.update(f"{parent_name}.{name}" for name in template["names"])
+    return allowed_inputs
+
+
+def _patch_dynamic_ui_widget_values(class_type: str, inputs: dict[str, Any], widget_values: Any) -> None:
+    if not isinstance(widget_values, list) or not widget_values:
+        return
+    lower = class_type.lower()
+    if lower == "resizeimagemasknode":
+        resize_type = str(widget_values[0] or "")
+        inputs["resize_type"] = resize_type
+        if resize_type == "scale by multiplier" and len(widget_values) >= 3:
+            inputs["resize_type.multiplier"] = widget_values[1]
+            inputs["scale_method"] = widget_values[2]
+        elif resize_type == "scale to multiple" and len(widget_values) >= 3:
+            inputs["resize_type.multiple"] = widget_values[1]
+            inputs["scale_method"] = widget_values[2]
+        elif resize_type == "match size" and len(widget_values) >= 3:
+            inputs["resize_type.crop"] = widget_values[1]
+            inputs["scale_method"] = widget_values[2]
+        elif resize_type == "scale dimensions" and len(widget_values) >= 5:
+            inputs["resize_type.width"] = widget_values[1]
+            inputs["resize_type.height"] = widget_values[2]
+            inputs["resize_type.crop"] = widget_values[3]
+            inputs["scale_method"] = widget_values[4]
+        elif len(widget_values) >= 2:
+            # Other resize modes expose one numeric option followed by scale_method.
+            mode_key = {
+                "scale longer dimension": "longer_size",
+                "scale shorter dimension": "shorter_size",
+                "scale width": "width",
+                "scale height": "height",
+            }.get(resize_type)
+            if mode_key:
+                inputs[f"resize_type.{mode_key}"] = widget_values[1]
+                if len(widget_values) >= 3:
+                    inputs["scale_method"] = widget_values[2]
+
+
 def _widget_input_names(class_type: str, object_info: dict[str, Any]) -> list[str]:
     lower = class_type.lower()
+    if lower == "comfymathexpression":
+        return ["expression"]
+    if lower == "resizeimagemasknode":
+        return []
     known = _known_ui_widget_order(class_type)
     if lower in {"trellis2sparsemultiviewgenerator"} and known:
         return known
@@ -1162,8 +1356,10 @@ def _append_inpaint_mask(
     sampler_node_id: str,
     mask_image_name: str | None,
     start_id: int = 80,
+    decoded_image_ref: list[Any] | None = None,
+    save_node_id: str | None = None,
 ) -> bool:
-    if not mask_image_name or "inpaint" not in request.img2img.mode.lower():
+    if not mask_image_name or not _uses_inpaint_mask_mode(request):
         return False
     mask_loader_id = str(start_id)
     mask_to_mask_id = str(start_id + 1)
@@ -1198,7 +1394,205 @@ def _append_inpaint_mask(
     sampler = workflow.get(sampler_node_id, {})
     sampler_inputs = sampler.setdefault("inputs", {})
     sampler_inputs["latent_image"] = [encode_id, 0]
+    if decoded_image_ref and save_node_id:
+        _append_masked_output_composite(
+            workflow,
+            request=request,
+            destination_image_ref=[reference_resize_id, 0],
+            source_image_ref=decoded_image_ref,
+            mask_ref=[mask_to_mask_id, 0],
+            save_node_id=save_node_id,
+            start_id=start_id + 5,
+        )
     return True
+
+
+def _append_masked_output_composite(
+    workflow: dict[str, Any],
+    *,
+    request: GenerateRequest | None = None,
+    destination_image_ref: list[Any],
+    source_image_ref: list[Any],
+    mask_ref: list[Any],
+    save_node_id: str,
+    start_id: int,
+) -> list[Any] | None:
+    save_node = workflow.get(save_node_id)
+    if not isinstance(save_node, dict):
+        return None
+    composite_id = str(start_id)
+    while composite_id in workflow:
+        start_id += 1
+        composite_id = str(start_id)
+    composite_mask_ref = mask_ref
+    composite_mask_image_name = ""
+    if request is not None and _uses_outpaint_extend_mode(request):
+        composite_mask_image_name = str(getattr(request.img2img, "composite_mask_image", "") or "").strip()
+    if composite_mask_image_name:
+        load_mask_id = composite_id
+        start_id += 1
+        resize_mask_id = str(start_id)
+        while resize_mask_id in workflow:
+            start_id += 1
+            resize_mask_id = str(start_id)
+        start_id += 1
+        mask_to_mask_id = str(start_id)
+        while mask_to_mask_id in workflow:
+            start_id += 1
+            mask_to_mask_id = str(start_id)
+        start_id += 1
+        composite_id = str(start_id)
+        while composite_id in workflow:
+            start_id += 1
+            composite_id = str(start_id)
+        width = max(1, int(getattr(request, "width", 0) or 0))
+        height = max(1, int(getattr(request, "height", 0) or 0))
+        workflow[load_mask_id] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": composite_mask_image_name},
+            "_meta": {"title": "Extend Composite Mask"},
+        }
+        workflow[resize_mask_id] = _image_scale_node([load_mask_id, 0], width, height, method="nearest-exact")
+        workflow[resize_mask_id]["_meta"]["title"] = "Resize Extend Composite Mask"
+        workflow[mask_to_mask_id] = {
+            "class_type": "ImageToMask",
+            "inputs": {"image": [resize_mask_id, 0], "channel": "red"},
+            "_meta": {"title": "Extend Composite Mask Channel"},
+        }
+        composite_mask_ref = [mask_to_mask_id, 0]
+    workflow[composite_id] = {
+        "class_type": "ImageCompositeMasked",
+        "inputs": {
+            "destination": destination_image_ref,
+            "source": source_image_ref,
+            "x": 0,
+            "y": 0,
+            "resize_source": False,
+            "mask": composite_mask_ref,
+        },
+        "_meta": {"title": "Composite Generated Mask Over Preserved Source"},
+    }
+    save_node.setdefault("inputs", {})["images"] = [composite_id, 0]
+    return [composite_id, 0]
+
+
+def _append_qwen_inpaint_noise_mask(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    *,
+    base_latent_ref: list[Any],
+    sampler_node_id: str,
+    mask_image_name: str | None,
+    start_id: int = 80,
+    base_image_ref: list[Any] | None = None,
+    decoded_image_ref: list[Any] | None = None,
+    save_node_id: str | None = None,
+) -> bool:
+    if not mask_image_name or not _uses_inpaint_mask_mode(request):
+        return False
+    mask_loader_id = str(start_id)
+    mask_to_mask_id = str(start_id + 1)
+    set_mask_id = str(start_id + 2)
+    mask_resize_id = str(start_id + 4)
+    workflow[mask_loader_id] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": mask_image_name},
+        "_meta": {"title": "Inpaint Mask"},
+    }
+    workflow[mask_resize_id] = _image_scale_node([mask_loader_id, 0], request.width, request.height, method="nearest-exact")
+    workflow[mask_resize_id]["_meta"]["title"] = "Resize Inpaint Mask To Side Menu"
+    workflow[mask_to_mask_id] = {
+        "class_type": "ImageToMask",
+        "inputs": {"image": [mask_resize_id, 0], "channel": "red"},
+        "_meta": {"title": "Mask Channel"},
+    }
+    workflow[set_mask_id] = {
+        "class_type": "SetLatentNoiseMask",
+        "inputs": {"samples": base_latent_ref, "mask": [mask_to_mask_id, 0]},
+        "_meta": {"title": "Apply QWEN Inpaint Noise Mask"},
+    }
+    sampler = workflow.get(sampler_node_id, {})
+    sampler_inputs = sampler.setdefault("inputs", {})
+    sampler_inputs["latent_image"] = [set_mask_id, 0]
+    if base_image_ref and decoded_image_ref and save_node_id:
+        _append_masked_output_composite(
+            workflow,
+            request=request,
+            destination_image_ref=base_image_ref,
+            source_image_ref=decoded_image_ref,
+            mask_ref=[mask_to_mask_id, 0],
+            save_node_id=save_node_id,
+            start_id=start_id + 5,
+        )
+    return True
+
+
+def _uses_inpaint_mask_mode(request: GenerateRequest) -> bool:
+    mode = str(request.img2img.mode or "").lower()
+    return "inpaint" in mode or "outpaint" in mode or "extend" in mode
+
+
+def _uses_outpaint_extend_mode(request: GenerateRequest) -> bool:
+    mode = str(request.img2img.mode or "").lower()
+    return "outpaint" in mode or "extend" in mode
+
+
+def _extend_pad_values(request: GenerateRequest) -> dict[str, int]:
+    raw = getattr(request.img2img, "extend_pad", None)
+    if not isinstance(raw, dict):
+        return {"left": 0, "top": 0, "right": 0, "bottom": 0}
+    return {
+        side: max(0, int(float(raw.get(side) or 0)))
+        for side in ("left", "top", "right", "bottom")
+    }
+
+
+def _has_extend_pad(request: GenerateRequest) -> bool:
+    return any(_extend_pad_values(request).values())
+
+
+def _image_pad_for_outpaint_node(image_ref: list[Any], request: GenerateRequest, feathering: int = 0) -> dict[str, Any]:
+    pad = _extend_pad_values(request)
+    return {
+        "class_type": "ImagePadForOutpaint",
+        "inputs": {
+            "image": image_ref,
+            "left": pad["left"],
+            "top": pad["top"],
+            "right": pad["right"],
+            "bottom": pad["bottom"],
+            "feathering": max(0, int(feathering)),
+        },
+        "_meta": {"title": "Pad Base Image For Extend"},
+    }
+
+
+def _apply_outpaint_continuity_prompt(request: GenerateRequest) -> None:
+    if request.activity != "img2img" or not _uses_outpaint_extend_mode(request):
+        return
+    prefix = (
+        "Edit only the masked areas and keep every unmasked pixel identical. "
+        "If a masked area is temporary extension padding, replace it completely with newly painted scene content. "
+        "Continue the visible background, subject, and environment naturally with matching lighting, perspective, texture, color, scale, and camera lens. "
+        "Create plausible new scene detail in the expanded area; do not copy, mirror, smear, or stretch the edge pixels. "
+        "Make the expanded area part of the same environment with no visible seam, divider, vertical stripe, solid-color block, placeholder padding, border, dark overlay, blur, zoom, crop, stretch, or distortion. "
+        "Do not zoom, crop, stretch, darken, blur, or alter the original image outside the mask."
+    )
+    negative_prefix = (
+        "visible seam, divider, split line, border, dark overlay, black border, blurred transition, "
+        "placeholder padding, solid color block, brown block, vertical stripe, copied edge pixels, "
+        "duplicated curtain, mirrored edge, smeared edge, stretched image, distorted perspective, zoom, crop, changed subject, changed face, changed body, changed unmasked area"
+    )
+
+    def merge(text: str, existing: str) -> str:
+        current = str(existing or "").strip()
+        lead = text.split(".", 1)[0].lower()
+        if lead and lead in current.lower():
+            return current
+        return f"{text} {current}".strip()
+
+    request.prompt = merge(prefix, request.prompt)
+    request.negative_prompt = merge(negative_prefix, request.negative_prompt)
 
 
 def _inpaint_engine(request: GenerateRequest) -> str:
@@ -1218,7 +1612,7 @@ def ensure_inpaint_engine_route(
     *,
     available_nodes: set[str] | None = None,
 ) -> None:
-    if request.activity != "img2img" or "inpaint" not in request.img2img.mode.lower():
+    if request.activity != "img2img" or not _uses_inpaint_mask_mode(request):
         return
     sampler_id = _find_sampler_node_id(api)
     if not sampler_id:
@@ -1236,20 +1630,28 @@ def ensure_inpaint_engine_route(
     available_nodes = set(available_nodes or ())
     engine = _inpaint_engine(request)
     if engine == "lanpaint":
-        sampler_class = str(sampler.get("class_type", "") or "")
-        if sampler_class.lower() != "ksampler":
-            engine = "differential"
-        elif available_nodes and "LanPaint_KSampler" not in available_nodes:
-            engine = "differential"
+        has_flux_kontext_reference_method = any(
+            str(node.get("class_type", "")).lower() in {"fluxkontextmultireferencelatentmethod", "referencelatent"}
+            for node in api.values()
+            if isinstance(node, dict)
+        )
+        if request.preset.lower() == "qwen":
+            engine = "default"
         else:
-            sampler["class_type"] = "LanPaint_KSampler"
-            sampler.setdefault("_meta", {})["title"] = "LanPaint KSampler"
-            inputs["LanPaint_NumSteps"] = max(0, min(100, int(getattr(request.img2img, "lanpaint_thinking_steps", 5) or 5)))
-            prompt_mode = str(getattr(request.img2img, "lanpaint_prompt_mode", "Image First") or "Image First")
-            inputs["LanPaint_PromptMode"] = "Prompt First" if prompt_mode.lower().startswith("prompt") else "Image First"
-            inputs["LanPaint_Info"] = "LanPaint KSampler"
-            inputs["Inpainting_mode"] = "🖼️ Image Inpainting"
-            return
+            sampler_class = str(sampler.get("class_type", "") or "")
+            if sampler_class.lower() != "ksampler":
+                engine = "differential"
+            elif available_nodes and "LanPaint_KSampler" not in available_nodes:
+                engine = "differential"
+            else:
+                sampler["class_type"] = "LanPaint_KSampler"
+                sampler.setdefault("_meta", {})["title"] = "LanPaint KSampler"
+                inputs["LanPaint_NumSteps"] = max(0, min(100, int(getattr(request.img2img, "lanpaint_thinking_steps", 5) or 5)))
+                prompt_mode = str(getattr(request.img2img, "lanpaint_prompt_mode", "Image First") or "Image First")
+                inputs["LanPaint_PromptMode"] = "Prompt First" if prompt_mode.lower().startswith("prompt") else "Image First"
+                inputs["LanPaint_Info"] = "LanPaint KSampler"
+                inputs["Inpainting_mode"] = "🖼️ Image Inpainting"
+                return
 
     if engine != "differential":
         return
@@ -1291,6 +1693,98 @@ def _qwen_flux_image_scale_node(image_ref: list[Any], title: str = "QWEN FluxKon
     }
 
 
+def _truthy_option(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "false", "0", "off", "none", "no"}
+    return bool(value)
+
+
+def _qwen_multiangle_prompt(horizontal_angle: Any, vertical_angle: Any, zoom: Any) -> str:
+    try:
+        horizontal = int(round(float(horizontal_angle)))
+    except (TypeError, ValueError):
+        horizontal = 54
+    try:
+        vertical = int(round(float(vertical_angle)))
+    except (TypeError, ValueError):
+        vertical = 29
+    try:
+        zoom_value = float(zoom)
+    except (TypeError, ValueError):
+        zoom_value = 2.1
+    horizontal %= 360
+    vertical = max(-30, min(60, vertical))
+    zoom_value = max(0.0, min(10.0, zoom_value))
+
+    if horizontal < 22.5 or horizontal >= 337.5:
+        h_direction = "front view"
+    elif horizontal < 67.5:
+        h_direction = "front-right quarter view"
+    elif horizontal < 112.5:
+        h_direction = "right side view"
+    elif horizontal < 157.5:
+        h_direction = "back-right quarter view"
+    elif horizontal < 202.5:
+        h_direction = "back view"
+    elif horizontal < 247.5:
+        h_direction = "back-left quarter view"
+    elif horizontal < 292.5:
+        h_direction = "left side view"
+    else:
+        h_direction = "front-left quarter view"
+
+    if vertical < -15:
+        v_direction = "low-angle shot"
+    elif vertical < 15:
+        v_direction = "eye-level shot"
+    elif vertical < 45:
+        v_direction = "elevated shot"
+    else:
+        v_direction = "high-angle shot"
+
+    if zoom_value < 2:
+        distance = "wide shot"
+    elif zoom_value < 6:
+        distance = "medium shot"
+    else:
+        distance = "close-up"
+    return f"<sks> {h_direction} {v_direction} {distance}"
+
+
+def _qwen_multiview_options(request: GenerateRequest) -> dict[str, Any]:
+    video_options = request.video or {}
+    enabled = request.preset.lower() == "qwen" and request.activity == "img2img" and _truthy_option(video_options.get("qwen_multiview"))
+    try:
+        horizontal = int(round(float(video_options.get("qwen_camera_horizontal", 54)))) % 360
+    except (TypeError, ValueError):
+        horizontal = 54
+    try:
+        vertical = max(-30, min(60, int(round(float(video_options.get("qwen_camera_vertical", 29))))))
+    except (TypeError, ValueError):
+        vertical = 29
+    try:
+        zoom = max(0.0, min(10.0, float(video_options.get("qwen_camera_zoom", 2.1))))
+    except (TypeError, ValueError):
+        zoom = 2.1
+    return {
+        "enabled": enabled,
+        "horizontal": horizontal,
+        "vertical": vertical,
+        "zoom": zoom,
+        "camera_view": _truthy_option(video_options.get("qwen_camera_view")),
+        "prompt": _qwen_multiangle_prompt(horizontal, vertical, zoom),
+    }
+
+
+def _prepend_qwen_camera_prompt(prompt: str, camera_prompt: str) -> str:
+    base = str(prompt or "").strip()
+    if not camera_prompt:
+        return base
+    if camera_prompt.lower() in base.lower():
+        return base
+    return f"{camera_prompt}, {base}" if base else camera_prompt
+
+
 def _controlnet_can_apply(request: GenerateRequest, controlnet_name: str | None, controlnet_image_name: str | None) -> bool:
     preset = str(request.preset or "").lower()
     return bool(
@@ -1299,6 +1793,50 @@ def _controlnet_can_apply(request: GenerateRequest, controlnet_name: str | None,
         and controlnet_image_name
         and preset in {"sd", "sd15", "xl", "sdxl", "flux", "qwen", "zimageturbo", "zimage"}
     )
+
+
+def _append_controlnet_preprocessor(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    image_ref: list[Any],
+    *,
+    start_id: int,
+    title_prefix: str = "ControlNet",
+) -> tuple[list[Any], int]:
+    control_type = str(request.controlnet.type or "").lower()
+    preprocessor = str(request.controlnet.preprocessor or "auto").lower()
+    if preprocessor in {"none", "off", "disabled"}:
+        return image_ref, start_id
+    if control_type == "canny":
+        canny_id = str(start_id)
+        workflow[canny_id] = {
+            "class_type": "Canny",
+            "inputs": {
+                "image": image_ref,
+                "low_threshold": max(0.01, min(0.99, float(request.controlnet.low_threshold or 0.4))),
+                "high_threshold": max(0.01, min(0.99, float(request.controlnet.high_threshold or 0.8))),
+            },
+            "_meta": {"title": f"{title_prefix} Canny Preprocessor"},
+        }
+        return [canny_id, 0], start_id + 1
+    if control_type == "dwpose":
+        dwpose_id = str(start_id)
+        workflow[dwpose_id] = {
+            "class_type": "DWPreprocessor",
+            "inputs": {
+                "image": image_ref,
+                "detect_hand": "enable",
+                "detect_body": "enable",
+                "detect_face": "enable",
+                "resolution": 512,
+                "bbox_detector": "yolox_l.onnx",
+                "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
+                "scale_stick_for_xinsr_cn": "disable",
+            },
+            "_meta": {"title": f"{title_prefix} DWPose Preprocessor"},
+        }
+        return [dwpose_id, 0], start_id + 1
+    return image_ref, start_id
 
 
 def _append_controlnet_route(
@@ -1323,20 +1861,7 @@ def _append_controlnet_route(
         "_meta": {"title": "ControlNet Image"},
     }
     control_type = str(request.controlnet.type or "").lower()
-    preprocessor = str(request.controlnet.preprocessor or "auto").lower()
-    if control_type == "canny" and preprocessor not in {"none", "off", "disabled"}:
-        canny_id = str(next_id)
-        next_id += 1
-        workflow[canny_id] = {
-            "class_type": "Canny",
-            "inputs": {
-                "image": image_ref,
-                "low_threshold": max(0.01, min(0.99, float(request.controlnet.low_threshold or 0.4))),
-                "high_threshold": max(0.01, min(0.99, float(request.controlnet.high_threshold or 0.8))),
-            },
-            "_meta": {"title": "Canny Preprocessor"},
-        }
-        image_ref = [canny_id, 0]
+    image_ref, next_id = _append_controlnet_preprocessor(workflow, request, image_ref, start_id=next_id)
 
     loader_id = str(next_id)
     apply_id = str(next_id + 1)
@@ -1385,20 +1910,7 @@ def _append_zimage_fun_controlnet_route(
         "_meta": {"title": "Z-Image Control Image"},
     }
     control_type = str(request.controlnet.type or "").lower()
-    preprocessor = str(request.controlnet.preprocessor or "auto").lower()
-    if control_type == "canny" and preprocessor not in {"none", "off", "disabled"}:
-        canny_id = str(next_id)
-        next_id += 1
-        workflow[canny_id] = {
-            "class_type": "Canny",
-            "inputs": {
-                "image": image_ref,
-                "low_threshold": max(0.01, min(0.99, float(request.controlnet.low_threshold or 0.4))),
-                "high_threshold": max(0.01, min(0.99, float(request.controlnet.high_threshold or 0.8))),
-            },
-            "_meta": {"title": "Z-Image Canny Preprocessor"},
-        }
-        image_ref = [canny_id, 0]
+    image_ref, next_id = _append_controlnet_preprocessor(workflow, request, image_ref, start_id=next_id, title_prefix="Z-Image")
 
     patch_loader_id = str(next_id)
     apply_id = str(next_id + 1)
@@ -1442,20 +1954,7 @@ def _append_qwen_model_patch_controlnet_route(
         "_meta": {"title": "Qwen Control Image"},
     }
     control_type = str(request.controlnet.type or "").lower()
-    preprocessor = str(request.controlnet.preprocessor or "auto").lower()
-    if control_type == "canny" and preprocessor not in {"none", "off", "disabled"}:
-        canny_id = str(next_id)
-        next_id += 1
-        workflow[canny_id] = {
-            "class_type": "Canny",
-            "inputs": {
-                "image": image_ref,
-                "low_threshold": max(0.01, min(0.99, float(request.controlnet.low_threshold or 0.4))),
-                "high_threshold": max(0.01, min(0.99, float(request.controlnet.high_threshold or 0.8))),
-            },
-            "_meta": {"title": "Qwen Canny Preprocessor"},
-        }
-        image_ref = [canny_id, 0]
+    image_ref, next_id = _append_controlnet_preprocessor(workflow, request, image_ref, start_id=next_id, title_prefix="Qwen")
 
     patch_loader_id = str(next_id)
     apply_id = str(next_id + 1)
@@ -1500,22 +1999,10 @@ def _append_flux_union_controlnet_route(
         "_meta": {"title": "Flux Control Image"},
     }
     control_type = str(request.controlnet.type or "canny").lower()
-    preprocessor = str(request.controlnet.preprocessor or "auto").lower()
-    if control_type == "canny" and preprocessor not in {"none", "off", "disabled"}:
-        canny_id = str(next_id)
-        next_id += 1
-        workflow[canny_id] = {
-            "class_type": "Canny",
-            "inputs": {
-                "image": image_ref,
-                "low_threshold": max(0.01, min(0.99, float(request.controlnet.low_threshold or 0.4))),
-                "high_threshold": max(0.01, min(0.99, float(request.controlnet.high_threshold or 0.8))),
-            },
-            "_meta": {"title": "Flux Canny Preprocessor"},
-        }
-        image_ref = [canny_id, 0]
+    image_ref, next_id = _append_controlnet_preprocessor(workflow, request, image_ref, start_id=next_id, title_prefix="Flux")
     union_type = {
         "openpose": "pose",
+        "dwpose": "pose",
         "pose": "pose",
         "depth": "depth",
         "tile": "tile",
@@ -1652,6 +2139,8 @@ def build_basic_sd_workflow(
             vae_ref=vae_ref,
             sampler_node_id="5",
             mask_image_name=mask_image_name,
+            decoded_image_ref=["6", 0],
+            save_node_id="7",
         )
     return workflow
 
@@ -1759,6 +2248,8 @@ def build_basic_anima_workflow(
             vae_ref=["3", 0],
             sampler_node_id="7",
             mask_image_name=mask_image_name,
+            decoded_image_ref=["8", 0],
+            save_node_id="9",
         )
     return workflow
 
@@ -1775,13 +2266,17 @@ def build_basic_qwen_image_workflow(
     controlnet_image_name: str | None = None,
     controlnet_category: str | None = None,
 ) -> dict[str, Any]:
+    _apply_outpaint_continuity_prompt(request)
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     width = max(16, int(request.width))
     height = max(16, int(request.height))
-    width -= width % 16
-    height -= height % 16
     refs = [name for name in (reference_image_names or ([reference_image_name] if reference_image_name else [])) if name][:3]
     reference_image_name = refs[0] if refs else None
+    is_qwen_inpaint = bool(reference_image_name and mask_image_name and _uses_inpaint_mask_mode(request))
+    qwen_denoise = 1.0 if _uses_outpaint_extend_mode(request) else request.img2img.denoise
+    qwen_multiview = _qwen_multiview_options(request)
+    if qwen_multiview["enabled"]:
+        qwen_denoise = 1.0
     loader_class = "UnetLoaderGGUF" if checkpoint_name.lower().endswith(".gguf") else "UNETLoader"
     loader_inputs = (
         {"unet_name": checkpoint_name}
@@ -1805,14 +2300,15 @@ def build_basic_qwen_image_workflow(
         model_ref = [node_id, 0]
         next_lora_id += 1
 
-    prompt_text = request.prompt
-    if len(refs) > 1:
+    prompt_text = str(qwen_multiview["prompt"]) if qwen_multiview["enabled"] else request.prompt
+    negative_prompt_text = "" if qwen_multiview["enabled"] else (request.negative_prompt or "")
+    if len(refs) > 1 and not qwen_multiview["enabled"]:
         prompt_prefix = "Use Image 1 as the base reference"
         if len(refs) >= 2:
             prompt_prefix += ", Image 2 as the secondary reference"
         if len(refs) >= 3:
             prompt_prefix += ", and Image 3 as the additional reference"
-        prompt_text = prompt_prefix + ". " + request.prompt
+        prompt_text = prompt_prefix + ". " + str(prompt_text or request.prompt or "")
 
     workflow = {
         "1": {
@@ -1848,7 +2344,7 @@ def build_basic_qwen_image_workflow(
                 "cfg": request.cfg,
                 "sampler_name": normalize_sampler(request.sampler),
                 "scheduler": normalize_scheduler(request.scheduler),
-                "denoise": request.img2img.denoise if reference_image_name else request.denoise,
+                "denoise": qwen_denoise if reference_image_name else request.denoise,
                 "model": ["9", 0],
                 "positive": ["5", 0],
                 "negative": ["6", 0],
@@ -1861,15 +2357,19 @@ def build_basic_qwen_image_workflow(
             "inputs": {"samples": ["10", 0], "vae": ["3", 0]},
             "_meta": {"title": "VAE Decode"},
         },
+        "13": _image_scale_node(["11", 0], int(request.width), int(request.height)),
         "12": {
             "class_type": "SaveImage",
-            "inputs": {"filename_prefix": "NEXUS_BTA_QWEN", "images": ["11", 0]},
+            "inputs": {"filename_prefix": "NEXUS_BTA_QWEN", "images": ["13", 0]},
             "_meta": {"title": "Save Image"},
         },
     }
+    workflow["13"]["_meta"]["title"] = "Resize QWEN Output To Frontend Size"
     workflow.update(qwen_lora_nodes)
+    qwen_base_image_ref: list[Any] | None = None
 
     if reference_image_name:
+        qwen_extend_pad = is_qwen_inpaint and _uses_outpaint_extend_mode(request) and _has_extend_pad(request)
         for index, name in enumerate(refs, start=1):
             load_id = "4" if index == 1 else str(39 + index)
             scale_id = str(59 + index)
@@ -1878,53 +2378,80 @@ def build_basic_qwen_image_workflow(
                 "inputs": {"image": name},
                 "_meta": {"title": f"Reference Image {index}"},
             }
-            workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
-            workflow[scale_id]["_meta"]["title"] = f"Resize QWEN Reference {index} To Side Menu"
+            if qwen_extend_pad and index == 1:
+                workflow[scale_id] = _image_pad_for_outpaint_node([load_id, 0], request, feathering=0)
+                workflow[scale_id]["_meta"]["title"] = "QWEN Pad Base For Extend"
+            elif not is_qwen_inpaint:
+                workflow[scale_id] = _qwen_flux_image_scale_node([load_id, 0], f"QWEN Reference {index} FluxKontext Scale")
+            else:
+                workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
+                workflow[scale_id]["_meta"]["title"] = f"Resize QWEN Reference {index} To Side Menu"
+        if qwen_multiview["enabled"]:
+            workflow["110"] = {
+                "class_type": "QwenMultiangleCameraNode",
+                "inputs": {
+                    "horizontal_angle": int(round(float(qwen_multiview["horizontal"]))),
+                    "vertical_angle": int(round(float(qwen_multiview["vertical"]))),
+                    "zoom": float(qwen_multiview["zoom"]),
+                    "default_prompts": False,
+                    "camera_view": bool(qwen_multiview["camera_view"]),
+                    "image": ["60", 0],
+                },
+                "_meta": {"title": "Qwen Multiangle Camera"},
+            }
+        qwen_prompt_input: Any = ["110", 0] if qwen_multiview["enabled"] else prompt_text
         if len(refs) == 1:
-            workflow["70"] = _qwen_flux_image_scale_node(["60", 0], "QWEN Base FluxKontext Image Scale")
+            qwen_base_image_ref = ["60", 0]
             workflow["7"] = {
                 "class_type": "VAEEncode",
-                "inputs": {"pixels": ["70", 0], "vae": ["3", 0]},
+                "inputs": {"pixels": qwen_base_image_ref, "vae": ["3", 0]},
                 "_meta": {"title": "Encode QWEN Base Reference"},
             }
             workflow["10"]["inputs"]["latent_image"] = ["7", 0]
             workflow["5"] = {
                 "class_type": "TextEncodeQwenImageEditPlus",
-                "inputs": {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0], "image1": ["70", 0]},
+                "inputs": {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0], "image1": qwen_base_image_ref},
                 "_meta": {"title": "Positive Prompt"},
             }
             workflow["6"] = {
                 "class_type": "TextEncodeQwenImageEditPlus",
-                "inputs": {"clip": ["2", 0], "prompt": request.negative_prompt or "", "vae": ["3", 0], "image1": ["70", 0]},
+                "inputs": {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0], "image1": qwen_base_image_ref},
                 "_meta": {"title": "QWEN Negative Prompt"},
             }
-            workflow["15"] = {
-                "class_type": "FluxKontextMultiReferenceLatentMethod",
-                "inputs": {"conditioning": ["5", 0], "reference_latents_method": "index_timestep_zero"},
-                "_meta": {"title": "QWEN Reference Method"},
-            }
-            workflow["16"] = {
-                "class_type": "FluxKontextMultiReferenceLatentMethod",
-                "inputs": {"conditioning": ["6", 0], "reference_latents_method": "index_timestep_zero"},
-                "_meta": {"title": "QWEN Negative Reference Method"},
-            }
-            workflow["10"]["inputs"]["positive"] = ["15", 0]
-            workflow["10"]["inputs"]["negative"] = ["16", 0]
+            if is_qwen_inpaint or qwen_multiview["enabled"]:
+                workflow["10"]["inputs"]["positive"] = ["5", 0]
+                workflow["10"]["inputs"]["negative"] = ["6", 0]
+            else:
+                workflow["15"] = {
+                    "class_type": "FluxKontextMultiReferenceLatentMethod",
+                    "inputs": {"conditioning": ["5", 0], "reference_latents_method": "index_timestep_zero"},
+                    "_meta": {"title": "QWEN Reference Method"},
+                }
+                workflow["16"] = {
+                    "class_type": "FluxKontextMultiReferenceLatentMethod",
+                    "inputs": {"conditioning": ["6", 0], "reference_latents_method": "index_timestep_zero"},
+                    "_meta": {"title": "QWEN Negative Reference Method"},
+                }
+                workflow["10"]["inputs"]["positive"] = ["15", 0]
+                workflow["10"]["inputs"]["negative"] = ["16", 0]
         else:
+            qwen_base_image_ref = ["60", 0]
             workflow["7"] = {
                 "class_type": "VAEEncode",
                 "inputs": {"pixels": ["60", 0], "vae": ["3", 0]},
                 "_meta": {"title": "Encode QWEN Base Reference"},
             }
             workflow["10"]["inputs"]["latent_image"] = ["7", 0]
-            positive_inputs = {"clip": ["2", 0], "prompt": prompt_text, "vae": ["3", 0]}
-            negative_inputs = {"clip": ["2", 0], "prompt": request.negative_prompt or "", "vae": ["3", 0]}
+            positive_inputs = {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0]}
+            negative_inputs = {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0]}
             previous_conditioning: list[Any] = ["5", 0]
             previous_negative_conditioning: list[Any] = ["6", 0]
             for index, _name in enumerate(refs, start=1):
                 image_ref = [str(59 + index), 0]
                 positive_inputs[f"image{index}"] = image_ref
                 negative_inputs[f"image{index}"] = image_ref
+                if is_qwen_inpaint:
+                    continue
                 encode_id = str(69 + index)
                 ref_id = str(79 + index)
                 negative_ref_id = str(89 + index)
@@ -1955,18 +2482,22 @@ def build_basic_qwen_image_workflow(
                 "inputs": negative_inputs,
                 "_meta": {"title": "QWEN Negative Prompt"},
             }
-            workflow["15"] = {
-                "class_type": "FluxKontextMultiReferenceLatentMethod",
-                "inputs": {"conditioning": previous_conditioning, "reference_latents_method": "index_timestep_zero"},
-                "_meta": {"title": "QWEN Reference Method"},
-            }
-            workflow["16"] = {
-                "class_type": "FluxKontextMultiReferenceLatentMethod",
-                "inputs": {"conditioning": previous_negative_conditioning, "reference_latents_method": "index_timestep_zero"},
-                "_meta": {"title": "QWEN Negative Reference Method"},
-            }
-            workflow["10"]["inputs"]["positive"] = ["15", 0]
-            workflow["10"]["inputs"]["negative"] = ["16", 0]
+            if is_qwen_inpaint or qwen_multiview["enabled"]:
+                workflow["10"]["inputs"]["positive"] = ["5", 0]
+                workflow["10"]["inputs"]["negative"] = ["6", 0]
+            else:
+                workflow["15"] = {
+                    "class_type": "FluxKontextMultiReferenceLatentMethod",
+                    "inputs": {"conditioning": previous_conditioning, "reference_latents_method": "index_timestep_zero"},
+                    "_meta": {"title": "QWEN Reference Method"},
+                }
+                workflow["16"] = {
+                    "class_type": "FluxKontextMultiReferenceLatentMethod",
+                    "inputs": {"conditioning": previous_negative_conditioning, "reference_latents_method": "index_timestep_zero"},
+                    "_meta": {"title": "QWEN Negative Reference Method"},
+                }
+                workflow["10"]["inputs"]["positive"] = ["15", 0]
+                workflow["10"]["inputs"]["negative"] = ["16", 0]
     else:
         workflow["5"] = {
             "class_type": "CLIPTextEncode",
@@ -1983,15 +2514,29 @@ def build_basic_qwen_image_workflow(
             "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
             "_meta": {"title": "QWEN Latent"},
         }
-    if reference_image_name and mask_image_name and "inpaint" in request.img2img.mode.lower():
-        _append_inpaint_mask(
-            workflow,
-            request,
-            reference_node_id="4",
-            vae_ref=["3", 0],
-            sampler_node_id="10",
-            mask_image_name=mask_image_name,
-        )
+    if reference_image_name and mask_image_name and _uses_inpaint_mask_mode(request):
+        if is_qwen_inpaint:
+            _append_qwen_inpaint_noise_mask(
+                workflow,
+                request,
+                base_latent_ref=["7", 0],
+                sampler_node_id="10",
+                mask_image_name=mask_image_name,
+                base_image_ref=qwen_base_image_ref,
+                decoded_image_ref=["13", 0],
+                save_node_id="12",
+            )
+        else:
+            _append_inpaint_mask(
+                workflow,
+                request,
+                reference_node_id="4",
+                vae_ref=["3", 0],
+                sampler_node_id="10",
+                mask_image_name=mask_image_name,
+                decoded_image_ref=["13", 0],
+                save_node_id="12",
+            )
     if controlnet_category == "model_patches":
         patched_model_ref, _ = _append_qwen_model_patch_controlnet_route(
             workflow,
@@ -2165,6 +2710,8 @@ def build_basic_zimage_turbo_workflow(
             vae_ref=["3", 0],
             sampler_node_id="8",
             mask_image_name=mask_image_name,
+            decoded_image_ref=["11", 0],
+            save_node_id="12",
         )
     if controlnet_category == "model_patches":
         patched_model_ref, _ = _append_zimage_fun_controlnet_route(
@@ -2200,16 +2747,16 @@ def build_basic_flux_workflow(
     text_encoder_name: str,
     vae_name: str,
     reference_image_name: str | None = None,
+    reference_image_names: list[str] | None = None,
     mask_image_name: str | None = None,
     flux_family: str | None = None,
     controlnet_name: str | None = None,
     controlnet_image_name: str | None = None,
 ) -> dict[str, Any]:
+    _apply_outpaint_continuity_prompt(request)
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     width = max(16, int(request.width))
     height = max(16, int(request.height))
-    width -= width % 16
-    height -= height % 16
     sampler = normalize_sampler(request.sampler or "euler")
     scheduler = normalize_scheduler(request.scheduler or "simple")
     flux_family = flux_family or _flux_family_from_name(model_name)
@@ -2231,7 +2778,14 @@ def build_basic_flux_workflow(
     flux_guidance = max(0.0, float(request.cfg if request.cfg is not None else 3.5))
     latent_ref: list[Any] = ["6", 0]
     denoise = request.img2img.denoise if reference_image_name else request.denoise
+    flux2_reference_names: list[str] = []
+    for name in (reference_image_names or ([reference_image_name] if reference_image_name else [])):
+        normalized = str(name or "").strip()
+        if normalized and normalized not in flux2_reference_names:
+            flux2_reference_names.append(normalized)
     if is_flux2:
+        mode_lower = str(request.img2img.mode or "").lower()
+        flux2_outpaint_mode = _uses_inpaint_mask_mode(request) and ("outpaint" in mode_lower or "extend" in mode_lower)
         positive_ref: list[Any] = ["4", 0]
         workflow = {
             "1": loader,
@@ -2290,12 +2844,14 @@ def build_basic_flux_workflow(
                 "inputs": {"samples": ["11", 0], "vae": ["3", 0]},
                 "_meta": {"title": "VAE Decode"},
             },
+            "15": _image_scale_node(["12", 0], int(request.width), int(request.height)),
             "13": {
                 "class_type": "SaveImage",
-                "inputs": {"filename_prefix": "NEXUS_BTA_FLUX2", "images": ["12", 0]},
+                "inputs": {"filename_prefix": "NEXUS_BTA_FLUX2", "images": ["15", 0]},
                 "_meta": {"title": "Save Image"},
             },
         }
+        workflow["15"]["_meta"]["title"] = "Resize Flux.2 Output To Frontend Size"
         if not is_klein:
             workflow["14"] = {
                 "class_type": "FluxGuidance",
@@ -2306,26 +2862,57 @@ def build_basic_flux_workflow(
             workflow["10"]["inputs"]["conditioning"] = positive_ref
         model_ref, _, _ = _append_lora_chain(workflow, request, ["1", 0], ["2", 0], start_id=20, model_only=True)
         workflow["10"]["inputs"]["model"] = model_ref
-        if reference_image_name:
-            workflow["15"] = {
-                "class_type": "LoadImage",
-                "inputs": {"image": reference_image_name},
-                "_meta": {"title": "Reference Image"},
-            }
-            workflow["16"] = _image_scale_node(["15", 0], width, height)
-            workflow["16"]["_meta"]["title"] = "Resize Flux.2 Reference To Side Menu"
-            workflow["17"] = {
-                "class_type": "VAEEncode",
-                "inputs": {"pixels": ["16", 0], "vae": ["3", 0]},
-                "_meta": {"title": "Encode Reference"},
-            }
-            workflow["18"] = {
-                "class_type": "ReferenceLatent",
-                "inputs": {"conditioning": positive_ref, "latent": ["17", 0]},
-                "_meta": {"title": "Flux.2 Reference Latent"},
-            }
-            workflow["10"]["inputs"]["conditioning"] = ["18", 0]
-            workflow["11"]["inputs"]["latent_image"] = ["17", 0]
+        if flux2_reference_names:
+            previous_conditioning = positive_ref
+            base_loader_id: str | None = None
+            base_encode_id: str | None = None
+            for index, name in enumerate(flux2_reference_names[:5], start=1):
+                load_id = str(40 + (index - 1) * 4)
+                scale_id = str(41 + (index - 1) * 4)
+                encode_id = str(42 + (index - 1) * 4)
+                ref_id = str(43 + (index - 1) * 4)
+                workflow[load_id] = {
+                    "class_type": "LoadImage",
+                    "inputs": {"image": name},
+                    "_meta": {"title": f"Flux.2 Reference Image {index}"},
+                }
+                if flux2_outpaint_mode and index == 1 and _has_extend_pad(request):
+                    workflow[scale_id] = _image_pad_for_outpaint_node([load_id, 0], request, feathering=0)
+                    workflow[scale_id]["_meta"]["title"] = "Flux.2 Pad Base For Extend"
+                else:
+                    workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
+                    workflow[scale_id]["_meta"]["title"] = f"Resize Flux.2 Reference {index} To Side Menu"
+                workflow[encode_id] = {
+                    "class_type": "VAEEncode",
+                    "inputs": {"pixels": [scale_id, 0], "vae": ["3", 0]},
+                    "_meta": {"title": f"Encode Flux.2 Reference {index}"},
+                }
+                if (not flux2_outpaint_mode) or index > 1:
+                    workflow[ref_id] = {
+                        "class_type": "ReferenceLatent",
+                        "inputs": {"conditioning": previous_conditioning, "latent": [encode_id, 0]},
+                        "_meta": {"title": f"Flux.2 Reference Latent {index}"},
+                    }
+                    previous_conditioning = [ref_id, 0]
+                if index == 1:
+                    base_loader_id = scale_id
+                    base_encode_id = encode_id
+            if previous_conditioning != positive_ref:
+                workflow["10"]["inputs"]["conditioning"] = previous_conditioning
+            if base_encode_id:
+                workflow["11"]["inputs"]["latent_image"] = [base_encode_id, 0]
+            if base_loader_id:
+                _append_inpaint_mask(
+                    workflow,
+                    request,
+                    reference_node_id=base_loader_id,
+                    vae_ref=["3", 0],
+                    sampler_node_id="11",
+                    mask_image_name=mask_image_name,
+                    start_id=80,
+                    decoded_image_ref=["15", 0],
+                    save_node_id="13",
+                )
         positive_ref, _, _ = _append_flux_union_controlnet_route(
             workflow,
             request,
@@ -2397,12 +2984,14 @@ def build_basic_flux_workflow(
             "inputs": {"samples": ["7", 0], "vae": ["3", 0]},
             "_meta": {"title": "VAE Decode"},
         },
+        "14": _image_scale_node(["8", 0], int(request.width), int(request.height)),
         "9": {
             "class_type": "SaveImage",
-            "inputs": {"filename_prefix": "NEXUS_BTA_FLUX", "images": ["8", 0]},
+            "inputs": {"filename_prefix": "NEXUS_BTA_FLUX", "images": ["14", 0]},
             "_meta": {"title": "Save Image"},
         },
     }
+    workflow["14"]["_meta"]["title"] = "Resize Flux Output To Frontend Size"
     model_ref, clip_ref, _ = _append_lora_chain(workflow, request, ["1", 0], ["2", 0], start_id=20)
     workflow["4"]["inputs"]["clip"] = clip_ref
     workflow["7"]["inputs"]["model"] = model_ref
@@ -2412,7 +3001,11 @@ def build_basic_flux_workflow(
             "inputs": {"image": reference_image_name},
             "_meta": {"title": "Reference Image"},
         }
-        workflow["13"] = _image_scale_node(["10", 0], width, height)
+        if _uses_outpaint_extend_mode(request) and _has_extend_pad(request):
+            workflow["13"] = _image_pad_for_outpaint_node(["10", 0], request, feathering=0)
+            workflow["13"]["_meta"]["title"] = "Flux Pad Base For Extend"
+        else:
+            workflow["13"] = _image_scale_node(["10", 0], width, height)
         workflow["11"] = {
             "class_type": "VAEEncode",
             "inputs": {"pixels": ["13", 0], "vae": ["3", 0]},
@@ -2422,10 +3015,12 @@ def build_basic_flux_workflow(
         _append_inpaint_mask(
             workflow,
             request,
-            reference_node_id="10",
+            reference_node_id="13",
             vae_ref=["3", 0],
             sampler_node_id="7",
             mask_image_name=mask_image_name,
+            decoded_image_ref=["14", 0],
+            save_node_id="9",
         )
     positive_ref, negative_ref, _ = _append_flux_union_controlnet_route(
         workflow,
@@ -2455,6 +3050,7 @@ def build_basic_wan_i2video_workflow(
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     video_options = request.video or {}
+    loop_cycle = _truthy_option(video_options.get("wan_loop_cycle"))
     fps = max(1, int(_number_or_none(video_options.get("fps")) or 16))
     seconds = _number_or_none(video_options.get("seconds") or video_options.get("duration"))
     requested_frames = _number_or_none(video_options.get("frames") or video_options.get("length"))
@@ -2476,6 +3072,13 @@ def build_basic_wan_i2video_workflow(
     cfg = float(request.cfg if request.cfg is not None else 1.0)
     sampler = normalize_sampler(request.sampler or "euler")
     scheduler = normalize_scheduler(request.scheduler or "simple")
+    positive_prompt = (request.prompt or "").strip()
+    negative_prompt = (request.negative_prompt or "").strip()
+    if loop_cycle:
+        loop_positive = "seamless perfect looping video, cyclic motion, first frame matches last frame, no hard cut at loop point"
+        loop_negative = "jump cut, hard cut, scene change, flicker at loop seam, black frame"
+        positive_prompt = f"{positive_prompt}, {loop_positive}" if positive_prompt else loop_positive
+        negative_prompt = f"{negative_prompt}, {loop_negative}" if negative_prompt else loop_negative
     split_step = max(1, min(steps - 1, steps // 2))
     high_model_ref: list[Any] = ["1", 0]
     low_model_ref: list[Any] = ["2", 0]
@@ -2554,12 +3157,12 @@ def build_basic_wan_i2video_workflow(
         },
         "7": {
             "class_type": "CLIPTextEncode",
-            "inputs": {"clip": ["5", 0], "text": request.prompt},
+            "inputs": {"clip": ["5", 0], "text": positive_prompt},
             "_meta": {"title": "Positive Prompt"},
         },
         "8": {
             "class_type": "CLIPTextEncode",
-            "inputs": {"clip": ["5", 0], "text": request.negative_prompt},
+            "inputs": {"clip": ["5", 0], "text": negative_prompt},
             "_meta": {"title": "Negative Prompt"},
         },
         "10": {
@@ -2627,7 +3230,7 @@ def build_basic_wan_i2video_workflow(
             "class_type": "SaveVideo",
             "inputs": {
                 "video": ["14", 0],
-                "filename_prefix": "NEXUS_BTA_WAN22_I2V_512",
+                "filename_prefix": "NEXUS_BTA_WAN22_LOOP_CYCLE" if loop_cycle else "NEXUS_BTA_WAN22_I2V_512",
                 "format": "mp4",
                 "codec": "h264",
             },
@@ -2925,11 +3528,13 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
     seen: set[str] = set()
     flux_family = _flux_family_from_name(model_name or request.model_name or request.model_path or "")
 
-    def append_selection(name: str, strength_model: float, strength_clip: float = 0.0) -> None:
+    def append_selection(name: str, strength_model: float, strength_clip: float = 0.0, *, allow_cross_folder: bool = False) -> None:
         normalized = _normalize_lora_name(name)
         if request.preset.lower() == "ltx" and "\\" not in normalized and normalized.lower().startswith(("ltx", "singularity")):
             normalized = f"ltx\\{normalized}"
-        if not normalized or not _lora_is_compatible_with_preset(normalized, request.preset):
+        if not normalized:
+            return
+        if not allow_cross_folder and not _lora_is_compatible_with_preset(normalized, request.preset):
             return
         if request.preset.lower() == "flux" and not _flux_lora_is_compatible(normalized, flux_family):
             return
@@ -2945,7 +3550,7 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
                 continue
             raw_name = item.get("relative_name") or item.get("relative_path") or item.get("lora_name") or item.get("name")
             name = _normalize_lora_name(raw_name)
-            if not name or not _lora_is_compatible_with_preset(name, request.preset):
+            if not name:
                 continue
             if request.preset.lower() == "flux" and not _flux_lora_is_compatible(name, flux_family):
                 continue
@@ -2955,7 +3560,7 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
                 strength_clip = strength_clip_value if strength_clip_value is not None else 0.0
             else:
                 strength_clip = strength_model if strength_clip_value in {None, 0.0} else strength_clip_value
-            append_selection(name, float(strength_model), float(strength_clip))
+            append_selection(name, float(strength_model), float(strength_clip), allow_cross_folder=True)
 
     def append_distilled_loras() -> None:
         for item in request.distilled_loras:
@@ -3007,7 +3612,7 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
 
 def _is_incompatible_qwen_edit_lora(name: str) -> bool:
     lower = str(name or "").lower()
-    if "lightning" in lower and "edit" not in lower:
+    if "lightning" in lower and "qwen" not in lower:
         return True
     if "2512" in lower and "edit" not in lower:
         return True
@@ -3164,6 +3769,10 @@ def _ltx_transition_prompt(prompt: str, request: GenerateRequest, has_end_refere
     text = str(prompt or "").strip()
     lower = text.lower()
     additions: list[str] = []
+    video_options = request.video or {}
+    loop_cycle = _truthy_option(video_options.get("ltx_loop_cycle"))
+    if loop_cycle and "loop" not in lower:
+        additions.append("seamless perfect loop cycle, first frame and last frame match naturally, no visible jump cut")
     if "transition" not in lower and LTX_TRANSITION_TRIGGER not in lower:
         additions.append(LTX_TRANSITION_PROMPT_HINT)
     if LTX_TRANSITION_TRIGGER not in lower:
@@ -3193,6 +3802,8 @@ def build_basic_ltx_img2video_workflow(
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     video_options = request.video or {}
+    loop_cycle = _truthy_option(video_options.get("ltx_loop_cycle"))
+    loop_uses_start_as_end = loop_cycle and str(video_options.get("ltx_loop_source") or "").strip().lower() == "start_frame_as_end_frame"
     available_nodes = available_nodes or set()
     active_audio = video_options.get("active_audio", False)
     if isinstance(active_audio, str):
@@ -3216,12 +3827,12 @@ def build_basic_ltx_img2video_workflow(
     final_height = max(64, int(request.height))
     final_width -= final_width % 32
     final_height -= final_height % 32
-    sampler = normalize_sampler(request.sampler or "euler_ancestral_cfg_pp")
+    sampler = normalize_sampler(request.sampler or "euler_cfg_pp")
     if sampler == "euler_ancestral":
         sampler = "euler_ancestral_cfg_pp"
     min_steps = _ltx_min_steps_for_request(checkpoint_name, request)
     steps = max(min_steps, int(request.steps or min_steps))
-    img_compression = max(0, min(100, int(_number_or_none(video_options.get("img_compression")) or 18)))
+    img_compression = max(0, min(100, int(_number_or_none(video_options.get("img_compression")) or (35 if loop_uses_start_as_end else 18))))
     use_latent_upscale = bool(latent_upscale_name)
     refine_latent_upscale_value = video_options.get("latent_upscale_refine", True)
     if isinstance(refine_latent_upscale_value, str):
@@ -3294,6 +3905,7 @@ def build_basic_ltx_img2video_workflow(
     motion_transfer_route = bool(
         (base_video_name or "").strip()
         and _bool_option(video_options.get("motion_transfer_enabled"), False)
+        and not loop_cycle
         and not text_to_video
     )
     motion_control_mode = str(video_options.get("motion_transfer_control_mode") or "pose").strip().lower()
@@ -3301,7 +3913,19 @@ def build_basic_ltx_img2video_workflow(
         motion_control_mode = "pose"
     video_vae_ref: list[Any] = ["21", 0] if video_vae_name else ["1", 2]
     motion_scaffold_route = bool((base_video_name or "").strip() and video_options.get("ltx_motion_scaffold"))
+    ltx_native_loop_sampler_route = bool(
+        loop_uses_start_as_end
+        and _bool_option(video_options.get("ltx_loop_native_sampler"), False)
+        and not (base_video_name or "").strip()
+        and not active_audio
+        and "LTXVLoopingSampler" in available_nodes
+        and "STGGuiderAdvanced" in available_nodes
+    )
+    loop_sampler_name = "euler" if ltx_native_loop_sampler_route and sampler in {"euler_cfg_pp", "euler_ancestral_cfg_pp"} else sampler
+    loop_cfg_value = max(0.0, float(_number_or_none(request.cfg) if _number_or_none(request.cfg) is not None else 1.0))
+    loop_cfg_values = ", ".join(f"{loop_cfg_value:g}" for _ in range(6))
     use_first_last_guides = bool(not text_to_video and (has_end_reference or len(frame_guides) > 1) and not (base_video_name or "").strip())
+    use_ltx_flfv_reference_guides = bool(loop_uses_start_as_end and use_first_last_guides and "LTXVAddGuide" in available_nodes)
     motion_camera_end_frame_route = bool(motion_transfer_route and motion_control_mode == "camera" and has_end_reference)
     motion_transition_route = bool(motion_transfer_route and has_end_reference and _ltx_transition_lora_enabled(request, True))
     transition_route = bool(
@@ -3327,7 +3951,12 @@ def build_basic_ltx_img2video_workflow(
         ltx_model_ref = ic_lora_loader_ref
         next_lora_id += 1
 
-    positive_prompt = _ltx_transition_prompt(request.prompt, request, has_end_reference)
+    positive_prompt_text = request.prompt
+    if request.preset.lower() == "ltx":
+        active_lora_names = [name.lower() for name, _strength, _clip_strength in _active_lora_selections(request)]
+        if any("livewallpaper_ltx23_r64_6250" in name for name in active_lora_names) and "l1v3w4llp4p3r" not in str(positive_prompt_text).lower():
+            positive_prompt_text = f"{positive_prompt_text}, l1v3w4llp4p3r" if str(positive_prompt_text or "").strip() else "l1v3w4llp4p3r"
+    positive_prompt = _ltx_transition_prompt(positive_prompt_text, request, has_end_reference)
     use_ltx_nag_model = bool(transition_route or (motion_transfer_route and motion_control_mode == "camera"))
     transition_model_ref: list[Any] = ltx_model_ref
     if use_ltx_nag_model:
@@ -3335,10 +3964,10 @@ def build_basic_ltx_img2video_workflow(
     main_model_ref: list[Any] = transition_model_ref
     if not (use_latent_upscale and refine_latent_upscale):
         main_model_ref = add_detailer_lora(main_model_ref, "LTX Detailer LoRA")
-    sampler_latent_ref: list[Any] = ["7", 0] if (text_to_video or motion_transfer_route) else ["7", 2]
+    sampler_latent_ref: list[Any] = ["7", 0] if (text_to_video or motion_transfer_route or ltx_native_loop_sampler_route) else ["7", 2]
     scheduler_latent_ref: list[Any] = sampler_latent_ref
-    ltx_positive_ref: list[Any] = ["6", 0] if (text_to_video or motion_transfer_route) else ["7", 0]
-    ltx_negative_ref: list[Any] = ["6", 1] if (text_to_video or motion_transfer_route) else ["7", 1]
+    ltx_positive_ref: list[Any] = ["6", 0] if (text_to_video or motion_transfer_route or ltx_native_loop_sampler_route) else ["7", 0]
+    ltx_negative_ref: list[Any] = ["6", 1] if (text_to_video or motion_transfer_route or ltx_native_loop_sampler_route) else ["7", 1]
     if use_first_last_guides:
         sampler_latent_ref = ["7", 0]
         scheduler_latent_ref = ["7", 0]
@@ -3396,16 +4025,22 @@ def build_basic_ltx_img2video_workflow(
                         }
                     )
             else:
+                start_strength_value = _number_or_none(video_options.get("start_frame_strength"))
+                end_strength_value = _number_or_none(video_options.get("end_frame_strength"))
                 guide_specs = [
                     {
                         "image": reference_image_name,
                         "index": 0,
-                        "strength": max(0.0, min(1.0, float(_number_or_none(video_options.get("start_frame_strength")) or 1.0))),
+                            "strength": max(0.0, min(1.0, float(
+                            start_strength_value if start_strength_value is not None else (0.70 if loop_uses_start_as_end else 1.0)
+                        ))),
                     },
                     {
                         "image": str(reference_end_image_name or ""),
                         "index": length - 1,
-                        "strength": max(0.0, min(1.0, float(_number_or_none(video_options.get("end_frame_strength")) or 1.0))),
+                            "strength": max(0.0, min(1.0, float(
+                            end_strength_value if end_strength_value is not None else (0.70 if loop_uses_start_as_end else 1.0)
+                        ))),
                     },
                 ]
             use_ic_timeline_guides = _bool_option(video_options.get("ltx_ic_timeline_guides"), False)
@@ -3469,6 +4104,42 @@ def build_basic_ltx_img2video_workflow(
                     ltx_negative_ref = [guide_node_id, 1]
                     sampler_latent_ref = [guide_node_id, 2]
                     scheduler_latent_ref = [guide_node_id, 2]
+            elif use_ltx_flfv_reference_guides:
+                first_guide = guide_specs[0]
+                last_guide = guide_specs[-1]
+                preprocess_nodes["76"] = {
+                    "class_type": "LTXVAddGuide",
+                    "inputs": {
+                        "positive": ltx_positive_ref,
+                        "negative": ltx_negative_ref,
+                        "vae": video_vae_ref,
+                        "latent": sampler_latent_ref,
+                        "image": reference_image_ref,
+                        "frame_idx": 0,
+                        "strength": max(0.0, min(1.0, float(_number_or_none(first_guide.get("strength")) or 0.7))),
+                    },
+                    "_meta": {"title": "LTX FLF2V Guide: Start Frame"},
+                }
+                last_positive_ref = ["76", 0]
+                last_negative_ref = ["76", 1]
+                last_latent_ref = ["76", 2]
+                preprocess_nodes["178"] = {
+                    "class_type": "LTXVAddGuide",
+                    "inputs": {
+                        "positive": last_positive_ref,
+                        "negative": last_negative_ref,
+                        "vae": video_vae_ref,
+                        "latent": last_latent_ref,
+                        "image": reference_image_ref,
+                        "frame_idx": -1,
+                        "strength": max(0.0, min(1.0, float(_number_or_none(last_guide.get("strength")) or 0.7))),
+                    },
+                    "_meta": {"title": "LTX FLF2V Guide: End Frame"},
+                }
+                ltx_positive_ref = ["178", 0]
+                ltx_negative_ref = ["178", 1]
+                sampler_latent_ref = ["178", 2]
+                scheduler_latent_ref = ["178", 2]
             else:
                 preprocess_nodes["76"] = {
                     "class_type": "LTXVImgToVideoInplaceKJ",
@@ -3828,7 +4499,8 @@ def build_basic_ltx_img2video_workflow(
             ltx_negative_ref = ["73", 1]
             sampler_latent_ref = ["73", 2]
             scheduler_latent_ref = ["73", 2]
-            if motion_transfer_enabled and "LTXVCropGuides" in available_nodes:
+            crop_motion_guides_before_sampling = False
+            if crop_motion_guides_before_sampling and motion_transfer_enabled and motion_control_mode == "camera" and "LTXVCropGuides" in available_nodes:
                 preprocess_nodes["81"] = {
                     "class_type": "LTXVCropGuides",
                     "inputs": {
@@ -3891,7 +4563,7 @@ def build_basic_ltx_img2video_workflow(
     latent_upscale_nodes: dict[str, Any] = {}
     if use_latent_upscale:
         crop_ic_guides_before_upscale = bool(
-            motion_transfer_route or (transition_route and use_ic_timeline_guides and ic_lora_loader_ref)
+            motion_transfer_route or use_ltx_flfv_reference_guides or (transition_route and use_ic_timeline_guides and ic_lora_loader_ref)
         )
         if crop_ic_guides_before_upscale:
             latent_upscale_nodes["540"] = {
@@ -3991,7 +4663,8 @@ def build_basic_ltx_img2video_workflow(
                         }
                         refiner_latent_ref = ["25", 0]
             else:
-                if motion_transfer_route and motion_control_mode == "camera":
+                use_camera_inplace_after_upscale = False
+                if use_camera_inplace_after_upscale and motion_transfer_route and motion_control_mode == "camera":
                     camera_upscale_strength = max(0.0, min(1.0, float(_number_or_none(video_options.get("motion_transfer_target_strength")) if _number_or_none(video_options.get("motion_transfer_target_strength")) is not None else 0.2)))
                     if "LTXVImgToVideoInplace" in available_nodes:
                         latent_upscale_nodes["25"] = {
@@ -4033,13 +4706,18 @@ def build_basic_ltx_img2video_workflow(
                         }
                         refiner_latent_ref = ["25", 0]
                 else:
+                    upscale_condition_strength = (
+                        max(0.0, min(1.0, float(_number_or_none(video_options.get("motion_transfer_target_strength")) or 0.7)))
+                        if motion_transfer_route
+                        else float(video_options.get("upscale_condition_strength") or 1.0)
+                    )
                     latent_upscale_nodes["25"] = {
                         "class_type": "LTXVImgToVideoConditionOnly",
                         "inputs": {
                             "vae": video_vae_ref,
                             "image": reference_image_ref,
                             "latent": ["24", 0],
-                            "strength": float(video_options.get("upscale_condition_strength") or 1.0),
+                            "strength": upscale_condition_strength,
                         },
                         "_meta": {"title": "Reapply Reference After Latent Upscale"},
                     }
@@ -4140,7 +4818,7 @@ def build_basic_ltx_img2video_workflow(
         create_video_inputs["audio"] = ["33", 0]
 
     guide_crop_nodes: dict[str, Any] = {}
-    if motion_transfer_route and not motion_guides_cropped_before_sampling and not (use_latent_upscale and refine_latent_upscale):
+    if (motion_transfer_route or use_ltx_flfv_reference_guides) and not motion_guides_cropped_before_sampling and not (use_latent_upscale and refine_latent_upscale):
         guide_crop_nodes["81"] = {
             "class_type": "LTXVCropGuides",
             "inputs": {
@@ -4289,7 +4967,7 @@ def build_basic_ltx_img2video_workflow(
             "_meta": {"title": "LTX Frame Rate Conditioning"},
         },
         "7": {
-            "class_type": "EmptyLTXVLatentVideo" if (text_to_video or use_first_last_guides or motion_transfer_route) else "LTXVImgToVideo",
+            "class_type": "EmptyLTXVLatentVideo" if (text_to_video or use_first_last_guides or motion_transfer_route or ltx_native_loop_sampler_route) else "LTXVImgToVideo",
             "inputs": (
                 {
                     "width": width,
@@ -4297,7 +4975,7 @@ def build_basic_ltx_img2video_workflow(
                     "length": length,
                     "batch_size": max(1, request.batch_size),
                 }
-                if (text_to_video or use_first_last_guides or motion_transfer_route)
+                if (text_to_video or use_first_last_guides or motion_transfer_route or ltx_native_loop_sampler_route)
                 else {
                     "positive": ["6", 0],
                     "negative": ["6", 1],
@@ -4308,7 +4986,7 @@ def build_basic_ltx_img2video_workflow(
                     "length": length,
                     "batch_size": max(1, request.batch_size),
                     "strength": (
-                        float(video_options.get("motion_strength") or request.img2img.denoise or 0.85)
+                        float(video_options.get("motion_strength") or (0.30 if loop_uses_start_as_end else request.img2img.denoise) or 0.85)
                     ),
                 }
             ),
@@ -4321,33 +4999,80 @@ def build_basic_ltx_img2video_workflow(
         },
         "9": {
             "class_type": "KSamplerSelect",
-            "inputs": {"sampler_name": sampler},
+            "inputs": {"sampler_name": loop_sampler_name},
             "_meta": {"title": "Sampler"},
         },
         "10": {
             **sigma_node,
         },
-        "11": {
-            "class_type": "CFGGuider",
-            "inputs": {
-                "model": main_model_ref,
-                "positive": ltx_positive_ref,
-                "negative": ltx_negative_ref,
-                "cfg": request.cfg,
-            },
-            "_meta": {"title": "CFG Guider"},
-        },
-        "12": {
-            "class_type": "SamplerCustomAdvanced",
-            "inputs": {
-                "noise": ["8", 0],
-                "guider": ["11", 0],
-                "sampler": ["9", 0],
-                "sigmas": ["10", 0],
-                "latent_image": sampler_latent_ref,
-            },
-            "_meta": {"title": "LTX Sampler"},
-        },
+        "11": (
+            {
+                "class_type": "STGGuiderAdvanced",
+                "inputs": {
+                    "model": main_model_ref,
+                    "positive": ltx_positive_ref,
+                    "negative": ltx_negative_ref,
+                    "skip_steps_sigma_threshold": 0.998,
+                    "cfg_star_rescale": True,
+                    "sigmas": "1.0, 0.9933, 0.9850, 0.9767, 0.9008, 0.6180",
+                    "cfg_values": loop_cfg_values,
+                    "stg_scale_values": "1.2, 1.0, 0.8, 0.45, 0.2, 0",
+                    "stg_rescale_values": "0.7, 0.7, 0.7, 0.7, 0.7, 0",
+                    "stg_layers_indices": "[29], [29], [29], [29], [29], [29]",
+                },
+                "_meta": {"title": "LTX Native Loop STG Guider"},
+            }
+            if ltx_native_loop_sampler_route
+            else {
+                "class_type": "CFGGuider",
+                "inputs": {
+                    "model": main_model_ref,
+                    "positive": ltx_positive_ref,
+                    "negative": ltx_negative_ref,
+                    "cfg": request.cfg,
+                },
+                "_meta": {"title": "CFG Guider"},
+            }
+        ),
+        "12": (
+            {
+                "class_type": "LTXVLoopingSampler",
+                "inputs": {
+                    "model": main_model_ref,
+                    "vae": video_vae_ref,
+                    "noise": ["8", 0],
+                    "sampler": ["9", 0],
+                    "sigmas": ["10", 0],
+                    "guider": ["11", 0],
+                    "latents": sampler_latent_ref,
+                    "temporal_tile_size": int(_number_or_none(video_options.get("ltx_loop_temporal_tile_size")) or 80),
+                    "temporal_overlap": int(_number_or_none(video_options.get("ltx_loop_temporal_overlap")) or 24),
+                    "guiding_strength": float(_number_or_none(video_options.get("ltx_loop_guiding_strength")) or 0.0),
+                    "temporal_overlap_cond_strength": float(_number_or_none(video_options.get("ltx_loop_overlap_strength")) or 0.65),
+                    "cond_image_strength": float(_number_or_none(video_options.get("ltx_loop_cond_image_strength")) or 0.72),
+                    "horizontal_tiles": int(_number_or_none(video_options.get("ltx_loop_horizontal_tiles")) or 1),
+                    "vertical_tiles": int(_number_or_none(video_options.get("ltx_loop_vertical_tiles")) or 1),
+                    "spatial_overlap": int(_number_or_none(video_options.get("ltx_loop_spatial_overlap")) or 1),
+                    "optional_cond_images": ["3", 0],
+                    "optional_cond_image_indices": "0",
+                    "adain_factor": float(_number_or_none(video_options.get("ltx_loop_adain_factor")) or 0.12),
+                    "optional_normalizing_latents": sampler_latent_ref,
+                },
+                "_meta": {"title": "LTX Native Looping Sampler"},
+            }
+            if ltx_native_loop_sampler_route
+            else {
+                "class_type": "SamplerCustomAdvanced",
+                "inputs": {
+                    "noise": ["8", 0],
+                    "guider": ["11", 0],
+                    "sampler": ["9", 0],
+                    "sigmas": ["10", 0],
+                    "latent_image": sampler_latent_ref,
+                },
+                "_meta": {"title": "LTX Sampler"},
+            }
+        ),
         "13": {
             "class_type": "LTXVTiledVAEDecode",
             "inputs": {
@@ -4415,6 +5140,23 @@ def patch_workflow(
     )
     if not director_negative_prompt:
         director_negative_prompt = request.negative_prompt
+    effective_prompt = request.prompt
+    effective_negative_prompt = director_negative_prompt
+    if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting":
+        outpaint_prompt = (
+            "seamless natural video outpainting, extend the original scene beyond the canvas, "
+            "preserve the source video region exactly, continuous lighting and perspective"
+        )
+        outpaint_negative = (
+            "black bars, dark overlay, dark border, dividing line, seam, hard edge, text, letters, "
+            "subtitle, watermark, stretched edge, edge streaks, blur, zoom, crop, distorted source"
+        )
+        effective_prompt = f"{effective_prompt}, {outpaint_prompt}" if str(effective_prompt or "").strip() else outpaint_prompt
+        effective_negative_prompt = (
+            f"{effective_negative_prompt}, {outpaint_negative}"
+            if str(effective_negative_prompt or "").strip()
+            else outpaint_negative
+        )
     fps_value = _number_or_none(video_options.get("fps"))
     seconds_value = _number_or_none(video_options.get("seconds") or video_options.get("duration"))
     frames_value = _number_or_none(video_options.get("frames"))
@@ -4423,11 +5165,64 @@ def patch_workflow(
     max_shift_value = _number_or_none(video_options.get("max_shift"))
     base_shift_value = _number_or_none(video_options.get("base_shift"))
     terminal_value = _number_or_none(video_options.get("terminal"))
-    if preset == "ltx" and seconds_value and fps_value:
+    if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting":
+        def nearest_ltx_dimension(value: Any) -> int:
+            aligned = round(max(1, int(round(_number_or_none(value) or 512))) / 32) * 32
+            return max(64, min(4096, aligned or 512))
+
+        def nearest_ltx_frame_count(value: Any) -> int:
+            frames = max(9, int(round(_number_or_none(value) or 9)))
+            if (frames - 1) % 8 == 0:
+                return frames
+            lower = max(9, ((frames - 1) // 8) * 8 + 1)
+            upper = max(9, math.ceil((frames - 1) / 8) * 8 + 1)
+            return lower if (frames - lower) <= (upper - frames) else upper
+
+        def ltx_outpaint_sigmas(steps: int) -> str:
+            base = [1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0]
+            step_count = max(1, int(steps or 4))
+            if step_count == len(base) - 1:
+                return ", ".join(f"{value:g}" for value in base)
+            sampled: list[float] = []
+            scale = (len(base) - 1) / step_count
+            for index in range(step_count + 1):
+                position = index * scale
+                lo = int(position)
+                hi = min(len(base) - 1, lo + 1)
+                frac = position - lo
+                sampled.append(base[lo] + (base[hi] - base[lo]) * frac)
+            return ", ".join(f"{value:.6g}" for value in sampled)
+
+        def ltx_outpaint_fit_size() -> tuple[int, int] | None:
+            source_width = _number_or_none(video_options.get("outpaint_source_width"))
+            source_height = _number_or_none(video_options.get("outpaint_source_height"))
+            if not source_width or not source_height or source_width <= 0 or source_height <= 0:
+                return None
+            scale = min(request.width / source_width, request.height / source_height)
+            fit_width = nearest_ltx_dimension(source_width * scale)
+            fit_height = nearest_ltx_dimension(source_height * scale)
+            if fit_width > request.width:
+                fit_width = max(32, (int(request.width) // 32) * 32)
+                fit_height = nearest_ltx_dimension(fit_width * source_height / source_width)
+            if fit_height > request.height:
+                fit_height = max(32, (int(request.height) // 32) * 32)
+                fit_width = nearest_ltx_dimension(fit_height * source_width / source_height)
+            return max(32, int(fit_width)), max(32, int(fit_height))
+
+        request.width = nearest_ltx_dimension(request.width)
+        request.height = nearest_ltx_dimension(request.height)
+        if frames_value is not None:
+            frames_value = nearest_ltx_frame_count(frames_value)
+        elif seconds_value and fps_value:
+            frames_value = nearest_ltx_frame_count(seconds_value * fps_value)
+    elif preset == "ltx" and seconds_value and fps_value:
         frames_value = max(1, round(seconds_value * fps_value))
 
     positive_patched = False
     lora_slot = 0
+    aspect_gcd = math.gcd(max(1, int(request.width or 1)), max(1, int(request.height or 1)))
+    target_aspect_w = max(1, int(request.width or 1) // max(1, aspect_gcd))
+    target_aspect_h = max(1, int(request.height or 1) // max(1, aspect_gcd))
 
     def ltx_director_base_dimension(value: Any) -> int:
         numeric = max(0, int(round(_number_or_none(value) or 0)))
@@ -4508,7 +5303,7 @@ def patch_workflow(
             if not timeline_data and isinstance(director_options.get("timeline_data"), dict):
                 timeline_data = json.dumps(director_options["timeline_data"])
             director_patch = {
-                "global_prompt": request.prompt,
+                "global_prompt": effective_prompt,
                 "duration_frames": director_options.get("duration_frames"),
                 "duration_seconds": director_options.get("duration_seconds"),
                 "timeline_data": timeline_data,
@@ -4560,6 +5355,22 @@ def patch_workflow(
 
         patch_side_menu_asset_inputs(inputs, class_lower, title)
 
+        if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting" and "value" in inputs:
+            if "target_aspect_w" in title:
+                inputs["value"] = target_aspect_w
+            elif "target_aspect_h" in title:
+                inputs["value"] = target_aspect_h
+        if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting" and class_lower == "imagepadkj":
+            set_input_or_linked(inputs, "target_width", request.width)
+            set_input_or_linked(inputs, "target_height", request.height)
+            outpaint_pad = video_options.get("outpaint_pad") if isinstance(video_options, dict) else {}
+            if isinstance(outpaint_pad, dict):
+                for side in ("left", "right", "top", "bottom"):
+                    if side in inputs:
+                        set_input_or_linked(inputs, side, max(0, int(round(_number_or_none(outpaint_pad.get(side)) or 0))))
+            inputs["color"] = "0, 0, 0"
+            inputs["pad_mode"] = str(video_options.get("outpaint_pad_mode") or "edge")
+
         for key, value in list(inputs.items()):
             if isinstance(value, str) and _looks_like_model_file(value):
                 if class_lower == "ltxavtextencoderloader" and key == "ckpt_name":
@@ -4578,24 +5389,24 @@ def patch_workflow(
         if "text" in inputs and ("textencode" in class_lower or "conditioning" in class_lower or "prompt" in title):
             is_negative = "negative" in title or "negative" in class_lower
             if is_negative:
-                inputs["text"] = director_negative_prompt
+                inputs["text"] = effective_negative_prompt
             elif not positive_patched:
-                inputs["text"] = request.prompt
+                inputs["text"] = effective_prompt
                 positive_patched = True
         elif "text" in inputs:
             if "negative" in title or "negative" in class_lower:
-                inputs["text"] = director_negative_prompt
+                inputs["text"] = effective_negative_prompt
             elif "positive" in title or "positive" in class_lower:
-                inputs["text"] = request.prompt
+                inputs["text"] = effective_prompt
         if "prompt" in inputs and ("textencode" in class_lower or "conditioning" in class_lower or "prompt" in title):
             is_negative = "negative" in title or "negative" in class_lower
             if is_negative:
-                inputs["prompt"] = director_negative_prompt
+                inputs["prompt"] = effective_negative_prompt
             elif not positive_patched:
-                inputs["prompt"] = request.prompt
+                inputs["prompt"] = effective_prompt
                 positive_patched = True
             elif "positive" in title:
-                inputs["prompt"] = request.prompt
+                inputs["prompt"] = effective_prompt
 
         for key in ["width", "empty_latent_width"]:
             if key in inputs:
@@ -4616,12 +5427,17 @@ def patch_workflow(
                 set_input_or_linked(inputs, key, seed)
         if "steps" in inputs:
             if preset == "ltx":
-                step_value = max(8, int(request.steps or 8))
+                step_value = max(1, int(request.steps or 4)) if request.workflow_id == "ltx23-video-outpainting" else max(8, int(request.steps or 8))
             elif preset == "wan":
                 step_value = 4
             else:
                 step_value = request.steps
             set_input_or_linked(inputs, "steps", step_value)
+        if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting" and class_lower == "manualsigmas":
+            inputs["sigmas"] = ltx_outpaint_sigmas(max(1, int(request.steps or 4)))
+        if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting" and class_lower == "resizeimagemasknode":
+            if inputs.get("resize_type") == "scale by multiplier" and "resize_type.multiplier" in inputs:
+                set_input_or_linked(inputs, "resize_type.multiplier", 1.0)
         if preset == "flux" and "guidance" in inputs:
             set_input_or_linked(inputs, "guidance", request.cfg)
         if "cfg" in inputs:
@@ -4637,6 +5453,14 @@ def patch_workflow(
             inputs["denoise"] = request.img2img.denoise if request.activity == "img2img" else request.denoise
         if assets.get("mask_image") and "image" in inputs and ("mask" in title or "mask" in class_lower):
             inputs["image"] = assets["mask_image"]
+        elif (
+            preset == "ltx"
+            and request.workflow_id == "ltx23-video-outpainting"
+            and assets.get("outpaint_reference_image")
+            and class_lower == "loadimage"
+            and "image" in inputs
+        ):
+            inputs["image"] = assets["outpaint_reference_image"]
         elif assets.get("reference_image") and "image" in inputs and ("loadimage" in class_lower or "image" in title):
             inputs["image"] = assets["reference_image"]
         if "batch_size" in inputs:
@@ -4652,9 +5476,19 @@ def patch_workflow(
         if assets.get("base_video") and is_video_loader and "skip_first_frames" in inputs:
             set_input_or_linked(inputs, "skip_first_frames", max(0, int(round(_number_or_none(video_options.get("base_start_frame")) or 0))))
         if assets.get("base_video") and is_video_loader and "custom_width" in inputs:
-            set_input_or_linked(inputs, "custom_width", request.width)
+            fit_size = ltx_outpaint_fit_size() if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting" else None
+            set_input_or_linked(
+                inputs,
+                "custom_width",
+                fit_size[0] if fit_size else (0 if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting" else request.width),
+            )
         if assets.get("base_video") and is_video_loader and "custom_height" in inputs:
-            set_input_or_linked(inputs, "custom_height", request.height)
+            fit_size = ltx_outpaint_fit_size() if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting" else None
+            set_input_or_linked(
+                inputs,
+                "custom_height",
+                fit_size[1] if fit_size else (0 if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting" else request.height),
+            )
         if assets.get("base_video") and "start_frame" in inputs:
             set_input_or_linked(inputs, "start_frame", max(0, int(round(_number_or_none(video_options.get("base_start_frame")) or 0))))
         if assets.get("base_video") and "end_frame" in inputs and frames_value is not None:
@@ -4684,9 +5518,12 @@ def patch_workflow(
 
     _ensure_external_vae_loader(api, assets)
     _ensure_model3d_trellis_route(api, request, assets)
-    _apply_side_menu_loras(api, request)
+    _ensure_ltx_outpaint_attention_mask(api, request)
+    if not (preset == "ltx" and request.workflow_id == "ltx23-video-outpainting"):
+        _apply_side_menu_loras(api, request)
     _ensure_zimage_reference_route(api, request, assets)
     _ensure_qwen_image_edit_route(api, request, assets)
+    _ensure_qwen_multiview_route(api, request, assets)
     _ensure_qwen_multi_reference_route(api, request, assets)
     _ensure_wan_start_end_frame_route(api, request, assets)
     _ensure_img2img_reference_resize_routes(api, request)
@@ -4695,6 +5532,38 @@ def patch_workflow(
     _ensure_inpaint_mask_route(api, request, assets)
     _ensure_ltx_director_frame_trim(api, request)
     return api
+
+
+def _ensure_ltx_outpaint_attention_mask(api: dict[str, Any], request: GenerateRequest) -> None:
+    if request.preset.lower() != "ltx" or request.workflow_id != "ltx23-video-outpainting":
+        return
+    pad_node_id = None
+    guide_node_id = None
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        class_lower = str(node.get("class_type", "")).lower()
+        if class_lower == "imagepadkj":
+            pad_node_id = str(node_id)
+        elif class_lower in {"ltxaddvideoicloraguide", "ltxaddvideoicloraguideadvanced"}:
+            guide_node_id = str(node_id)
+    if not pad_node_id or not guide_node_id:
+        return
+
+    invert_node_id = str(_next_api_node_id(api))
+    api[invert_node_id] = {
+        "class_type": "InvertMask",
+        "inputs": {"mask": [pad_node_id, 1]},
+        "_meta": {"title": "LTX Outpaint Preserve Source Mask"},
+    }
+    guide = api.get(guide_node_id)
+    if not isinstance(guide, dict):
+        return
+    guide["class_type"] = "LTXAddVideoICLoRAGuideAdvanced"
+    inputs = guide.setdefault("inputs", {})
+    if isinstance(inputs, dict):
+        inputs["attention_strength"] = float(request.video.get("outpaint_attention_strength") or 1.0)
+        inputs["attention_mask"] = [invert_node_id, 0]
 
 
 def _model3d_number(options: dict[str, Any], key: str, default: float) -> float:
@@ -5323,14 +6192,14 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
     if isinstance(loader, dict):
         loader.setdefault("inputs", {})["image"] = reference_image
         loader.setdefault("_meta", {})["title"] = "Reference Image 1"
-    scaled_loader_ref = _ensure_image_ref_scaled(
+        scaled_loader_ref = _ensure_image_ref_scaled(
         api,
         [str(loader_id), 0],
         request.width,
         request.height,
         "Resize QWEN Reference 1 To Side Menu",
     ) or [str(loader_id), 0]
-    qwen_base_ref = _ensure_qwen_flux_image_ref(api, scaled_loader_ref, "QWEN Base FluxKontext Image Scale") or scaled_loader_ref
+    qwen_base_ref = scaled_loader_ref
 
     vae_ref = _find_vae_ref(api)
     positive_node_id: str | None = None
@@ -5365,7 +6234,7 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
         else:
             positive_node_id = str(node_id)
 
-    if "inpaint" in request.img2img.mode.lower():
+    if _uses_inpaint_mask_mode(request):
         return
     sampler_id = _find_sampler_node_id(api)
     if not sampler_id:
@@ -5448,12 +6317,6 @@ def _ensure_qwen_multi_reference_route(api: dict[str, Any], request: GenerateReq
             request.height,
             f"Resize QWEN Reference {index} To Side Menu",
         ) or [str(node_id), 0]
-        if index == 1:
-            scaled_ref = _ensure_qwen_flux_image_ref(
-                api,
-                scaled_ref,
-                "QWEN Base FluxKontext Image Scale",
-            ) or scaled_ref
         loader_refs.append(scaled_ref)
     if len(loader_refs) < 2:
         return
@@ -5491,6 +6354,71 @@ def _ensure_qwen_multi_reference_route(api: dict[str, Any], request: GenerateReq
             inputs["vae"] = vae_ref
         for index, ref in enumerate(loader_refs, start=1):
             inputs[f"image{index}"] = ref
+
+
+def _ensure_qwen_multiview_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
+    qwen_multiview = _qwen_multiview_options(request)
+    if not qwen_multiview["enabled"]:
+        return
+    reference_image = str(assets.get("reference_image") or "").strip()
+    if not reference_image:
+        return
+    loader_id = _find_qwen_reference_loader_id(api, 1, reference_image) or _find_reference_image_node_id(api, reference_image)
+    if not loader_id:
+        loader_id = _add_load_image_node(api, reference_image, "Reference Image 1")
+    if not loader_id:
+        return
+    loader = api.get(str(loader_id))
+    if isinstance(loader, dict):
+        loader.setdefault("inputs", {})["image"] = reference_image
+        loader.setdefault("_meta", {})["title"] = "Reference Image 1"
+    scaled_ref = _ensure_image_ref_scaled(
+        api,
+        [str(loader_id), 0],
+        request.width,
+        request.height,
+        "Resize QWEN Reference 1 To Side Menu",
+    ) or [str(loader_id), 0]
+
+    node_id = None
+    for existing_id, node in api.items():
+        if isinstance(node, dict) and str(node.get("class_type", "")).lower() == "qwenmultianglecameranode":
+            node_id = str(existing_id)
+            break
+    if not node_id:
+        node_id = str(_next_api_node_id(api))
+        api[node_id] = {"class_type": "QwenMultiangleCameraNode", "inputs": {}, "_meta": {"title": "Qwen Multiangle Camera"}}
+    node = api[node_id]
+    node["class_type"] = "QwenMultiangleCameraNode"
+    node.setdefault("_meta", {})["title"] = "Qwen Multiangle Camera"
+    inputs = node.setdefault("inputs", {})
+    if isinstance(inputs, dict):
+        inputs["horizontal_angle"] = int(qwen_multiview["horizontal"])
+        inputs["vertical_angle"] = int(qwen_multiview["vertical"])
+        inputs["zoom"] = float(qwen_multiview["zoom"])
+        inputs["default_prompts"] = False
+        inputs["camera_view"] = bool(qwen_multiview["camera_view"])
+        inputs["image"] = scaled_ref
+
+    for text_node in api.values():
+        if not isinstance(text_node, dict):
+            continue
+        if str(text_node.get("class_type", "")).lower() not in {"textencodeqwenimageedit", "textencodeqwenimageeditplus"}:
+            continue
+        text_inputs = text_node.setdefault("inputs", {})
+        if not isinstance(text_inputs, dict):
+            continue
+        title = str(text_node.get("_meta", {}).get("title", "")).lower()
+        if "negative" in title:
+            if "prompt" in text_inputs:
+                text_inputs["prompt"] = ""
+            elif "text" in text_inputs:
+                text_inputs["text"] = ""
+            continue
+        if "prompt" in text_inputs:
+            text_inputs["prompt"] = [str(node_id), 0]
+        elif "text" in text_inputs:
+            text_inputs["text"] = [str(node_id), 0]
 
 
 def _ensure_wan_start_end_frame_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
@@ -5964,7 +6892,7 @@ def _replace_clip_refs(api: dict[str, Any], old_ref: list[Any], new_ref: list[An
 
 
 def _ensure_inpaint_mask_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, str]) -> None:
-    if request.activity != "img2img" or "inpaint" not in request.img2img.mode.lower():
+    if request.activity != "img2img" or not _uses_inpaint_mask_mode(request):
         return
     mask_image_name = assets.get("mask_image")
     if not mask_image_name:
@@ -6603,6 +7531,8 @@ def _replacement_for_model_input(
         return assets["text_encoder"], lora_slot
     if "lora" in haystack:
         lora_slot += 1
+        if "outpaint" in haystack and assets.get("outpaint_lora"):
+            return assets["outpaint_lora"], lora_slot
         if "ic" in haystack and assets.get("ic_lora"):
             return assets["ic_lora"], lora_slot
         if lora_slot == 1 and assets.get("distilled_lora_1"):

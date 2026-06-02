@@ -42,8 +42,9 @@ function boundedNumber(value: number, min: number, max: number, fallback: number
 
 export function buildExtrasPlan(state: ExtrasState, catalog: ModelCatalog | undefined): ExtrasPlan {
   const sourceType = sourceTypeForState(state);
-  const upscalers = catalogNames(catalog, ['upscale_models'], ['Lanczos']);
-  const videoUpscalers = catalogNames(catalog, ['upscale_models', 'latent_upscale_models'], ['Lanczos']);
+  const nvidiaUpscalers = ['nvidia_pid', 'nvidia_rtx'];
+  const upscalers = catalogNames(catalog, ['upscale_models'], ['Lanczos', ...nvidiaUpscalers]);
+  const videoUpscalers = catalogNames(catalog, ['upscale_models', 'latent_upscale_models'], ['Lanczos', ...nvidiaUpscalers]);
   const interpolators = catalogNames(catalog, ['frame_interpolation'], ['frame_interpolation/rife_v4.26.safetensors']);
   const removeBgModels = catalogNames(catalog, ['background_removal', 'RMBG'], ['BiRefNet']);
 
@@ -71,20 +72,30 @@ export function buildExtrasPlan(state: ExtrasState, catalog: ModelCatalog | unde
   }
 
   if (state.mode === 'image') {
+    const imageUpscaler = state.imageUpscaler || upscalers[0] || 'Lanczos';
+    const imageUpscaleEngine = nvidiaUpscalers.includes(imageUpscaler) ? imageUpscaler : 'standard';
+    const customResolution =
+      state.imageScale === 'custom'
+        ? {
+            width: boundedNumber(state.customWidth, 64, 16384, 1024),
+            height: boundedNumber(state.customHeight, 64, 16384, 1024),
+          }
+        : null;
     return {
       mediaType: 'image',
       mode: 'image',
       source_type: sourceType,
       source_url: state.remoteSource?.url || '',
-      upscaler: state.imageUpscaler || upscalers[0] || 'Lanczos',
+      upscaler: imageUpscaler,
       scale: state.imageScale,
-      custom_resolution:
-        state.imageScale === 'custom'
-          ? {
-              width: boundedNumber(state.customWidth, 64, 16384, 1024),
-              height: boundedNumber(state.customHeight, 64, 16384, 1024),
-            }
-          : null,
+      custom_resolution: customResolution,
+      upscale: {
+        enabled: true,
+        engine: imageUpscaleEngine,
+        model: imageUpscaler,
+        scale: state.imageScale,
+        custom_resolution: customResolution,
+      },
       preserve_alpha: state.preserveAlpha,
       export_format: state.exportFormat,
       pack_metadata: true,
@@ -110,6 +121,7 @@ export function buildExtrasPlan(state: ExtrasState, catalog: ModelCatalog | unde
     upscale: {
       enabled: state.videoUpscaleEnabled,
       model: state.videoUpscaleEnabled ? state.videoUpscaleModel || videoUpscalers[0] || 'Lanczos' : 'Off',
+      engine: state.videoUpscaleEnabled && nvidiaUpscalers.includes(state.videoUpscaleModel) ? state.videoUpscaleModel : 'standard',
       scale: state.videoScale,
       tile: boundedNumber(state.tileSize, 128, 2048, 512),
     },
@@ -127,7 +139,7 @@ export function extrasPlanLabel(plan: ExtrasPlan) {
   if (plan.mode === 'video') {
     const bits = [];
     if (plan.interpolate?.enabled) bits.push(`interp ${plan.interpolate.fps} FPS`);
-    if (plan.upscale?.enabled) bits.push(plan.upscale.scale);
+    if (plan.upscale?.enabled) bits.push(`${plan.upscale.engine || 'standard'} ${plan.upscale.scale}`);
     bits.push(plan.encoder || 'mp4_h264');
     return bits.join(' / ');
   }

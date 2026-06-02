@@ -9,6 +9,7 @@ import random
 import re
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 from datetime import datetime
@@ -97,6 +98,16 @@ ANSI = {
 }
 
 LTX_HF_LORA_ARTIFACTS: dict[str, dict[str, str]] = {
+    "control": {
+        "label": "LTX 2.3 IC-LoRA Union Control",
+        "filename": "ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors",
+        "url": "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control/resolve/main/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors?download=true",
+    },
+    "transition": {
+        "label": "LTX 2.3 Transition LoRA",
+        "filename": "ltx2.3-transition.safetensors",
+        "url": "https://huggingface.co/joyfox/LTX-2.3-Transition-LORA/resolve/main/ltx2.3-transition.safetensors?download=true",
+    },
     "detailer": {
         "label": "LTX IC-LoRA Detailer",
         "filename": "ltx-2-19b-ic-lora-detailer.safetensors",
@@ -106,6 +117,11 @@ LTX_HF_LORA_ARTIFACTS: dict[str, dict[str, str]] = {
         "label": "LTX 2.3 IC-LoRA Cameraman",
         "filename": "LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors",
         "url": "https://huggingface.co/Cseti/LTX2.3-22B_IC-LoRA-Cameraman_v1/resolve/main/LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors",
+    },
+    "outpaint": {
+        "label": "LTX 2.3 IC-LoRA Outpaint",
+        "filename": "ltx-2.3-22b-ic-lora-outpaint.safetensors",
+        "url": "https://huggingface.co/oumoumad/LTX-2.3-22b-IC-LoRA-Outpaint/resolve/main/ltx-2.3-22b-ic-lora-outpaint.safetensors",
     },
     "denoise": {
         "label": "FastDVDnet Video Denoise",
@@ -129,6 +145,13 @@ LTX_HF_LORA_ARTIFACTS: dict[str, dict[str, str]] = {
     },
 }
 
+QWEN_MULTIANGLE_LORA_ARTIFACT: dict[str, str] = {
+    "label": "Qwen Image Edit 2511 Multiple Angles LoRA",
+    "filename": "qwen-image-edit-2511-multiple-angles-lora.safetensors",
+    "url": "https://huggingface.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA/resolve/main/qwen-image-edit-2511-multiple-angles-lora.safetensors",
+    "size_bytes": "295140688",
+}
+
 TRELLIS2_REPO_ID = "microsoft/TRELLIS.2-4B"
 DINOV3_REPO_ID = "facebook/dinov3-vitl16-pretrain-lvd1689m"
 DINOV3_KAGGLE_HANDLE = "x1an9l1/facebook-dinov3-vitl16-pretrain-lvd1689m/transformers/default"
@@ -138,6 +161,86 @@ EXTRAS_VIDEO_RESTORE_NODES: dict[str, tuple[str, ...]] = {
     "flashvsr": ("ComfyUI-FlashVSR", "ComfyUI-FlashVSR_Ultra_Fast"),
     "seedvr2": ("ComfyUI-SeedVR2_VideoUpscaler", "seedvr2_videoupscaler"),
     "ltx_detailer": ("ComfyUI-LTXVideo",),
+}
+
+NVIDIA_EXTRAS_ENGINES: dict[str, dict[str, Any]] = {
+    "nvidia_rtx": {
+        "label": "NVIDIA RTX Video Super Resolution",
+        "nodes": ("Nvidia_RTX_Nodes_ComfyUI",),
+        "packages": ("nvvfx",),
+        "model_required": False,
+        "notes": "Uses NVIDIA RTX Video Super Resolution when the ComfyUI node is available; falls back to Lanczos in Extras.",
+    },
+    "nvidia_pid": {
+        "label": "NVIDIA PiD Pixel Diffusion Decoder",
+        "nodes": ("ComfyUI-PiD",),
+        "packages": (
+            "hydra",
+            "omegaconf",
+            "attrs",
+            "einops",
+            "loguru",
+            "termcolor",
+            "fvcore",
+            "iopath",
+            "pynvml",
+            "wandb",
+            "imageio",
+            "cv2",
+            "pandas",
+            "safetensors",
+            "huggingface_hub",
+            "sentencepiece",
+            "boto3",
+            "botocore",
+            "accelerate",
+            "transformers",
+            "diffusers",
+        ),
+        "model_required": True,
+        "notes": "PiD is a latent decoder/upscaler, not a normal MP4 upscaler; large PiD weights remain opt-in through the node auto_download path.",
+    },
+}
+
+NVIDIA_PID_REPO_ID = "nvidia/PiD"
+NVIDIA_PID_SOURCE_REPO = "https://github.com/nv-tlabs/PiD.git"
+NVIDIA_PID_HF_BASE = "https://huggingface.co/nvidia/PiD/resolve/main"
+NVIDIA_PID_ASSET_SIZES = {
+    "checkpoints/PiD_res2k_sr4x_official_flux_distill_4step/model_ema_bf16.pth": 2724842961,
+    "checkpoints/PiD_res2k_sr4x_official_flux2_distill_4step/model_ema_bf16.pth": 2725875153,
+    "checkpoints/PiD_res2k_sr4x_official_sd3_distill_4step/model_ema_bf16.pth": 2724842961,
+    "checkpoints/PiD_res2kto4k_sr4x_official_flux_distill_4step/model_ema_bf16.pth": 2724842961,
+    "checkpoints/PiD_res2kto4k_sr4x_official_flux2_distill_4step/model_ema_bf16.pth": 2725875153,
+    "checkpoints/PiD_res2kto4k_sr4x_official_sd3_distill_4step/model_ema_bf16.pth": 2724842961,
+    "checkpoints/ae.safetensors": 335304388,
+    "checkpoints/flux2_ae.safetensors": 336211292,
+    "checkpoints/sd3_vae/vae/diffusion_pytorch_model.safetensors": 167666654,
+}
+NVIDIA_PID_PROFILES: dict[str, dict[str, Any]] = {
+    "lowvram_zimage_2k": {
+        "label": "Low VRAM Z-Image 2K",
+        "backbone": "zimage",
+        "checkpoint": "2k",
+        "scale": 1,
+        "steps": 4,
+        "cfg": 1.0,
+        "low_vram": True,
+        "description": "Safest first PiD setup; downloads Flux-compatible 2K checkpoint and AE, then keeps media fallback unless a latent workflow is used.",
+    },
+    "zimage_2k_quality": {
+        "label": "Z-Image 2K Quality",
+        "backbone": "zimage",
+        "checkpoint": "2k",
+        "scale": 2,
+        "steps": 4,
+        "cfg": 1.0,
+        "low_vram": True,
+        "description": "Same checkpoint as low VRAM with a stronger PiD output scale for better GPUs.",
+    },
+    "flux_2k": {"label": "Flux 2K", "backbone": "flux", "checkpoint": "2k", "scale": 2, "steps": 4, "cfg": 1.0, "low_vram": True},
+    "flux2_2k": {"label": "Flux2 2K", "backbone": "flux2", "checkpoint": "2k", "scale": 2, "steps": 4, "cfg": 1.0, "low_vram": False},
+    "sd3_2k": {"label": "SD3 2K", "backbone": "sd3", "checkpoint": "2k", "scale": 2, "steps": 4, "cfg": 1.0, "low_vram": False},
+    "zimage_2kto4k": {"label": "Z-Image 2K to 4K", "backbone": "zimage", "checkpoint": "2kto4k", "scale": 4, "steps": 4, "cfg": 1.0, "low_vram": False},
 }
 
 
@@ -280,6 +383,9 @@ def _update_generation_job(job_id: str, update: dict[str, Any], *, force: bool =
     if not job:
         return
     if str(job.get("status") or "").lower() == "cancelled" and str(update.get("status") or "").lower() != "cancelled":
+        if update.get("prompt_id"):
+            job["prompt_id"] = update.get("prompt_id")
+            job["updated_at"] = datetime.now().isoformat(timespec="seconds")
         return
     if "progress" in update and update.get("progress") is not None:
         next_progress = int(float(update.get("progress") or 0))
@@ -294,6 +400,31 @@ def _update_generation_job(job_id: str, update: dict[str, Any], *, force: bool =
         job["elapsed_seconds"] = round(time.monotonic() - float(job["_started_monotonic"]), 1)
     job["updated_at"] = datetime.now().isoformat(timespec="seconds")
     _console_generation(job, force=force)
+
+
+def _generation_job_cancelled(job_id: str | None) -> bool:
+    return bool(job_id and str(generation_jobs.get(job_id, {}).get("status") or "").lower() == "cancelled")
+
+
+def _raise_if_generation_cancelled(job_id: str | None) -> None:
+    if _generation_job_cancelled(job_id):
+        raise RuntimeError("Generation cancelled.")
+
+
+def _handle_cancelled_generation_progress(job_id: str | None, update: dict[str, Any]) -> bool:
+    if not _generation_job_cancelled(job_id):
+        return False
+    prompt_id = update.get("prompt_id")
+    if prompt_id and job_id and generation_jobs.get(job_id):
+        generation_jobs[job_id]["prompt_id"] = prompt_id
+        generation_jobs[job_id]["updated_at"] = datetime.now().isoformat(timespec="seconds")
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(comfy.interrupt(str(prompt_id)))
+            loop.create_task(comfy.clear_queue())
+        except RuntimeError:
+            pass
+    return True
 
 
 def _public_generation_job(job: dict[str, Any]) -> dict[str, Any]:
@@ -326,7 +457,7 @@ def _update_download_job(job_id: str, update: dict[str, Any]) -> None:
     job["updated_at"] = datetime.now().isoformat(timespec="seconds")
 
 
-def _write_input_data_image(value: str, prefix: str) -> str:
+def _write_input_data_image(value: str, prefix: str, *, normalize: bool = True) -> str:
     settings.input_dir.mkdir(parents=True, exist_ok=True)
     match = re.match(r"data:image/([a-zA-Z0-9.+-]+);base64,(.+)", value, flags=re.DOTALL)
     if not match:
@@ -335,7 +466,8 @@ def _write_input_data_image(value: str, prefix: str) -> str:
     filename = f"{prefix}_{uuid.uuid4().hex[:10]}.{ext}"
     target = settings.input_dir / filename
     target.write_bytes(base64.b64decode(match.group(2)))
-    _normalize_input_image_file(target)
+    if normalize:
+        _normalize_input_image_file(target)
     return filename
 
 
@@ -719,7 +851,7 @@ def _is_omnicine_lora_name(value: object) -> bool:
 
 def _is_qwen_edit_lightning_lora_name(value: object) -> bool:
     text = str(value or "").lower()
-    return "qwen" in text and "edit" in text and "lightning" in text
+    return "qwen" in text and "lightning" in text
 
 
 def _ensure_qwen_edit_lightning_lora(request: GenerateRequest, assets: dict[str, str]) -> None:
@@ -741,12 +873,48 @@ def _ensure_qwen_edit_lightning_lora(request: GenerateRequest, assets: dict[str,
         item_name = getattr(item, "name", "")
         if not _is_qwen_edit_lightning_lora_name(item_name):
             continue
+        if auto_lightning is not False:
+            item.strength = 1.0
         cleaned.append(item)
         if _normalize_lora_key(item_name) == normalized:
             has_edit_lightning = True
     if auto_lightning is not False and not has_edit_lightning:
         cleaned.insert(0, DistilledLoraSelection(name=name, strength=1.0))
     request.distilled_loras = cleaned[:1]
+
+
+def _is_qwen_multiangle_lora_name(value: object) -> bool:
+    text = str(value or "").lower()
+    return "qwen" in text and any(token in text for token in ("multiangle", "multi-angle", "multiple-angle", "multiple-angles", "angles-lora"))
+
+
+def _ensure_qwen_multiangle_lora(request: GenerateRequest, assets: dict[str, str]) -> None:
+    if request.preset.lower() != "qwen" or request.activity != "img2img":
+        return
+    video_options = request.video or {}
+    enabled = video_options.get("qwen_multiview", False)
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() not in {"", "false", "0", "off", "none", "no"}
+    if not enabled:
+        return
+    name = assets.get("qwen_multiangle_lora")
+    if not name:
+        return
+    normalized = _normalize_lora_key(name)
+    existing = {
+        _normalize_lora_key(item.get("relative_name") or item.get("relative_path") or item.get("lora_name") or item.get("name"))
+        for item in request.loras
+        if isinstance(item, dict)
+    }
+    existing.update(_normalize_lora_key(getattr(item, "name", "")) for item in request.distilled_loras)
+    if normalized in existing:
+        return
+    strength = video_options.get("qwen_multiangle_lora_strength", 1.0)
+    try:
+        strength_value = float(strength)
+    except (TypeError, ValueError):
+        strength_value = 1.0
+    request.loras.append({"name": name, "relative_name": name, "strength": strength_value, "strength_model": strength_value})
 
 
 def _ensure_wan_4step_loras(request: GenerateRequest, assets: dict[str, str]) -> None:
@@ -851,6 +1019,58 @@ def _prepare_base_video(request: GenerateRequest) -> str | None:
     return _prepare_video_value(value)
 
 
+def _ltx_outpaint_route_requested(request: GenerateRequest) -> bool:
+    if request.preset.lower() != "ltx" or request.workflow_id != "ltx23-video-outpainting":
+        return False
+    video_options = request.video if isinstance(request.video, dict) else {}
+    return bool(
+        request.activity == "img2img"
+        and getattr(request, "workspace", "") == "canvas"
+        and video_options.get("outpaint_enabled")
+        and (request.img2img.base_video or "").strip()
+    )
+
+
+def _normalize_ltx_outpaint_workflow_scope(request: GenerateRequest) -> None:
+    if request.preset.lower() != "ltx" or request.workflow_id != "ltx23-video-outpainting":
+        if request.preset.lower() == "ltx" and request.workflow_override and not _ltx_outpaint_route_requested(request):
+            override_text = json.dumps(request.workflow_override, ensure_ascii=False).lower()
+            if any(token in override_text for token in ("imagepadkj", "outpaint", "ltxaddvideoicloraguideadvanced")):
+                request.workflow_override = None
+                if isinstance(request.video, dict):
+                    request.video["outpaint_enabled"] = False
+        return
+    if _ltx_outpaint_route_requested(request):
+        return
+    request.workflow_id = None
+    request.workflow_override = None
+    if isinstance(request.video, dict):
+        request.video["outpaint_enabled"] = False
+
+
+def _extract_video_first_frame(video_name: str, prefix: str = "nexus_base_video_frame") -> str | None:
+    source = settings.input_dir / video_name
+    ffmpeg = _ffmpeg_binary()
+    if not ffmpeg or not source.exists():
+        return None
+    target = settings.input_dir / f"{prefix}_{uuid.uuid4().hex[:10]}.png"
+    try:
+        _run_ffmpeg([
+            ffmpeg,
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            str(source),
+            "-frames:v",
+            "1",
+            str(target),
+        ])
+    except Exception:
+        return None
+    return target.name if target.exists() else None
+
+
 def _prepare_ltx_motion_scaffold(reference_names: list[str], request: GenerateRequest) -> str | None:
     if request.preset.lower() != "ltx" or len(reference_names) < 2:
         return None
@@ -929,7 +1149,10 @@ def _reference_image_values(request: GenerateRequest) -> list[str]:
 def _prepare_reference_images(request: GenerateRequest) -> list[str]:
     if request.activity != "img2img":
         return []
-    max_refs = 4 if request.preset.lower() == "model3d" else 3
+    preset = request.preset.lower()
+    raw_model = f"{request.model_name or ''} {request.model_path or ''} {request.template or ''}"
+    flux2_refs = preset == "flux" and any(token in raw_model.lower() for token in ("flux-2", "flux2", "flux_2", "flux.2", "klein"))
+    max_refs = 5 if flux2_refs else (4 if preset == "model3d" else 3)
     values = _reference_image_values(request)[:max_refs]
     return [_prepare_reference_value(value, f"nexus_reference_{index + 1}") for index, value in enumerate(values)]
 
@@ -1384,6 +1607,7 @@ async def _run_ltx_director_segment_render(
     last_prompt_id: str | None = None
     director_run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     for index, segment in enumerate(visual_segments):
+        _raise_if_generation_cancelled(job_id)
         motion = segment.get("motionTransfer") if isinstance(segment.get("motionTransfer"), dict) else {}
         motion_mode = str(motion.get("mode") or "pose").strip().lower()
         if motion_mode not in {"pose", "canny", "depth", "camera"}:
@@ -1467,7 +1691,7 @@ async def _run_ltx_director_segment_render(
                     "motion_transfer_target_strength": float(
                         _number_or_none(motion.get("targetStrength"))
                         if _number_or_none(motion.get("targetStrength")) is not None
-                        else (0.7 if motion_mode == "camera" else (_number_or_none(parent_video.get("motion_transfer_target_strength")) if _number_or_none(parent_video.get("motion_transfer_target_strength")) is not None else 1.0))
+                        else (1.0 if motion_mode == "camera" else (_number_or_none(parent_video.get("motion_transfer_target_strength")) if _number_or_none(parent_video.get("motion_transfer_target_strength")) is not None else 1.0))
                     ),
                     "ltx_ic_lora_strength": float(_number_or_none(parent_video.get("ltx_ic_lora_strength")) or 1.0),
                     "ltx_ic_image_bypass": bool(parent_video.get("ltx_ic_image_bypass") or False),
@@ -1535,6 +1759,8 @@ async def _run_ltx_director_segment_render(
         def segment_progress(update: dict[str, Any], segment_index: int = index) -> None:
             if not job_id:
                 return
+            if _handle_cancelled_generation_progress(job_id, update):
+                return
             base = 12 + segment_index * 72 / max(1, len(visual_segments))
             span = 72 / max(1, len(visual_segments))
             progress = base + span * (float(update.get("progress") or 0) / 100.0)
@@ -1549,6 +1775,7 @@ async def _run_ltx_director_segment_render(
 
         prompt_id, outputs = await comfy.run_workflow(prompt, progress_callback=segment_progress)
         last_prompt_id = prompt_id
+        _raise_if_generation_cancelled(job_id)
         if not outputs:
             outputs = await _recover_outputs_from_history(prompt_id, segment_started_at)
         outputs = _cleanup_video_sidecar_images(outputs, segment_started_at)
@@ -1605,7 +1832,8 @@ def _available_comfy_node(object_info: dict[str, Any], *names: str) -> str | Non
 
 
 def _inpaint_uses_lanpaint(request: GenerateRequest) -> bool:
-    if request.activity != "img2img" or "inpaint" not in request.img2img.mode.lower():
+    mode = request.img2img.mode.lower()
+    if request.activity != "img2img" or not ("inpaint" in mode or "outpaint" in mode or "extend" in mode):
         return False
     return str(getattr(request.img2img, "inpaint_engine", "") or "").strip().lower() in {
         "lanpaint",
@@ -1633,7 +1861,8 @@ def _ensure_lanpaint_custom_node(request: GenerateRequest) -> bool:
 
 
 def _apply_inpaint_intent_prompt(request: GenerateRequest) -> None:
-    if request.activity != "img2img" or "inpaint" not in request.img2img.mode.lower():
+    mode = request.img2img.mode.lower()
+    if request.activity != "img2img" or not ("inpaint" in mode or "outpaint" in mode or "extend" in mode):
         return
     intent = str(getattr(request.img2img, "inpaint_intent", "") or "").strip().lower()
     if intent not in {"remove", "mixed"} and not getattr(request.img2img, "remove_mask_present", False):
@@ -1665,11 +1894,22 @@ def _prepare_mask_image(request: GenerateRequest) -> str | None:
     model3d_value = model3d_view_mask if model3d_texture_paint and model3d_mask_space == "viewpoint" and model3d_view_mask else model3d_uv_mask
     value = (model3d_value if request.preset.lower() == "model3d" else "") or (request.img2img.mask_image or "").strip()
     mode = request.img2img.mode.lower()
-    if request.activity != "img2img" or not value or ("inpaint" not in mode and not model3d_texture_paint):
+    mask_mode = "inpaint" in mode or "outpaint" in mode or "extend" in mode
+    if request.activity != "img2img" or not value or (not mask_mode and not model3d_texture_paint):
         return None
     if not value.startswith("data:image/"):
         raise ValueError("Invalid inpaint mask image.")
-    return _write_input_data_image(value, "nexus_texture_mask" if model3d_texture_paint else "nexus_mask")
+    return _write_input_data_image(value, "nexus_texture_mask" if model3d_texture_paint else "nexus_mask", normalize=False)
+
+
+def _prepare_composite_mask_image(request: GenerateRequest) -> str | None:
+    value = (getattr(request.img2img, "composite_mask_image", None) or "").strip()
+    mode = request.img2img.mode.lower()
+    if request.activity != "img2img" or not value or not ("outpaint" in mode or "extend" in mode):
+        return None
+    if not value.startswith("data:image/"):
+        raise ValueError("Invalid composite mask image.")
+    return _write_input_data_image(value, "nexus_composite_mask", normalize=False)
 
 
 def _prepare_controlnet_image(request: GenerateRequest) -> str | None:
@@ -2111,6 +2351,82 @@ def _lock_video_endpoint_frames(video_path: Path, start_image: Path | None, end_
         shutil.rmtree(temp_root, ignore_errors=True)
 
 
+def _make_video_seamless_forward_loop(video_path: Path, blend_frames: int | None = None) -> bool:
+    ffmpeg = _ffmpeg_binary()
+    if not ffmpeg or not video_path.exists():
+        return False
+    temp_root = settings.temp_dir / f"ltx_loop_seam_{uuid.uuid4().hex[:8]}"
+    frames_dir = temp_root / "frames"
+    sequence_dir = temp_root / "sequence"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    sequence_dir.mkdir(parents=True, exist_ok=True)
+    loop_video = temp_root / "loop.mp4"
+    try:
+        extract_command = [ffmpeg, "-y", "-i", str(video_path), str(frames_dir / "frame_%06d.png")]
+        if subprocess.run(extract_command, capture_output=True, text=True).returncode != 0:
+            return False
+        frames = sorted(frames_dir.glob("frame_*.png"))
+        if len(frames) < 5:
+            return False
+        target_count = len(frames)
+        blend_count = int(blend_frames or max(8, min(30, round(target_count * 0.18))))
+        blend_count = max(3, min(blend_count, target_count // 3))
+        from PIL import Image
+
+        for frame_path in frames:
+            shutil.copy2(frame_path, sequence_dir / frame_path.name)
+
+        first_frame = Image.open(frames[0]).convert("RGB")
+        for offset, frame_path in enumerate(frames[-blend_count:], start=1):
+            alpha = offset / blend_count
+            with Image.open(frame_path).convert("RGB") as tail_frame:
+                blended = Image.blend(tail_frame, first_frame, alpha)
+                blended.save(sequence_dir / frame_path.name)
+        fps = max(1.0, min(120.0, _ffprobe_fps(video_path)))
+        encode_command = [
+            ffmpeg,
+            "-y",
+            "-framerate",
+            f"{fps:.6f}",
+            "-i",
+            str(sequence_dir / "frame_%06d.png"),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "16",
+            "-an",
+            str(loop_video),
+        ]
+        if subprocess.run(encode_command, capture_output=True, text=True).returncode != 0 or not loop_video.exists():
+            return False
+        shutil.move(str(loop_video), str(video_path))
+        return True
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def _apply_ltx_loop_cycle_seam(outputs: list[dict[str, Any]], request: GenerateRequest) -> None:
+    if request.preset.lower() != "ltx":
+        return
+    video_options = request.video or {}
+    loop_enabled = _truthy(video_options.get("ltx_loop_cycle"))
+    loop_source = str(video_options.get("ltx_loop_source") or "").strip().lower()
+    if not loop_enabled or loop_source != "start_frame_as_end_frame":
+        return
+    if not _truthy(video_options.get("ltx_loop_post_seam_blend")):
+        return
+    for output in outputs:
+        path = _safe_output_media_path(output)
+        if not path or path.suffix.lower() not in {".mp4", ".webm", ".mkv", ".mov", ".avi"}:
+            continue
+        blend_frames = _number_or_none(video_options.get("ltx_loop_blend_frames"))
+        if _make_video_seamless_forward_loop(path, int(blend_frames) if blend_frames is not None else None):
+            output.setdefault("metadata", {})
+            output["ltx_loop_seamless_forward"] = True
+
+
 def _apply_ltx_reference_frame_lock(
     outputs: list[dict[str, Any]],
     request: GenerateRequest,
@@ -2450,6 +2766,16 @@ def _safe_upload_name(name: str, fallback: str = "source") -> str:
     return f"{stem[:48]}{suffix}"
 
 
+def _copy_extras_source_to_comfy_input(source: Path, prefix: str = "extras") -> str:
+    settings.input_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{prefix}_{uuid.uuid4().hex[:8]}_{_safe_upload_name(source.name, prefix)}"
+    target = (settings.input_dir / filename).resolve()
+    if not target.is_relative_to(settings.input_dir.resolve()):
+        raise ValueError("Invalid Extras input target.")
+    shutil.copy2(source, target)
+    return filename
+
+
 async def _save_extras_uploads(files: list[UploadFile]) -> list[Path]:
     upload_root = settings.temp_dir / "extras_uploads" / uuid.uuid4().hex[:12]
     upload_root.mkdir(parents=True, exist_ok=True)
@@ -2690,6 +3016,143 @@ def _image_scale_size(width: int, height: int, plan: dict[str, Any]) -> tuple[in
     return max(1, width * factor), max(1, height * factor)
 
 
+def _nvidia_extras_status(engine: str) -> dict[str, Any]:
+    normalized = engine.strip().lower()
+    info = NVIDIA_EXTRAS_ENGINES.get(normalized)
+    if not info:
+        raise HTTPException(status_code=404, detail=f"Unknown NVIDIA Extras engine: {engine}")
+    expected_nodes = tuple(info.get("nodes") or ())
+    packages = tuple(info.get("packages") or ())
+    node_ready = all((settings.custom_nodes_dir / name).exists() for name in expected_nodes)
+    if normalized in {"nvidia_rtx", "nvidia_pid"}:
+        package_status = {name: "checked_in_comfy_runtime" for name in packages}
+        dependency_ready = node_ready
+    else:
+        package_status = {name: importlib.util.find_spec(name) is not None for name in packages}
+        dependency_ready = all(package_status.values()) if package_status else True
+    result = {
+        "engine": normalized,
+        "label": info["label"],
+        "installed": bool(node_ready and dependency_ready),
+        "node_ready": node_ready,
+        "dependency_ready": dependency_ready,
+        "expected_nodes": list(expected_nodes),
+        "packages": package_status,
+        "model_required": bool(info.get("model_required")),
+        "models_auto_download": normalized == "nvidia_pid",
+        "notes": info.get("notes") or "",
+    }
+    if normalized == "nvidia_pid":
+        result["pid"] = _nvidia_pid_prepare_status()
+    if normalized == "nvidia_rtx":
+        result["upscale_catalog"] = _ensure_nvidia_rtx_catalog_marker()
+    return result
+
+
+def _mark_nvidia_upscale_runtime(upscale: dict[str, Any], engine: str) -> None:
+    status = _nvidia_extras_status(engine)
+    upscale["runtime_engine"] = engine if status["installed"] else "standard_fallback"
+    upscale["expected_nodes"] = status["expected_nodes"]
+    upscale["node_ready"] = status["node_ready"]
+    upscale["dependency_ready"] = status["dependency_ready"]
+    upscale["model_required"] = status["model_required"]
+    upscale["workflow_reference"] = status["label"]
+    upscale["fallback_engine"] = "standard"
+    if not status["installed"]:
+        reason = "missing_custom_node" if not status["node_ready"] else "missing_dependency"
+        upscale["fallback_reason"] = reason
+    if engine == "nvidia_pid":
+        pid_options = upscale.get("pid") if isinstance(upscale.get("pid"), dict) else {}
+        pid_status = _nvidia_pid_prepare_status(str(pid_options.get("profile") or ""), pid_options)
+        upscale["pid"] = pid_status["profile"]
+        upscale["pid_source_ready"] = pid_status["source_ready"]
+        upscale["pid_prepared"] = pid_status["prepared"]
+        upscale["pid_assets"] = pid_status["assets"]
+        upscale["latent_decoder_only"] = True
+        upscale["media_runtime_note"] = "PiD improves latent decode/upscale. Rendered image/video sources need a latent workflow; Extras media uses restoration fallback."
+        upscale["runtime_engine"] = "nvidia_pid_prepared_fallback" if pid_status["prepared"] else "standard_fallback"
+        upscale["fallback_engine"] = "standard"
+        upscale["fallback_reason"] = (
+            "pid_requires_latent_workflow_for_direct_media_upscale"
+            if pid_status["prepared"]
+            else "missing_pid_source_or_assets"
+        )
+
+
+def _nvidia_rtx_upscale_pil(image: Any, target_size: tuple[int, int], quality: str = "HIGH") -> Any:
+    import numpy as np
+    import torch
+    import nvvfx
+    from PIL import Image
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA GPU is required for NVIDIA RTX Video Super Resolution.")
+    output_width = max(8, round(int(target_size[0]) / 8) * 8)
+    output_height = max(8, round(int(target_size[1]) / 8) * 8)
+    quality_mapping = {
+        "LOW": nvvfx.effects.QualityLevel.LOW,
+        "MEDIUM": nvvfx.effects.QualityLevel.MEDIUM,
+        "HIGH": nvvfx.effects.QualityLevel.HIGH,
+        "ULTRA": nvvfx.effects.QualityLevel.ULTRA,
+    }
+    selected_quality = quality_mapping.get(str(quality or "HIGH").upper(), nvvfx.effects.QualityLevel.HIGH)
+    rgb = image.convert("RGB")
+    array = np.asarray(rgb, dtype=np.float32) / 255.0
+    frame = torch.from_numpy(array).cuda().permute(2, 0, 1).contiguous()
+    with nvvfx.VideoSuperRes(selected_quality) as sr:
+        sr.output_width = output_width
+        sr.output_height = output_height
+        sr.load()
+        out = torch.from_dlpack(sr.run(frame).image).movedim(0, -1).detach().float().cpu().clamp(0, 1).numpy()
+    return Image.fromarray((out * 255.0).round().astype("uint8"), "RGB")
+
+
+def _apply_nvidia_rtx_upscale_video(source: Path, target: Path, factor: int, quality: str = "HIGH") -> bool:
+    ffmpeg = _ffmpeg_binary()
+    if not ffmpeg or not source.exists():
+        return False
+    temp_root = settings.temp_dir / "extras_nvidia_rtx" / uuid.uuid4().hex[:12]
+    frames_dir = temp_root / "frames"
+    upscaled_dir = temp_root / "upscaled"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    upscaled_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        _run_ffmpeg([ffmpeg, "-y", "-v", "error", "-i", str(source), str(frames_dir / "frame_%06d.png")])
+        frames = sorted(frames_dir.glob("frame_*.png"))
+        if not frames:
+            return False
+        from PIL import Image
+
+        with Image.open(frames[0]) as first:
+            target_size = (int(first.width) * factor, int(first.height) * factor)
+        for frame_path in frames:
+            with Image.open(frame_path) as frame:
+                upscaled = _nvidia_rtx_upscale_pil(frame, target_size, quality)
+                upscaled.save(upscaled_dir / frame_path.name)
+        fps = max(1.0, min(240.0, _ffprobe_fps(source)))
+        _run_ffmpeg(
+            [
+                ffmpeg,
+                "-y",
+                "-framerate",
+                f"{fps:.6f}",
+                "-i",
+                str(upscaled_dir / "frame_%06d.png"),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-crf",
+                "16",
+                "-an",
+                str(target),
+            ]
+        )
+        return target.exists() and target.stat().st_size > 0
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
 def _load_birefnet_model() -> Any:
     import sys
 
@@ -2801,10 +3264,35 @@ def _process_extras_image(source: Path, plan: dict[str, Any], remove_bg: bool = 
             upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
             upscale_enabled = bool(upscale.get("enabled") or plan.get("upscaler") or plan.get("scale"))
             if upscale_enabled:
+                engine = str(upscale.get("engine") or plan.get("upscale_engine") or plan.get("upscaler") or "standard").strip().lower()
+                if engine in NVIDIA_EXTRAS_ENGINES:
+                    _mark_nvidia_upscale_runtime(upscale, engine)
+                    plan["upscale"] = upscale
                 target = _image_scale_size(working.width, working.height, plan)
-                working = working.resize(target, Image.Resampling.LANCZOS)
+                if engine == "nvidia_rtx" and upscale.get("runtime_engine") == "nvidia_rtx":
+                    try:
+                        working = _nvidia_rtx_upscale_pil(working, target, str(upscale.get("quality") or "HIGH"))
+                        upscale["workflow_reference"] = "nvvfx.VideoSuperRes"
+                        upscale.pop("fallback_reason", None)
+                    except Exception as exc:
+                        upscale["runtime_engine"] = "standard_fallback"
+                        upscale["fallback_engine"] = "standard"
+                        upscale["fallback_reason"] = f"nvidia_rtx_failed: {str(exc)[:180]}"
+                        working = working.resize(target, Image.Resampling.LANCZOS)
+                else:
+                    working = working.resize(target, Image.Resampling.LANCZOS)
             face_restore = plan.get("face_restore")
             face_restore_enabled = bool(face_restore.get("enabled")) if isinstance(face_restore, dict) else bool(face_restore)
+            detail_refine = plan.get("detail_refine") if isinstance(plan.get("detail_refine"), dict) else {}
+            if detail_refine.get("enabled"):
+                denoise_strength = max(0.0, min(1.0, float(_number_or_none(detail_refine.get("denoise")) or 0.18)))
+                detail_strength = max(0.0, min(1.0, float(_number_or_none(detail_refine.get("detail")) or 0.30)))
+                if denoise_strength > 0:
+                    radius = 1 if denoise_strength < 0.35 else 2
+                    working = working.filter(ImageFilter.MedianFilter(size=radius * 2 + 1))
+                if detail_strength > 0:
+                    working = working.filter(ImageFilter.UnsharpMask(radius=1.0 + detail_strength, percent=int(45 + detail_strength * 120), threshold=4))
+                detail_refine["runtime"] = "pil_median_unsharp"
             if face_restore_enabled:
                 if isinstance(face_restore, dict):
                     face_restore["runtime"] = "pil_fallback"
@@ -3098,7 +3586,20 @@ def _run_ffmpeg(command: list[str]) -> None:
         raise RuntimeError(message[-1800:])
 
 
-def _video_encoder_args(encoder: str, output: Path) -> list[str]:
+def _extras_video_encode_settings(plan: dict[str, Any] | None = None) -> dict[str, Any]:
+    plan = plan or {}
+    upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+    engine = str(upscale.get("engine") or upscale.get("runtime_engine") or "").strip().lower()
+    quality = str(upscale.get("quality") or "HIGH").strip().upper()
+    crf = 18
+    if engine in {"flashvsr", "seedvr2", "nvidia_rtx"}:
+        crf = 17 if quality == "ULTRA" else 18
+    if _number_or_none(plan.get("encode_crf")) is not None:
+        crf = int(max(10, min(28, float(plan.get("encode_crf")))))
+    return {"crf": crf, "preset": "medium" if quality != "ULTRA" else "slow", "tune": "animation"}
+
+
+def _video_encoder_args(encoder: str, output: Path, plan: dict[str, Any] | None = None) -> list[str]:
     encoder = (encoder or "mp4_h264").lower()
     if encoder == "webm_vp9":
         return ["-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", "30", "-b:v", "0", str(output)]
@@ -3106,7 +3607,8 @@ def _video_encoder_args(encoder: str, output: Path) -> list[str]:
         return ["-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuva444p10le", str(output)]
     if encoder == "mov_prores_422":
         return ["-c:v", "prores_ks", "-profile:v", "2", "-pix_fmt", "yuv422p10le", str(output)]
-    return ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium", str(output)]
+    encode = _extras_video_encode_settings(plan)
+    return ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", str(encode["crf"]), "-preset", str(encode["preset"]), "-tune", str(encode["tune"]), "-movflags", "+faststart", str(output)]
 
 
 def _encode_extras_frame_sequence(frames: list[Path], fps: float, encoder: str, stem: str) -> list[dict[str, Any]]:
@@ -3148,6 +3650,444 @@ def _process_extras_remove_bg_video(source_files: list[Path], plan: dict[str, An
     return _encode_extras_frame_sequence(output_frames, detected_fps, str(plan.get("encoder") or "image_sequence_png_alpha"), "remove_bg_video")
 
 
+def _extras_denoise_model_ready(model_name: str) -> bool:
+    text = str(model_name or "").strip()
+    if not text or text.lower() in {"off", "none", "ffmpeg_hqdn3d", "nlmeans", "ffmpeg_nlmeans"}:
+        return False
+    candidate = Path(text)
+    if candidate.exists():
+        return candidate.stat().st_size > 1024 * 1024
+    lowered = text.replace("\\", "/").lower()
+    roots = _model_category_roots("denoise_models") + _model_category_roots("video_restore_models") + _model_category_roots("loras")
+    for root in roots:
+        direct = (root / text).resolve()
+        if direct.exists() and direct.is_file() and direct.stat().st_size > 1024 * 1024:
+            return True
+        if "/" not in lowered:
+            for match in root.rglob(Path(text).name):
+                if match.is_file() and match.stat().st_size > 1024 * 1024:
+                    return True
+    return False
+
+
+def _nvidia_scale_factor(upscale: dict[str, Any]) -> float:
+    raw = str(upscale.get("scale") or "2x").strip().lower()
+    if raw.endswith("x"):
+        raw = raw[:-1]
+    try:
+        return max(1.0, min(4.0, float(raw)))
+    except (TypeError, ValueError):
+        return 2.0
+
+
+def _comfy_output_items(outputs: list[dict[str, Any]], kind: str | None = None) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for output in outputs:
+        relative = str(output.get("path") or "")
+        if not relative:
+            continue
+        path = (settings.output_dir / relative).resolve()
+        if path.exists() and path.is_relative_to(settings.output_dir.resolve()):
+            items.append(_output_item(path, kind or output.get("kind")))
+    return items
+
+
+def _build_rtx_comfy_workflow(input_name: str, plan: dict[str, Any], is_video: bool) -> dict[str, Any]:
+    upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+    factor = _nvidia_scale_factor(upscale)
+    quality = str(upscale.get("quality") or "ULTRA").upper()
+    if quality not in {"LOW", "MEDIUM", "HIGH", "ULTRA"}:
+        quality = "ULTRA"
+    if is_video:
+        return {
+            "1": {"class_type": "LoadVideo", "inputs": {"file": input_name}},
+            "2": {"class_type": "GetVideoComponents", "inputs": {"video": ["1", 0]}},
+            "3": {"class_type": "RTXVideoSuperResolution", "inputs": {"images": ["2", 0], "resize_type": "scale by multiplier", "scale": factor, "quality": quality}},
+            "4": {"class_type": "CreateVideo", "inputs": {"images": ["3", 0], "audio": ["2", 1], "fps": ["2", 2]}},
+            "5": {"class_type": "SaveVideo", "inputs": {"video": ["4", 0], "filename_prefix": "extras/video/nvidia_rtx", "format": "auto", "codec": "auto"}},
+        }
+    return {
+        "1": {"class_type": "LoadImage", "inputs": {"image": input_name}},
+        "2": {"class_type": "RTXVideoSuperResolution", "inputs": {"images": ["1", 0], "resize_type": "scale by multiplier", "scale": factor, "quality": quality}},
+        "3": {"class_type": "SaveImage", "inputs": {"images": ["2", 0], "filename_prefix": "extras/image/nvidia_rtx"}},
+    }
+
+
+def _pid_source_size(source: Path, is_video: bool) -> tuple[int, int] | None:
+    try:
+        if is_video:
+            ffprobe = _ffprobe_binary()
+            if not ffprobe:
+                return None
+            result = subprocess.run(
+                [
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height",
+                    "-of",
+                    "json",
+                    str(source),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            stream = (json.loads(result.stdout).get("streams") or [{}])[0]
+            width, height = int(stream.get("width") or 0), int(stream.get("height") or 0)
+        else:
+            from PIL import Image
+
+            with Image.open(source) as image:
+                width, height = image.size
+        if width <= 0 or height <= 0:
+            return None
+        return width, height
+    except Exception:
+        return None
+
+
+def _pid_aligned_size_for(width: int, height: int, align: int = 64) -> tuple[int, int] | None:
+    try:
+        if width <= 0 or height <= 0:
+            return None
+        align = 64
+        width_candidates = {
+            max(align, (width // align) * align),
+            max(align, ((width + align - 1) // align) * align),
+        }
+        height_candidates = {
+            max(align, (height // align) * align),
+            max(align, ((height + align - 1) // align) * align),
+        }
+        source_aspect = width / height
+        aligned_w, aligned_h = min(
+            ((candidate_w, candidate_h) for candidate_w in width_candidates for candidate_h in height_candidates),
+            key=lambda item: (abs((item[0] / item[1]) - source_aspect), abs((item[0] * item[1]) - (width * height))),
+        )
+        return aligned_w, aligned_h
+    except Exception:
+        return None
+
+
+def _pid_media_sizes(source_path: Path | None, plan: dict[str, Any], is_video: bool, pid: dict[str, Any]) -> tuple[int, int, int, int, int]:
+    source_size = _pid_source_size(source_path, is_video) if source_path else None
+    source_w, source_h = source_size or (512, 512)
+    ui_factor = _nvidia_scale_factor(plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {})
+    target_w = max(64, int(round(source_w * ui_factor)))
+    target_h = max(64, int(round(source_h * ui_factor)))
+
+    checkpoint = str(pid.get("checkpoint") or "2k").lower()
+    requested_scale = int(_number_or_none(pid.get("scale")) or 0)
+    pid_scale = 4 if checkpoint in {"2k", "2kto4k"} else max(1, requested_scale or 4)
+    base_w = max(64, int(round(target_w / max(1, pid_scale))))
+    base_h = max(64, int(round(target_h / max(1, pid_scale))))
+    max_base_long = 1024 if checkpoint == "2kto4k" else 512
+    current_long = max(base_w, base_h)
+    if current_long > max_base_long:
+        ratio = max_base_long / current_long
+        base_w = max(64, int(round(base_w * ratio)))
+        base_h = max(64, int(round(base_h * ratio)))
+    aligned = _pid_aligned_size_for(base_w, base_h) or (base_w, base_h)
+    return int(aligned[0]), int(aligned[1]), target_w, target_h, pid_scale
+
+
+def _build_pid_comfy_workflow(input_name: str, plan: dict[str, Any], is_video: bool, source_path: Path | None = None) -> dict[str, Any]:
+    upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+    pid = upscale.get("pid") if isinstance(upscale.get("pid"), dict) else {}
+    backbone = str(pid.get("backbone") or "zimage")
+    checkpoint = str(pid.get("checkpoint") or "2k")
+    steps = int(_number_or_none(pid.get("steps")) or 4)
+    cfg = float(_number_or_none(pid.get("cfg")) or 1.0)
+    caption = str(plan.get("prompt") or pid.get("caption") or "high quality restored image, clean detail, low noise")
+    sequential = str(pid.get("sequential_offload") or "sequential_blocks_aggressive")
+    base_w, base_h, target_w, target_h, scale = _pid_media_sizes(source_path, plan, is_video, pid)
+    if is_video:
+        return {
+            "1": {"class_type": "LoadVideo", "inputs": {"file": input_name}},
+            "2": {"class_type": "GetVideoComponents", "inputs": {"video": ["1", 0]}},
+            "3": {"class_type": "ImageScale", "inputs": {"image": ["2", 0], "upscale_method": "lanczos", "width": base_w, "height": base_h, "crop": "disabled"}},
+            "4": {"class_type": "VAELoader", "inputs": {"vae_name": "ae.safetensors"}},
+            "5": {"class_type": "VAEEncode", "inputs": {"pixels": ["3", 0], "vae": ["4", 0]}},
+            "6": {
+                "class_type": "PiDPrepare",
+                "inputs": {
+                    "latent": ["5", 0],
+                    "caption": caption,
+                    "backbone": backbone,
+                    "pid_ckpt_type": checkpoint,
+                    "scale": scale,
+                    "sigma": 0.0,
+                    "auto_download": False,
+                    "cleanup_after_prepare": True,
+                },
+            },
+            "7": {
+                "class_type": "PiDSample",
+                "inputs": {
+                    "prepared": ["6", 0],
+                    "pid_steps": steps,
+                    "cfg_scale": cfg,
+                    "seed": int(time.time()) % (2**31 - 1),
+                    "aggressive_cleanup": True,
+                    "sequential_offload": sequential,
+                },
+            },
+            "8": {"class_type": "PiDFinalize", "inputs": {"sampled": ["7", 0]}},
+            "9": {"class_type": "ImageScale", "inputs": {"image": ["8", 0], "upscale_method": "lanczos", "width": target_w, "height": target_h, "crop": "disabled"}},
+            "10": {"class_type": "CreateVideo", "inputs": {"images": ["9", 0], "audio": ["2", 1], "fps": ["2", 2]}},
+            "11": {"class_type": "SaveVideo", "inputs": {"video": ["10", 0], "filename_prefix": "extras/video/nvidia_pid", "format": "auto", "codec": "auto"}},
+        }
+    return {
+        "1": {"class_type": "LoadImage", "inputs": {"image": input_name}},
+        "2": {"class_type": "ImageScale", "inputs": {"image": ["1", 0], "upscale_method": "lanczos", "width": base_w, "height": base_h, "crop": "disabled"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": "ae.safetensors"}},
+        "4": {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["3", 0]}},
+        "5": {
+            "class_type": "PiDPrepare",
+            "inputs": {
+                "latent": ["4", 0],
+                "caption": caption,
+                "backbone": backbone,
+                "pid_ckpt_type": checkpoint,
+                "scale": scale,
+                "sigma": 0.0,
+                "auto_download": False,
+                "cleanup_after_prepare": True,
+            },
+        },
+        "6": {
+            "class_type": "PiDSample",
+            "inputs": {
+                "prepared": ["5", 0],
+                "pid_steps": steps,
+                "cfg_scale": cfg,
+                "seed": int(time.time()) % (2**31 - 1),
+                "aggressive_cleanup": True,
+                "sequential_offload": sequential,
+            },
+        },
+        "7": {"class_type": "PiDFinalize", "inputs": {"sampled": ["6", 0]}},
+        "8": {"class_type": "ImageScale", "inputs": {"image": ["7", 0], "upscale_method": "lanczos", "width": target_w, "height": target_h, "crop": "disabled"}},
+        "9": {"class_type": "SaveImage", "inputs": {"images": ["8", 0], "filename_prefix": "extras/image/nvidia_pid"}},
+    }
+
+
+def _build_video_restore_comfy_workflow(input_name: str, plan: dict[str, Any], engine: str, source_path: Path | None = None) -> dict[str, Any]:
+    upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+    factor = 4 if str(upscale.get("scale") or "2x").startswith("4") else 2
+    source_size = _pid_source_size(source_path, True) if source_path else None
+    source_w, source_h = source_size or (928, 480)
+    target_short = max(256, int(round(min(source_w, source_h) * factor)))
+    if engine == "flashvsr":
+        if str(upscale.get("workflow") or "").lower() in {"wavespeed", "reference", "api"}:
+            target_resolution = "4K" if factor >= 4 else "1080p"
+            upscale["workflow_reference"] = "WavespeedFlashVSRNode"
+            upscale["quality_profile"] = "wavespeed_reference"
+            return {
+                "1": {"class_type": "LoadVideo", "inputs": {"file": input_name}},
+                "2": {"class_type": "WavespeedFlashVSRNode", "inputs": {"video": ["1", 0], "target_resolution": target_resolution}},
+                "3": {"class_type": "SaveVideo", "inputs": {"video": ["2", 0], "filename_prefix": "extras/video/flashvsr", "format": "auto", "codec": "auto"}},
+            }
+        scale = 4 if factor >= 4 else 2
+        quality_text = " ".join(str(upscale.get(key) or "") for key in ("quality", "model", "restore_model")).lower()
+        quality_mode = any(token in quality_text for token in ("ultra", "full", "best", "quality", "high"))
+        low_vram = any(token in quality_text for token in ("low", "tiny", "fast", "lite"))
+        if not quality_mode and not low_vram:
+            low_vram = True
+        model_version = "Tiny Long (Low VRAM)" if low_vram else "Full (Best Quality)"
+        speed_optimization = 2.0
+        quality_boost = 2.0 if low_vram else 2.2
+        tile_hint = int(_number_or_none(upscale.get("tile")) or (384 if low_vram else 256))
+        tile_size = max(128, min(1024 if low_vram else 256, tile_hint))
+        tile_overlap = 48 if low_vram and tile_size >= 384 else 24
+        upscale["quality_profile"] = "low_vram" if low_vram else "full_best_quality"
+        upscale["flashvsr_model_version"] = model_version
+        return {
+            "1": {"class_type": "LoadVideo", "inputs": {"file": input_name}},
+            "2": {"class_type": "GetVideoComponents", "inputs": {"video": ["1", 0]}},
+            "3": {
+                "class_type": "AILab_FlashVSR_Advanced",
+                "inputs": {
+                    "frames": ["2", 0],
+                    "audio": ["2", 1],
+                    "model_version": model_version,
+                    "scale": scale,
+                    "enable_tiling": True,
+                    "tile_size": tile_size,
+                    "tile_overlap": tile_overlap,
+                    "speed_optimization": speed_optimization,
+                    "quality_boost": quality_boost,
+                    "stability_level": 11,
+                    "color_fix": True,
+                    "vae_tiling": True,
+                    "unload_model": False,
+                    "sageattention": "enable",
+                    "device": "auto",
+                    "precision": "bf16",
+                    "seed": int(time.time()) % (2**31 - 1),
+                },
+            },
+            "4": {"class_type": "CreateVideo", "inputs": {"images": ["3", 0], "audio": ["3", 1], "fps": ["2", 2]}},
+            "5": {"class_type": "SaveVideo", "inputs": {"video": ["4", 0], "filename_prefix": "extras/video/flashvsr", "format": "auto", "codec": "auto"}},
+        }
+    seed_attention = "sageattn_2" if importlib.util.find_spec("sageattention") else "sdpa"
+    seed_batch = 5
+    return {
+        "1": {"class_type": "LoadVideo", "inputs": {"file": input_name}},
+        "2": {"class_type": "GetVideoComponents", "inputs": {"video": ["1", 0]}},
+        "3": {"class_type": "SeedVR2LoadDiTModel", "inputs": {"model": "seedvr2_ema_3b_fp8_e4m3fn.safetensors", "device": "cuda:0", "offload_device": "cpu", "cache_model": False, "attention_mode": seed_attention}},
+        "4": {"class_type": "SeedVR2LoadVAEModel", "inputs": {"model": "ema_vae_fp16.safetensors", "device": "cuda:0", "encode_tiled": True, "encode_tile_size": 512, "encode_tile_overlap": 64, "decode_tiled": True, "decode_tile_size": 512, "decode_tile_overlap": 64, "offload_device": "cpu", "cache_model": False}},
+        "5": {"class_type": "SeedVR2VideoUpscaler", "inputs": {"image": ["2", 0], "dit": ["3", 0], "vae": ["4", 0], "seed": int(time.time()) % (2**31 - 1), "resolution": target_short, "max_resolution": max(source_w, source_h) * factor, "batch_size": seed_batch, "uniform_batch_size": False, "color_correction": "lab", "temporal_overlap": 0, "offload_device": "cpu", "enable_debug": False}},
+        "6": {"class_type": "CreateVideo", "inputs": {"images": ["5", 0], "audio": ["2", 1], "fps": ["2", 2]}},
+        "7": {"class_type": "SaveVideo", "inputs": {"video": ["6", 0], "filename_prefix": "extras/video/seedvr2", "format": "auto", "codec": "auto"}},
+    }
+
+
+def _extras_comfy_timeout_seconds(plan: dict[str, Any], engine: str) -> int:
+    upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+    raw = upscale.get("timeout_seconds") or plan.get("timeout_seconds") or os.environ.get("NEXUS_EXTRAS_UPSCALE_TIMEOUT")
+    try:
+        if raw is not None:
+            return int(max(60, min(3600, float(raw))))
+    except (TypeError, ValueError):
+        pass
+    return 600 if engine in {"flashvsr", "seedvr2"} else 900
+
+
+async def _process_video_restore_with_comfy(source_files: list[Path], plan: dict[str, Any], engine: str) -> list[dict[str, Any]]:
+    if engine not in {"flashvsr", "seedvr2"} or not source_files:
+        return []
+    await comfy.ensure_running()
+    object_info = await comfy.object_info()
+    upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+    flash_reference = engine == "flashvsr" and str(upscale.get("workflow") or "").lower() in {"wavespeed", "reference", "api"}
+    required = ["LoadVideo", "SaveVideo"]
+    if flash_reference:
+        required.append("WavespeedFlashVSRNode")
+    else:
+        required.extend(["GetVideoComponents", "CreateVideo"])
+        required.extend(["AILab_FlashVSR_Advanced"] if engine == "flashvsr" else ["SeedVR2LoadDiTModel", "SeedVR2LoadVAEModel", "SeedVR2VideoUpscaler"])
+    missing = [node for node in required if not _available_comfy_node(object_info, node)]
+    if missing:
+        upscale["runtime_engine"] = "missing_nodes"
+        upscale["fallback_reason"] = "missing_comfy_nodes:" + ",".join(sorted(set(missing)))
+        raise RuntimeError(upscale["fallback_reason"])
+    source_name = _copy_extras_source_to_comfy_input(source_files[0], engine)
+    workflow = _build_video_restore_comfy_workflow(source_name, plan, engine, source_files[0])
+    timeout_seconds = _extras_comfy_timeout_seconds(plan, engine)
+    try:
+        prompt_id, comfy_outputs = await comfy.run_workflow(workflow, timeout_seconds=timeout_seconds)
+    except (TimeoutError, asyncio.TimeoutError):
+        try:
+            await comfy.clear_queue()
+            await comfy.free_memory(unload_models=True, free_memory=True)
+        except Exception:
+            pass
+        upscale["runtime_engine"] = "timeout"
+        upscale["timeout_seconds"] = timeout_seconds
+        raise TimeoutError(f"{engine} upscale timed out after {timeout_seconds}s.")
+    outputs = _comfy_output_items(comfy_outputs, "video")
+    if outputs:
+        upscale["runtime_engine"] = engine
+        upscale["comfy_prompt_id"] = prompt_id
+        upscale["timeout_seconds"] = timeout_seconds
+        upscale["workflow_reference"] = upscale.get("workflow_reference") or ("AILab_FlashVSR_Advanced" if engine == "flashvsr" else "SeedVR2VideoUpscaler")
+    return outputs
+
+
+async def _process_nvidia_extras_with_comfy(source_files: list[Path], plan: dict[str, Any], is_video: bool) -> list[dict[str, Any]]:
+    upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+    engine = str(upscale.get("engine") or "").strip().lower()
+    if engine not in {"nvidia_rtx", "nvidia_pid"} or not source_files:
+        return []
+    if is_video and engine == "nvidia_pid":
+        upscale["runtime_engine"] = "disabled"
+        upscale["fallback_reason"] = "nvidia_pid_image_only"
+        raise ValueError("NVIDIA PiD is image-only in Extras for now.")
+    await comfy.ensure_running()
+    object_info = await comfy.object_info()
+    required = ["RTXVideoSuperResolution"] if engine == "nvidia_rtx" else ["PiDPrepare", "PiDSample", "PiDFinalize", "VAELoader", "VAEEncode", "ImageScale"]
+    missing = [node for node in required if not _available_comfy_node(object_info, node)]
+    if is_video:
+        missing.extend(node for node in ("LoadVideo", "GetVideoComponents", "CreateVideo", "SaveVideo") if not _available_comfy_node(object_info, node))
+    else:
+        missing.extend(node for node in ("LoadImage", "SaveImage") if not _available_comfy_node(object_info, node))
+    if missing:
+        upscale["runtime_engine"] = "standard_fallback"
+        upscale["fallback_reason"] = "missing_comfy_nodes:" + ",".join(sorted(set(missing)))
+        return []
+    if engine == "nvidia_pid":
+        pid_options = upscale.get("pid") if isinstance(upscale.get("pid"), dict) else {}
+        pid_status = _nvidia_pid_prepare_status(str(pid_options.get("profile") or ""), pid_options)
+        upscale["pid"] = pid_status.get("profile")
+        upscale["pid_assets"] = pid_status.get("assets")
+        if not pid_status.get("prepared"):
+            upscale["runtime_engine"] = "standard_fallback"
+            upscale["fallback_reason"] = "missing_pid_source_or_assets"
+            return []
+    source_name = _copy_extras_source_to_comfy_input(source_files[0], engine)
+    workflow = _build_rtx_comfy_workflow(source_name, plan, is_video) if engine == "nvidia_rtx" else _build_pid_comfy_workflow(source_name, plan, is_video, source_files[0])
+    prompt_id, comfy_outputs = await comfy.run_workflow(workflow, timeout_seconds=5400)
+    outputs = _comfy_output_items(comfy_outputs, "video" if is_video else "image")
+    if outputs:
+        upscale["runtime_engine"] = engine
+        upscale["comfy_prompt_id"] = prompt_id
+        upscale["workflow_reference"] = "RTXVideoSuperResolution" if engine == "nvidia_rtx" else "PiDPrepare/PiDSample/PiDFinalize"
+        if engine == "nvidia_pid":
+            upscale["latent_decode"] = True
+            upscale["staged_decode"] = True
+    return outputs
+
+
+def _extras_video_denoise_filters(denoise: dict[str, Any], upscale_engine: str = "") -> list[str]:
+    if not denoise.get("enabled"):
+        return []
+    model_name = str(denoise.get("model") or "ffmpeg_hqdn3d")
+    model_lower = model_name.lower()
+    strength = max(0.0, min(1.0, float(_number_or_none(denoise.get("strength")) or 0.2)))
+    model_ready = _extras_denoise_model_ready(model_name)
+    wants_quality = model_ready or any(token in model_lower for token in ("fastdvd", "dvdnet", "swinir", "vrt", "basicvsr", "seedvr", "restore", "detailer", "lora"))
+    if "ltx" in model_lower and ("detailer" in model_lower or "lora" in model_lower):
+        denoise["model_runtime"] = "ltx_detailer_lora_detected_latent_only"
+        denoise["runtime_note"] = "LTX detailer is a generation/latent LoRA; post-render Extras uses temporal restoration fallback."
+    elif model_ready:
+        denoise["model_runtime"] = "model_guided_ffmpeg_restoration"
+    else:
+        denoise["model_runtime"] = "ffmpeg_restoration"
+    filters: list[str] = []
+    if wants_quality:
+        temporal_a = max(0.006, min(0.05, 0.008 + strength * 0.055))
+        temporal_b = max(0.018, min(0.16, 0.025 + strength * 0.14))
+        filters.append(
+            "atadenoise="
+            f"0a={temporal_a:.4f}:0b={temporal_b:.4f}:"
+            f"1a={temporal_a * 0.72:.4f}:1b={temporal_b * 0.72:.4f}:"
+            f"2a={temporal_a * 0.72:.4f}:2b={temporal_b * 0.72:.4f}:s={9 if strength < 0.45 else 13}"
+        )
+        filters.append(f"nlmeans=s={max(1.2, 2.0 + strength * 7.0):.3f}:p=7:r={13 if strength < 0.5 else 15}")
+        filters.append(
+            "deband="
+            f"1thr={max(0.008, 0.012 + strength * 0.035):.4f}:"
+            f"2thr={max(0.006, 0.010 + strength * 0.025):.4f}:"
+            f"3thr={max(0.006, 0.010 + strength * 0.025):.4f}:"
+            f"4thr={max(0.006, 0.010 + strength * 0.025):.4f}"
+        )
+    else:
+        spatial = max(0.2, 5.5 * strength)
+        temporal = max(0.6, 24.0 * strength)
+        filters.append(f"hqdn3d={spatial:.3f}:{spatial:.3f}:{temporal:.3f}:{temporal:.3f}")
+    if upscale_engine in {"nvidia_pid", "nvidia_rtx"} and strength > 0:
+        wave = max(1.0, min(7.0, 1.6 + strength * 5.5))
+        filters.append(f"vaguedenoiser=threshold={wave:.3f}:method=garrote:nsteps=6:percent={max(40, min(88, 55 + strength * 30)):.1f}")
+        denoise["nvidia_cleanup"] = True
+    denoise["runtime"] = ",".join(filters)
+    return filters
+
+
 def _process_extras_video(source_files: list[Path], plan: dict[str, Any], remove_bg: bool = False) -> list[dict[str, Any]]:
     if remove_bg:
         return _process_extras_remove_bg_video(source_files, plan)
@@ -3162,6 +4102,7 @@ def _process_extras_video(source_files: list[Path], plan: dict[str, Any], remove
     input_args: list[str]
     active_fps = source_fps
     intermediate_dir: Path | None = None
+    temp_roots: list[Path] = []
     if interpolate.get("enabled"):
         frame_root = settings.temp_dir / "extras_interpolation" / uuid.uuid4().hex[:12]
         source_frames, detected_fps = _extract_video_frames_for_extras(source_files, source_fps, frame_root / "source")
@@ -3173,6 +4114,9 @@ def _process_extras_video(source_files: list[Path], plan: dict[str, Any], remove
             target_fps,
             str(interpolate.get("model") or "rife_v4.26.safetensors"),
         )
+        interpolate["runtime"] = "rife_frame_interpolation"
+        interpolate["source_fps_detected"] = detected_fps
+        interpolate["target_fps_applied"] = active_fps
         intermediate_dir = interpolated_frames[0].parent
         input_args = ["-framerate", str(active_fps), "-i", str(intermediate_dir / "frame_%06d.png")]
     elif len(image_files) > 1:
@@ -3190,12 +4134,18 @@ def _process_extras_video(source_files: list[Path], plan: dict[str, Any], remove
         raise ValueError("No video or image sequence source was provided.")
 
     filters: list[str] = []
+    post_filters: list[str] = []
     upscale = plan.get("upscale") or {}
+    upscale_engine_for_denoise = str(upscale.get("engine") or upscale.get("mode") or "").strip().lower()
+    denoise = plan.get("denoise") or {}
+    denoise_filters = _extras_video_denoise_filters(denoise, upscale_engine_for_denoise)
+    filters.extend(denoise_filters)
     if upscale.get("enabled"):
         engine = str(upscale.get("engine") or upscale.get("mode") or "standard").strip().lower()
-        if engine not in {"standard", "flashvsr", "seedvr2", "ltx_detailer"}:
+        if engine not in {"standard", "flashvsr", "seedvr2", "ltx_detailer", "nvidia_rtx", "nvidia_pid"}:
             engine = "standard"
         factor = 4 if str(upscale.get("scale") or "2x").startswith("4") else 2
+        scale_filter_required = True
         if engine in {"flashvsr", "seedvr2", "ltx_detailer"}:
             target = _ltx_hf_lora_installed_path(engine)
             model_ready = target.exists() and target.stat().st_size > 1024 * 1024
@@ -3213,25 +4163,47 @@ def _process_extras_video(source_files: list[Path], plan: dict[str, Any], remove
                 upscale["fallback_reason"] = "missing_model"
             elif not node_ready:
                 upscale["fallback_reason"] = "missing_custom_node"
+        elif engine in NVIDIA_EXTRAS_ENGINES:
+            _mark_nvidia_upscale_runtime(upscale, engine)
+            if engine == "nvidia_rtx" and upscale.get("runtime_engine") == "nvidia_rtx":
+                rtx_root = settings.temp_dir / "extras_nvidia_rtx_source" / uuid.uuid4().hex[:12]
+                rtx_root.mkdir(parents=True, exist_ok=True)
+                temp_roots.append(rtx_root)
+                normalized_source = rtx_root / "source.mp4"
+                rtx_source = rtx_root / "rtx.mp4"
+                try:
+                    _run_ffmpeg([ffmpeg, "-y", *input_args, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", "-an", str(normalized_source)])
+                    if _apply_nvidia_rtx_upscale_video(normalized_source, rtx_source, factor, str(upscale.get("quality") or "HIGH")):
+                        input_args = ["-i", str(rtx_source)]
+                        active_fps = _ffprobe_fps(rtx_source)
+                        scale_filter_required = False
+                        upscale["runtime_engine"] = "nvidia_rtx"
+                        upscale["workflow_reference"] = "nvvfx.VideoSuperRes"
+                        upscale.pop("fallback_reason", None)
+                    else:
+                        upscale["runtime_engine"] = "standard_fallback"
+                        upscale["fallback_reason"] = "nvidia_rtx_failed"
+                except Exception as exc:
+                    upscale["runtime_engine"] = "standard_fallback"
+                    upscale["fallback_engine"] = "standard"
+                    upscale["fallback_reason"] = f"nvidia_rtx_failed: {str(exc)[:180]}"
         else:
             upscale["runtime_engine"] = "standard"
-        filters.append(f"scale=iw*{factor}:ih*{factor}:flags=lanczos")
-    denoise = plan.get("denoise") or {}
-    if denoise.get("enabled"):
-        denoise_model = str(denoise.get("model") or "ffmpeg_hqdn3d").lower()
-        strength = max(0.0, min(1.0, float(_number_or_none(denoise.get("strength")) or 0.2)))
-        if "fastdvd" in denoise_model or "nlmeans" in denoise_model:
-            filters.append(f"nlmeans=s={max(1.0, 8.0 * strength):.3f}:p=7:r=15")
-        else:
-            spatial = max(0.1, 7.5 * strength)
-            temporal = max(0.1, 30.0 * strength)
-            filters.append(f"hqdn3d={spatial:.3f}:{spatial:.3f}:{temporal:.3f}:{temporal:.3f}")
+        if scale_filter_required:
+            filters.append(f"scale=iw*{factor}:ih*{factor}:flags=lanczos")
+    detail_refine = plan.get("detail_refine") if isinstance(plan.get("detail_refine"), dict) else {}
+    if detail_refine.get("enabled"):
+        strength = max(0.0, min(1.0, float(_number_or_none(detail_refine.get("strength")) or 0.30)))
+        amount = max(0.05, min(1.0, 0.18 + strength * 0.55))
+        post_filters.append(f"unsharp=5:5:{amount:.3f}:3:3:{amount * 0.45:.3f}")
+        detail_refine["runtime"] = "ffmpeg_unsharp"
     face_restore = plan.get("face_restore") if isinstance(plan.get("face_restore"), dict) else {}
     if face_restore.get("enabled"):
         target = _ltx_hf_lora_installed_path("face_restore")
         has_model = target.exists() and target.stat().st_size > 1024 * 1024
         face_restore["runtime"] = "ffmpeg_fallback" if has_model else "ffmpeg_fallback_missing_model"
-        filters.append("unsharp=5:5:0.35:3:3:0.15")
+        post_filters.append("unsharp=5:5:0.35:3:3:0.15")
+    filters.extend(post_filters)
     if plan.get("preserve_alpha"):
         filters.append("format=rgba")
 
@@ -3248,13 +4220,93 @@ def _process_extras_video(source_files: list[Path], plan: dict[str, Any], remove
         _run_ffmpeg([*command, str(pattern)])
         for frame in sorted(folder.glob("frame_*.png"))[:12]:
             outputs.append(_output_item(frame, "image"))
+        for temp_root in temp_roots:
+            shutil.rmtree(temp_root, ignore_errors=True)
         return outputs
 
     suffix = ".webm" if encoder == "webm_vp9" else ".mov" if encoder.startswith("mov_") else ".mp4"
     output = _extras_output("video", suffix, "remove_bg_video" if remove_bg else "video")
-    _run_ffmpeg([*command, *_video_encoder_args(encoder, output)])
+    encode_settings = _extras_video_encode_settings(plan)
+    plan["encode_crf"] = encode_settings["crf"]
+    plan["encode_preset"] = encode_settings["preset"]
+    plan["encode_tune"] = encode_settings["tune"]
+    _run_ffmpeg([*command, *_video_encoder_args(encoder, output, plan)])
     outputs.append(_output_item(output, "video"))
+    for temp_root in temp_roots:
+        shutil.rmtree(temp_root, ignore_errors=True)
     return outputs
+
+
+def _extras_video_output_paths(outputs: list[dict[str, Any]]) -> list[Path]:
+    paths: list[Path] = []
+    output_root = settings.output_dir.resolve()
+    for output in outputs:
+        relative = str(output.get("path") or "").strip()
+        if not relative:
+            continue
+        path = (settings.output_dir / relative).resolve()
+        if path.exists() and path.is_relative_to(output_root) and path.suffix.lower() in {".mp4", ".mov", ".webm", ".mkv", ".avi"}:
+            paths.append(path)
+    return paths
+
+
+def _extras_video_needs_post_refine(plan: dict[str, Any]) -> bool:
+    for key in ("interpolate", "denoise", "detail_refine", "face_restore"):
+        value = plan.get(key)
+        if isinstance(value, dict) and value.get("enabled"):
+            return True
+    return bool(plan.get("preserve_alpha"))
+
+
+def _normalize_extras_video_timing(source_files: list[Path], plan: dict[str, Any]) -> None:
+    video_exts = {".mp4", ".mov", ".webm", ".mkv", ".avi"}
+    source = next((path for path in source_files if path.suffix.lower() in video_exts and path.exists()), None)
+    if not source:
+        return
+    detected_fps = _ffprobe_fps(source)
+    if detected_fps <= 0:
+        return
+    requested_fps = _number_or_none(plan.get("source_fps"))
+    if requested_fps and abs(float(requested_fps) - detected_fps) > 0.05:
+        plan["source_fps_requested"] = float(requested_fps)
+    plan["source_fps"] = detected_fps
+    interpolate = plan.get("interpolate") if isinstance(plan.get("interpolate"), dict) else {}
+    requested_interpolate_fps = _number_or_none(interpolate.get("source_fps"))
+    if requested_interpolate_fps and abs(float(requested_interpolate_fps) - detected_fps) > 0.05:
+        interpolate["source_fps_requested"] = float(requested_interpolate_fps)
+    interpolate["source_fps"] = detected_fps
+    plan["interpolate"] = interpolate
+
+
+async def _postprocess_restored_video_outputs(outputs: list[dict[str, Any]], plan: dict[str, Any]) -> list[dict[str, Any]]:
+    source_paths = _extras_video_output_paths(outputs)
+    if not source_paths:
+        return outputs
+    refine_plan = json.loads(json.dumps(plan))
+    refine_upscale = refine_plan.get("upscale") if isinstance(refine_plan.get("upscale"), dict) else {}
+    refine_upscale["enabled"] = False
+    refine_plan["upscale"] = refine_upscale
+    refined = await asyncio.to_thread(_process_extras_video, source_paths, refine_plan, False)
+    if not refined:
+        return outputs
+    for key in ("interpolate", "denoise", "detail_refine", "face_restore"):
+        if isinstance(refine_plan.get(key), dict):
+            target = plan.get(key) if isinstance(plan.get(key), dict) else {}
+            target.update(refine_plan[key])
+            plan[key] = target
+    upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+    upscale["post_refine_applied"] = True
+    upscale["post_refine_source"] = "comfy_restore_output"
+    plan["upscale"] = upscale
+    output_root = settings.output_dir.resolve()
+    for path in source_paths:
+        if path.is_relative_to(output_root) and path.parent.name == "video" and path.name.startswith(("flashvsr_", "seedvr2_")):
+            try:
+                path.unlink(missing_ok=True)
+                path.with_suffix(path.suffix + ".nexus.json").unlink(missing_ok=True)
+            except Exception:
+                pass
+    return refined
 
 
 async def _run_extras_job(job_id: str, source_files: list[Path], plan: dict[str, Any]) -> None:
@@ -3274,6 +4326,36 @@ async def _run_extras_job(job_id: str, source_files: list[Path], plan: dict[str,
         video_exts = {".mp4", ".mov", ".webm", ".mkv", ".avi"}
         is_video = media_type in {"video", "image_sequence"} or any(path.suffix.lower() in video_exts for path in source_files) or len(source_files) > 1
         if is_video:
+            _normalize_extras_video_timing(source_files, plan)
+        outputs: list[dict[str, Any]] = []
+        upscale = plan.get("upscale") if isinstance(plan.get("upscale"), dict) else {}
+        nvidia_engine = str(upscale.get("engine") or "").strip().lower()
+        if is_video and nvidia_engine == "nvidia_pid":
+            raise ValueError("NVIDIA PiD is disabled for video Extras; use RTX, FlashVSR, SeedVR2, or Standard for video upscale.")
+        video_restore_engine = nvidia_engine if nvidia_engine in {"flashvsr", "seedvr2"} else ""
+        if not remove_bg and nvidia_engine == "nvidia_pid":
+            _update_extras_job(job_id, {"progress": 22, "message": f"Running {nvidia_engine} Extras through ComfyUI."})
+            try:
+                outputs = await _process_nvidia_extras_with_comfy(source_files, plan, is_video)
+            except Exception as exc:
+                upscale["runtime_engine"] = "standard_fallback"
+                upscale["fallback_reason"] = f"comfy_{nvidia_engine}_failed: {str(exc)[:240]}"
+                plan["upscale"] = upscale
+                outputs = []
+        if not outputs and not remove_bg and is_video and video_restore_engine:
+            _update_extras_job(job_id, {"progress": 22, "message": f"Running {video_restore_engine} Extras through ComfyUI."})
+            try:
+                outputs = await _process_video_restore_with_comfy(source_files, plan, video_restore_engine)
+            except Exception as exc:
+                upscale["runtime_engine"] = "failed"
+                upscale["fallback_reason"] = f"comfy_{video_restore_engine}_failed: {str(exc)[:240]}"
+                plan["upscale"] = upscale
+                raise
+        if outputs:
+            if is_video and video_restore_engine:
+                _update_extras_job(job_id, {"progress": 72, "message": "Applying Extras refine to restored video."})
+                outputs = await _postprocess_restored_video_outputs(outputs, plan)
+        elif is_video:
             outputs = await asyncio.to_thread(_process_extras_video, source_files, plan, remove_bg)
         else:
             outputs = await asyncio.to_thread(_process_extras_image, source_files[0], plan, remove_bg)
@@ -4030,6 +5112,7 @@ async def config() -> dict[str, Any]:
 @app.patch("/api/config")
 async def update_config(request: SettingsUpdate) -> dict[str, Any]:
     previous_models_dir = settings.models_dir
+    previous_custom_nodes_dir = settings.custom_nodes_dir
     path_fields = ("models_dir", "custom_nodes_dir", "workflows_dir")
     for field in path_fields:
         value = getattr(request, field)
@@ -4064,7 +5147,14 @@ async def update_config(request: SettingsUpdate) -> dict[str, Any]:
 
     settings.ensure_directories()
     save_settings(settings)
-    if request.models_dir is not None or request.model_sources is not None or request.reference_model_sources is not None:
+    custom_nodes_changed = request.custom_nodes_dir is not None and settings.custom_nodes_dir != previous_custom_nodes_dir
+    if (
+        request.models_dir is not None
+        or request.model_sources is not None
+        or request.reference_model_sources is not None
+        or custom_nodes_changed
+        or request.reference_custom_node_sources is not None
+    ):
         sync_startup_model_path(settings, previous_models_dir=previous_models_dir)
     return settings.model_dump(mode="json")
 
@@ -4422,7 +5512,12 @@ async def custom_node_versions(node_name: str) -> dict[str, Any]:
 @app.post("/api/custom-nodes/{node_name}/update")
 async def update_custom_node(node_name: str, request: CustomNodeUpdateRequest) -> dict[str, Any]:
     path = _resolve_custom_node_path(unquote(node_name))
-    return _update_custom_node(path, request.version)
+    result = _update_custom_node(path, request.version)
+    installed: list[str] = []
+    errors: dict[str, str] = {}
+    if request.install_dependencies:
+        installed, errors = install_custom_node_dependencies(settings, node_names=[path.name], all_enabled=False)
+    return {**result, "installed_dependencies": installed, "dependency_errors": errors}
 
 
 @app.post("/api/custom-nodes/update-all")
@@ -4641,6 +5736,28 @@ async def restart_comfy(force: bool = Query(False)) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@app.post("/api/backend/restart")
+async def restart_backend(delay: float = Query(2.0)) -> dict[str, Any]:
+    python = sys.executable or "python"
+    runner = settings.project_root / "backend" / "run_backend.py"
+    if not runner.exists():
+        raise HTTPException(status_code=404, detail=f"Backend runner not found: {runner}")
+    delay_value = max(0.5, min(15.0, float(delay or 2.0)))
+    helper = (
+        "import subprocess,time,os;"
+        f"time.sleep({delay_value!r});"
+        f"subprocess.Popen({[python, str(runner)]!r}, cwd={str(settings.project_root)!r});"
+    )
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+    subprocess.Popen([python, "-c", helper], cwd=settings.project_root, creationflags=creationflags)
+    async def _exit_soon() -> None:
+        await asyncio.sleep(0.25)
+        os._exit(0)
+
+    asyncio.create_task(_exit_soon())
+    return {"status": "restarting", "delay_seconds": delay_value}
+
+
 @app.get("/api/runtime/memory")
 async def runtime_memory() -> dict[str, Any]:
     return await _runtime_memory_snapshot()
@@ -4706,6 +5823,289 @@ def _download_url_to_file(url: str, target: Path, job_id: str) -> dict[str, Any]
     }
 
 
+def _nvidia_pid_dir() -> Path:
+    return settings.custom_nodes_dir / "ComfyUI-PiD" / "vendor" / "PiD"
+
+
+def _nvidia_pid_source_ready() -> bool:
+    return (_nvidia_pid_dir() / "pid" / "_src" / "utils" / "model_loader.py").is_file()
+
+
+def _nvidia_pid_profile(profile: str | None = None, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    key = str(profile or "lowvram_zimage_2k").strip().lower()
+    base = dict(NVIDIA_PID_PROFILES.get(key) or NVIDIA_PID_PROFILES["lowvram_zimage_2k"])
+    base["key"] = key if key in NVIDIA_PID_PROFILES else "lowvram_zimage_2k"
+    overrides = overrides or {}
+    for field in ("backbone", "checkpoint"):
+        value = str(overrides.get(field) or "").strip().lower()
+        if value:
+            base[field] = value
+    if _number_or_none(overrides.get("scale")) is not None:
+        base["scale"] = max(1, min(8, int(float(overrides["scale"]))))
+    if _number_or_none(overrides.get("steps")) is not None:
+        base["steps"] = max(1, min(12, int(float(overrides["steps"]))))
+    if _number_or_none(overrides.get("cfg")) is not None:
+        base["cfg"] = max(0.1, min(5.0, float(overrides["cfg"])))
+    return base
+
+
+def _nvidia_pid_checkpoint_relpath(profile: dict[str, Any]) -> str:
+    backbone = str(profile.get("backbone") or "zimage").lower()
+    checkpoint = str(profile.get("checkpoint") or "2k").lower()
+    registry_key = "flux" if backbone in {"zimage", "flux"} else backbone
+    if registry_key not in {"flux", "flux2", "sd3"}:
+        registry_key = "flux"
+    if checkpoint not in {"2k", "2kto4k"}:
+        checkpoint = "2k"
+    prefix = "PiD_res2kto4k_sr4x" if checkpoint == "2kto4k" else "PiD_res2k_sr4x"
+    return f"checkpoints/{prefix}_official_{registry_key}_distill_4step/model_ema_bf16.pth"
+
+
+def _preferred_model_category_dir(category: str) -> Path:
+    roots = settings.model_sources.get(category) or []
+    for root in roots:
+        try:
+            path = Path(root).expanduser()
+        except Exception:
+            continue
+        if path.exists() or path.parent.exists():
+            return path
+    return settings.models_dir / category
+
+
+def _model_category_roots(category: str) -> list[Path]:
+    roots = [settings.models_dir / category]
+    roots.extend(Path(root).expanduser() for root in settings.model_sources.get(category, []))
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for root in roots:
+        try:
+            key = str(root.resolve())
+        except Exception:
+            key = str(root)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(root)
+    return unique
+
+
+def _find_existing_model_asset(category: str, relpath: str) -> Path | None:
+    expected_tail = Path("nvidia_pid") / Path(relpath).parent.name / Path(relpath).name
+    if category == "vae":
+        expected_tail = Path("nvidia_pid") / Path(relpath).name
+    for root in _model_category_roots(category):
+        direct = root / expected_tail
+        if direct.is_file() and direct.stat().st_size > 1024 * 1024:
+            return direct
+        try:
+            matches = list(root.rglob(Path(relpath).name)) if root.exists() else []
+        except Exception:
+            matches = []
+        for match in matches:
+            if match.is_file() and match.stat().st_size > 1024 * 1024:
+                return match
+    return None
+
+
+def _nvidia_pid_asset_category(relpath: str) -> str:
+    name = Path(relpath).name.lower()
+    if name.startswith("model_ema"):
+        return "checkpoints"
+    if name.endswith(".safetensors") and ("ae" in name or "vae" in relpath.lower()):
+        return "vae"
+    return "upscale_models"
+
+
+def _nvidia_pid_assets(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    backbone = str(profile.get("backbone") or "zimage").lower()
+    assets = [_nvidia_pid_checkpoint_relpath(profile)]
+    if backbone in {"zimage", "flux"}:
+        assets.append("checkpoints/ae.safetensors")
+    elif backbone == "flux2":
+        assets.append("checkpoints/flux2_ae.safetensors")
+    elif backbone == "sd3":
+        assets.append("checkpoints/sd3_vae/vae/diffusion_pytorch_model.safetensors")
+    pid_dir = _nvidia_pid_dir()
+    items: list[dict[str, Any]] = []
+    for relpath in assets:
+        catalog_path, catalog_category = _nvidia_pid_catalog_path(relpath)
+        vendor_path = pid_dir / relpath
+        existing = _find_existing_model_asset(catalog_category, relpath)
+        exists = (
+            (vendor_path.is_file() and vendor_path.stat().st_size > 1024 * 1024)
+            or (catalog_path.is_file() and catalog_path.stat().st_size > 1024 * 1024)
+            or existing is not None
+        )
+        items.append({
+            "relpath": relpath,
+            "path": str(vendor_path),
+            "catalog_path": str(catalog_path),
+            "catalog_category": catalog_category,
+            "detected_path": str(existing) if existing else "",
+            "size_bytes": NVIDIA_PID_ASSET_SIZES.get(relpath, 0),
+            "exists": exists,
+        })
+    return items
+
+
+def _nvidia_pid_catalog_path(relpath: str) -> tuple[Path, str]:
+    name = Path(relpath).name
+    if name.startswith("model_ema"):
+        profile_folder = Path(relpath).parts[1] if len(Path(relpath).parts) > 1 else "pid"
+        return _preferred_model_category_dir("checkpoints") / "nvidia_pid" / profile_folder / name, "checkpoints"
+    if name.endswith(".safetensors") and ("ae" in name or "vae" in relpath.lower()):
+        return _preferred_model_category_dir("vae") / "nvidia_pid" / name, "vae"
+    return _preferred_model_category_dir("upscale_models") / "nvidia_pid" / name, "upscale_models"
+
+
+def _ensure_model_alias(source: Path, target: Path) -> None:
+    if not source.exists():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        return
+    try:
+        os.link(source, target)
+        return
+    except Exception:
+        pass
+    try:
+        target.symlink_to(source)
+        return
+    except Exception:
+        pass
+    marker = target.with_suffix(target.suffix + ".nexus-link.json")
+    marker.write_text(
+        json.dumps({"source": str(source), "target": str(target), "kind": "model_alias"}, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _organize_nvidia_pid_assets(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    organized: list[dict[str, Any]] = []
+    pid_dir = _nvidia_pid_dir()
+    for asset in _nvidia_pid_assets(profile):
+        source = pid_dir / str(asset["relpath"])
+        detected = Path(str(asset.get("detected_path") or "")) if asset.get("detected_path") else None
+        if (not source.exists()) and detected and detected.exists():
+            _ensure_model_alias(detected, source)
+        if (not source.exists()) and Path(str(asset.get("catalog_path") or "")).exists():
+            _ensure_model_alias(Path(str(asset["catalog_path"])), source)
+        target, category = _nvidia_pid_catalog_path(str(asset["relpath"]))
+        _ensure_model_alias(source, target)
+        item = dict(asset)
+        item["catalog_path"] = str(target)
+        item["catalog_category"] = category
+        item["catalog_exists"] = target.exists()
+        organized.append(item)
+    ensure_model_tree(settings)
+    return organized
+
+
+def _ensure_nvidia_rtx_catalog_marker() -> dict[str, Any]:
+    root = _preferred_model_category_dir("upscale_models") / "nvidia_rtx"
+    root.mkdir(parents=True, exist_ok=True)
+    marker = root / "RTXVideoSuperResolution.nexus-upscale.json"
+    payload = {
+        "name": "NVIDIA RTX Video Super Resolution",
+        "engine": "nvidia_rtx",
+        "category": "upscale_models",
+        "custom_node": "Nvidia_RTX_Nodes_ComfyUI",
+        "python_package": "nvvfx",
+        "model_required": False,
+        "notes": "Runtime engine marker; NVIDIA RTX VSR uses nvvfx and does not require a safetensors/pth checkpoint.",
+    }
+    if not marker.exists():
+        marker.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    payload["path"] = str(marker)
+    return payload
+
+
+def _nvidia_pid_prepare_status(profile: str | None = None, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    selected = _nvidia_pid_profile(profile, overrides)
+    assets = _nvidia_pid_assets(selected)
+    missing = [asset for asset in assets if not asset["exists"]]
+    if _nvidia_pid_source_ready() and not missing:
+        assets = _organize_nvidia_pid_assets(selected)
+        missing = [asset for asset in assets if not asset.get("exists")]
+    return {
+        "profile": selected,
+        "profiles": list(NVIDIA_PID_PROFILES.values()),
+        "profile_keys": list(NVIDIA_PID_PROFILES.keys()),
+        "pid_dir": str(_nvidia_pid_dir()),
+        "source_ready": _nvidia_pid_source_ready(),
+        "assets": assets,
+        "missing_assets": missing,
+        "prepared": _nvidia_pid_source_ready() and not missing,
+        "estimated_download_bytes": sum(int(asset.get("size_bytes") or 0) for asset in missing),
+    }
+
+
+def _nvidia_pid_clone_source(job_id: str) -> None:
+    if _nvidia_pid_source_ready():
+        return
+    target = _nvidia_pid_dir()
+    if target.exists() and any(target.iterdir()):
+        raise RuntimeError(f"PiD source directory exists but is incomplete: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    git = shutil.which("git")
+    if not git:
+        raise RuntimeError("git is required to download NVIDIA PiD source through the front.")
+    _update_download_job(job_id, {"status": "downloading", "progress": 1, "message": "Cloning NVIDIA PiD source."})
+    proc = subprocess.run([git, "clone", "--depth", "1", NVIDIA_PID_SOURCE_REPO, str(target)], cwd=settings.project_root, capture_output=True, text=True)
+    if proc.returncode != 0 or not _nvidia_pid_source_ready():
+        raise RuntimeError((proc.stderr or proc.stdout or "NVIDIA PiD source clone failed.").strip()[:1000])
+
+
+async def _run_nvidia_pid_download_job(job_id: str, profile: str, overrides: dict[str, Any] | None = None) -> None:
+    try:
+        selected_status = _nvidia_pid_prepare_status(profile, overrides)
+        selected = selected_status["profile"]
+        _update_download_job(
+            job_id,
+            {
+                "status": "downloading",
+                "progress": 0,
+                "message": f"Preparing NVIDIA PiD {selected.get('label')}.",
+                "profile": selected,
+                "bytes_total": selected_status["estimated_download_bytes"],
+            },
+        )
+        await asyncio.to_thread(_nvidia_pid_clone_source, job_id)
+        for asset in _nvidia_pid_assets(selected):
+            relpath = str(asset["relpath"])
+            target = _nvidia_pid_dir() / relpath
+            detected_path = Path(str(asset.get("detected_path") or "")) if asset.get("detected_path") else None
+            catalog_path = Path(str(asset.get("catalog_path") or "")) if asset.get("catalog_path") else None
+            if asset["exists"]:
+                if not target.exists() and detected_path and detected_path.exists():
+                    _ensure_model_alias(detected_path, target)
+                if not target.exists() and catalog_path and catalog_path.exists():
+                    _ensure_model_alias(catalog_path, target)
+                _update_download_job(job_id, {"message": f"PiD asset already exists: {Path(relpath).name}"})
+                continue
+            url = f"{NVIDIA_PID_HF_BASE}/{quote(relpath, safe='/')}?download=true"
+            _update_download_job(job_id, {"message": f"Downloading PiD asset: {Path(relpath).name}"})
+            await asyncio.to_thread(_download_url_to_file, url, target, job_id)
+        organized = _organize_nvidia_pid_assets(selected)
+        final_status = _nvidia_pid_prepare_status(str(selected.get("key") or profile), selected)
+        _update_download_job(
+            job_id,
+            {
+                "status": "downloaded" if final_status["prepared"] else "failed",
+                "progress": 100,
+                "message": f"NVIDIA PiD {selected.get('label')} ready." if final_status["prepared"] else "NVIDIA PiD prepare is incomplete.",
+                "prepared": final_status["prepared"],
+                "profile": selected,
+                "assets": organized,
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
+            },
+        )
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
 def _ltx_hf_lora_artifact(kind: str) -> dict[str, str]:
     normalized = kind.strip().lower()
     if normalized == "ltx_detailer":
@@ -4728,6 +6128,8 @@ def _ltx_hf_lora_target(kind: str) -> Path:
         return settings.models_dir / "video_restore_models" / folder / artifact["filename"]
     if normalized == "face_restore":
         return settings.models_dir / "face_restore_models" / artifact["filename"]
+    if normalized == "transition":
+        return settings.models_dir / "loras" / "ltx_transition" / artifact["filename"]
     return settings.models_dir / "loras" / "ltx_ic" / artifact["filename"]
 
 
@@ -4744,12 +6146,13 @@ def _ltx_hf_lora_installed_path(kind: str) -> Path:
         )
     elif normalized == "flashvsr":
         candidates = (
+            settings.models_dir / "FlashVSR" / filename,
             settings.models_dir / "video_restore_models" / "FlashVSR" / filename,
             settings.models_dir / "video_restore_models" / filename,
-            settings.models_dir / "FlashVSR" / filename,
         )
     elif normalized == "seedvr2":
         candidates = (
+            settings.models_dir / "SEEDVR2" / filename,
             settings.models_dir / "video_restore_models" / "SeedVR2" / filename,
             settings.models_dir / "video_restore_models" / filename,
             settings.models_dir / "SeedVR2" / filename,
@@ -4759,6 +6162,12 @@ def _ltx_hf_lora_installed_path(kind: str) -> Path:
             settings.models_dir / "face_restore_models" / filename,
             settings.models_dir / "facerestore_models" / filename,
             settings.models_dir / "GFPGAN" / filename,
+        )
+    elif normalized == "transition":
+        candidates = (
+            settings.models_dir / "loras" / "ltx_transition" / filename,
+            settings.models_dir / "loras" / "ltx" / filename,
+            settings.models_dir / "loras" / filename,
         )
     else:
         candidates = (
@@ -4828,6 +6237,70 @@ async def ltx_detailer_download_start() -> dict[str, Any]:
     return download_jobs[job_id]
 
 
+@app.get("/api/ltx/control/status")
+async def ltx_control_status() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("control")
+    target = _ltx_hf_lora_installed_path("control")
+    installed = target.exists() and target.stat().st_size > 1024 * 1024
+    return {
+        "installed": installed,
+        "name": str(target.relative_to(settings.models_dir / "loras")).replace("/", "\\"),
+        "filename": artifact["filename"],
+        "path": str(target) if installed else "",
+        "url": artifact["url"],
+    }
+
+
+@app.post("/api/ltx/control/download/start")
+async def ltx_control_download_start() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("control")
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued LTX 2.3 IC-LoRA Union Control download.",
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ltx_hf_lora_download_job(job_id, "control"))
+    return download_jobs[job_id]
+
+
+@app.get("/api/ltx/transition/status")
+async def ltx_transition_status() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("transition")
+    target = _ltx_hf_lora_installed_path("transition")
+    installed = target.exists() and target.stat().st_size > 1024 * 1024
+    return {
+        "installed": installed,
+        "name": str(target.relative_to(settings.models_dir / "loras")).replace("/", "\\"),
+        "filename": artifact["filename"],
+        "path": str(target) if installed else "",
+        "url": artifact["url"],
+    }
+
+
+@app.post("/api/ltx/transition/download/start")
+async def ltx_transition_download_start() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("transition")
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued LTX 2.3 Transition LoRA download.",
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ltx_hf_lora_download_job(job_id, "transition"))
+    return download_jobs[job_id]
+
+
 @app.get("/api/ltx/cameraman/status")
 async def ltx_cameraman_status() -> dict[str, Any]:
     artifact = _ltx_hf_lora_artifact("cameraman")
@@ -4857,6 +6330,114 @@ async def ltx_cameraman_download_start() -> dict[str, Any]:
         "updated_at": datetime.now().isoformat(timespec="seconds"),
     }
     asyncio.create_task(_run_ltx_hf_lora_download_job(job_id, "cameraman"))
+    return download_jobs[job_id]
+
+
+@app.get("/api/ltx/outpaint/status")
+async def ltx_outpaint_status() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("outpaint")
+    target = _ltx_hf_lora_installed_path("outpaint")
+    installed = target.exists() and target.stat().st_size > 1024 * 1024
+    return {
+        "installed": installed,
+        "name": str(target.relative_to(settings.models_dir / "loras")).replace("/", "\\"),
+        "filename": artifact["filename"],
+        "path": str(target) if installed else "",
+        "url": artifact["url"],
+    }
+
+
+@app.post("/api/ltx/outpaint/download/start")
+async def ltx_outpaint_download_start() -> dict[str, Any]:
+    artifact = _ltx_hf_lora_artifact("outpaint")
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued LTX 2.3 IC-LoRA Outpaint download.",
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ltx_hf_lora_download_job(job_id, "outpaint"))
+    return download_jobs[job_id]
+
+
+def _qwen_multiangle_lora_target() -> Path:
+    return settings.models_dir / "loras" / "qwen" / QWEN_MULTIANGLE_LORA_ARTIFACT["filename"]
+
+
+def _qwen_multiangle_lora_installed_path() -> Path:
+    filename = QWEN_MULTIANGLE_LORA_ARTIFACT["filename"]
+    candidates = (
+        settings.models_dir / "loras" / "qwen" / filename,
+        settings.models_dir / "loras" / filename,
+    )
+    for candidate in candidates:
+        if candidate.exists() and candidate.stat().st_size > 1024 * 1024:
+            return candidate
+    return candidates[0]
+
+
+async def _run_qwen_multiangle_lora_download_job(job_id: str) -> None:
+    try:
+        artifact = QWEN_MULTIANGLE_LORA_ARTIFACT
+        target = _qwen_multiangle_lora_installed_path()
+        if target.exists() and target.stat().st_size > 1024 * 1024:
+            result = {
+                "status": "downloaded",
+                "already_downloaded": True,
+                "filename": target.name,
+                "path": str(target),
+                "relative_path": str(target.relative_to(settings.project_root)),
+                "bytes_downloaded": target.stat().st_size,
+                "bytes_total": target.stat().st_size,
+                "progress": 100,
+            }
+        else:
+            target = _qwen_multiangle_lora_target()
+            _update_download_job(job_id, {"status": "downloading", "progress": 0, "message": f"Downloading {artifact['label']}"})
+            result = await asyncio.to_thread(_download_url_to_file, artifact["url"], target, job_id)
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {**result, "message": f"{artifact['label']} ready.", "completed_at": datetime.now().isoformat(timespec="seconds")})
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/qwen/multiview/status")
+async def qwen_multiview_status() -> dict[str, Any]:
+    artifact = QWEN_MULTIANGLE_LORA_ARTIFACT
+    target = _qwen_multiangle_lora_installed_path()
+    installed = target.exists() and target.stat().st_size > 1024 * 1024
+    return {
+        "installed": installed,
+        "name": str(target.relative_to(settings.models_dir / "loras")).replace("/", "\\"),
+        "filename": artifact["filename"],
+        "label": artifact["label"],
+        "path": str(target) if installed else "",
+        "url": artifact["url"],
+        "size_bytes": int(artifact["size_bytes"]),
+    }
+
+
+@app.post("/api/qwen/multiview/download/start")
+async def qwen_multiview_download_start() -> dict[str, Any]:
+    artifact = QWEN_MULTIANGLE_LORA_ARTIFACT
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued Qwen MultiView LoRA download.",
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "bytes_total": int(artifact["size_bytes"]),
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_qwen_multiangle_lora_download_job(job_id))
     return download_jobs[job_id]
 
 
@@ -4935,6 +6516,53 @@ async def extras_video_restore_download_start(engine: str) -> dict[str, Any]:
     return download_jobs[job_id]
 
 
+@app.get("/api/extras/nvidia/{engine}/status")
+async def extras_nvidia_status(
+    engine: str,
+    profile: str | None = Query(None),
+    backbone: str | None = Query(None),
+    checkpoint: str | None = Query(None),
+    scale: int | None = Query(None),
+    steps: int | None = Query(None),
+    cfg: float | None = Query(None),
+) -> dict[str, Any]:
+    status = _nvidia_extras_status(engine)
+    if engine.strip().lower() == "nvidia_pid":
+        overrides = {"backbone": backbone, "checkpoint": checkpoint, "scale": scale, "steps": steps, "cfg": cfg}
+        status["pid"] = _nvidia_pid_prepare_status(profile, overrides)
+    return status
+
+
+@app.post("/api/extras/nvidia/{engine}/download/start")
+async def extras_nvidia_download_start(
+    engine: str,
+    profile: str = Query("lowvram_zimage_2k"),
+    backbone: str | None = Query(None),
+    checkpoint: str | None = Query(None),
+    scale: int | None = Query(None),
+    steps: int | None = Query(None),
+    cfg: float | None = Query(None),
+) -> dict[str, Any]:
+    normalized = engine.strip().lower()
+    if normalized != "nvidia_pid":
+        raise HTTPException(status_code=400, detail="Only NVIDIA PiD requires a downloadable model prepare step.")
+    overrides = {"backbone": backbone, "checkpoint": checkpoint, "scale": scale, "steps": steps, "cfg": cfg}
+    selected = _nvidia_pid_profile(profile, overrides)
+    job_id = f"download-nvidia-pid-{uuid.uuid4().hex[:10]}"
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "kind": "nvidia_pid",
+        "status": "queued",
+        "progress": 0,
+        "message": f"Queued NVIDIA PiD {selected.get('label')} prepare.",
+        "profile": selected,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_nvidia_pid_download_job(job_id, profile, overrides))
+    return download_jobs[job_id]
+
+
 @app.get("/api/extras/face-restore/status")
 async def extras_face_restore_status() -> dict[str, Any]:
     artifact = _ltx_hf_lora_artifact("face_restore")
@@ -4981,6 +6609,7 @@ async def civitai_search(request: CivitaiSearchRequest) -> dict[str, Any]:
         return search_civitai_models(
             settings=settings,
             query=request.query,
+            tag=request.tag,
             token=request.token,
             types=request.types,
             base_model=request.base_model,
@@ -5400,12 +7029,14 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             await comfy.restart()
         if job_id:
             _update_generation_job(job_id, {"status": "preparing", "progress": 4, "message": "Resolving generation assets"})
+        _normalize_ltx_outpaint_workflow_scope(request)
         assets = resolve_generation_assets(settings, request)
         if request.preset.lower() == "ltx" and float(request.cfg or 0) == 7.0:
             request.cfg = 1.0
         _ensure_ltx_default_distilled_loras(request, assets)
         _ensure_wan_4step_loras(request, assets)
         _ensure_qwen_edit_lightning_lora(request, assets)
+        _ensure_qwen_multiangle_lora(request, assets)
         if request.preset.lower() == "model3d":
             requested_model = str((request.model3d or {}).get("model") or request.model_name or "microsoft/TRELLIS.2-4B")
             model3d_preflight = await _model3d_preflight_report(requested_model=requested_model)
@@ -5483,20 +7114,44 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 frames,
             )
             request.img2img.base_video = str(settings.input_dir / base_video_name)
-        if not base_video_name and request.preset.lower() == "ltx" and len(reference_image_names) >= 2:
+        ltx_loop_cycle = _truthy((request.video or {}).get("ltx_loop_cycle")) if request.preset.lower() == "ltx" else False
+        ltx_loop_source = str((request.video or {}).get("ltx_loop_source") or "").strip().lower()
+        if ltx_loop_cycle and isinstance(request.video, dict):
+            request.video["motion_transfer_enabled"] = False
+            request.video["motion_transfer_mode"] = "off"
+            request.video["motion_transfer_control_mode"] = "off"
+            base_video_name = None
+            request.img2img.base_video = None
+        if not ltx_loop_cycle and not base_video_name and request.preset.lower() == "ltx" and len(reference_image_names) >= 2:
             base_video_name = _prepare_ltx_motion_scaffold(reference_image_names, request)
         reference_image_name = reference_image_names[0] if reference_image_names else None
         reference_end_image_name = reference_image_names[1] if len(reference_image_names) > 1 else None
+        if (
+            ltx_loop_cycle
+            and reference_image_name
+            and not base_video_name
+            and not reference_end_image_name
+        ):
+            reference_end_image_name = reference_image_name
         mask_image_name = _prepare_mask_image(request)
+        composite_mask_image_name = _prepare_composite_mask_image(request)
+        if composite_mask_image_name:
+            request.img2img.composite_mask_image = composite_mask_image_name
         controlnet_image_name = _prepare_controlnet_image(request)
         if reference_image_name:
             assets["reference_image"] = reference_image_name
         if base_video_name:
             assets["base_video"] = base_video_name
+            if request.preset.lower() == "ltx" and request.workflow_id == "ltx23-video-outpainting":
+                outpaint_reference_image = _extract_video_first_frame(base_video_name, "nexus_ltx_outpaint_frame")
+                if outpaint_reference_image:
+                    assets["outpaint_reference_image"] = outpaint_reference_image
         if reference_image_names:
             assets["reference_images"] = reference_image_names
         if mask_image_name:
             assets["mask_image"] = mask_image_name
+        if composite_mask_image_name:
+            assets["composite_mask_image"] = composite_mask_image_name
         if controlnet_image_name:
             assets["controlnet_image"] = controlnet_image_name
         if assets.get("primary_model") and not request.model_name:
@@ -5529,7 +7184,9 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         await comfy.ensure_running()
         if job_id:
             _update_generation_job(job_id, {"status": "preparing", "progress": 7, "message": "Reading Comfy object registry"})
+        _raise_if_generation_cancelled(job_id)
         object_info = await comfy.object_info()
+        _raise_if_generation_cancelled(job_id)
         if request.preset.lower() == "model3d":
             node_status = _model3d_node_status(object_info)
             if node_status.get("missing"):
@@ -5678,6 +7335,15 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 if not assets.get("clip_vision"):
                     raise ValueError("WAN 2.2 requires clip_vision_h.safetensors or a compatible CLIP Vision encoder in models/clip_vision.")
                 wan_first_last_node = None
+                wan_loop_cycle = _truthy((request.video or {}).get("wan_loop_cycle"))
+                wan_loop_source = str((request.video or {}).get("wan_loop_source") or "").strip().lower()
+                if (
+                    wan_loop_cycle
+                    and reference_image_name
+                    and not base_video_name
+                    and (wan_loop_source == "start_frame_as_end_frame" or not reference_end_image_name)
+                ):
+                    reference_end_image_name = reference_image_name
                 if base_video_name:
                     if not reference_image_name:
                         raise ValueError("WAN video2video requires an image reference.")
@@ -5701,6 +7367,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                         "WanFirstLastFrameToVideo",
                         "WanFirstLastFrameToVideoFunModel",
                     )
+                    if wan_loop_cycle and not wan_first_last_node:
+                        raise ValueError("WAN Loop Cycle requires WanFirstLastFrameToVideo support in the installed ComfyUI nodes.")
                 if not base_video_name:
                     prompt = build_basic_wan_i2video_workflow(
                         request,
@@ -5765,6 +7433,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 vae_name = assets.get("vae")
                 flux_family = assets.get("flux_family") or ""
                 is_flux2 = str(flux_family).startswith("flux2")
+                if is_flux2 and not assets.get("primary_model"):
+                    raise ValueError("Flux.2 requires the selected Flux.2/Klein model file in models/checkpoints/flux, models/diffusion_models or models/unet.")
                 if not is_flux2 and not clip_l_name:
                     raise ValueError("Flux requires clip_l.safetensors in models/text_encoders.")
                 if not text_encoder_name:
@@ -5786,6 +7456,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     text_encoder_name,
                     vae_name,
                     reference_image_name=reference_image_name,
+                    reference_image_names=reference_image_names,
                     mask_image_name=mask_image_name,
                     flux_family=flux_family,
                     controlnet_name=assets.get("controlnet_model"),
@@ -5805,9 +7476,12 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         ensure_inpaint_engine_route(prompt, request, available_nodes=set(object_info or {}))
         _materialize_ltx_director_audio(prompt)
         _apply_output_prefixes(prompt, request)
+        _raise_if_generation_cancelled(job_id)
 
         def progress_callback(update: dict[str, Any]) -> None:
             if job_id:
+                if _handle_cancelled_generation_progress(job_id, update):
+                    return
                 _update_generation_job(job_id, update)
 
         generation_started_at = datetime.now().timestamp()
@@ -5816,6 +7490,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             progress_callback=progress_callback,
             timeout_seconds=_generation_timeout_seconds(request),
         )
+        _raise_if_generation_cancelled(job_id)
         if not outputs:
             outputs = await _recover_outputs_from_history(prompt_id, generation_started_at)
         outputs = _cleanup_video_sidecar_images(outputs, generation_started_at)
@@ -5824,6 +7499,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if not outputs:
             await asyncio.sleep(1.0)
             outputs = _cleanup_video_sidecar_images(_recent_output_files(generation_started_at - 300, limit=20), generation_started_at)
+        _apply_ltx_loop_cycle_seam(outputs, request)
         _normalize_ltx_start_end_motion(outputs, request, reference_image_names)
         _apply_ltx_reference_frame_lock(outputs, request, reference_image_names)
         _annotate_output_metadata(outputs, request, assets)
@@ -5850,7 +7526,9 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 await comfy.stop()
             except Exception:
                 pass
-        await _release_comfy_memory_if_idle()
+        job_cancelled = bool(job_id and generation_jobs.get(job_id, {}).get("status") == "cancelled")
+        if not job_cancelled:
+            await _release_comfy_memory_if_idle()
         _schedule_comfy_idle_release()
         if job_id and generation_jobs.get(job_id, {}).get("status") != "cancelled":
             _update_generation_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)}, force=True)
@@ -6111,11 +7789,13 @@ async def cancel_generation(job_id: str) -> dict[str, Any]:
     )
     _console_generation(job, force=True)
     try:
-        if prompt_id:
-            await comfy.interrupt(str(prompt_id))
+        await comfy.interrupt(str(prompt_id) if prompt_id else None)
     except Exception:
         pass
-    await _release_comfy_memory_if_idle()
+    try:
+        await comfy.clear_queue()
+    except Exception:
+        pass
     _schedule_comfy_idle_release()
     return _public_generation_job(job)
 

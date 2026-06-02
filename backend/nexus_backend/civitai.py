@@ -21,6 +21,7 @@ API_HOSTS = ("https://civitai.red", "https://civitai.com")
 def search_civitai_models(
     settings: NexusSettings | None = None,
     query: str = "",
+    tag: str = "",
     token: str | None = None,
     types: str = "",
     base_model: str = "",
@@ -30,16 +31,23 @@ def search_civitai_models(
     limit: int = 24,
     cursor: str | None = None,
 ) -> dict[str, Any]:
+    raw_query = str(query or "").strip()
     query = _normalize_search_query(query)
+    tag = _normalize_tag(tag)
+    if raw_query.startswith("#") and not tag:
+        tag = _normalize_tag(raw_query)
+        query = ""
     base_model = _civitai_base_model(base_model)
     params: dict[str, Any] = {
-        "limit": max(1, min(int(limit or 24), 100)),
+        "limit": max(1, min(int(limit or 24), 200)),
         "sort": sort or "Newest",
         "period": period or "AllTime",
         "nsfw": "true" if nsfw else "false",
     }
     if query:
         params["query"] = query
+    if tag:
+        params["tag"] = tag
     if types:
         params["types"] = types
     if base_model:
@@ -54,20 +62,34 @@ def search_civitai_models(
             items = data.get("items") or []
             if items:
                 break
+    if tag and not items:
+        for fallback_params in _tag_fallback_search_params(tag, params):
+            data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(fallback_params)}", token)
+            items = data.get("items") or []
+            if items:
+                break
     if not items and (types or base_model):
         for relaxed_params in _relaxed_search_params(params):
             data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(relaxed_params)}", token)
             items = data.get("items") or []
             if items:
                 break
+    visible_items = [item for item in items if isinstance(item, dict)]
+    if not nsfw:
+        visible_items = [item for item in visible_items if _item_visible_when_mature_hidden(item)]
     return {
-        "items": [_normalize_model_item(item, settings=settings) for item in items if isinstance(item, dict)],
+        "items": [_normalize_model_item(item, settings=settings) for item in visible_items],
         "metadata": data.get("metadata") or {},
     }
 
 
 def _normalize_search_query(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lstrip("#"))
+
+
+def _normalize_tag(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", str(value or "").strip().lstrip("#"))
+    return cleaned.replace("_", "-")
 
 
 def _fallback_search_query(value: str) -> str:
@@ -90,11 +112,81 @@ def _fallback_search_params(query: str, params: dict[str, Any]) -> list[dict[str
     return fallbacks
 
 
+def _tag_fallback_search_params(tag: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+    query = _fallback_search_query(tag.replace("-", " "))
+    if not query:
+        return []
+    fallback = {key: value for key, value in params.items() if key != "tag"}
+    fallback["query"] = query
+    return [fallback]
+
+
 def _relaxed_search_params(params: dict[str, Any]) -> list[dict[str, Any]]:
     fallbacks: list[dict[str, Any]] = []
     if params.get("baseModels"):
         fallbacks.append({key: value for key, value in params.items() if key != "baseModels"})
     return fallbacks
+
+
+MATURE_TAGS = {
+    "18+",
+    "adult",
+    "boobs",
+    "explicit",
+    "genital",
+    "hentai",
+    "mature",
+    "naked",
+    "nsfl",
+    "nsfw",
+    "nude",
+    "nudity",
+    "porn",
+    "pussy",
+    "sex",
+    "sexual",
+    "vagina",
+}
+
+
+def _mature_flag(value: Any) -> bool:
+    if value is None or value == "":
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return int(value) > 2
+    if isinstance(value, list):
+        return any(_mature_flag(item) for item in value)
+    text = str(value).strip().lower()
+    if not text or text in {"0", "1", "false", "none", "safe", "sfw"}:
+        return False
+    return any(token in text for token in ("mature", "nsfw", "racy", "x", "xxx", "adult", "explicit"))
+
+
+def _mature_text(value: Any) -> bool:
+    tokens = {str(token or "").strip().lower() for token in (value if isinstance(value, list) else [value])}
+    for token in tokens:
+        if not token:
+            continue
+        normalized = re.sub(r"[^a-z0-9+]+", " ", token).strip()
+        words = set(normalized.split())
+        if token in MATURE_TAGS or normalized in MATURE_TAGS or words.intersection(MATURE_TAGS):
+            return True
+    return False
+
+
+def _image_is_mature(image: dict[str, Any]) -> bool:
+    return _mature_flag(image.get("nsfw")) or _mature_flag(image.get("needsReview")) or _mature_flag(image.get("nsfwLevel"))
+
+
+def _item_visible_when_mature_hidden(item: dict[str, Any]) -> bool:
+    if _mature_flag(item.get("nsfw")) or _mature_text(item.get("tags") or []) or _mature_text(item.get("name") or ""):
+        return False
+    images = [image for version in item.get("modelVersions") or [] for image in (version.get("images") or []) if isinstance(image, dict)]
+    if not images:
+        return True
+    return any(not _image_is_mature(image) for image in images)
 
 
 def _civitai_base_model(value: Any) -> str:
@@ -157,6 +249,9 @@ def resolve_civitai_asset(settings: NexusSettings, url: str, token: str | None =
         "previews": _preview_media(version),
         "description": model.get("description") or version.get("description") or "",
         "creator": (model.get("creator") or {}).get("username") if isinstance(model.get("creator"), dict) else "",
+        "nsfw": bool(model.get("nsfw")),
+        "nsfw_level": model.get("nsfwLevel"),
+        "tags": model.get("tags") or [],
         "stats": model.get("stats") or {},
     }
     return _with_installed_state(resolved, settings)
@@ -181,6 +276,7 @@ def _normalize_model_item(item: dict[str, Any], settings: NexusSettings | None =
                 "preview": _preview_url(version),
                 "previews": _preview_media(version),
                 "description": version.get("description") or "",
+                "nsfw_level": version.get("nsfwLevel"),
                 "url": f"https://civitai.red/models/{item.get('id')}?modelVersionId={version_id}" if version_id else f"https://civitai.red/models/{item.get('id')}",
         }
         if settings:
@@ -196,6 +292,7 @@ def _normalize_model_item(item: dict[str, Any], settings: NexusSettings | None =
         "name": item.get("name") or "Civitai model",
         "type": item.get("type") or "Unknown",
         "nsfw": bool(item.get("nsfw")),
+        "nsfw_level": item.get("nsfwLevel"),
         "poi": bool(item.get("poi")),
         "creator": (item.get("creator") or {}).get("username") if isinstance(item.get("creator"), dict) else "",
         "description": item.get("description") or "",
@@ -232,7 +329,15 @@ def download_civitai_asset(
     filename = _safe_filename(str(resolved["file_name"]))
     target = target_dir / filename
     if target.exists() and target.stat().st_size > 0:
-        return _with_installed_state({**resolved, "target_kind": kind, "path": str(target), "relative_path": _safe_relative(target, settings.project_root)}, settings)
+        preview_path = _save_civitai_preview(target, resolved, token, save_preview, progress_callback)
+        return _with_installed_state({
+            **resolved,
+            "target_kind": kind,
+            "path": str(target),
+            "relative_path": _safe_relative(target, settings.project_root),
+            "preview_path": str(preview_path) if preview_path else "",
+            "preview_relative_path": _safe_relative(preview_path, settings.project_root) if preview_path else "",
+        }, settings)
     download_url = str(resolved["download_url"])
     if progress_callback:
         progress_callback(
@@ -247,27 +352,7 @@ def download_civitai_asset(
         )
     _download_file(download_url, target, token, progress_callback=progress_callback)
 
-    preview_path = None
-    preview_source = _preview_download_source(resolved)
-    if save_preview and preview_source:
-        preview_url = preview_source["url"]
-        preview_is_video = preview_source["type"] == "video"
-        suffix = ".jpg" if preview_is_video else (Path(str(urllib.parse.urlparse(preview_url).path)).suffix or ".png")
-        preview_path = target.with_suffix(target.suffix + f".preview{suffix}")
-        try:
-            if progress_callback:
-                progress_callback({"status": "saving_preview", "progress": 100, "message": "Saving preview"})
-            if preview_is_video:
-                if _save_video_first_frame(preview_url, preview_path):
-                    pass
-                elif preview_source.get("poster"):
-                    _download_file(preview_source["poster"], preview_path, token=None)
-                else:
-                    preview_path = None
-            else:
-                _download_file(preview_url, preview_path, token=None)
-        except Exception:
-            preview_path = None
+    preview_path = _save_civitai_preview(target, resolved, token, save_preview, progress_callback)
 
     return {
         **resolved,
@@ -302,7 +387,7 @@ def _get_json_any_host(path: str, token: str | None) -> dict[str, Any]:
     errors: list[str] = []
     for host in API_HOSTS:
         try:
-            request = urllib.request.Request(host + path, headers=_headers(token))
+            request = urllib.request.Request(host + path, headers={**_headers(token), "Accept": "application/json,*/*"})
             with urllib.request.urlopen(request, timeout=30) as response:
                 return json.loads(response.read().decode("utf-8"))
         except Exception as exc:
@@ -508,6 +593,8 @@ def _preview_media(version: dict[str, Any]) -> list[dict[str, Any]]:
                 "lowResUrl": image.get("lowResUrl") or image.get("url"),
                 "lowResVideoUrl": video.get("lowResUrl") or video_url,
                 "nsfw": image.get("nsfw") or image.get("needsReview"),
+                "nsfwLevel": image.get("nsfwLevel"),
+                "nsfw_level": image.get("nsfwLevel"),
                 "width": image.get("width"),
                 "height": image.get("height"),
             }
@@ -522,15 +609,61 @@ def _preview_download_source(resolved: dict[str, Any]) -> dict[str, str] | None:
             continue
         item_url = str(item.get("url") or "")
         video_url = str(item.get("videoUrl") or item.get("video_url") or item.get("lowResVideoUrl") or "")
-        poster_url = str(item.get("posterUrl") or item.get("thumbnailUrl") or item.get("imageUrl") or item.get("lowResUrl") or item_url)
+        poster_url = str(item.get("posterUrl") or item.get("thumbnailUrl") or item.get("imageUrl") or item.get("lowResUrl") or item.get("previewUrl") or item_url)
         item_type = str(item.get("type") or "").lower()
         if item_type == "video" and video_url and (not preview_url or item_url == preview_url):
             return {"url": video_url, "type": "video", "poster": poster_url}
+        if poster_url and not poster_url.lower().split("?", 1)[0].endswith((".mp4", ".webm", ".mov")):
+            return {"url": poster_url, "type": "image"}
     if preview_url:
         suffix = Path(str(urllib.parse.urlparse(preview_url).path)).suffix.lower()
         media_type = "video" if suffix in {".mp4", ".webm", ".mov"} else "image"
         return {"url": preview_url, "type": media_type}
     return None
+
+
+def _preview_suffix(url: str, is_video: bool) -> str:
+    if is_video:
+        return ".jpg"
+    suffix = Path(str(urllib.parse.urlparse(url).path)).suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return ".jpg"
+    if suffix == ".png":
+        return ".png"
+    return ".jpg"
+
+
+def _save_civitai_preview(
+    target: Path,
+    resolved: dict[str, Any],
+    token: str | None,
+    save_preview: bool,
+    progress_callback: ProgressCallback | None = None,
+) -> Path | None:
+    preview_source = _preview_download_source(resolved)
+    if not save_preview or not preview_source:
+        return None
+    preview_url = preview_source["url"]
+    preview_is_video = preview_source["type"] == "video"
+    preview_path = target.with_suffix(target.suffix + f".preview{_preview_suffix(preview_url, preview_is_video)}")
+    if preview_path.exists() and preview_path.stat().st_size > 0:
+        return preview_path
+    try:
+        if progress_callback:
+            progress_callback({"status": "saving_preview", "progress": 100, "message": "Saving preview"})
+        if preview_is_video:
+            if _save_video_first_frame(preview_url, preview_path):
+                return preview_path
+            poster = preview_source.get("poster")
+            if poster:
+                poster_path = target.with_suffix(target.suffix + f".preview{_preview_suffix(poster, False)}")
+                _download_file(poster, poster_path, token=None)
+                return poster_path if poster_path.exists() and poster_path.stat().st_size > 0 else None
+            return None
+        _download_file(preview_url, preview_path, token=None)
+        return preview_path if preview_path.exists() and preview_path.stat().st_size > 0 else None
+    except Exception:
+        return None
 
 
 def _target_kind(model_type: Any, filename: str, requested: str) -> str:
@@ -580,7 +713,11 @@ def _preset_from_base_model(base_model: Any, fallback: str | None = None) -> str
     if normalized:
         rules = (
             ("sd15", ("sd15", "sd1", "stable diffusion 1", "stable diffusion 1.5")),
-            ("sdxl", ("sdxl", "stable diffusion xl", "pony")),
+            ("illustrious", ("illustrious", "illustriousxl", "illustrious xl")),
+            ("noobai", ("noobai", "noob ai", "noobai xl", "noobai-xl")),
+            ("animagine", ("animagine", "animaginexl", "animagine xl")),
+            ("pony", ("pony", "pony diffusion", "pony diffusion v6 xl")),
+            ("sdxl", ("sdxl", "stable diffusion xl")),
             ("flux", ("flux", "flux1")),
             ("qwen", ("qwen", "qwen image", "qwenimage")),
             ("zimage", ("zimage", "z image", "z-image", "zimage turbo", "z image turbo")),
@@ -592,6 +729,7 @@ def _preset_from_base_model(base_model: Any, fallback: str | None = None) -> str
         for preset, aliases in rules:
             if any(re.sub(r"[^a-z0-9]+", "", alias.lower()) in normalized for alias in aliases):
                 return preset
+        return normalized
     return fallback
 
 
@@ -602,6 +740,10 @@ def _preset_folder(preset: str | None) -> str:
         "sd15": "sd15",
         "xl": "sdxl",
         "sdxl": "sdxl",
+        "illustrious": "illustrious",
+        "noobai": "noobai",
+        "animagine": "animagine",
+        "pony": "pony",
         "ltx": "ltx",
         "anima": "anima",
         "wan": "wan",
@@ -621,9 +763,9 @@ def _safe_filename(value: str) -> str:
 def _with_installed_state(data: dict[str, Any], settings: NexusSettings) -> dict[str, Any]:
     filename = _safe_filename(str(data.get("file_name") or ""))
     target_folder = Path(str(data.get("target_folder") or ""))
-    if not filename or not target_folder:
+    if not filename:
         return data
-    target = target_folder / filename
+    target = _find_installed_asset(settings, data, filename, target_folder)
     if target.exists() and target.is_file():
         return {
             **data,
@@ -636,6 +778,54 @@ def _with_installed_state(data: dict[str, Any], settings: NexusSettings) -> dict
             "installed_path": _safe_relative(target, settings.project_root),
         }
     return data
+
+
+def _candidate_install_roots(settings: NexusSettings, data: dict[str, Any], target_folder: Path) -> list[Path]:
+    model_type = data.get("model_type") or data.get("target_kind") or ""
+    kind = _target_kind(model_type, str(data.get("file_name") or ""), "auto")
+    roots: list[Path] = []
+    if target_folder:
+        roots.append(target_folder)
+    roots.extend(settings.model_sources.get(kind, []))
+    roots.append(settings.models_dir / kind)
+    if kind == "checkpoints":
+        roots.extend([settings.models_dir / "checkpoints", settings.models_dir / "diffusion_models", settings.models_dir / "unet"])
+        roots.extend(settings.model_sources.get("diffusion_models", []))
+        roots.extend(settings.model_sources.get("unet", []))
+    elif kind == "loras":
+        roots.append(settings.models_dir / "loras")
+    elif kind == "controlnet":
+        roots.extend([settings.models_dir / "controlnet", settings.models_dir / "model_patches"])
+        roots.extend(settings.model_sources.get("model_patches", []))
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        try:
+            resolved = str(Path(root).resolve())
+        except Exception:
+            resolved = str(root)
+        if resolved and resolved not in seen:
+            seen.add(resolved)
+            deduped.append(Path(root))
+    return deduped
+
+
+def _find_installed_asset(settings: NexusSettings, data: dict[str, Any], filename: str, target_folder: Path) -> Path:
+    for root in _candidate_install_roots(settings, data, target_folder):
+        direct = root / filename
+        if direct.exists() and direct.is_file():
+            return direct
+    lower_filename = filename.lower()
+    for root in _candidate_install_roots(settings, data, target_folder):
+        if not root.exists() or not root.is_dir():
+            continue
+        try:
+            for candidate in root.rglob(filename):
+                if candidate.is_file() and candidate.name.lower() == lower_filename:
+                    return candidate
+        except Exception:
+            continue
+    return target_folder / filename if target_folder else settings.models_dir / filename
 
 
 def _save_video_first_frame(url: str, target: Path) -> bool:

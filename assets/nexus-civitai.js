@@ -16,7 +16,17 @@
   let searchDebounceTimer = null;
   const tokenStorageKey = "nexus_civitai_api_key";
   const downloadJobs = new Map();
-  const lazyPageSize = 10;
+  const lazyPageSize = 36;
+  const galleryPreviewLimit = 60;
+  const tagPresets = {
+    "": ["character", "style", "concept", "realistic", "photorealistic", "anime", "female", "male", "digital art", "video game", "base model", "upscaler"],
+    Checkpoint: ["base model", "realistic", "photorealistic", "anime", "semi-realistic", "cgi", "digital art", "style", "concept", "upscaler"],
+    LORA: ["character", "style", "concept", "clothing", "pose", "anime", "female", "male", "ponyxl", "digital art", "western art", "video game"],
+    TextualInversion: ["style", "concept", "anime", "realistic", "photorealistic", "female", "male"],
+    VAE: ["vae", "base model", "sdxl", "anime", "realistic"],
+    Controlnet: ["controlnet", "pose", "depth", "lineart", "canny"],
+  };
+  const matureTokens = new Set(["18+", "adult", "boobs", "explicit", "genital", "hentai", "mature", "naked", "nsfl", "nsfw", "nude", "nudity", "porn", "pussy", "sex", "sexual", "vagina"]);
   let modalVideoObserver = null;
   let tileVideoObserver = null;
 
@@ -50,6 +60,79 @@
       .replace(/[,_]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function normalizeTagValue(value) {
+    return normalizedCivitaiQuery(value).replace(/\s+/g, " ");
+  }
+
+  function selectedTag() {
+    return normalizeTagValue(el("civitaiTagFilter")?.value || "");
+  }
+
+  function tagsForCurrentType() {
+    const type = el("civitaiTypeFilter")?.value || "";
+    const active = selectedTag();
+    const tags = tagPresets[type] || tagPresets[""];
+    return active && !tags.includes(active) ? [active, ...tags] : tags;
+  }
+
+  function tagButtonClass(active) {
+    return active
+      ? "bg-nexus-red text-white border border-nexus-red px-2 py-1 rounded-sm text-[9px] font-bold uppercase shrink-0"
+      : "bg-nexus-bg text-nexus-muted hover:text-white hover:border-nexus-red border border-nexus-border px-2 py-1 rounded-sm text-[9px] font-bold uppercase shrink-0";
+  }
+
+  function renderTagChips() {
+    const node = el("civitaiTagChips");
+    if (!node) return;
+    const active = selectedTag();
+    node.innerHTML = [
+      `<button type="button" onclick="window.NexusCivitai?.setTag('')" class="${tagButtonClass(!active)}">All tags</button>`,
+      ...tagsForCurrentType().map((tag) => `<button type="button" onclick="window.NexusCivitai?.setTag(${JSON.stringify(tag)})" class="${tagButtonClass(active === tag)}">#${html(tag)}</button>`),
+    ].join("");
+  }
+
+  function setTagFilter(value) {
+    const input = el("civitaiTagFilter");
+    if (input) input.value = normalizeTagValue(value);
+    const searchInput = el("civitaiUrlInput");
+    if (searchInput && String(searchInput.value || "").trim().startsWith("#")) searchInput.value = "";
+    renderTagChips();
+    search(false).catch(() => status("Search failed."));
+  }
+
+  function submitSearchInput() {
+    const rawInput = el("civitaiUrlInput")?.value?.trim() || "";
+    return isCivitaiUrl(rawInput) ? resolve() : search(false);
+  }
+
+  function activeSearchQuery() {
+    const rawInput = el("civitaiUrlInput")?.value?.trim() || "";
+    if (!rawInput || isCivitaiUrl(rawInput) || rawInput.startsWith("#")) return "";
+    return normalizedCivitaiQuery(rawInput).toLowerCase();
+  }
+
+  function itemSearchHaystack(item) {
+    const version = firstVersion(item) || {};
+    return [
+      item?.name,
+      item?.creator,
+      item?.description,
+      item?.type,
+      ...(item?.tags || []),
+      version?.name,
+      version?.base_model,
+      version?.file_name,
+      ...(version?.trained_words || []),
+    ].join(" ").normalize("NFKC").toLowerCase();
+  }
+
+  function itemMatchesSearchQuery(item, query = activeSearchQuery()) {
+    const terms = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return true;
+    const haystack = itemSearchHaystack(item);
+    return terms.every((term) => haystack.includes(term));
   }
 
   function queueSearch() {
@@ -96,6 +179,7 @@
     const type = el("civitaiTypeFilter");
     const sort = el("civitaiSortFilter");
     const searchInput = el("civitaiUrlInput");
+    const installed = el("civitaiInstalledToggle");
     wireTokenPersistence();
     if (blur && !blur.dataset.nexusWired) {
       blur.dataset.nexusWired = "1";
@@ -113,19 +197,44 @@
         if (el("civitaiMediaModal") && !el("civitaiMediaModal").classList.contains("hidden")) closeMediaModal();
       });
     }
+    if (installed && !installed.dataset.nexusWired) {
+      installed.dataset.nexusWired = "1";
+      installed.addEventListener("change", () => {
+        renderSearch(currentItems, false);
+        restoreExplorerScroll();
+      });
+    }
     [base, type, sort].forEach((control) => {
       if (!control || control.dataset.nexusWired) return;
       control.dataset.nexusWired = "1";
-      control.addEventListener("change", () => search(false).catch(() => status("Search failed.")));
+      control.addEventListener("change", () => {
+        if (control === type) renderTagChips();
+        search(false).catch(() => status("Search failed."));
+      });
     });
     updateTypeButtons();
+    renderTagChips();
     if (searchInput && !searchInput.dataset.nexusWired) {
       searchInput.dataset.nexusWired = "1";
       searchInput.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") resolve().catch(() => status("Submit failed."));
+        if (event.key === "Enter") submitSearchInput().catch(() => status("Submit failed."));
       });
       searchInput.addEventListener("input", () => {
         if (isCivitaiUrl(searchInput.value)) return;
+        if (String(searchInput.value || "").trim().startsWith("#")) {
+          const nextTag = normalizeTagValue(searchInput.value);
+          const tag = el("civitaiTagFilter");
+          if (tag && tag.value !== nextTag) {
+            tag.value = nextTag;
+            renderTagChips();
+          }
+        } else {
+          const tag = el("civitaiTagFilter");
+          if (tag && tag.value) {
+            tag.value = "";
+            renderTagChips();
+          }
+        }
         queueSearch();
       });
     }
@@ -145,6 +254,7 @@
     const select = el("civitaiTypeFilter");
     if (select) select.value = value;
     updateTypeButtons();
+    renderTagChips();
     search(false).catch(() => status("Search failed."));
   }
 
@@ -219,6 +329,38 @@
     return preview ? [{ url: preview, type: mediaType(preview), nsfw: item?.nsfw }] : [];
   }
 
+  function showMatureEnabled() {
+    return !!el("civitaiNsfwToggle")?.checked;
+  }
+
+  function matureFlag(value) {
+    if (value === undefined || value === null || value === "") return false;
+    if (Array.isArray(value)) return value.some(matureFlag);
+    if (value === true) return true;
+    if (value === false) return false;
+    if (typeof value === "number") return value > 2;
+    const text = String(value).trim().toLowerCase();
+    if (!text || ["0", "1", "false", "none", "safe", "sfw"].includes(text)) return false;
+    return ["mature", "nsfw", "racy", "xxx", "adult", "explicit"].some((token) => text.includes(token)) || text === "x";
+  }
+
+  function matureText(value) {
+    const values = Array.isArray(value) ? value : [value];
+    return values.some((entry) => {
+      const text = String(entry || "").trim().toLowerCase();
+      if (!text) return false;
+      const normalized = text.replace(/[^a-z0-9+]+/g, " ").trim();
+      return matureTokens.has(text) || matureTokens.has(normalized) || normalized.split(/\s+/).some((token) => matureTokens.has(token));
+    });
+  }
+
+  function itemHasExplicitMatureSignal(item) {
+    return matureFlag(item?.nsfw)
+      || matureText(item?.tags || [])
+      || matureText(item?.name || item?.model_name || "")
+      || matureText(item?.description || "");
+  }
+
   function mediaType(urlOrPreview) {
     const url = typeof urlOrPreview === "string" ? urlOrPreview : urlOrPreview?.url || "";
     return /\.(mp4|webm|mov)(\?|$)/i.test(url) ? "video" : "image";
@@ -286,13 +428,14 @@
     return videoUrl(preview) ? "video" : "image";
   }
 
-  function mediaHtml(preview, className, alt) {
+  function mediaHtml(preview, className, alt, options = {}) {
     const url = mediaUrl(preview);
     if (!url) return `<div class="${className} flex items-center justify-center text-nexus-muted"><i class="fa-regular fa-image text-2xl"></i></div>`;
     if (previewKind(preview) === "video") {
       const poster = posterUrl(preview);
-      const fallback = poster || url;
-      return `<div class="${className} relative bg-black">${fallback ? `<img src="${html(fallback)}" loading="lazy" decoding="async" alt="${html(alt)}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-nexus-muted"><i class="fa-solid fa-play text-2xl"></i></div>`}<span class="absolute bottom-2 left-2 bg-black/80 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-play mr-1"></i>Video</span></div>`;
+      const src = videoUrl(preview) || url;
+      const playable = !!options.playVideo && !!src;
+      return `<div class="${className} relative bg-black">${playable ? `<video data-src="${html(src)}" muted loop playsinline preload="none" ${poster ? `poster="${html(poster)}"` : ""} aria-label="${html(alt)}" class="nexus-civitai-tile-video w-full h-full object-cover"></video>` : poster ? `<img src="${html(poster)}" loading="lazy" decoding="async" alt="${html(alt)}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-nexus-muted"><i class="fa-solid fa-play text-2xl"></i></div>`}<span class="absolute bottom-2 left-2 bg-black/80 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-play mr-1"></i>Video</span></div>`;
     }
     return `<img src="${html(url)}" loading="lazy" decoding="async" alt="${html(alt)}" class="${className} object-cover">`;
   }
@@ -336,6 +479,7 @@
     const video = el("civitaiMediaStage")?.querySelector("video");
     if (!modal || !video) return;
     if (!video.src) video.src = video.dataset.src || "";
+    video.load();
     modalVideoObserver = new IntersectionObserver((entries) => {
       const visible = entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.6);
       if (!visible || modal.classList.contains("hidden")) {
@@ -347,32 +491,124 @@
 
   function wireTileVideoLazyload() {
     if (tileVideoObserver) tileVideoObserver.disconnect();
+    const videos = [...document.querySelectorAll(".nexus-civitai-tile-video[data-src]")];
+    if (!videos.length) return;
+    const loadVideo = (video) => {
+      if (!video.src) {
+        video.src = video.dataset.src || "";
+        video.load();
+      }
+    };
+    const playVideo = (video) => {
+      loadVideo(video);
+      video.play?.().catch(() => {});
+    };
+    if (!("IntersectionObserver" in window)) {
+      videos.slice(0, 8).forEach(playVideo);
+      return;
+    }
+    tileVideoObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const video = entry.target;
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.25) {
+          playVideo(video);
+        } else {
+          video.pause?.();
+        }
+      });
+    }, { root: explorerScroller(), rootMargin: "360px 0px", threshold: [0, 0.25, 0.75] });
+    videos.forEach((video) => tileVideoObserver.observe(video));
   }
 
   function mediaIsMature(preview, owner) {
-    const flag = preview?.nsfw ?? owner?.nsfw ?? owner?.needsReview ?? false;
-    if (Array.isArray(flag)) return flag.some(Boolean);
-    return flag === true || String(flag).toLowerCase() === "true" || String(flag).toLowerCase().includes("x");
+    if (itemHasExplicitMatureSignal(owner)) return true;
+    const previewFlag = preview?.nsfw ?? preview?.needsReview ?? preview?.nsfwLevel ?? preview?.nsfw_level;
+    if (previewFlag !== undefined && previewFlag !== null && previewFlag !== "") return matureFlag(previewFlag);
+    return false;
+  }
+
+  function itemVisibleWithCurrentMatureFilter(item) {
+    if (showMatureEnabled()) return true;
+    if (itemHasExplicitMatureSignal(item)) return false;
+    const version = firstVersion(item) || {};
+    const previews = previewList(item, version);
+    if (!previews.length) return true;
+    return previews.some((preview) => !mediaIsMature(preview, item));
+  }
+
+  function installedOnlyEnabled() {
+    return !!el("civitaiInstalledToggle")?.checked;
+  }
+
+  function setInstalledOnly(value) {
+    const toggle = el("civitaiInstalledToggle");
+    if (toggle) toggle.checked = !!value;
+  }
+
+  function itemInstalled(item) {
+    return isInstalled(item) || (item?.versions || []).some((version) => isInstalled(version));
+  }
+
+  function itemVisibleWithCurrentFilters(item) {
+    if (installedOnlyEnabled() && !itemInstalled(item)) return false;
+    if (!itemMatchesSearchQuery(item)) return false;
+    return itemVisibleWithCurrentMatureFilter(item);
+  }
+
+  function visibleSearchEntries() {
+    return currentItems
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => itemVisibleWithCurrentFilters(item));
+  }
+
+  function currentFilterSummary() {
+    const filters = [];
+    const query = activeSearchQuery();
+    if (query) filters.push(`search: ${query}`);
+    if (installedOnlyEnabled()) filters.push("Installed");
+    if (!showMatureEnabled()) filters.push("Show mature off");
+    const type = el("civitaiTypeFilter")?.value || "";
+    const base = el("civitaiBaseModelFilter")?.value || "";
+    const tag = selectedTag();
+    if (type) filters.push(type);
+    if (base) filters.push(base);
+    if (tag) filters.push(`#${tag}`);
+    return filters.join(" + ") || "none";
+  }
+
+  function clearSearchFilters() {
+    setInstalledOnly(false);
+    const type = el("civitaiTypeFilter");
+    const base = el("civitaiBaseModelFilter");
+    const tag = el("civitaiTagFilter");
+    const searchInput = el("civitaiUrlInput");
+    if (type) type.value = "";
+    if (base) base.value = "";
+    if (tag) tag.value = "";
+    if (searchInput && !isCivitaiUrl(searchInput.value)) searchInput.value = "";
+    updateTypeButtons();
+    renderTagChips();
+    search(false).catch(() => status("Search failed."));
   }
 
   function visiblePreviews(data) {
-    const showMature = !!el("civitaiNsfwToggle")?.checked;
     const source = data.previews?.length
       ? data.previews
       : data.preview
         ? [{ url: data.preview, type: mediaType(data.preview), nsfw: data.nsfw }]
         : [];
-    return showMature ? source : source.filter((preview) => !mediaIsMature(preview, data));
+    return showMatureEnabled() ? source : source.filter((preview) => !mediaIsMature(preview, data));
   }
 
   function previewTile(preview, index, data, shape = "aspect-square") {
     const blurMature = !!el("civitaiBlurMatureToggle")?.checked;
     const mature = mediaIsMature(preview, data);
     const blurClass = mature && blurMature ? "blur-xl scale-110" : "";
+    const playVideo = showMatureEnabled() && !(mature && blurMature);
     return `
       <button type="button" onclick="window.NexusCivitai?.openMedia(${index})" class="${shape} border border-nexus-border overflow-hidden bg-black relative group">
         <div class="w-full h-full transition-transform duration-300 group-hover:scale-[1.03] ${blurClass}">
-          ${mediaHtml(preview, "w-full h-full", data.model_name)}
+          ${mediaHtml(preview, "w-full h-full", data.model_name, { playVideo })}
         </div>
         ${mature ? `<span class="absolute top-1 right-1 bg-yellow-400 text-black text-[7px] font-bold px-1 py-0.5 uppercase">Mature</span>` : ""}
       </button>
@@ -417,7 +653,7 @@
     stage.innerHTML = `
       <div class="relative max-w-full max-h-full overflow-hidden border border-nexus-border bg-black">
         ${isVideo
-          ? `<div class="relative max-w-full max-h-[76vh]"><video data-src="${html(videoUrl(preview))}" controls muted playsinline preload="none" poster="${html(poster)}" class="max-w-full max-h-[76vh] object-contain ${blurClass}"></video></div>`
+          ? `<div class="relative max-w-full max-h-[76vh]"><video data-src="${html(videoUrl(preview))}" controls muted playsinline preload="metadata" poster="${html(poster)}" class="max-w-full max-h-[76vh] object-contain ${blurClass}">Your browser cannot play this Civitai video.</video></div>`
           : `<img src="${html(url)}" alt="Civitai preview" class="max-w-full max-h-[76vh] object-contain ${blurClass}">`}
         ${mature && blurMature ? `<span class="absolute top-3 left-3 bg-yellow-400 text-black text-[9px] font-bold px-2 py-1 uppercase">Mature preview blurred</span>` : ""}
       </div>
@@ -611,12 +847,47 @@
             </div>
           </section>
           ${data.description ? `<section><span class="mini-label">Description & author notes</span><p class="mt-2 text-xs leading-5 text-white">${html(stripHtml(data.description)).slice(0, 1400)}</p></section>` : ""}
-          ${previews.length > 1 ? `<section><span class="mini-label">Model gallery</span><div class="grid grid-cols-4 lg:grid-cols-6 gap-2 mt-2">${previews.slice(0, 24).map((preview, index) => previewTile(preview, index, data)).join("")}</div></section>` : ""}
+          ${previews.length > 1 ? `<section><span class="mini-label">Model gallery</span><div class="grid grid-cols-4 lg:grid-cols-6 gap-2 mt-2">${previews.slice(0, galleryPreviewLimit).map((preview, index) => previewTile(preview, index, data)).join("")}</div></section>` : ""}
           ${installed && localPath ? `<div class="border border-nexus-red bg-nexus-bg p-2 text-[10px] text-white font-mono break-all">${html(localPath)}</div>` : ""}
         </div>
       </div>
     `;
     wireTileVideoLazyload();
+  }
+
+  function searchCardHtml(item, index, blurMature) {
+    const version = firstVersion(item) || {};
+    const preview = previewList(item, version)[0];
+    const mature = mediaIsMature(preview, item);
+    const matureClass = mature && blurMature ? "blur-xl scale-110" : "";
+    const installed = isInstalled(version, isInstalled(item));
+    const playVideo = showMatureEnabled() && !(mature && blurMature);
+    return `
+      <article class="group bg-nexus-panel border border-nexus-border hover:border-nexus-red rounded-sm overflow-hidden">
+        <button class="block w-full text-left" onclick="window.NexusCivitai?.selectSearchResult(${index})">
+          <div class="aspect-[3/4] bg-nexus-bg border-b border-nexus-border overflow-hidden relative">
+            <div class="w-full h-full transition-transform duration-300 group-hover:scale-[1.03] ${matureClass}">
+              ${mediaHtml(preview || "", "w-full h-full", item.name, { playVideo })}
+            </div>
+            <span class="absolute top-2 left-2 bg-nexus-red text-white text-[7px] font-mono font-bold px-1.5 py-0.5 uppercase">${html(item.type)}</span>
+            ${mature ? `<span class="absolute top-2 right-2 bg-yellow-400 text-black text-[7px] font-bold px-1.5 py-0.5 uppercase">Mature</span>` : ""}
+            ${installed ? `<span class="absolute bottom-7 left-2 bg-emerald-500 text-black text-[7px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-circle-check mr-1"></i>Installed</span>` : ""}
+            <span class="absolute bottom-2 right-2 bg-black/80 text-zinc-300 text-[8px] font-mono px-1.5 py-0.5 rounded-sm">${html(version.base_model || "Base")}</span>
+          </div>
+          <div class="p-2 space-y-1">
+            <h4 class="text-xs font-bold text-white truncate group-hover:text-nexus-red">${html(item.name)}</h4>
+            <p class="text-[10px] text-nexus-muted truncate">by ${html(item.creator || "Unknown creator")}</p>
+            <p class="text-[10px] text-nexus-muted font-mono"><i class="fa-solid fa-cloud-arrow-down text-nexus-red"></i> ${downloadCount(item)}</p>
+          </div>
+        </button>
+      </article>
+    `;
+  }
+
+  function lazyStatusHtml() {
+    return searchCursor
+      ? `<div id="civitaiLazyStatus" class="py-6 flex items-center justify-center gap-2 text-nexus-muted font-mono text-[10px]"><i class="fa-solid fa-spinner text-nexus-red"></i> Lazy loading more models as you scroll...</div>`
+      : `<div id="civitaiLazyStatus" class="hidden"></div>`;
   }
 
   function renderSearch(items, append) {
@@ -625,44 +896,45 @@
     const scrollTopBeforeRender = explorerScroller()?.scrollTop || explorerScrollTop;
     viewMode = "explorer";
     currentDetail = null;
-    if (!append) currentItems = [];
+    const startIndex = append ? currentItems.length : 0;
     currentItems = append ? [...currentItems, ...items] : items;
-    if (!currentItems.length) {
-      panel.innerHTML = `<div class="h-full min-h-[300px] flex items-center justify-center text-center text-nexus-muted">No Civitai models found.</div>`;
+    const visibleEntries = visibleSearchEntries();
+    if (!visibleEntries.length) {
+      const message = currentItems.length
+        ? "No models match the current Civitai filters."
+        : "No Civitai models found.";
+      panel.innerHTML = `
+        <div class="h-full min-h-[300px] flex flex-col items-center justify-center text-center text-nexus-muted gap-3">
+          <p>${message}</p>
+          ${currentItems.length ? `<p class="text-[10px] font-mono">Active filters: ${html(currentFilterSummary())}</p><button type="button" onclick="window.NexusCivitai?.clearFilters()" class="flat-button px-3 py-2 text-xs font-bold uppercase"><i class="fa-solid fa-filter-circle-xmark text-nexus-red mr-1"></i>Clear filters</button>` : ""}
+        </div>
+      `;
       return;
     }
     const blurMature = !!el("civitaiBlurMatureToggle")?.checked;
+    if (append) {
+      const grid = el("civitaiSearchGrid");
+      const lazyStatus = el("civitaiLazyStatus");
+      const appendedEntries = items
+        .map((item, offset) => ({ item, index: startIndex + offset }))
+        .filter(({ item }) => itemVisibleWithCurrentFilters(item));
+      if (grid && appendedEntries.length) {
+        grid.insertAdjacentHTML("beforeend", appendedEntries.map(({ item, index }) => searchCardHtml(item, index, blurMature)).join(""));
+        if (lazyStatus) lazyStatus.outerHTML = lazyStatusHtml();
+        scrollExplorerTo(scrollTopBeforeRender);
+        wireTileVideoLazyload();
+        return;
+      }
+      if (grid) {
+        if (lazyStatus) lazyStatus.outerHTML = lazyStatusHtml();
+        return;
+      }
+    }
     panel.innerHTML = `
-      <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
-        ${currentItems.map((item, index) => {
-          const version = firstVersion(item) || {};
-          const preview = previewList(item, version)[0];
-          const mature = mediaIsMature(preview, item);
-          const matureClass = mature && blurMature ? "blur-xl scale-110" : "";
-          const installed = isInstalled(version, isInstalled(item));
-          return `
-            <article class="group bg-nexus-panel border border-nexus-border hover:border-nexus-red rounded-sm overflow-hidden">
-              <button class="block w-full text-left" onclick="window.NexusCivitai?.selectSearchResult(${index})">
-                <div class="aspect-[3/4] bg-nexus-bg border-b border-nexus-border overflow-hidden relative">
-                  <div class="w-full h-full transition-transform duration-300 group-hover:scale-[1.03] ${matureClass}">
-                    ${mediaHtml(preview || "", "w-full h-full", item.name)}
-                  </div>
-                  <span class="absolute top-2 left-2 bg-nexus-red text-white text-[7px] font-mono font-bold px-1.5 py-0.5 uppercase">${html(item.type)}</span>
-                  ${mature ? `<span class="absolute top-2 right-2 bg-yellow-400 text-black text-[7px] font-bold px-1.5 py-0.5 uppercase">Mature</span>` : ""}
-                  ${installed ? `<span class="absolute bottom-7 left-2 bg-emerald-500 text-black text-[7px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-circle-check mr-1"></i>Installed</span>` : ""}
-                  <span class="absolute bottom-2 right-2 bg-black/80 text-zinc-300 text-[8px] font-mono px-1.5 py-0.5 rounded-sm">${html(version.base_model || "Base")}</span>
-                </div>
-                <div class="p-2 space-y-1">
-                  <h4 class="text-xs font-bold text-white truncate group-hover:text-nexus-red">${html(item.name)}</h4>
-                  <p class="text-[10px] text-nexus-muted truncate">by ${html(item.creator || "Unknown creator")}</p>
-                  <p class="text-[10px] text-nexus-muted font-mono"><i class="fa-solid fa-cloud-arrow-down text-nexus-red"></i> ${downloadCount(item)}</p>
-                </div>
-              </button>
-            </article>
-          `;
-        }).join("")}
+      <div id="civitaiSearchGrid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+        ${visibleEntries.map(({ item, index }) => searchCardHtml(item, index, blurMature)).join("")}
       </div>
-      ${searchCursor ? `<div class="py-6 flex items-center justify-center gap-2 text-nexus-muted font-mono text-[10px]"><i class="fa-solid fa-spinner text-nexus-red"></i> Lazy loading more models as you scroll...</div>` : ""}
+      ${lazyStatusHtml()}
     `;
     if (append) scrollExplorerTo(scrollTopBeforeRender);
     wireTileVideoLazyload();
@@ -701,9 +973,13 @@
     loadingMore = true;
     status(append ? "Loading more..." : "Searching Civitai...");
     const rawInput = el("civitaiUrlInput")?.value?.trim() || "";
+    const tagFromInput = rawInput.startsWith("#") ? normalizeTagValue(rawInput) : "";
+    const query = isCivitaiUrl(rawInput) || tagFromInput ? "" : normalizedCivitaiQuery(rawInput);
+    const tag = tagFromInput || selectedTag();
     const payload = {
       ...basePayload(),
-      query: isCivitaiUrl(rawInput) ? "" : normalizedCivitaiQuery(rawInput),
+      query,
+      tag,
       types: el("civitaiTypeFilter")?.value || "",
       base_model: el("civitaiBaseModelFilter")?.value || "",
       sort: el("civitaiSortFilter")?.value || "Newest",
@@ -737,12 +1013,21 @@
     open() {
       el("civitaiModal")?.classList.remove("hidden");
       wireControls();
+      setInstalledOnly(false);
       updateTypeButtons();
+      renderTagChips();
       syncDownloadJobs();
       status("Idle");
-      if (!currentItems.length) search(false).catch(() => status("Browse unavailable."));
+      if (!currentItems.length) {
+        search(false).catch(() => status("Browse unavailable."));
+      } else if (visibleSearchEntries().length) {
+        renderSearch(currentItems, false);
+      } else {
+        search(false).catch(() => status("Browse unavailable."));
+      }
     },
     close() {
+      setInstalledOnly(false);
       el("civitaiModal")?.classList.add("hidden");
       closeMediaModal();
     },
@@ -750,6 +1035,12 @@
       resolve().catch((error) => {
         status("Resolve failed.");
         window.showToast?.("Civitai Resolve Failed", String(error.message || error).slice(0, 180));
+      });
+    },
+    submit() {
+      submitSearchInput().catch((error) => {
+        status("Submit failed.");
+        window.showToast?.("Civitai Submit Failed", String(error.message || error).slice(0, 180));
       });
     },
     download() {
@@ -760,7 +1051,7 @@
       });
     },
     search() {
-      search(false).catch((error) => {
+      return search(false).catch((error) => {
         status("Search failed.");
         window.showToast?.("Civitai Search Failed", String(error.message || error).slice(0, 180));
       });
@@ -768,9 +1059,9 @@
     loadMore() {
       if (!searchCursor) {
         status("No more results.");
-        return;
+        return Promise.resolve();
       }
-      search(true).catch((error) => {
+      return search(true).catch((error) => {
         status("Load more failed.");
         window.showToast?.("Civitai Search Failed", String(error.message || error).slice(0, 180));
       });
@@ -803,6 +1094,9 @@
         relative_path: version.relative_path || item.relative_path || "",
         path: version.path || item.path || "",
         nsfw: item.nsfw,
+        nsfw_level: item.nsfw_level ?? version.nsfw_level,
+        nsfwLevel: item.nsfwLevel ?? item.nsfw_level ?? version.nsfwLevel ?? version.nsfw_level,
+        tags: item.tags || [],
         preview: version.preview || item.preview,
         previews: previewList(item, version),
         trained_words: version.trained_words || [],
@@ -853,6 +1147,12 @@
     },
     setType(value) {
       setTypeFilter(value);
+    },
+    setTag(value) {
+      setTagFilter(value);
+    },
+    clearFilters() {
+      clearSearchFilters();
     },
     clearToken() {
       localStorage.removeItem(tokenStorageKey);

@@ -20,6 +20,11 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
         assets["primary_model"] = selected_name
 
     preset = request.preset.lower()
+    selected_requests_flux2 = preset == "flux" and any(
+        token in selected_name.lower() for token in ("flux-2", "flux2", "flux_2", "flux.2", "klein")
+    )
+    if selected_requests_flux2 and not selected_model:
+        assets.pop("primary_model", None)
     if preset == "ltx":
         assets.update(_resolve_ltx(by_category, selected_name, request))
     elif preset == "wan":
@@ -153,7 +158,8 @@ def _first_controlnet(items: list[ModelFile], preset: str, control_type: str) ->
 def _resolve_flux(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
     assets: dict[str, str] = {}
     primary = _find_name(by_category, selected_name)
-    if not primary:
+    selected_requests_flux2 = any(token in str(selected_name or "").lower() for token in ("flux-2", "flux2", "flux_2", "flux.2", "klein"))
+    if not primary and not selected_requests_flux2:
         primary = (
             _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["flux", "q5"])
             or _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["flux", "dev"])
@@ -351,6 +357,9 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, re
     detailer_lora = _first_ltx_lora(by_category, [["detailer"], ["ic-lora", "detail"]])
     if detailer_lora:
         assets["detailer_lora"] = _comfy_name(detailer_lora)
+    outpaint_lora = _first_ltx_lora(by_category, [["outpaint"], ["outpainting"]])
+    if outpaint_lora:
+        assets["outpaint_lora"] = _comfy_name(outpaint_lora)
     id_lora = _first_ltx_lora(by_category, [["id-lora"], ["id", "lora"], ["celebvhq"]])
     if id_lora:
         assets["id_lora"] = _comfy_name(id_lora)
@@ -521,6 +530,10 @@ def _resolve_qwen(by_category: dict[str, list[ModelFile]], selected_name: str, r
         edit_lightning = _first_qwen_edit_lightning_lora(by_category)
         if edit_lightning:
             assets["qwen_edit_lightning_lora"] = _comfy_name(edit_lightning)
+    if has_reference and _truthy((request.video or {}).get("qwen_multiview")):
+        multiangle_lora = _first_qwen_multiangle_lora(by_category)
+        if multiangle_lora:
+            assets["qwen_multiangle_lora"] = _comfy_name(multiangle_lora)
     return assets
 
 
@@ -556,10 +569,10 @@ def _resolve_zimage(by_category: dict[str, list[ModelFile]], selected_name: str,
 
 
 def _selected_model_choice(by_category: dict[str, list[ModelFile]], value: str | None) -> ModelFile | None:
-    name = Path(str(value or "")).name
-    if not name or name.lower() in {"automatic", "auto", "none"}:
+    raw = str(value or "").strip()
+    if not raw or raw.lower() in {"automatic", "auto", "none"}:
         return None
-    return _find_name(by_category, name)
+    return _find_name(by_category, raw) or _find_name(by_category, Path(raw).name)
 
 
 def _is_exact_model_name(item: ModelFile, name: str) -> bool:
@@ -594,13 +607,17 @@ def _first_qwen_edit_lightning_lora(by_category: dict[str, list[ModelFile]]) -> 
     preferred: list[tuple[int, ModelFile]] = []
     for item in by_category.get("loras", []):
         haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
-        if "qwen" not in haystack or "edit" not in haystack or "lightning" not in haystack:
+        if "qwen" not in haystack or "lightning" not in haystack:
             continue
         score = 0
+        if "edit" in haystack:
+            score += 50
         if "2511" in haystack:
             score += 40
         if "4steps" in haystack or "4step" in haystack:
             score += 20
+        if "bf16" in haystack:
+            score += 8
         if "fp32" in haystack:
             score += 5
         if "2509" in haystack:
@@ -610,6 +627,34 @@ def _first_qwen_edit_lightning_lora(by_category: dict[str, list[ModelFile]]) -> 
         return None
     preferred.sort(key=lambda pair: pair[0], reverse=True)
     return preferred[0][1]
+
+
+def _first_qwen_multiangle_lora(by_category: dict[str, list[ModelFile]]) -> ModelFile | None:
+    preferred: list[tuple[int, ModelFile]] = []
+    for item in by_category.get("loras", []):
+        haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+        if "qwen" not in haystack:
+            continue
+        if not any(token in haystack for token in ("multiangle", "multi-angle", "multiple-angle", "multiple-angles", "angles-lora")):
+            continue
+        score = 0
+        if "2511" in haystack:
+            score += 40
+        if "edit" in haystack:
+            score += 20
+        if "fal" in haystack:
+            score += 5
+        preferred.append((score, item))
+    if not preferred:
+        return None
+    preferred.sort(key=lambda pair: pair[0], reverse=True)
+    return preferred[0][1]
+
+
+def _truthy(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "false", "0", "off", "none", "no"}
+    return bool(value)
 
 
 def _is_ltx_preview_vae(item: ModelFile) -> bool:
@@ -632,6 +677,10 @@ def _comfy_name(item: ModelFile) -> str:
         if item.category == "loras" and name.lower().startswith("ltx_ic\\"):
             return "ltx_ic\\" + name.split("\\", 1)[1]
         return name
+    if relative:
+        if relative.lower().startswith("ltx2\\"):
+            return "ltx\\" + relative.split("\\", 1)[1]
+        return relative
     return item.name
 
 
@@ -659,8 +708,10 @@ def _find_name(by_category: dict[str, list[ModelFile]], name: str) -> ModelFile 
         for item in items:
             item_name = item.name.replace("/", "\\").lower()
             item_relative = item.relative_path.replace("/", "\\").lower()
+            item_path = item.path.replace("/", "\\").lower()
             item_lookup = _normalize_model_lookup(item_relative)
-            if item_name == lower or item_relative == lower or item_lookup in lookup_variants:
+            item_path_lookup = _normalize_model_lookup(item_path)
+            if item_name == lower or item_relative == lower or item_path == lower or item_lookup in lookup_variants or item_path_lookup in lookup_variants:
                 return item
     return None
 

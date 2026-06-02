@@ -1,5 +1,5 @@
 param(
-    [string]$ProjectRoot = "D:\NexusBTA"
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
 
 $ErrorActionPreference = "Stop"
@@ -134,7 +134,7 @@ if (Test-Path -LiteralPath $python) {
     }
 
     if (Test-Path -LiteralPath $customNodeDeps) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $customNodeDeps -ProjectRoot $root -RuntimePython $comfyPython -CustomNodesDir $customNodesDir -Strict
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $customNodeDeps -ProjectRoot $root -RuntimePython $comfyPython -CustomNodesDir $customNodesDir
     }
 
     if (Test-Path -LiteralPath $ltxDirectorDeps) {

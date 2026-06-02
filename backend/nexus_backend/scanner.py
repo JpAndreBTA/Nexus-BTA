@@ -35,6 +35,10 @@ MODEL_CATEGORIES = [
 CHECKPOINT_PRESET_FOLDERS = [
     "sd15",
     "sdxl",
+    "illustrious",
+    "noobai",
+    "animagine",
+    "pony",
     "flux",
     "qwen",
     "lumina",
@@ -52,6 +56,8 @@ MODEL_SOURCE_CATEGORY_ALIASES = {
     "loras": "loras",
     "controlnet": "controlnet",
     "controlnets": "controlnet",
+    "model_patch": "model_patches",
+    "model_patches": "model_patches",
     "upscale": "upscale_models",
     "upscale_models": "upscale_models",
     "latent_upscale": "latent_upscale_models",
@@ -241,4 +247,7 @@ def ensure_model_tree(settings: NexusSettings) -> list[str]:
         path = settings.models_dir / "checkpoints" / folder
         path.mkdir(parents=True, exist_ok=True)
         created.append(str(path))
+        lora_path = settings.models_dir / "loras" / folder
+        lora_path.mkdir(parents=True, exist_ok=True)
+        created.append(str(lora_path))
     return created

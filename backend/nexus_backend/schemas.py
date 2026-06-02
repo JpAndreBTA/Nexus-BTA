@@ -93,6 +93,9 @@ class Img2ImgSettings(BaseModel):
     reference_images: list[str] = Field(default_factory=list)
     base_video: str | None = None
     mask_image: str | None = None
+    composite_mask_image: str | None = None
+    extend_source_image: str | None = None
+    extend_pad: dict[str, int] | None = None
 
 
 class ControlNetSettings(BaseModel):
@@ -192,6 +195,7 @@ class DependencyInstallRequest(BaseModel):
 
 class CustomNodeUpdateRequest(BaseModel):
     version: str = ""
+    install_dependencies: bool = True
 
 
 class PluginInstallRequest(BaseModel):
@@ -216,6 +220,7 @@ class CivitaiDownloadRequest(BaseModel):
 
 class CivitaiSearchRequest(BaseModel):
     query: str = ""
+    tag: str = ""
     token: str | None = None
     types: str = ""
     base_model: str = ""

@@ -1,5 +1,5 @@
 param(
-    [string]$ProjectRoot = "D:\NexusBTA",
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$ComfyCoreSource = "C:\ComfyUI\resources\ComfyUI",
     [string]$PythonEnvSource = "C:\ComfyUpdate\.venv",
     [string]$CustomNodesSource = "C:\ComfyUpdate\custom_nodes",
