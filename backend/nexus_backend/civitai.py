@@ -78,7 +78,7 @@ def search_civitai_models(
     if not nsfw:
         visible_items = [item for item in visible_items if _item_visible_when_mature_hidden(item)]
     return {
-        "items": [_normalize_model_item(item, settings=settings) for item in visible_items],
+        "items": [_normalize_model_item(item, settings=settings, token=token) for item in visible_items],
         "metadata": data.get("metadata") or {},
     }
 
@@ -245,8 +245,8 @@ def resolve_civitai_asset(settings: NexusSettings, url: str, token: str | None =
         "target_kind": target_kind,
         "target_folder": str(_target_dir(settings, target_kind, target_preset)),
         "trained_words": version.get("trainedWords") or [],
-        "preview": _preview_url(version),
-        "previews": _preview_media(version),
+        "preview": _preview_url(version, token=token),
+        "previews": _preview_media(version, token=token),
         "description": model.get("description") or version.get("description") or "",
         "creator": (model.get("creator") or {}).get("username") if isinstance(model.get("creator"), dict) else "",
         "nsfw": bool(model.get("nsfw")),
@@ -257,7 +257,7 @@ def resolve_civitai_asset(settings: NexusSettings, url: str, token: str | None =
     return _with_installed_state(resolved, settings)
 
 
-def _normalize_model_item(item: dict[str, Any], settings: NexusSettings | None = None) -> dict[str, Any]:
+def _normalize_model_item(item: dict[str, Any], settings: NexusSettings | None = None, token: str | None = None) -> dict[str, Any]:
     versions = item.get("modelVersions") or []
     normalized_versions: list[dict[str, Any]] = []
     for version in versions[:6]:
@@ -273,8 +273,8 @@ def _normalize_model_item(item: dict[str, Any], settings: NexusSettings | None =
                 "file_name": primary.get("name") or "",
                 "file_size_kb": primary.get("sizeKB") or 0,
                 "trained_words": version.get("trainedWords") or [],
-                "preview": _preview_url(version),
-                "previews": _preview_media(version),
+                "preview": _preview_url(version, token=token),
+                "previews": _preview_media(version, token=token),
                 "description": version.get("description") or "",
                 "nsfw_level": version.get("nsfwLevel"),
                 "url": f"https://civitai.red/models/{item.get('id')}?modelVersionId={version_id}" if version_id else f"https://civitai.red/models/{item.get('id')}",
@@ -387,14 +387,26 @@ def _ids_from_url(url: str) -> tuple[int | None, int | None]:
 
 def _get_json_any_host(path: str, token: str | None) -> dict[str, Any]:
     errors: list[str] = []
+    api_path = _api_path_with_token(path, token)
     for host in API_HOSTS:
         try:
-            request = urllib.request.Request(host + path, headers={**_headers(token), "Accept": "application/json,*/*"})
+            request = urllib.request.Request(host + api_path, headers={**_headers(token), "Accept": "application/json,*/*"})
             with urllib.request.urlopen(request, timeout=30) as response:
                 return json.loads(response.read().decode("utf-8"))
         except Exception as exc:
             errors.append(str(exc))
     raise ValueError("; ".join(errors) or "Civitai request failed.")
+
+
+def _api_path_with_token(path: str, token: str | None) -> str:
+    cleaned_token = str(token or "").strip()
+    if not cleaned_token:
+        return path
+    parsed = urllib.parse.urlsplit(path)
+    query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    if not any(key == "token" for key, _ in query):
+        query.append(("token", cleaned_token))
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urllib.parse.urlencode(query), parsed.fragment))
 
 
 def _download_file(
@@ -538,35 +550,43 @@ def _primary_file(version: dict[str, Any]) -> dict[str, Any]:
     return next((file for file in files if file.get("primary")), files[0])
 
 
-def _preview_url(version: dict[str, Any]) -> str:
-    images = version.get("images") or []
-    preferred = next((item for item in images if isinstance(item, dict) and "video" not in str(item.get("mimeType") or item.get("type") or "").lower()), None)
-    source = preferred or (images[0] if images else {})
-    if not isinstance(source, dict):
+def _tokenized_preview_url(url: Any, token: str | None = None) -> str:
+    text = str(url or "").strip()
+    if not text:
         return ""
-    return str(
-        source.get("thumbnailUrl")
-        or source.get("thumbUrl")
-        or source.get("imageUrl")
-        or source.get("lowResUrl")
-        or source.get("previewUrl")
-        or source.get("url")
-        or ""
-    )
+    if not token:
+        return text
+    host = urllib.parse.urlparse(text).netloc.lower()
+    if "civitai." in host:
+        return _with_token(text, token)
+    return text
 
 
-def _preview_media(version: dict[str, Any]) -> list[dict[str, Any]]:
+def _first_preview_value(image: dict[str, Any], keys: tuple[str, ...], token: str | None = None) -> str:
+    for key in keys:
+        value = image.get(key)
+        if value:
+            return _tokenized_preview_url(value, token)
+    return ""
+
+
+def _preview_url(version: dict[str, Any], token: str | None = None) -> str:
+    previews = _preview_media(version, token=token)
+    image = next((item for item in previews if str(item.get("type") or "").lower() != "video" and item.get("url")), None)
+    source = image or next((item for item in previews if item.get("posterUrl") or item.get("thumbnailUrl") or item.get("url")), None)
+    if not source:
+        return ""
+    return str(source.get("posterUrl") or source.get("thumbnailUrl") or source.get("url") or "")
+
+
+def _preview_media(version: dict[str, Any], token: str | None = None) -> list[dict[str, Any]]:
     previews: list[dict[str, Any]] = []
     for image in version.get("images") or []:
         if not isinstance(image, dict):
             continue
-        url = str(image.get("url") or "")
-        if not url:
-            continue
         mime = str(image.get("mimeType") or image.get("type") or "").lower()
-        lower_url = url.lower()
         video = image.get("video") if isinstance(image.get("video"), dict) else {}
-        video_url = str(
+        video_url = _tokenized_preview_url(
             image.get("lowResVideoUrl")
             or image.get("lowresVideoUrl")
             or video.get("lowResUrl")
@@ -574,17 +594,21 @@ def _preview_media(version: dict[str, Any]) -> list[dict[str, Any]]:
             or image.get("videoUrl")
             or image.get("video_url")
             or video.get("url")
-            or ""
+            or "",
+            token,
         )
+        poster_url = _first_preview_value(
+            image,
+            ("thumbnailUrl", "thumbUrl", "imageUrl", "lowResUrl", "previewUrl", "url"),
+            token=token,
+        )
+        url = _tokenized_preview_url(image.get("url") or poster_url or video_url, token)
+        if not url and not poster_url and not video_url:
+            continue
+        lower_url = url.lower()
         media_type = "video" if video_url or "video" in mime or lower_url.endswith((".mp4", ".webm", ".mov")) else "image"
-        poster_url = str(
-            image.get("thumbnailUrl")
-            or image.get("thumbUrl")
-            or image.get("imageUrl")
-            or image.get("lowResUrl")
-            or image.get("previewUrl")
-            or (url if not lower_url.endswith((".mp4", ".webm", ".mov")) else "")
-        )
+        if media_type == "video" and not poster_url and not lower_url.endswith((".mp4", ".webm", ".mov")):
+            poster_url = url
         previews.append(
             {
                 "url": url,
@@ -592,8 +616,8 @@ def _preview_media(version: dict[str, Any]) -> list[dict[str, Any]]:
                 "thumbnailUrl": poster_url,
                 "posterUrl": poster_url,
                 "videoUrl": video_url,
-                "lowResUrl": image.get("lowResUrl") or image.get("url"),
-                "lowResVideoUrl": video.get("lowResUrl") or video_url,
+                "lowResUrl": _tokenized_preview_url(image.get("lowResUrl") or image.get("url") or poster_url, token),
+                "lowResVideoUrl": _tokenized_preview_url(video.get("lowResUrl") or video_url, token),
                 "nsfw": image.get("nsfw") or image.get("needsReview"),
                 "nsfwLevel": image.get("nsfwLevel"),
                 "nsfw_level": image.get("nsfwLevel"),

@@ -15,9 +15,12 @@
   let searchRunId = 0;
   let lastSearchSignature = "";
   let searchDebounceTimer = null;
+  let tokenRefreshTimer = null;
+  let autoLoadMoreCount = 0;
   const tokenStorageKey = "nexus_civitai_api_key";
   const downloadJobs = new Map();
   const lazyPageSize = 36;
+  const autoLoadMoreMaxPages = 3;
   const galleryPreviewLimit = 60;
   const tagPresets = {
     "": ["character", "style", "concept", "realistic", "photorealistic", "anime", "female", "male", "digital art", "video game", "base model", "upscaler"],
@@ -153,6 +156,20 @@
     }, 360);
   }
 
+  function queueTokenRefresh() {
+    clearTimeout(tokenRefreshTimer);
+    tokenRefreshTimer = setTimeout(() => {
+      const modal = el("civitaiModal");
+      if (!modal || modal.classList.contains("hidden")) return;
+      const rawInput = el("civitaiUrlInput")?.value?.trim() || "";
+      const refresh = isCivitaiUrl(rawInput) || viewMode === "detail" ? submitSearchInput : startFreshSearch;
+      refresh().catch((error) => {
+        if (error?.name === "AbortError") return;
+        status("Token refresh failed.");
+      });
+    }, 500);
+  }
+
   function explorerScroller() {
     return el("civitaiExplorerScroll");
   }
@@ -268,21 +285,56 @@
     startFreshSearch().catch(() => status("Search failed."));
   }
 
-  async function post(path, body, signal = null) {
-    const response = await fetch(api + path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-    });
-    if (!response.ok) throw new Error(await response.text());
-    return response.json();
+  async function post(path, body, signal = null, timeoutMs = 25000) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    const abortFromCaller = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) abortFromCaller();
+      else signal.addEventListener("abort", abortFromCaller, { once: true });
+    }
+    try {
+      const response = await fetch(api + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    } catch (error) {
+      if (timedOut) throw new Error("Civitai request timed out. Try again or reduce filters.");
+      if (signal?.aborted && error?.name !== "AbortError") {
+        let abortError;
+        try {
+          abortError = new DOMException("Aborted", "AbortError");
+        } catch {
+          abortError = new Error("Aborted");
+          abortError.name = "AbortError";
+        }
+        throw abortError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+      if (signal) signal.removeEventListener?.("abort", abortFromCaller);
+    }
   }
 
-  async function get(path) {
-    const response = await fetch(api + path);
-    if (!response.ok) throw new Error(await response.text());
-    return response.json();
+  async function get(path, timeoutMs = 25000) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(api + path, { signal: controller.signal });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   function savedToken() {
@@ -299,6 +351,7 @@
       const value = token.value.trim();
       if (value) localStorage.setItem(tokenStorageKey, value);
       else localStorage.removeItem(tokenStorageKey);
+      queueTokenRefresh();
     });
   }
 
@@ -451,13 +504,14 @@
   function mediaHtml(preview, className, alt, options = {}) {
     const url = mediaUrl(preview);
     if (!url) return `<div class="${className} flex items-center justify-center text-nexus-muted"><i class="fa-regular fa-image text-2xl"></i></div>`;
+    const fallback = `<div class="absolute inset-0 flex items-center justify-center text-nexus-muted bg-nexus-bg"><i class="fa-regular fa-image text-2xl"></i></div>`;
     if (previewKind(preview) === "video") {
       const poster = posterUrl(preview);
       const src = videoUrl(preview) || url;
       const playable = !!options.playVideo && !!src;
-      return `<div class="${className} relative bg-black">${playable ? `<video data-src="${html(src)}" muted loop playsinline preload="none" ${poster ? `poster="${html(poster)}"` : ""} aria-label="${html(alt)}" class="nexus-civitai-tile-video w-full h-full object-cover"></video>` : poster ? `<img src="${html(poster)}" loading="lazy" decoding="async" alt="${html(alt)}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-nexus-muted"><i class="fa-solid fa-play text-2xl"></i></div>`}<span class="absolute bottom-2 left-2 bg-black/80 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-play mr-1"></i>Video</span></div>`;
+      return `<div class="${className} relative bg-black">${fallback}${playable ? `<video data-src="${html(src)}" muted loop playsinline preload="none" ${poster ? `poster="${html(poster)}"` : ""} aria-label="${html(alt)}" onerror="this.remove()" class="nexus-civitai-tile-video relative z-10 w-full h-full object-cover"></video>` : poster ? `<img src="${html(poster)}" loading="lazy" decoding="async" alt="${html(alt)}" onerror="this.remove()" class="relative z-10 w-full h-full object-cover">` : `<div class="relative z-10 w-full h-full flex items-center justify-center text-nexus-muted"><i class="fa-solid fa-play text-2xl"></i></div>`}<span class="absolute bottom-2 left-2 z-20 bg-black/80 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-play mr-1"></i>Video</span></div>`;
     }
-    return `<img src="${html(url)}" loading="lazy" decoding="async" alt="${html(alt)}" class="${className} object-cover">`;
+    return `<div class="${className} relative bg-nexus-bg overflow-hidden">${fallback}<img src="${html(url)}" loading="lazy" decoding="async" alt="${html(alt)}" onerror="this.remove()" class="relative z-10 w-full h-full object-cover"></div>`;
   }
 
   function isInstalled(data, downloaded = false) {
@@ -632,7 +686,7 @@
     const blurMature = !!el("civitaiBlurMatureToggle")?.checked;
     const mature = mediaIsMature(preview, data);
     const blurClass = mature && blurMature ? "blur-xl scale-110" : "";
-    const playVideo = showMatureEnabled() && !(mature && blurMature);
+    const playVideo = showMatureEnabled();
     return `
       <button type="button" onclick="window.NexusCivitai?.openMedia(${index})" class="${shape} border border-nexus-border overflow-hidden bg-black relative group">
         <div class="w-full h-full transition-transform duration-300 group-hover:scale-[1.03] ${blurClass}">
@@ -678,11 +732,12 @@
     const url = mediaUrl(preview);
     const isVideo = previewKind(preview) === "video";
     const poster = posterUrl(preview);
+    const fallback = `<div class="absolute inset-0 flex items-center justify-center text-nexus-muted bg-nexus-bg"><i class="fa-regular fa-image text-3xl"></i></div>`;
     stage.innerHTML = `
       <div class="relative max-w-full max-h-full overflow-hidden border border-nexus-border bg-black">
         ${isVideo
-          ? `<div class="relative max-w-full max-h-[76vh]"><video data-src="${html(videoUrl(preview))}" controls muted playsinline preload="metadata" poster="${html(poster)}" class="max-w-full max-h-[76vh] object-contain ${blurClass}">Your browser cannot play this Civitai video.</video></div>`
-          : `<img src="${html(url)}" alt="Civitai preview" class="max-w-full max-h-[76vh] object-contain ${blurClass}">`}
+          ? `<div class="relative max-w-full max-h-[76vh]">${fallback}<video data-src="${html(videoUrl(preview))}" controls muted playsinline preload="metadata" poster="${html(poster)}" onerror="this.remove()" class="relative z-10 max-w-full max-h-[76vh] object-contain ${blurClass}">Your browser cannot play this Civitai video.</video></div>`
+          : `${fallback}<img src="${html(url)}" alt="Civitai preview" onerror="this.remove()" class="relative z-10 max-w-full max-h-[76vh] object-contain ${blurClass}">`}
         ${mature && blurMature ? `<span class="absolute top-3 left-3 bg-yellow-400 text-black text-[9px] font-bold px-2 py-1 uppercase">Mature preview blurred</span>` : ""}
       </div>
     `;
@@ -890,7 +945,7 @@
     const mature = mediaIsMature(preview, item);
     const matureClass = mature && blurMature ? "blur-xl scale-110" : "";
     const installed = isInstalled(version, isInstalled(item));
-    const playVideo = showMatureEnabled() && !(mature && blurMature);
+    const playVideo = showMatureEnabled();
     return `
       <article class="group bg-nexus-panel border border-nexus-border hover:border-nexus-red rounded-sm overflow-hidden">
         <button class="block w-full text-left" onclick="window.NexusCivitai?.selectSearchResult(${index})">
@@ -936,12 +991,14 @@
 
   function resetSearchState({ clearPanel = true } = {}) {
     clearTimeout(searchDebounceTimer);
+    clearTimeout(tokenRefreshTimer);
     if (activeSearchController) activeSearchController.abort();
     searchRunId += 1;
     activeSearchController = null;
     loadingMore = false;
     searchCursor = null;
     currentItems = [];
+    autoLoadMoreCount = 0;
     selectedIndex = -1;
     viewMode = "explorer";
     currentDetail = null;
@@ -984,8 +1041,13 @@
         <div class="h-full min-h-[300px] flex flex-col items-center justify-center text-center text-nexus-muted gap-3">
           <p>${message}</p>
           ${currentItems.length ? `<p class="text-[10px] font-mono">Active filters: ${html(currentFilterSummary())}</p><button type="button" onclick="window.NexusCivitai?.clearFilters()" class="flat-button px-3 py-2 text-xs font-bold uppercase"><i class="fa-solid fa-filter-circle-xmark text-nexus-red mr-1"></i>Clear filters</button>` : ""}
+          ${searchCursor ? `<button type="button" onclick="window.NexusCivitai?.loadMore()" class="bg-nexus-red hover:bg-nexus-darkRed text-white px-3 py-2 rounded-sm text-xs font-bold uppercase"><i class="fa-solid fa-angles-down mr-1"></i>Load more</button>` : ""}
         </div>
       `;
+      if (searchCursor && autoLoadMoreCount < autoLoadMoreMaxPages) {
+        autoLoadMoreCount += 1;
+        setTimeout(() => window.NexusCivitai?.loadMore?.(), 0);
+      }
       return;
     }
     const blurMature = !!el("civitaiBlurMatureToggle")?.checked;
@@ -1040,6 +1102,7 @@
     currentDetail = null;
     searchCursor = null;
     currentItems = [];
+    autoLoadMoreCount = 0;
     explorerScrollTop = 0;
     return search(false);
   }
@@ -1124,7 +1187,8 @@
       }
       if (runId === searchRunId) {
         const panel = el("civitaiResultPanel");
-        if (panel) panel.innerHTML = searchErrorHtml("Civitai search failed. Try again or adjust filters.");
+        const message = String(error?.message || "Civitai search failed. Try again or adjust filters.").slice(0, 180);
+        if (panel) panel.innerHTML = searchErrorHtml(message);
       }
       throw error;
     } finally {
