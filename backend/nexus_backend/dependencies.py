@@ -17,6 +17,11 @@ _OPTIONAL_REQUIREMENT_FALLBACKS = {
     "imath": "OpenEXR>=3.2.0",
 }
 
+_OPTIONAL_REQUIREMENT_SKIPS = {
+    "inference-cli",
+    "inference-gpu",
+}
+
 
 def custom_node_requirements(settings: NexusSettings) -> dict[str, Path]:
     requirements: dict[str, Path] = {}
@@ -46,11 +51,14 @@ def _normalize_package_name(value: str) -> str:
 
 def _installed_requirement(package: str) -> bool:
     normalized = _normalize_package_name(package)
-    try:
-        metadata.version(package)
+    if normalized in _OPTIONAL_REQUIREMENT_SKIPS:
         return True
-    except metadata.PackageNotFoundError:
-        pass
+    for candidate in dict.fromkeys((package, normalized)):
+        try:
+            metadata.version(candidate)
+            return True
+        except metadata.PackageNotFoundError:
+            pass
     fallback = _OPTIONAL_REQUIREMENT_FALLBACKS.get(normalized)
     if not fallback:
         return False
@@ -70,9 +78,13 @@ def _sanitized_requirements_file(requirements_path: Path, temp_dir: Path) -> Pat
     sanitized: list[str] = []
     for line in lines:
         package = _requirement_package_name(line)
-        fallback = _OPTIONAL_REQUIREMENT_FALLBACKS.get(_normalize_package_name(package or ""))
+        normalized = _normalize_package_name(package or "")
+        fallback = _OPTIONAL_REQUIREMENT_FALLBACKS.get(normalized)
         if fallback:
             sanitized.append(f"{fallback}  # Nexus fallback for optional {package}")
+            changed = True
+        elif normalized in _OPTIONAL_REQUIREMENT_SKIPS:
+            sanitized.append(f"# {line}  # Nexus skip: optional Roboflow inference package conflicts with current Comfy/Nexus runtime")
             changed = True
         else:
             sanitized.append(line)
@@ -96,6 +108,8 @@ def custom_node_dependency_status(settings: NexusSettings) -> dict[str, dict[str
         for line in lines:
             package = _requirement_package_name(line)
             if not package:
+                continue
+            if _normalize_package_name(package) in _OPTIONAL_REQUIREMENT_SKIPS:
                 continue
             packages.append(package)
             if not _installed_requirement(package):
