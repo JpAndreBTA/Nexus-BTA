@@ -187,7 +187,7 @@ if ($assets.Count -gt 0) {
     Write-NexusLine "Wan 2.2 model downloads skipped or already satisfied." "Info"
 }
 
-$assetJson = $assets | ConvertTo-Json -Depth 5 -Compress
+$assetJson = @($assets) | ConvertTo-Json -Depth 5 -Compress
 $downloadScript = @'
 import json
 import os
@@ -199,6 +199,8 @@ from pathlib import Path
 from huggingface_hub import hf_hub_download
 
 assets = json.loads(os.environ["NEXUS_WAN22_ASSETS"])
+if isinstance(assets, dict):
+    assets = [assets]
 
 for asset in assets:
     target = Path(asset["Target"])

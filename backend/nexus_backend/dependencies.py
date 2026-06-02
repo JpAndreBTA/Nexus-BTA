@@ -25,7 +25,7 @@ _REQUIREMENT_VERSION_FLOORS = {
     "diffusers": "diffusers>=0.38.0",
     "fastapi": "fastapi>=0.136.3",
     "huggingface-hub": "huggingface-hub>=0.36.2",
-    "kornia": "kornia>=0.8.2",
+    "kornia": "kornia>=0.8.2,<0.8.3",
     "numpy": "numpy>=2.4.6",
     "opencv-contrib-python": "opencv-contrib-python>=4.10.0.84",
     "opencv-python": "opencv-python>=4.10.0.84",
@@ -84,9 +84,12 @@ def _installed_requirement(package: str) -> bool:
                 if floor_package and _normalize_package_name(floor_package) == normalized:
                     exact_match = re.search(r"==\s*([A-Za-z0-9_.!+-]+)", floor)
                     floor_match = re.search(r">=\s*([A-Za-z0-9_.!+-]+)", floor)
+                    ceiling_match = re.search(r"<\s*([A-Za-z0-9_.!+-]+)", floor)
                     if exact_match and Version(installed_version) != Version(exact_match.group(1)):
                         return False
                     if floor_match and Version(installed_version) < Version(floor_match.group(1)):
+                        return False
+                    if ceiling_match and Version(installed_version) >= Version(ceiling_match.group(1)):
                         return False
             return True
         except metadata.PackageNotFoundError:

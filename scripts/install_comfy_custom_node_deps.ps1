@@ -74,7 +74,7 @@ function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
                     $sanitized += "huggingface-hub>=0.36.2 # Nexus minimum for current Comfy/Nexus runtime"
                     $changed = $true
                 } elseif ($line.Trim() -match '^kornia(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
-                    $sanitized += "kornia>=0.8.2 # Nexus minimum for current Comfy/Nexus runtime"
+                    $sanitized += "kornia>=0.8.2,<0.8.3 # Nexus pin: ComfyUI-LTXVideo imports pyramid.pad"
                     $changed = $true
                 } elseif ($line.Trim() -match '^numpy(\[.*\])?([<>=!~].*)?(\s*(#.*)?)?$') {
                     $sanitized += "numpy>=2.4.6 # Nexus minimum for current Comfy/Nexus runtime"
