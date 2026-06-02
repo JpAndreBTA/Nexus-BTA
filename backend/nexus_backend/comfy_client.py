@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import importlib.util
 import json
 import os
@@ -23,8 +24,12 @@ def _module_available(module_name: str) -> bool:
             import xformers.ops  # noqa: F401
 
             return importlib.util.find_spec("xformers._C") is not None
-        return importlib.util.find_spec(module_name) is not None
-    except (ImportError, ValueError):
+        if importlib.util.find_spec(module_name) is None:
+            return False
+        if module_name in {"sageattention", "flash_attn"}:
+            importlib.import_module(module_name)
+        return True
+    except Exception:
         return False
 
 
@@ -411,13 +416,24 @@ class ComfyClient:
         elif precision == "fp8":
             flags.append("--fp8_e4m3fn-unet")
 
-        if runtime.disable_xformers or not _module_available("xformers"):
-            flags.append("--disable-xformers")
         attention = runtime.attention_backend.lower().replace(" ", "").replace("_", "").replace("-", "")
+        if attention in {"xformers", "xformer"}:
+            if not _module_available("xformers"):
+                raise RuntimeError(
+                    "xFormers is selected for the Nexus runtime, but the configured Comfy Python cannot import xformers. "
+                    "Run update.bat to install the current runtime requirements, then restart Nexus."
+                )
+        elif runtime.disable_xformers or not _module_available("xformers"):
+            flags.append("--disable-xformers")
+
         if (
             (attention in {"sage", "sageattention"} or (attention == "auto" and runtime.enable_sage_attention))
-            and _module_available("sageattention")
         ):
+            if not _module_available("sageattention"):
+                raise RuntimeError(
+                    "SageAttention is enabled for the Nexus runtime, but the configured Comfy Python cannot import sageattention. "
+                    "Run update.bat to install the current runtime requirements, then restart Nexus."
+                )
             flags.append("--use-sage-attention")
         elif (attention in {"flash", "flashattention"} or runtime.enable_flash_attention) and _module_available("flash_attn"):
             flags.append("--use-flash-attention")

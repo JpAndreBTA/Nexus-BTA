@@ -113,7 +113,7 @@ zstandard
 # cumesh, custom_rasterizer, nvdiffrast, flex_gemm, o_voxel
 
 # Attention/runtime acceleration. xFormers is pinned to the matching PyTorch CUDA 13.0 wheel;
-# keep SDPA as fallback when the local GPU/PyTorch build cannot load these kernels.
+# SageAttention is also installed so each model/profile can select the right backend.
 xformers @ https://download.pytorch.org/whl/cu130/xformers-0.0.35-py39-none-win_amd64.whl
 sageattention>=1.0.6
 # Optional attention/runtime packages, install only when compatible with the GPU and PyTorch build:

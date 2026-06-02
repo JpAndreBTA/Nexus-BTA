@@ -266,6 +266,7 @@ function Test-NexusLtxVideoRuntimeImport([string]$NodePath) {
     }
     $probe = @'
 import importlib
+import importlib.util
 import logging
 import pathlib
 import sys
@@ -277,6 +278,23 @@ node_path = pathlib.Path(sys.argv[3])
 
 sys.path.insert(0, str(comfy_root))
 sys.path.insert(0, str(custom_nodes_dir))
+
+def require_attention_runtime(label, module_name):
+    try:
+        if module_name == "xformers":
+            import xformers.ops  # noqa: F401
+            if importlib.util.find_spec("xformers._C") is None:
+                raise RuntimeError("xformers._C extension is not available")
+        else:
+            importlib.import_module(module_name)
+    except Exception as exc:
+        print(f"{label} runtime validation failed: {type(exc).__name__}: {exc}")
+        sys.exit(3)
+
+require_attention_runtime("xFormers", "xformers")
+require_attention_runtime("SageAttention", "sageattention")
+# xFormers was validated above; avoid repeating its optional Triton warning when
+# importing custom nodes so real node import errors stay readable.
 logging.getLogger("xformers").setLevel(logging.ERROR)
 
 try:
@@ -367,6 +385,15 @@ if (!$RuntimePython) {
 }
 
 New-Item -ItemType Directory -Force -Path $customNodesDir, $diffusionModelsDir, $melDir, $ltxTransitionDir, $ltxIcDir | Out-Null
+
+Invoke-NexusStep -Label "Installing Nexus attention runtime" -Step {
+    Invoke-NexusPipInstallIfNeeded "Nexus attention runtime" @(
+        "--extra-index-url",
+        "https://download.pytorch.org/whl/cu130",
+        "xformers @ https://download.pytorch.org/whl/cu130/xformers-0.0.35-py39-none-win_amd64.whl",
+        "sageattention>=1.0.6"
+    )
+}
 
 $repos = @(
     @{
