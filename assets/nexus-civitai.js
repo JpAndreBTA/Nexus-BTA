@@ -571,7 +571,6 @@
 
   function itemVisibleWithCurrentFilters(item) {
     if (installedOnlyEnabled() && !itemInstalled(item)) return false;
-    if (!itemMatchesSearchQuery(item)) return false;
     return itemVisibleWithCurrentMatureFilter(item);
   }
 
@@ -923,6 +922,45 @@
     `;
   }
 
+  function searchErrorHtml(message = "Civitai search failed.") {
+    return `
+      <div class="h-full min-h-[360px] flex flex-col items-center justify-center text-center text-nexus-muted gap-3">
+        <i class="fa-solid fa-triangle-exclamation text-nexus-red text-xl"></i>
+        <p class="font-mono text-[11px]">${html(message)}</p>
+        <button type="button" onclick="window.NexusCivitai?.search()" class="flat-button px-3 py-2 text-xs font-bold uppercase">
+          <i class="fa-solid fa-rotate-right text-nexus-red mr-1"></i>Retry
+        </button>
+      </div>
+    `;
+  }
+
+  function resetSearchState({ clearPanel = true } = {}) {
+    clearTimeout(searchDebounceTimer);
+    if (activeSearchController) activeSearchController.abort();
+    searchRunId += 1;
+    activeSearchController = null;
+    loadingMore = false;
+    searchCursor = null;
+    currentItems = [];
+    selectedIndex = -1;
+    viewMode = "explorer";
+    currentDetail = null;
+    mediaItems = [];
+    mediaIndex = 0;
+    explorerScrollTop = 0;
+    lastSearchSignature = "";
+    if (tileVideoObserver) {
+      tileVideoObserver.disconnect();
+      tileVideoObserver = null;
+    }
+    if (clearPanel) {
+      const panel = el("civitaiResultPanel");
+      if (panel) panel.innerHTML = searchLoadingHtml("Ready to search Civitai...");
+    }
+    const scroller = explorerScroller();
+    if (scroller) scroller.scrollTop = 0;
+  }
+
   function lazyStatusHtml() {
     return searchCursor
       ? `<div id="civitaiLazyStatus" class="py-6 flex items-center justify-center gap-2 text-nexus-muted font-mono text-[10px]"><i class="fa-solid fa-spinner text-nexus-red"></i> Lazy loading more models as you scroll...</div>`
@@ -1001,6 +1039,7 @@
     viewMode = "explorer";
     currentDetail = null;
     searchCursor = null;
+    currentItems = [];
     explorerScrollTop = 0;
     return search(false);
   }
@@ -1083,13 +1122,15 @@
         }
         return;
       }
+      if (runId === searchRunId) {
+        const panel = el("civitaiResultPanel");
+        if (panel) panel.innerHTML = searchErrorHtml("Civitai search failed. Try again or adjust filters.");
+      }
       throw error;
     } finally {
       if (runId === searchRunId) {
         loadingMore = false;
         activeSearchController = null;
-      } else if (!append) {
-        loadingMore = false;
       }
     }
   }
@@ -1099,20 +1140,17 @@
       el("civitaiModal")?.classList.remove("hidden");
       wireControls();
       setInstalledOnly(false);
+      resetSearchState({ clearPanel: true });
       updateTypeButtons();
       renderTagChips();
       syncDownloadJobs();
       status("Idle");
-      if (!currentItems.length) {
-        startFreshSearch().catch(() => status("Browse unavailable."));
-      } else if (visibleSearchEntries().length) {
-        renderSearch(currentItems, false);
-      } else {
-        startFreshSearch().catch(() => status("Browse unavailable."));
-      }
+      startFreshSearch().catch(() => status("Browse unavailable."));
     },
     close() {
       setInstalledOnly(false);
+      resetSearchState({ clearPanel: true });
+      status("Idle");
       el("civitaiModal")?.classList.add("hidden");
       closeMediaModal();
     },
