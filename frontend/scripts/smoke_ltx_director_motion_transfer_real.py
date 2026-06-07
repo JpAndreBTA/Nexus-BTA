@@ -59,7 +59,7 @@ def main() -> None:
               ltxDirectorState.segments = [];
               ltxDirectorState.referenceImages = [];
               ltxDirectorState.audioSegments = [];
-              setPreset(document.querySelector('[data-preset="LTX"]'), 'LTX');
+              setPreset(document.querySelector('button[data-preset="LTX"]'), 'LTX');
               switchActivity('img2img', document.querySelector('[data-activity="img2img"]'));
               switchView('director');
               document.querySelector('#widthInput').value = '512';

@@ -113,6 +113,21 @@ class WorkflowRegistry:
     def __init__(self, settings: NexusSettings):
         self.settings = settings
 
+    def ensure_model3d_workflow_aliases(self) -> int:
+        self.settings.workflows_dir.mkdir(parents=True, exist_ok=True)
+        aliases = [
+            (
+                self.settings.workflows_dir / "model3d_trellis2_meshwithtexturing_multiview.json",
+                self.settings.workflows_dir / "model3d_trellis2_meshwithvoxel_texturing_multiview.json",
+            ),
+        ]
+        count = 0
+        for source, target in aliases:
+            if source.exists() and not target.exists():
+                shutil.copy2(source, target)
+                count += 1
+        return count
+
     def import_reference_workflows(self) -> int:
         count = 0
         self.settings.workflows_dir.mkdir(parents=True, exist_ok=True)
@@ -124,6 +139,7 @@ class WorkflowRegistry:
                 if not target.exists():
                     shutil.copy2(item, target)
                     count += 1
+        count += self.ensure_model3d_workflow_aliases()
         return count
 
     def list_workflows(self) -> list[WorkflowSummary]:
@@ -236,7 +252,7 @@ class WorkflowRegistry:
                 "wan": ["wan"],
                 "flux": [],
                 "qwen": [],
-                "model3d": ["trellis", "3d", "meshwithtexturing", "meshonly"],
+                "model3d": ["meshwithvoxel", "meshwithtexturing", "trellis", "3d", "meshonly"],
                 "zimageturbo": ["z-image-turbo", "zimage-turbo", "zimage"],
                 "zimage": ["z-image-turbo", "zimage-turbo", "zimage"],
                 "lumina": ["lumina"],
@@ -1358,6 +1374,7 @@ def _append_inpaint_mask(
     start_id: int = 80,
     decoded_image_ref: list[Any] | None = None,
     save_node_id: str | None = None,
+    available_nodes: set[str] | None = None,
 ) -> bool:
     if not mask_image_name or not _uses_inpaint_mask_mode(request):
         return False
@@ -1366,7 +1383,9 @@ def _append_inpaint_mask(
     encode_id = str(start_id + 2)
     reference_resize_id = str(start_id + 3)
     mask_resize_id = str(start_id + 4)
+    next_id = start_id + 5
     grow_mask_by = max(0, min(64, int(request.img2img.mask_blur or 0)))
+    available_nodes = set(available_nodes or ())
     workflow[mask_loader_id] = {
         "class_type": "LoadImage",
         "inputs": {"image": mask_image_name},
@@ -1381,12 +1400,32 @@ def _append_inpaint_mask(
         "inputs": {"image": [mask_resize_id, 0], "channel": "red"},
         "_meta": {"title": "Mask Channel"},
     }
+    mask_ref: list[Any] = [mask_to_mask_id, 0]
+    if _uses_outpaint_extend_mode(request) and "GrowMaskWithBlur" in available_nodes:
+        grow_mask_id = str(next_id)
+        next_id += 1
+        workflow[grow_mask_id] = {
+            "class_type": "GrowMaskWithBlur",
+            "inputs": {
+                "mask": mask_ref,
+                "expand": 20,
+                "incremental_expandrate": 0.0,
+                "tapered_corners": True,
+                "flip_input": False,
+                "blur_radius": 4.0,
+                "lerp_alpha": 1.0,
+                "decay_factor": 1.0,
+                "fill_holes": False,
+            },
+            "_meta": {"title": "Grow Outpaint Mask For Seamless Blend"},
+        }
+        mask_ref = [grow_mask_id, 0]
     workflow[encode_id] = {
         "class_type": "VAEEncodeForInpaint",
         "inputs": {
             "pixels": [reference_resize_id, 0],
             "vae": vae_ref,
-            "mask": [mask_to_mask_id, 0],
+            "mask": mask_ref,
             "grow_mask_by": grow_mask_by,
         },
         "_meta": {"title": "Encode Reference For Inpaint"},
@@ -1400,9 +1439,10 @@ def _append_inpaint_mask(
             request=request,
             destination_image_ref=[reference_resize_id, 0],
             source_image_ref=decoded_image_ref,
-            mask_ref=[mask_to_mask_id, 0],
+            mask_ref=mask_ref,
             save_node_id=save_node_id,
-            start_id=start_id + 5,
+            start_id=next_id,
+            available_nodes=available_nodes,
         )
     return True
 
@@ -1416,6 +1456,7 @@ def _append_masked_output_composite(
     mask_ref: list[Any],
     save_node_id: str,
     start_id: int,
+    available_nodes: set[str] | None = None,
 ) -> list[Any] | None:
     save_node = workflow.get(save_node_id)
     if not isinstance(save_node, dict):
@@ -1426,9 +1467,19 @@ def _append_masked_output_composite(
         composite_id = str(start_id)
     composite_mask_ref = mask_ref
     composite_mask_image_name = ""
+    available_nodes = set(available_nodes or ())
+    use_lanpaint_blend = (
+        request is not None
+        and _uses_outpaint_extend_mode(request)
+        and "LanPaint_MaskBlend" in available_nodes
+    )
     if request is not None and _uses_outpaint_extend_mode(request):
         composite_mask_image_name = str(getattr(request.img2img, "composite_mask_image", "") or "").strip()
-    if composite_mask_image_name:
+    if (
+        composite_mask_image_name
+        and not use_lanpaint_blend
+        and not (request is not None and _uses_outpaint_extend_mode(request))
+    ):
         load_mask_id = composite_id
         start_id += 1
         resize_mask_id = str(start_id)
@@ -1460,20 +1511,67 @@ def _append_masked_output_composite(
             "_meta": {"title": "Extend Composite Mask Channel"},
         }
         composite_mask_ref = [mask_to_mask_id, 0]
-    workflow[composite_id] = {
-        "class_type": "ImageCompositeMasked",
-        "inputs": {
-            "destination": destination_image_ref,
-            "source": source_image_ref,
-            "x": 0,
-            "y": 0,
-            "resize_source": False,
-            "mask": composite_mask_ref,
-        },
-        "_meta": {"title": "Composite Generated Mask Over Preserved Source"},
-    }
-    save_node.setdefault("inputs", {})["images"] = [composite_id, 0]
-    return [composite_id, 0]
+    if use_lanpaint_blend:
+        workflow[composite_id] = {
+            "class_type": "LanPaint_MaskBlend",
+            "inputs": {
+                "image1": destination_image_ref,
+                "image2": source_image_ref,
+                "mask": composite_mask_ref,
+                "blend_overlap": 17,
+            },
+            "_meta": {"title": "LanPaint Blend Generated Pad With Preserved Source"},
+        }
+    else:
+        workflow[composite_id] = {
+            "class_type": "ImageCompositeMasked",
+            "inputs": {
+                "destination": destination_image_ref,
+                "source": source_image_ref,
+                "x": 0,
+                "y": 0,
+                "resize_source": False,
+                "mask": composite_mask_ref,
+            },
+            "_meta": {"title": "Composite Generated Mask Over Preserved Source"},
+        }
+    output_ref: list[Any] = [composite_id, 0]
+    if (
+        request is not None
+        and _uses_outpaint_extend_mode(request)
+        and not use_lanpaint_blend
+        and "ColorMatch" in available_nodes
+    ):
+        color_match_id = str(start_id + 1)
+        while color_match_id in workflow:
+            start_id += 1
+            color_match_id = str(start_id + 1)
+        workflow[color_match_id] = {
+            "class_type": "ColorMatch",
+            "inputs": {
+                "image_ref": destination_image_ref,
+                "image_target": output_ref,
+                "method": "mkl",
+                "strength": 0.65,
+                "multithread": True,
+            },
+            "_meta": {"title": "Match Outpaint Composite Color To Source"},
+        }
+        output_ref = [color_match_id, 0]
+        start_id = int(color_match_id)
+    if request is not None:
+        width = max(1, int(getattr(request, "width", 0) or 0))
+        height = max(1, int(getattr(request, "height", 0) or 0))
+        if width and height:
+            scale_id = str(start_id + 1)
+            while scale_id in workflow:
+                start_id += 1
+                scale_id = str(start_id + 1)
+            workflow[scale_id] = _image_scale_node(output_ref, width, height)
+            workflow[scale_id]["_meta"]["title"] = "Resize Composite To Requested Output"
+            output_ref = [scale_id, 0]
+    save_node.setdefault("inputs", {})["images"] = output_ref
+    return output_ref
 
 
 def _append_qwen_inpaint_noise_mask(
@@ -1487,6 +1585,7 @@ def _append_qwen_inpaint_noise_mask(
     base_image_ref: list[Any] | None = None,
     decoded_image_ref: list[Any] | None = None,
     save_node_id: str | None = None,
+    available_nodes: set[str] | None = None,
 ) -> bool:
     if not mask_image_name or not _uses_inpaint_mask_mode(request):
         return False
@@ -1494,6 +1593,8 @@ def _append_qwen_inpaint_noise_mask(
     mask_to_mask_id = str(start_id + 1)
     set_mask_id = str(start_id + 2)
     mask_resize_id = str(start_id + 4)
+    next_id = start_id + 5
+    available_nodes = set(available_nodes or ())
     workflow[mask_loader_id] = {
         "class_type": "LoadImage",
         "inputs": {"image": mask_image_name},
@@ -1506,9 +1607,29 @@ def _append_qwen_inpaint_noise_mask(
         "inputs": {"image": [mask_resize_id, 0], "channel": "red"},
         "_meta": {"title": "Mask Channel"},
     }
+    mask_ref: list[Any] = [mask_to_mask_id, 0]
+    if _uses_outpaint_extend_mode(request) and "GrowMaskWithBlur" in available_nodes:
+        grow_mask_id = str(next_id)
+        next_id += 1
+        workflow[grow_mask_id] = {
+            "class_type": "GrowMaskWithBlur",
+            "inputs": {
+                "mask": mask_ref,
+                "expand": 20,
+                "incremental_expandrate": 0.0,
+                "tapered_corners": True,
+                "flip_input": False,
+                "blur_radius": 4.0,
+                "lerp_alpha": 1.0,
+                "decay_factor": 1.0,
+                "fill_holes": False,
+            },
+            "_meta": {"title": "Grow QWEN Outpaint Mask For Seamless Blend"},
+        }
+        mask_ref = [grow_mask_id, 0]
     workflow[set_mask_id] = {
         "class_type": "SetLatentNoiseMask",
-        "inputs": {"samples": base_latent_ref, "mask": [mask_to_mask_id, 0]},
+        "inputs": {"samples": base_latent_ref, "mask": mask_ref},
         "_meta": {"title": "Apply QWEN Inpaint Noise Mask"},
     }
     sampler = workflow.get(sampler_node_id, {})
@@ -1520,9 +1641,10 @@ def _append_qwen_inpaint_noise_mask(
             request=request,
             destination_image_ref=base_image_ref,
             source_image_ref=decoded_image_ref,
-            mask_ref=[mask_to_mask_id, 0],
+            mask_ref=mask_ref,
             save_node_id=save_node_id,
-            start_id=start_id + 5,
+            start_id=next_id,
+            available_nodes=available_nodes,
         )
     return True
 
@@ -1551,8 +1673,42 @@ def _has_extend_pad(request: GenerateRequest) -> bool:
     return any(_extend_pad_values(request).values())
 
 
-def _image_pad_for_outpaint_node(image_ref: list[Any], request: GenerateRequest, feathering: int = 0) -> dict[str, Any]:
+def _uses_prepadded_outpaint_reference(request: GenerateRequest) -> bool:
+    # Extend/Outpaint should follow the workflow-node contract: load the
+    # original image, then let the backend pad node produce the outpaint mask.
+    # Treating the frontend preview as a pre-padded conditioning image makes
+    # Qwen/Flux preserve or zoom the temporary padding instead of painting it.
+    return False
+
+
+def _image_pad_for_outpaint_node(
+    image_ref: list[Any],
+    request: GenerateRequest,
+    feathering: int = 0,
+    available_nodes: set[str] | None = None,
+) -> dict[str, Any]:
     pad = _extend_pad_values(request)
+    available_nodes = set(available_nodes or ())
+    if "AGSoft_Img_Pad_Adv" in available_nodes:
+        return {
+            "class_type": "AGSoft_Img_Pad_Adv",
+            "inputs": {
+                "image": image_ref,
+                "pad_left": pad["left"],
+                "pad_top": pad["top"],
+                "pad_right": pad["right"],
+                "pad_bottom": pad["bottom"],
+                "pad_mode": "edge",
+                "background_color": "gray",
+                "feathering": 0,
+                "invert_mask": False,
+                "target_width": 0,
+                "target_height": 0,
+                "keep_proportions": False,
+                "resize_position": "center",
+            },
+            "_meta": {"title": "AGSoft Pad Base Image For Extend"},
+        }
     return {
         "class_type": "ImagePadForOutpaint",
         "inputs": {
@@ -1561,7 +1717,7 @@ def _image_pad_for_outpaint_node(image_ref: list[Any], request: GenerateRequest,
             "top": pad["top"],
             "right": pad["right"],
             "bottom": pad["bottom"],
-            "feathering": max(0, int(feathering)),
+            "feathering": 0,
         },
         "_meta": {"title": "Pad Base Image For Extend"},
     }
@@ -1776,6 +1932,15 @@ def _qwen_multiview_options(request: GenerateRequest) -> dict[str, Any]:
     }
 
 
+def _qwen_pose_studio_handoff(request: GenerateRequest) -> bool:
+    video_options = request.video or {}
+    return (
+        request.preset.lower() == "qwen"
+        and request.activity == "img2img"
+        and _truthy_option(video_options.get("pose_studio"))
+    )
+
+
 def _prepend_qwen_camera_prompt(prompt: str, camera_prompt: str) -> str:
     base = str(prompt or "").strip()
     if not camera_prompt:
@@ -1805,6 +1970,8 @@ def _append_controlnet_preprocessor(
 ) -> tuple[list[Any], int]:
     control_type = str(request.controlnet.type or "").lower()
     preprocessor = str(request.controlnet.preprocessor or "auto").lower()
+    if _truthy_option((request.video or {}).get("pose_studio")) and control_type in {"dwpose", "openpose", "pose"}:
+        return image_ref, start_id
     if preprocessor in {"none", "off", "disabled"}:
         return image_ref, start_id
     if control_type == "canny":
@@ -2265,17 +2432,29 @@ def build_basic_qwen_image_workflow(
     controlnet_name: str | None = None,
     controlnet_image_name: str | None = None,
     controlnet_category: str | None = None,
+    available_nodes: set[str] | None = None,
 ) -> dict[str, Any]:
     _apply_outpaint_continuity_prompt(request)
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     width = max(16, int(request.width))
     height = max(16, int(request.height))
+    available_nodes = set(available_nodes or ())
     refs = [name for name in (reference_image_names or ([reference_image_name] if reference_image_name else [])) if name][:3]
     reference_image_name = refs[0] if refs else None
     is_qwen_inpaint = bool(reference_image_name and mask_image_name and _uses_inpaint_mask_mode(request))
     qwen_denoise = 1.0 if _uses_outpaint_extend_mode(request) else request.img2img.denoise
     qwen_multiview = _qwen_multiview_options(request)
+    qwen_pose_studio = _qwen_pose_studio_handoff(request)
+    qwen_pose_controlnet = bool(qwen_pose_studio and controlnet_name and controlnet_image_name)
+    if qwen_pose_studio and refs and qwen_pose_controlnet:
+        refs = refs[:1]
+        reference_image_name = refs[0]
+    elif qwen_pose_studio and refs:
+        refs = refs[:2]
+        reference_image_name = refs[0]
     if qwen_multiview["enabled"]:
+        qwen_denoise = 1.0
+    if qwen_pose_studio:
         qwen_denoise = 1.0
     loader_class = "UnetLoaderGGUF" if checkpoint_name.lower().endswith(".gguf") else "UNETLoader"
     loader_inputs = (
@@ -2302,7 +2481,28 @@ def build_basic_qwen_image_workflow(
 
     prompt_text = str(qwen_multiview["prompt"]) if qwen_multiview["enabled"] else request.prompt
     negative_prompt_text = "" if qwen_multiview["enabled"] else (request.negative_prompt or "")
-    if len(refs) > 1 and not qwen_multiview["enabled"]:
+    if qwen_pose_studio:
+        if qwen_pose_controlnet:
+            prompt_prefix = "Use the ControlNet POSE/OpenPose/DWPose guide as the only body pose and composition target"
+            if refs:
+                prompt_prefix += ", and use Image 1 only for character identity/appearance"
+            prompt_prefix += ". Render the full body from head to feet inside the requested frame, do not crop the character, do not copy the original reference image pose, do not render the colored skeleton/guide marks, and match the ControlNet pose guide composition exactly"
+        else:
+            prompt_prefix = "Use Image 1 as the POSE Studio OpenPose/DWPose body pose and composition guide"
+            if len(refs) >= 2:
+                prompt_prefix += ", and use Image 2 only for character identity and appearance"
+            prompt_prefix += ". Render the full body from head to feet inside the requested frame, do not crop the character, do not copy the original reference image pose, do not render the colored skeleton/guide marks, and match Image 1 pose guide composition exactly"
+        prompt_text = prompt_prefix + ". " + str(prompt_text or request.prompt or "")
+        negative_additions = (
+            "cropped body, close-up crop, torso crop, cut off head, cut off feet, missing legs, "
+            "missing arms, ignored pose guide, copied reference pose, stretched character, rendered skeleton marks"
+        )
+        negative_prompt_text = (
+            f"{negative_additions}, {negative_prompt_text}"
+            if negative_prompt_text.strip()
+            else negative_additions
+        )
+    elif len(refs) > 1 and not qwen_multiview["enabled"]:
         prompt_prefix = "Use Image 1 as the base reference"
         if len(refs) >= 2:
             prompt_prefix += ", Image 2 as the secondary reference"
@@ -2365,8 +2565,20 @@ def build_basic_qwen_image_workflow(
         },
     }
     workflow["13"]["_meta"]["title"] = "Resize QWEN Output To Frontend Size"
+    if is_qwen_inpaint:
+        workflow["10"]["class_type"] = "LanPaint_KSampler"
+        workflow["10"]["inputs"].update(
+            {
+                "LanPaint_NumSteps": max(1, int(getattr(request.img2img, "lanpaint_thinking_steps", 1) or 1)),
+                "LanPaint_PromptMode": str(getattr(request.img2img, "lanpaint_prompt_mode", "") or "Image First"),
+                "LanPaint_Info": "",
+                "Inpainting_mode": "🖼️ Image Inpainting",
+            }
+        )
+        workflow["10"]["_meta"]["title"] = "QWEN LanPaint KSampler"
     workflow.update(qwen_lora_nodes)
     qwen_base_image_ref: list[Any] | None = None
+    qwen_conditioning_image_refs: dict[int, list[Any]] = {}
 
     if reference_image_name:
         qwen_extend_pad = is_qwen_inpaint and _uses_outpaint_extend_mode(request) and _has_extend_pad(request)
@@ -2379,8 +2591,17 @@ def build_basic_qwen_image_workflow(
                 "_meta": {"title": f"Reference Image {index}"},
             }
             if qwen_extend_pad and index == 1:
-                workflow[scale_id] = _image_pad_for_outpaint_node([load_id, 0], request, feathering=0)
-                workflow[scale_id]["_meta"]["title"] = "QWEN Pad Base For Extend"
+                if _uses_prepadded_outpaint_reference(request):
+                    workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
+                    workflow[scale_id]["_meta"]["title"] = "QWEN Pre-Padded Extend Reference"
+                    qwen_conditioning_image_refs[index] = [scale_id, 0]
+                else:
+                    workflow[scale_id] = _image_pad_for_outpaint_node([load_id, 0], request, feathering=40, available_nodes=available_nodes)
+                    workflow[scale_id]["_meta"]["title"] = "QWEN Pad Base For Extend"
+                    qwen_conditioning_image_refs[index] = [load_id, 0]
+            elif qwen_pose_studio:
+                workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
+                workflow[scale_id]["_meta"]["title"] = f"Resize QWEN POSE Reference {index} To Output Frame"
             elif not is_qwen_inpaint:
                 workflow[scale_id] = _qwen_flux_image_scale_node([load_id, 0], f"QWEN Reference {index} FluxKontext Scale")
             else:
@@ -2402,23 +2623,42 @@ def build_basic_qwen_image_workflow(
         qwen_prompt_input: Any = ["110", 0] if qwen_multiview["enabled"] else prompt_text
         if len(refs) == 1:
             qwen_base_image_ref = ["60", 0]
-            workflow["7"] = {
-                "class_type": "VAEEncode",
-                "inputs": {"pixels": qwen_base_image_ref, "vae": ["3", 0]},
-                "_meta": {"title": "Encode QWEN Base Reference"},
-            }
+            qwen_text_image_ref = qwen_conditioning_image_refs.get(1, qwen_base_image_ref)
+            if qwen_pose_studio:
+                workflow["7"] = {
+                    "class_type": "EmptySD3LatentImage",
+                    "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
+                    "_meta": {"title": "QWEN POSE Studio Empty Latent"},
+                }
+            else:
+                workflow["7"] = {
+                    "class_type": "VAEEncode",
+                    "inputs": {"pixels": qwen_base_image_ref, "vae": ["3", 0]},
+                    "_meta": {"title": "Encode QWEN Base Reference"},
+                }
             workflow["10"]["inputs"]["latent_image"] = ["7", 0]
+            qwen_text_encoder_class = "TextEncodeQwenImageEdit" if qwen_pose_studio else "TextEncodeQwenImageEditPlus"
+            qwen_positive_inputs = (
+                {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0], "image": qwen_text_image_ref}
+                if qwen_pose_studio
+                else {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0], "image1": qwen_text_image_ref}
+            )
+            qwen_negative_inputs = (
+                {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0], "image": qwen_text_image_ref}
+                if qwen_pose_studio
+                else {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0], "image1": qwen_text_image_ref}
+            )
             workflow["5"] = {
-                "class_type": "TextEncodeQwenImageEditPlus",
-                "inputs": {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0], "image1": qwen_base_image_ref},
+                "class_type": qwen_text_encoder_class,
+                "inputs": qwen_positive_inputs,
                 "_meta": {"title": "Positive Prompt"},
             }
             workflow["6"] = {
-                "class_type": "TextEncodeQwenImageEditPlus",
-                "inputs": {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0], "image1": qwen_base_image_ref},
+                "class_type": qwen_text_encoder_class,
+                "inputs": qwen_negative_inputs,
                 "_meta": {"title": "QWEN Negative Prompt"},
             }
-            if is_qwen_inpaint or qwen_multiview["enabled"]:
+            if is_qwen_inpaint or qwen_multiview["enabled"] or qwen_pose_studio:
                 workflow["10"]["inputs"]["positive"] = ["5", 0]
                 workflow["10"]["inputs"]["negative"] = ["6", 0]
             else:
@@ -2436,21 +2676,28 @@ def build_basic_qwen_image_workflow(
                 workflow["10"]["inputs"]["negative"] = ["16", 0]
         else:
             qwen_base_image_ref = ["60", 0]
-            workflow["7"] = {
-                "class_type": "VAEEncode",
-                "inputs": {"pixels": ["60", 0], "vae": ["3", 0]},
-                "_meta": {"title": "Encode QWEN Base Reference"},
-            }
+            if qwen_pose_studio:
+                workflow["7"] = {
+                    "class_type": "EmptySD3LatentImage",
+                    "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
+                    "_meta": {"title": "QWEN POSE Studio Empty Latent"},
+                }
+            else:
+                workflow["7"] = {
+                    "class_type": "VAEEncode",
+                    "inputs": {"pixels": ["60", 0], "vae": ["3", 0]},
+                    "_meta": {"title": "Encode QWEN Base Reference"},
+                }
             workflow["10"]["inputs"]["latent_image"] = ["7", 0]
             positive_inputs = {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0]}
             negative_inputs = {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0]}
             previous_conditioning: list[Any] = ["5", 0]
             previous_negative_conditioning: list[Any] = ["6", 0]
             for index, _name in enumerate(refs, start=1):
-                image_ref = [str(59 + index), 0]
+                image_ref = qwen_conditioning_image_refs.get(index, [str(59 + index), 0])
                 positive_inputs[f"image{index}"] = image_ref
                 negative_inputs[f"image{index}"] = image_ref
-                if is_qwen_inpaint:
+                if is_qwen_inpaint or qwen_pose_studio:
                     continue
                 encode_id = str(69 + index)
                 ref_id = str(79 + index)
@@ -2482,7 +2729,7 @@ def build_basic_qwen_image_workflow(
                 "inputs": negative_inputs,
                 "_meta": {"title": "QWEN Negative Prompt"},
             }
-            if is_qwen_inpaint or qwen_multiview["enabled"]:
+            if is_qwen_inpaint or qwen_multiview["enabled"] or qwen_pose_studio:
                 workflow["10"]["inputs"]["positive"] = ["5", 0]
                 workflow["10"]["inputs"]["negative"] = ["6", 0]
             else:
@@ -2525,6 +2772,7 @@ def build_basic_qwen_image_workflow(
                 base_image_ref=qwen_base_image_ref,
                 decoded_image_ref=["13", 0],
                 save_node_id="12",
+                available_nodes=available_nodes,
             )
         else:
             _append_inpaint_mask(
@@ -2537,7 +2785,7 @@ def build_basic_qwen_image_workflow(
                 decoded_image_ref=["13", 0],
                 save_node_id="12",
             )
-    if controlnet_category == "model_patches":
+    if controlnet_category == "model_patches" and not qwen_pose_studio:
         patched_model_ref, _ = _append_qwen_model_patch_controlnet_route(
             workflow,
             request,
@@ -2548,6 +2796,8 @@ def build_basic_qwen_image_workflow(
             start_id=120,
         )
         workflow["8"]["inputs"]["model"] = patched_model_ref
+    elif qwen_pose_studio and not qwen_pose_controlnet:
+        pass
     else:
         positive_ref, negative_ref, _ = _append_controlnet_route(
             workflow,
@@ -2752,11 +3002,13 @@ def build_basic_flux_workflow(
     flux_family: str | None = None,
     controlnet_name: str | None = None,
     controlnet_image_name: str | None = None,
+    available_nodes: set[str] | None = None,
 ) -> dict[str, Any]:
     _apply_outpaint_continuity_prompt(request)
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     width = max(16, int(request.width))
     height = max(16, int(request.height))
+    available_nodes = set(available_nodes or ())
     sampler = normalize_sampler(request.sampler or "euler")
     scheduler = normalize_scheduler(request.scheduler or "simple")
     flux_family = flux_family or _flux_family_from_name(model_name)
@@ -2877,8 +3129,12 @@ def build_basic_flux_workflow(
                     "_meta": {"title": f"Flux.2 Reference Image {index}"},
                 }
                 if flux2_outpaint_mode and index == 1 and _has_extend_pad(request):
-                    workflow[scale_id] = _image_pad_for_outpaint_node([load_id, 0], request, feathering=0)
-                    workflow[scale_id]["_meta"]["title"] = "Flux.2 Pad Base For Extend"
+                    if _uses_prepadded_outpaint_reference(request):
+                        workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
+                        workflow[scale_id]["_meta"]["title"] = "Flux.2 Pre-Padded Extend Reference"
+                    else:
+                        workflow[scale_id] = _image_pad_for_outpaint_node([load_id, 0], request, feathering=40, available_nodes=available_nodes)
+                        workflow[scale_id]["_meta"]["title"] = "Flux.2 Pad Base For Extend"
                 else:
                     workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
                     workflow[scale_id]["_meta"]["title"] = f"Resize Flux.2 Reference {index} To Side Menu"
@@ -2912,6 +3168,7 @@ def build_basic_flux_workflow(
                     start_id=80,
                     decoded_image_ref=["15", 0],
                     save_node_id="13",
+                    available_nodes=available_nodes,
                 )
         positive_ref, _, _ = _append_flux_union_controlnet_route(
             workflow,
@@ -3002,13 +3259,19 @@ def build_basic_flux_workflow(
             "_meta": {"title": "Reference Image"},
         }
         if _uses_outpaint_extend_mode(request) and _has_extend_pad(request):
-            workflow["13"] = _image_pad_for_outpaint_node(["10", 0], request, feathering=0)
-            workflow["13"]["_meta"]["title"] = "Flux Pad Base For Extend"
+            if _uses_prepadded_outpaint_reference(request):
+                workflow["13"] = _image_scale_node(["10", 0], width, height)
+                workflow["13"]["_meta"]["title"] = "Flux Pre-Padded Extend Reference"
+            else:
+                workflow["13"] = _image_pad_for_outpaint_node(["10", 0], request, feathering=40, available_nodes=available_nodes)
+                workflow["13"]["_meta"]["title"] = "Flux Pad Base For Extend"
+            reference_encode_image_ref = ["13", 0]
         else:
             workflow["13"] = _image_scale_node(["10", 0], width, height)
+            reference_encode_image_ref = ["13", 0]
         workflow["11"] = {
             "class_type": "VAEEncode",
-            "inputs": {"pixels": ["13", 0], "vae": ["3", 0]},
+            "inputs": {"pixels": reference_encode_image_ref, "vae": ["3", 0]},
             "_meta": {"title": "Encode Reference"},
         }
         workflow["7"]["inputs"]["latent_image"] = ["11", 0]
@@ -3021,6 +3284,7 @@ def build_basic_flux_workflow(
             mask_image_name=mask_image_name,
             decoded_image_ref=["14", 0],
             save_node_id="9",
+            available_nodes=available_nodes,
         )
     positive_ref, negative_ref, _ = _append_flux_union_controlnet_route(
         workflow,
@@ -3482,6 +3746,71 @@ def build_basic_wan_video_reference_workflow(
     return workflow
 
 
+def build_basic_wan_motion_capture_workflow(
+    request: GenerateRequest,
+    high_model_name: str,
+    low_model_name: str,
+    text_encoder_name: str,
+    vae_name: str,
+    reference_image_name: str,
+    motion_video_name: str,
+    clip_vision_name: str | None = None,
+) -> dict[str, Any]:
+    video_options = request.video or {}
+    workflow = build_basic_wan_video_reference_workflow(
+        request,
+        high_model_name,
+        low_model_name,
+        text_encoder_name,
+        vae_name,
+        reference_image_name,
+        motion_video_name,
+        clip_vision_name=clip_vision_name,
+    )
+    width = max(64, int(request.width))
+    height = max(64, int(request.height))
+    width -= width % 16
+    height -= height % 16
+
+    workflow["10"]["_meta"]["title"] = "Motion Source Video"
+    workflow["10"]["inputs"]["format"] = "AnimateDiff"
+    workflow["11"] = {
+        "class_type": "Wan22FunControlToVideo",
+        "inputs": {
+            "positive": ["7", 0],
+            "negative": ["8", 0],
+            "vae": ["6", 0],
+            "width": width,
+            "height": height,
+            "length": int(workflow["11"]["inputs"]["length"]),
+            "batch_size": max(1, request.batch_size),
+            "ref_image": ["9", 0],
+            "control_video": ["19", 0],
+        },
+        "_meta": {"title": "WAN 2.2 Motion Capture DWPose Control"},
+    }
+    pose_inputs: dict[str, Any] = {
+        "image": ["10", 0],
+        "detect_hand": "enable",
+        "detect_body": "enable",
+        "detect_face": "enable",
+        "resolution": max(width, height),
+        "bbox_detector": "yolox_l.onnx",
+        "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
+        "scale_stick_for_xinsr_cn": "disable",
+    }
+    workflow["19"] = {
+        "class_type": "DWPreprocessor",
+        "inputs": pose_inputs,
+        "_meta": {"title": "WAN Motion DWPose Control Video"},
+    }
+    workflow.pop("17", None)
+    workflow.pop("18", None)
+    workflow["16"]["inputs"]["filename_prefix"] = "NEXUS_BTA_WAN22_MOTION_CAPTURE"
+    workflow["16"]["_meta"]["title"] = "Save Motion Capture Video"
+    return workflow
+
+
 def _append_lora_chain(
     workflow: dict[str, Any],
     request: GenerateRequest,
@@ -3805,6 +4134,7 @@ def build_basic_ltx_img2video_workflow(
     loop_cycle = _truthy_option(video_options.get("ltx_loop_cycle"))
     loop_uses_start_as_end = loop_cycle and str(video_options.get("ltx_loop_source") or "").strip().lower() == "start_frame_as_end_frame"
     available_nodes = available_nodes or set()
+    audio_volume_normalization_available = "AudioVolumeNormalization" in available_nodes
     active_audio = video_options.get("active_audio", False)
     if isinstance(active_audio, str):
         active_audio = active_audio.lower() not in {"false", "0", "off", "none", "no"}
@@ -4810,12 +5140,15 @@ def build_basic_ltx_img2video_workflow(
             "inputs": {"samples": first_audio_latent_ref, "audio_vae": ["16", 0]},
             "_meta": {"title": "Decode LTX Audio"},
         }
-        audio_nodes["33"] = {
-            "class_type": "AudioVolumeNormalization",
-            "inputs": {"audio": ["20", 0], "target_level": -14.0},
-            "_meta": {"title": "Normalize LTX Audio Output"},
-        }
-        create_video_inputs["audio"] = ["33", 0]
+        if audio_volume_normalization_available:
+            audio_nodes["33"] = {
+                "class_type": "AudioVolumeNormalization",
+                "inputs": {"audio": ["20", 0], "target_level": -14.0},
+                "_meta": {"title": "Normalize LTX Audio Output"},
+            }
+            create_video_inputs["audio"] = ["33", 0]
+        else:
+            create_video_inputs["audio"] = ["20", 0]
 
     guide_crop_nodes: dict[str, Any] = {}
     if (motion_transfer_route or use_ltx_flfv_reference_guides) and not motion_guides_cropped_before_sampling and not (use_latent_upscale and refine_latent_upscale):
@@ -6176,6 +6509,8 @@ def _ensure_zimage_reference_route(api: dict[str, Any], request: GenerateRequest
 def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
     if request.activity != "img2img" or request.preset.lower() != "qwen":
         return
+    if _qwen_pose_studio_handoff(request):
+        return
     reference_image = str(assets.get("reference_image") or "").strip()
     if not reference_image:
         return
@@ -6290,6 +6625,8 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
 
 def _ensure_qwen_multi_reference_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
     if request.activity != "img2img" or request.preset.lower() != "qwen":
+        return
+    if _qwen_pose_studio_handoff(request):
         return
     raw_refs = assets.get("reference_images") or []
     if isinstance(raw_refs, str):

@@ -73,12 +73,32 @@ def _resolve_controlnet(by_category: dict[str, list[ModelFile]], request: Genera
         return {"controlnet_model": _comfy_name(model), "ic_lora": _comfy_name(model)}
     if preset not in {"sd", "sd15", "xl", "sdxl", "flux", "qwen", "zimageturbo", "zimage"}:
         return {}
+    selected_name = Path(request.model_path or request.model_name or "").name
     selected = _selected_model_choice(by_category, control.model)
+    selected_model_haystack = " ".join([selected_name, request.model_name or "", request.model_path or ""]).lower()
+    flux2_route = preset == "flux" and any(
+        token in selected_model_haystack
+        for token in ("flux-2", "flux2", "flux_2", "flux.2", "klein")
+    )
     controlnet_categories = {"controlnet", "model_patches"}
     if selected and selected.category not in controlnet_categories:
         selected = None
     control_type = str(control.type or "").lower()
     candidates = [*by_category.get("controlnet", []), *by_category.get("model_patches", [])]
+    if flux2_route:
+        flux2_candidates = [
+            item
+            for item in candidates
+            if any(
+                token in " ".join([item.name, item.folder, item.relative_path]).lower()
+                for token in ("flux-2", "flux2", "flux_2", "flux.2", "klein")
+            )
+        ]
+        candidates = flux2_candidates
+        if selected and selected not in candidates:
+            selected = None
+    if selected and not _controlnet_matches_preset_type(selected, preset, control_type):
+        selected = None
     model = selected
     if not model:
         model = _first_controlnet(candidates, preset, control_type)
@@ -109,7 +129,7 @@ def _resolve_sd_family(
     return assets
 
 
-def _first_controlnet(items: list[ModelFile], preset: str, control_type: str) -> ModelFile | None:
+def _controlnet_matches_preset_type(item: ModelFile, preset: str, control_type: str) -> bool:
     if preset in {"xl", "sdxl"}:
         preset_tokens = ["sdxl", "xl"]
     elif preset == "qwen":
@@ -121,6 +141,7 @@ def _first_controlnet(items: list[ModelFile], preset: str, control_type: str) ->
     else:
         preset_tokens = ["sd15", "sd1", "v11", "1.5"]
     type_tokens = {
+        "dwpose": ["dwpose", "dw pose", "openpose", "pose"],
         "openpose": ["openpose", "pose"],
         "pose": ["openpose", "pose"],
         "depth": ["depth"],
@@ -130,23 +151,29 @@ def _first_controlnet(items: list[ModelFile], preset: str, control_type: str) ->
         "softedge": ["softedge", "soft", "hed"],
         "normal": ["normal"],
     }.get(control_type, [control_type] if control_type else [])
+    haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+    if preset == "qwen" and ("qwen" not in haystack and "instantx" not in haystack and "diffsynth" not in haystack):
+        return False
+    if preset in {"zimageturbo", "zimage"} and not any(token in haystack for token in preset_tokens + ["fun", "controlnet-union"]):
+        return False
+    if preset not in {"qwen", "zimageturbo", "zimage"} and not any(token in haystack for token in preset_tokens):
+        return False
+    union_model = (
+        preset == "qwen" and ("union" in haystack or "instantx" in haystack)
+    ) or (
+        preset in {"zimageturbo", "zimage"} and ("union" in haystack or "fun" in haystack)
+    ) or (
+        preset == "flux" and ("union" in haystack or "shakker" in haystack)
+    )
+    if type_tokens and not union_model and not any(token in haystack for token in type_tokens):
+        return False
+    return True
+
+
+def _first_controlnet(items: list[ModelFile], preset: str, control_type: str) -> ModelFile | None:
     scored: list[tuple[int, str, ModelFile]] = []
     for item in items:
-        haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
-        if preset == "qwen" and ("qwen" not in haystack and "instantx" not in haystack and "diffsynth" not in haystack):
-            continue
-        if preset in {"zimageturbo", "zimage"} and not any(token in haystack for token in preset_tokens + ["fun", "controlnet-union"]):
-            continue
-        if preset not in {"qwen", "zimageturbo", "zimage"} and not any(token in haystack for token in preset_tokens):
-            continue
-        union_model = (
-            preset == "qwen" and ("union" in haystack or "instantx" in haystack)
-        ) or (
-            preset in {"zimageturbo", "zimage"} and ("union" in haystack or "fun" in haystack)
-        ) or (
-            preset == "flux" and ("union" in haystack or "shakker" in haystack)
-        )
-        if type_tokens and not union_model and not any(token in haystack for token in type_tokens):
+        if not _controlnet_matches_preset_type(item, preset, control_type):
             continue
         scored.append((len(item.name), item.name.lower(), item))
     if not scored:
@@ -372,8 +399,9 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, re
 def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
     assets: dict[str, str] = {}
     selected = _find_name(by_category, selected_name)
-    high_model = selected if selected and _is_wan_noise_model(selected, "high") else None
-    low_model = selected if selected and _is_wan_noise_model(selected, "low") else None
+    selected_base = selected if selected and _is_wan_base_model(selected) else None
+    high_model = selected_base if selected_base and _is_wan_noise_model(selected_base, "high") else None
+    low_model = selected_base if selected_base and _is_wan_noise_model(selected_base, "low") else None
 
     high_model = high_model or (
         _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["wan2.2", "high"])
@@ -386,7 +414,12 @@ def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str, re
         or _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["wan", "low"])
     )
 
-    primary = high_model or selected or low_model
+    single_file_model = selected_base if selected_base and _is_wan_single_file_model(selected_base) else None
+    if single_file_model and (not high_model or not low_model):
+        high_model = high_model or single_file_model
+        low_model = low_model or single_file_model
+
+    primary = selected_base or high_model or low_model
     if primary:
         assets["primary_model"] = _comfy_name(primary)
     if high_model:
@@ -739,6 +772,19 @@ def _normalize_model_lookup(value: str) -> str:
 def _is_wan_noise_model(item: ModelFile, noise: str) -> bool:
     haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
     return "wan" in haystack and noise.lower() in haystack
+
+
+def _is_wan_base_model(item: ModelFile) -> bool:
+    return item.category in {"checkpoints", "unet", "diffusion_models"} and "wan" in " ".join(
+        [item.name, item.folder, item.relative_path]
+    ).lower()
+
+
+def _is_wan_single_file_model(item: ModelFile) -> bool:
+    if not _is_wan_base_model(item) or item.extension.lower() != ".gguf":
+        return False
+    haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+    return not any(token in haystack for token in ("fun-control", "fun_control", "animate-lora", "motion-adapter"))
 
 
 def _first_wan_4step_lora(by_category: dict[str, list[ModelFile]], noise: str) -> ModelFile | None:

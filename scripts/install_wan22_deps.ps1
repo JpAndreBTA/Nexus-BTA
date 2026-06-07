@@ -117,6 +117,13 @@ function Test-NexusWanAssetPresent($Asset) {
 
 $optionalAssets = @(
     @{
+        Repo = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
+        File = "split_files/clip_vision/clip_vision_h.safetensors"
+        Target = Join-Path $modelsDir "clip_vision\clip_vision_h.safetensors"
+        Category = "clip_vision"
+        MinBytes = 500MB
+    },
+    @{
         Repo = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
         File = "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
         Target = Join-Path $modelsDir "text_encoders\umt5_xxl_fp8_e4m3fn_scaled.safetensors"
@@ -140,40 +147,15 @@ $optionalAssets = @(
     }
 )
 
-$mandatoryAssets = @(
-    @{
-        Repo = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
-        File = "split_files/clip_vision/clip_vision_h.safetensors"
-        Target = Join-Path $modelsDir "clip_vision\clip_vision_h.safetensors"
-        Category = "clip_vision"
-        MinBytes = 500MB
-    }
-)
-
 if ($IncludeWanModels) {
-    $optionalAssets += @(
-        @{
-            Repo = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
-            File = "split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
-            Target = Join-Path $modelsDir "diffusion_models\wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
-            Category = "diffusion_models"
-            MinBytes = 1GB
-        },
-        @{
-            Repo = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
-            File = "split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
-            Target = Join-Path $modelsDir "diffusion_models\wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
-            Category = "diffusion_models"
-            MinBytes = 1GB
-        }
-    )
+    Write-NexusLine "WAN 2.2 base diffusion/checkpoint models are not installed by this dependency helper; add base models through the model manager or your chosen template workflow." "Info"
 }
 
-$assets = @($mandatoryAssets | Where-Object { -not (Test-NexusWanAssetPresent $_) })
+$assets = @()
 if (!$allowModelDownloads) {
     $missing = @($optionalAssets | Where-Object { -not (Test-NexusWanAssetPresent $_) })
     if ($missing.Count -gt 0) {
-        Write-NexusWarn ("Skipping Wan 2.2 model downloads because startup model downloads were not approved: {0}" -f (($missing | ForEach-Object { Split-Path $_.Target -Leaf }) -join ", "))
+        Write-NexusWarn ("Skipping Wan 2.2 dependency asset downloads because startup optional downloads were not approved: {0}" -f (($missing | ForEach-Object { Split-Path $_.Target -Leaf }) -join ", "))
     }
 } else {
     $assets += @($optionalAssets | Where-Object { -not (Test-NexusWanAssetPresent $_) })
@@ -184,7 +166,7 @@ if ($assets.Count -gt 0) {
         Invoke-NexusPipInstallIfNeeded "Hugging Face downloader" @("huggingface-hub>=0.24")
     }
 } else {
-    Write-NexusLine "Wan 2.2 model downloads skipped or already satisfied." "Info"
+    Write-NexusLine "Wan 2.2 dependency asset downloads skipped or already satisfied." "Info"
 }
 
 $assetJson = @($assets) | ConvertTo-Json -Depth 5 -Compress
@@ -255,4 +237,8 @@ if ($assets.Count -gt 0) {
     }
 }
 
-Write-NexusLine "Wan 2.2 support assets satisfied." "Ok"
+if ($assets.Count -gt 0 -or $allowModelDownloads) {
+    Write-NexusLine "Wan 2.2 support assets checked." "Ok"
+} else {
+    Write-NexusLine "Wan 2.2 optional dependency assets remain opt-in. Base diffusion/checkpoint models are handled separately." "Info"
+}

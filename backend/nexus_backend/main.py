@@ -71,6 +71,7 @@ from .workflows import (
     build_basic_qwen_image_workflow,
     build_basic_sd_workflow,
     build_basic_wan_i2video_workflow,
+    build_basic_wan_motion_capture_workflow,
     build_basic_wan_video_reference_workflow,
     build_basic_zimage_turbo_workflow,
     convert_ui_to_api,
@@ -148,6 +149,223 @@ LTX_HF_LORA_ARTIFACTS: dict[str, dict[str, str]] = {
         "label": "GFPGAN Face Restoration",
         "filename": "GFPGANv1.4.pth",
         "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth",
+    },
+}
+
+WAN22_HF_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "clip_vision": {
+        "label": "WAN CLIP Vision encoder",
+        "filename": "clip_vision_h.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors?download=true",
+        "target": ("clip_vision", "clip_vision_h.safetensors"),
+        "min_bytes": 500 * 1024 * 1024,
+        "kind": "encoder",
+        "scope": "dependency",
+    },
+    "umt5": {
+        "label": "WAN UMT5 text encoder",
+        "filename": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors?download=true",
+        "target": ("text_encoders", "umt5_xxl_fp8_e4m3fn_scaled.safetensors"),
+        "min_bytes": 1 * 1024 * 1024 * 1024,
+        "kind": "encoder",
+        "scope": "dependency",
+    },
+    "vae21": {
+        "label": "WAN 2.1/2.2 video VAE",
+        "filename": "wan_2.1_vae.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors?download=true",
+        "target": ("vae", "wan_2.1_vae.safetensors"),
+        "min_bytes": 100 * 1024 * 1024,
+        "kind": "vae",
+        "scope": "dependency",
+    },
+    "vae22": {
+        "label": "WAN 2.2 TI2V VAE",
+        "filename": "wan2.2_vae.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan2.2_vae.safetensors?download=true",
+        "target": ("vae", "wan2.2_vae.safetensors"),
+        "min_bytes": 100 * 1024 * 1024,
+        "kind": "vae",
+        "scope": "dependency",
+    },
+    "high_noise": {
+        "label": "WAN 2.2 high-noise diffusion model",
+        "filename": "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors?download=true",
+        "target": ("diffusion_models", "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"),
+        "min_bytes": 1 * 1024 * 1024 * 1024,
+        "kind": "checkpoint",
+        "scope": "base_model",
+    },
+    "low_noise": {
+        "label": "WAN 2.2 low-noise diffusion model",
+        "filename": "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors?download=true",
+        "target": ("diffusion_models", "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"),
+        "min_bytes": 1 * 1024 * 1024 * 1024,
+        "kind": "checkpoint",
+        "scope": "base_model",
+    },
+}
+
+WAN_MOTION_CAPTURE_CUSTOM_NODES: dict[str, dict[str, str]] = {
+    "wan_animate_preprocess": {
+        "label": "ComfyUI Wan Animate Preprocess",
+        "repo": "https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git",
+        "folder": "ComfyUI-WanAnimatePreprocess",
+        "source": "GitHub",
+    },
+    "wan_video_wrapper": {
+        "label": "ComfyUI WanVideoWrapper",
+        "repo": "https://github.com/kijai/ComfyUI-WanVideoWrapper.git",
+        "folder": "ComfyUI-WanVideoWrapper",
+        "source": "GitHub",
+    },
+}
+
+WAN_MOTION_CAPTURE_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "yolo_det": {
+        "label": "WAN Animate YOLO detector",
+        "filename": "yolov10m.onnx",
+        "url": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/resolve/main/process_checkpoint/det/yolov10m.onnx?download=true",
+        "target": ("detection", "yolov10m.onnx"),
+        "min_bytes": 50 * 1024 * 1024,
+        "size_bytes": 60 * 1024 * 1024,
+        "source": "Hugging Face",
+        "scope": "dependency",
+    },
+    "vitpose_l": {
+        "label": "ViTPose whole-body large ONNX",
+        "filename": "vitpose-l-wholebody.onnx",
+        "url": "https://huggingface.co/JunkyByte/easy_ViTPose/resolve/main/onnx/wholebody/vitpose-l-wholebody.onnx?download=true",
+        "target": ("detection", "vitpose-l-wholebody.onnx"),
+        "min_bytes": 300 * 1024 * 1024,
+        "size_bytes": 360 * 1024 * 1024,
+        "source": "Hugging Face",
+        "scope": "dependency",
+    },
+    "wan_i2v_distill_lora": {
+        "label": "WAN I2V LightX2V distill LoRA",
+        "filename": "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+        "url": "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors?download=true",
+        "target": ("loras", "wan", "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors"),
+        "min_bytes": 100 * 1024 * 1024,
+        "size_bytes": 260 * 1024 * 1024,
+        "source": "Hugging Face",
+        "scope": "dependency",
+    },
+}
+
+WAN_MOTION_CAPTURE_NODE_GROUPS: dict[str, tuple[str, ...]] = {
+    "video_loader": ("LoadVideo", "VHS_LoadVideo"),
+    "image_loader": ("LoadImage",),
+    "video_saver": ("SaveVideo", "VHS_VideoCombine"),
+    "wan_fun_control": ("Wan22FunControlToVideo",),
+    "dwpose_preprocessor": ("DWPreprocessor", "OpenposePreprocessor"),
+}
+
+POSE_QWEN_LORA_ARTIFACT: dict[str, Any] = {
+    "label": "VNCCS Qwen Image Edit 2511 PoseStudio LoRA",
+    "filename": "VNCCS_QIE2511_PoseStudio_ART_V5.9.5.safetensors",
+    "version": "5.9.5",
+    "size_bytes": 1_179_883_808,
+    "repo": "MIUProject/VNCCS_PoseStudio",
+    "url": "https://huggingface.co/MIUProject/VNCCS_PoseStudio/resolve/main/models/loras/qwen/VNCCS/VNCCS_QIE2511_PoseStudio_ART_V5.9.5.safetensors?download=true",
+}
+
+POSE_QWEN_CONTROLNET_ARTIFACT: dict[str, Any] = {
+    "label": "Qwen Image InstantX ControlNet Union",
+    "filename": "Qwen-Image-InstantX-ControlNet-Union.safetensors",
+    "size_bytes": 4_281_779_224,
+    "repo": "InstantX/Qwen-Image-ControlNet-Union",
+    "url": "https://huggingface.co/InstantX/Qwen-Image-ControlNet-Union/resolve/main/diffusion_pytorch_model.safetensors?download=true",
+}
+
+POSE_MEDIAPIPE_LANDMARKER_ARTIFACT: dict[str, Any] = {
+    "label": "MediaPipe Pose Landmarker Full",
+    "filename": "pose_landmarker_full.task",
+    "size_bytes": 9_398_198,
+    "url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
+}
+
+CONTROLNET_OPTIONAL_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "qwen_union": {
+        "label": "Qwen Image InstantX ControlNet Union",
+        "preset": "Qwen",
+        "types": ["canny", "depth", "openpose", "dwpose", "pose", "softedge"],
+        "filename": POSE_QWEN_CONTROLNET_ARTIFACT["filename"],
+        "url": POSE_QWEN_CONTROLNET_ARTIFACT["url"],
+        "target": ("controlnet", "qwen", POSE_QWEN_CONTROLNET_ARTIFACT["filename"]),
+        "size_bytes": POSE_QWEN_CONTROLNET_ARTIFACT["size_bytes"],
+        "min_bytes": 1_000_000_000,
+        "scope": "dependency",
+    },
+    "flux_union": {
+        "label": "FLUX.1 ControlNet Union Pro 2.0",
+        "preset": "Flux",
+        "types": ["canny", "depth", "openpose", "dwpose", "pose", "softedge", "tile"],
+        "filename": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+        "url": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0/resolve/main/diffusion_pytorch_model.safetensors?download=true",
+        "target": ("controlnet", "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors"),
+        "size_bytes": 4_281_779_224,
+        "min_bytes": 1_000_000_000,
+        "scope": "dependency",
+    },
+    "sd15_canny": {
+        "label": "SD 1.5 ControlNet Canny",
+        "preset": "SD",
+        "types": ["canny"],
+        "filename": "sd15_control_v11p_canny_fp16.safetensors",
+        "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/main/control_v11p_sd15_canny_fp16.safetensors?download=true",
+        "target": ("controlnet", "sd15_control_v11p_canny_fp16.safetensors"),
+        "size_bytes": 722_601_100,
+        "min_bytes": 100_000_000,
+        "scope": "dependency",
+    },
+    "sd15_depth": {
+        "label": "SD 1.5 ControlNet Depth",
+        "preset": "SD",
+        "types": ["depth"],
+        "filename": "sd15_control_v11f1p_depth_fp16.safetensors",
+        "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/main/control_v11f1p_sd15_depth_fp16.safetensors?download=true",
+        "target": ("controlnet", "sd15_control_v11f1p_depth_fp16.safetensors"),
+        "size_bytes": 722_000_000,
+        "min_bytes": 100_000_000,
+        "scope": "dependency",
+    },
+    "sd15_openpose": {
+        "label": "SD 1.5 ControlNet OpenPose",
+        "preset": "SD",
+        "types": ["openpose", "dwpose", "pose"],
+        "filename": "sd15_control_v11p_openpose_fp16.safetensors",
+        "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/main/control_v11p_sd15_openpose_fp16.safetensors?download=true",
+        "target": ("controlnet", "sd15_control_v11p_openpose_fp16.safetensors"),
+        "size_bytes": 722_000_000,
+        "min_bytes": 100_000_000,
+        "scope": "dependency",
+    },
+    "sdxl_canny": {
+        "label": "SDXL ControlNet Canny Small",
+        "preset": "XL",
+        "types": ["canny"],
+        "filename": "sdxl_diffusers_canny_small.safetensors",
+        "url": "https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0-small/resolve/main/diffusion_pytorch_model.safetensors?download=true",
+        "target": ("controlnet", "sdxl_diffusers_canny_small.safetensors"),
+        "size_bytes": 320_237_152,
+        "min_bytes": 100_000_000,
+        "scope": "dependency",
+    },
+    "zimage_union": {
+        "label": "Z-Image Turbo Fun ControlNet Union",
+        "preset": "ZImageTurbo",
+        "types": ["canny", "depth", "openpose", "dwpose", "pose"],
+        "filename": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Z-Image-Turbo_ComfyUI/resolve/main/split_files/model_patches/Z-Image-Turbo-Fun-Controlnet-Union.safetensors?download=true",
+        "target": ("model_patches", "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"),
+        "size_bytes": 1_200_000_000,
+        "min_bytes": 100_000_000,
+        "scope": "dependency",
     },
 }
 
@@ -461,6 +679,16 @@ def _update_download_job(job_id: str, update: dict[str, Any]) -> None:
             update["progress"] = round((float(update["bytes_downloaded"]) / float(total)) * 100, 2)
     job.update({key: value for key, value in update.items() if value is not None})
     job["updated_at"] = datetime.now().isoformat(timespec="seconds")
+
+
+def _download_relative_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(settings.project_root))
+    except ValueError:
+        try:
+            return str(path.relative_to(settings.models_dir))
+        except ValueError:
+            return str(path)
 
 
 def _write_input_data_image(value: str, prefix: str, *, normalize: bool = True) -> str:
@@ -1835,6 +2063,55 @@ def _available_comfy_node(object_info: dict[str, Any], *names: str) -> str | Non
         if name in available:
             return name
     return None
+
+
+def _replace_workflow_refs(value: Any, remap: dict[str, Any]) -> Any:
+    if isinstance(value, list):
+        if len(value) >= 2 and str(value[0]) in remap:
+            replacement = remap[str(value[0])]
+            if isinstance(replacement, list):
+                replacement = _replace_workflow_refs(replacement, remap)
+                if isinstance(replacement, list) and len(replacement) >= 2:
+                    return [replacement[0], replacement[1], *value[2:]]
+                return replacement
+            return replacement
+        return [_replace_workflow_refs(item, remap) for item in value]
+    if isinstance(value, dict):
+        return {key: _replace_workflow_refs(item, remap) for key, item in value.items()}
+    return value
+
+
+def _bypass_missing_audio_normalization(prompt: dict[str, Any], object_info: dict[str, Any]) -> list[str]:
+    if _available_comfy_node(object_info, "AudioVolumeNormalization"):
+        return []
+    bypassed: dict[str, Any] = {}
+    titles: list[str] = []
+    for node_id, node in list((prompt or {}).items()):
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("class_type") or "") != "AudioVolumeNormalization":
+            continue
+        audio_ref = (node.get("inputs") or {}).get("audio")
+        if not isinstance(audio_ref, list) or len(audio_ref) < 2:
+            continue
+        bypassed[str(node_id)] = audio_ref
+        meta = node.get("_meta") if isinstance(node.get("_meta"), dict) else {}
+        titles.append(str(meta.get("title") or node_id))
+    if not bypassed:
+        return []
+    for node_id in list(bypassed):
+        seen = {node_id}
+        audio_ref = bypassed[node_id]
+        while isinstance(audio_ref, list) and len(audio_ref) >= 2 and str(audio_ref[0]) in bypassed and str(audio_ref[0]) not in seen:
+            seen.add(str(audio_ref[0]))
+            audio_ref = bypassed[str(audio_ref[0])]
+        bypassed[node_id] = audio_ref
+    for node_id in bypassed:
+        prompt.pop(node_id, None)
+    for node in (prompt or {}).values():
+        if isinstance(node, dict):
+            node["inputs"] = _replace_workflow_refs(node.get("inputs") or {}, bypassed)
+    return titles
 
 
 def _inpaint_uses_lanpaint(request: GenerateRequest) -> bool:
@@ -5104,6 +5381,7 @@ async def startup() -> None:
     cleanup_embedded_comfy_artifacts()
     ensure_model_tree(settings)
     workflow_registry.import_reference_workflows()
+    workflow_registry.ensure_model3d_workflow_aliases()
 
 
 @app.get("/api/health", response_model=RuntimeHealth)
@@ -5394,6 +5672,7 @@ async def _model3d_preflight_report(
             object_info_error = f"{type(exc).__name__}: {str(exc)[:240]}"
 
     node_status = _model3d_node_status(object_info)
+    workflow_registry.ensure_model3d_workflow_aliases()
     workflow_path = workflow_registry.find("model3d-trellis2-meshwithvoxel-texturing-multiview", "Model3D")
     workflow_id = "model3d-trellis2-meshwithvoxel-texturing-multiview"
     if workflow_path is None:
@@ -5418,6 +5697,8 @@ async def _model3d_preflight_report(
         blocking.append("Required TRELLIS.2 custom nodes are missing: " + ", ".join(node_status["missing"][:6]) + ".")
     if object_info_error:
         warnings.append(f"ComfyUI object registry could not be read: {object_info_error}")
+    if not workflow_path:
+        blocking.append("Model 3D workflow is missing: workflows/comfyui/model3d_trellis2_meshwithvoxel_texturing_multiview.json.")
     if not node_status.get("checked") and not full:
         warnings.append("Custom node registry was not checked in quick mode.")
     if not comfy_running:
@@ -5710,7 +5991,8 @@ async def workflow_analysis(
     workflow_id: str,
     install_dependencies: bool = Query(False),
 ) -> dict[str, Any]:
-    workflow_path = workflow_registry.find(workflow_id)
+    workflow_registry.ensure_model3d_workflow_aliases()
+    workflow_path = workflow_registry.find(workflow_id, "Model3D" if workflow_id.startswith("model3d-") else None)
     if not workflow_path:
         raise HTTPException(status_code=404, detail="Workflow not found.")
     workflow = workflow_registry.summarize(workflow_path)
@@ -5728,7 +6010,8 @@ async def install_workflow_dependencies(
     workflow_id: str,
     restart_comfy: bool = Query(True),
 ) -> dict[str, Any]:
-    workflow_path = workflow_registry.find(workflow_id)
+    workflow_registry.ensure_model3d_workflow_aliases()
+    workflow_path = workflow_registry.find(workflow_id, "Model3D" if workflow_id.startswith("model3d-") else None)
     if not workflow_path:
         raise HTTPException(status_code=404, detail="Workflow not found.")
     workflow = workflow_registry.summarize(workflow_path)
@@ -5895,7 +6178,7 @@ def _download_url_to_file(url: str, target: Path, job_id: str) -> dict[str, Any]
         "status": "downloaded",
         "filename": target.name,
         "path": str(target),
-        "relative_path": str(target.relative_to(settings.project_root)),
+        "relative_path": _download_relative_path(target),
         "bytes_downloaded": target.stat().st_size,
         "bytes_total": target.stat().st_size,
         "progress": 100,
@@ -5908,6 +6191,563 @@ def _nvidia_pid_dir() -> Path:
 
 def _nvidia_pid_source_ready() -> bool:
     return (_nvidia_pid_dir() / "pid" / "_src" / "utils" / "model_loader.py").is_file()
+
+
+def _wan22_artifact_target(key: str) -> Path:
+    artifact = WAN22_HF_ARTIFACTS[key]
+    category, filename = artifact["target"]
+    return settings.models_dir / str(category) / str(filename)
+
+
+def _controlnet_artifact_target(key: str) -> Path:
+    artifact = CONTROLNET_OPTIONAL_ARTIFACTS[key]
+    parts = [str(part) for part in artifact["target"]]
+    return settings.models_dir.joinpath(*parts)
+
+
+def _controlnet_artifact_installed_path(key: str) -> Path:
+    artifact = CONTROLNET_OPTIONAL_ARTIFACTS[key]
+    target = _controlnet_artifact_target(key)
+    min_bytes = int(artifact.get("min_bytes") or 1024 * 1024)
+    candidates = [target]
+    filename = str(artifact.get("filename") or "")
+    if filename:
+        candidates.extend(settings.models_dir.glob(f"controlnet/**/{filename}"))
+        candidates.extend(settings.models_dir.glob(f"model_patches/**/{filename}"))
+    if key == "qwen_union":
+        candidates.extend(settings.models_dir.glob("controlnet/**/*InstantX*ControlNet*Union*.safetensors"))
+        candidates.extend(settings.models_dir.glob("controlnet/**/*Qwen*ControlNet*Union*.safetensors"))
+    if key == "flux_union":
+        candidates.extend(settings.models_dir.glob("controlnet/**/*Flux*ControlNet*Union*.safetensors"))
+    for candidate in candidates:
+        try:
+            if candidate.exists() and candidate.stat().st_size >= min_bytes:
+                return candidate
+        except OSError:
+            continue
+    return target
+
+
+def _controlnet_artifact_status(key: str) -> dict[str, Any]:
+    artifact = CONTROLNET_OPTIONAL_ARTIFACTS[key]
+    target = _controlnet_artifact_installed_path(key)
+    installed = target.exists() and target.stat().st_size >= int(artifact.get("min_bytes") or 1024 * 1024)
+    canonical = _controlnet_artifact_target(key)
+    return {
+        "key": key,
+        "label": artifact["label"],
+        "preset": artifact["preset"],
+        "types": artifact["types"],
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "destination": str(canonical),
+        "path": str(target),
+        "installed": bool(installed),
+        "size_bytes": int(artifact.get("size_bytes") or 0),
+        "scope": artifact.get("scope") or "dependency",
+    }
+
+
+def _controlnet_status_snapshot(preset: str | None = None, control_type: str | None = None) -> dict[str, Any]:
+    preset_norm = str(preset or "").strip().lower()
+    type_norm = str(control_type or "").strip().lower()
+    assets = []
+    for key in CONTROLNET_OPTIONAL_ARTIFACTS:
+        status = _controlnet_artifact_status(key)
+        if preset_norm and str(status["preset"]).lower() != preset_norm and not (
+            preset_norm in {"sd15", "sd1.5"} and status["preset"] == "SD"
+        ) and not (
+            preset_norm in {"sdxl", "xl"} and status["preset"] == "XL"
+        ):
+            continue
+        if type_norm and type_norm not in {str(item).lower() for item in status["types"]}:
+            continue
+        assets.append(status)
+    missing = [item for item in assets if not item["installed"]]
+    return {
+        "installed": len(missing) == 0 if assets else False,
+        "assets": assets,
+        "missing_assets": missing,
+        "models_dir": str(settings.models_dir),
+        "estimated_missing_bytes": sum(int(item.get("size_bytes") or 0) for item in missing),
+        "note": "ControlNet models are optional dependency assets. Nexus downloads them only after UI confirmation and does not modify Torch/CUDA requirements.",
+    }
+
+
+def _wan22_artifact_installed_path(key: str) -> Path:
+    target = _wan22_artifact_target(key)
+    min_bytes = int(WAN22_HF_ARTIFACTS[key].get("min_bytes") or 1024 * 1024)
+    candidates = [target]
+    if key == "vae22":
+        candidates.append(settings.models_dir / "vae" / "wan22-vae.safetensors")
+    for candidate in candidates:
+        if candidate.exists() and candidate.stat().st_size >= min_bytes:
+            return candidate
+    return target
+
+
+def _wan22_artifact_status(key: str) -> dict[str, Any]:
+    artifact = WAN22_HF_ARTIFACTS[key]
+    target = _wan22_artifact_installed_path(key)
+    min_bytes = int(artifact.get("min_bytes") or 1024 * 1024)
+    installed = target.exists() and target.stat().st_size >= min_bytes
+    return {
+        "key": key,
+        "label": artifact["label"],
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "kind": artifact.get("kind") or "model",
+        "scope": artifact.get("scope") or "dependency",
+        "destination": str(_wan22_artifact_target(key)),
+        "path": str(target) if installed else "",
+        "installed": installed,
+        "size_bytes_min": min_bytes,
+        "source": "Hugging Face",
+    }
+
+
+def _wan_motion_artifact_target(key: str) -> Path:
+    artifact = WAN_MOTION_CAPTURE_ARTIFACTS[key]
+    parts = [str(part) for part in artifact["target"]]
+    return settings.models_dir.joinpath(*parts)
+
+
+def _wan_motion_artifact_installed_path(key: str) -> Path:
+    artifact = WAN_MOTION_CAPTURE_ARTIFACTS[key]
+    target = _wan_motion_artifact_target(key)
+    min_bytes = int(artifact.get("min_bytes") or 1024 * 1024)
+    candidates = [target]
+    filename = str(artifact.get("filename") or "")
+    if filename:
+        candidates.extend(settings.models_dir.glob(f"**/{filename}"))
+    for candidate in candidates:
+        try:
+            if candidate.exists() and candidate.stat().st_size >= min_bytes:
+                return candidate
+        except OSError:
+            continue
+    return target
+
+
+def _wan_motion_artifact_status(key: str) -> dict[str, Any]:
+    artifact = WAN_MOTION_CAPTURE_ARTIFACTS[key]
+    target = _wan_motion_artifact_installed_path(key)
+    min_bytes = int(artifact.get("min_bytes") or 1024 * 1024)
+    installed = target.exists() and target.stat().st_size >= min_bytes
+    canonical = _wan_motion_artifact_target(key)
+    return {
+        "key": key,
+        "label": artifact["label"],
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "scope": artifact.get("scope") or "dependency",
+        "destination": str(canonical),
+        "path": str(target) if installed else "",
+        "installed": bool(installed),
+        "size_bytes_min": min_bytes,
+        "size_bytes": int(artifact.get("size_bytes") or min_bytes),
+        "source": artifact.get("source") or "source",
+    }
+
+
+def _wan_motion_control_model_status() -> dict[str, Any]:
+    roots = [
+        settings.models_dir / "checkpoints",
+        settings.models_dir / "diffusion_models",
+        settings.models_dir / "unet",
+    ]
+    high_candidates: list[dict[str, Any]] = []
+    low_candidates: list[dict[str, Any]] = []
+    generic_candidates: list[dict[str, Any]] = []
+    suffixes = {".safetensors", ".gguf", ".pt", ".pth"}
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in suffixes:
+                continue
+            name = path.name.lower()
+            if "wan" not in name:
+                continue
+            is_fun_control = "fun" in name and "control" in name
+            is_animate = "animate" in name
+            if not (is_fun_control or is_animate):
+                continue
+            item = {
+                "name": str(path.relative_to(settings.models_dir)).replace("\\", "/"),
+                "filename": path.name,
+                "size_bytes": path.stat().st_size,
+            }
+            if "high" in name:
+                high_candidates.append(item)
+            elif "low" in name:
+                low_candidates.append(item)
+            else:
+                generic_candidates.append(item)
+    return {
+        "ready": bool(high_candidates and low_candidates),
+        "high_candidates": high_candidates,
+        "low_candidates": low_candidates,
+        "generic_candidates": generic_candidates,
+        "note": "WAN Motion Capture generation needs compatible high/low WAN Fun-Control or Animate motion-control models. LoRAs can help speed/style but do not replace that route.",
+    }
+
+
+def _wan_motion_custom_node_status(key: str) -> dict[str, Any]:
+    node = WAN_MOTION_CAPTURE_CUSTOM_NODES[key]
+    path = settings.custom_nodes_dir / node["folder"]
+    return {
+        "key": key,
+        "label": node["label"],
+        "repo": node["repo"],
+        "destination": str(path),
+        "installed": path.exists(),
+        "source": node.get("source") or "GitHub",
+    }
+
+
+def _wan_motion_missing_node_groups(object_info: dict[str, Any]) -> list[dict[str, Any]]:
+    missing: list[dict[str, Any]] = []
+    for key, names in WAN_MOTION_CAPTURE_NODE_GROUPS.items():
+        if not _available_comfy_node(object_info, *names):
+            missing.append({"key": key, "accepted_nodes": list(names), "label": names[0]})
+    return missing
+
+
+async def _wan_motion_status_snapshot() -> dict[str, Any]:
+    object_info = await _optional_comfy_object_info()
+    node_groups_missing = _wan_motion_missing_node_groups(object_info)
+    custom_nodes = [_wan_motion_custom_node_status(key) for key in WAN_MOTION_CAPTURE_CUSTOM_NODES]
+    artifacts = [_wan_motion_artifact_status(key) for key in WAN_MOTION_CAPTURE_ARTIFACTS]
+    dependency_assets = [item for item in artifacts if item.get("scope") != "base_model"]
+    base_assets = [item for item in artifacts if item.get("scope") == "base_model"]
+    missing_custom_nodes = [item for item in custom_nodes if not item["installed"]]
+    missing_dependencies = [item for item in dependency_assets if not item["installed"]]
+    missing_base = [item for item in base_assets if not item["installed"]]
+    ready_dependencies = not missing_custom_nodes and not missing_dependencies and not node_groups_missing
+    motion_control_models = _wan_motion_control_model_status()
+    return {
+        "template": "Wan",
+        "label": "WAN Motion Capture",
+        "installed": ready_dependencies,
+        "dependencies_installed": ready_dependencies,
+        "generation_ready": bool(ready_dependencies and motion_control_models["ready"]),
+        "motion_control_models_ready": bool(motion_control_models["ready"]),
+        "motion_control_models": motion_control_models,
+        "custom_nodes": custom_nodes,
+        "missing_custom_nodes": missing_custom_nodes,
+        "node_groups_missing": node_groups_missing,
+        "assets": artifacts,
+        "dependency_assets": dependency_assets,
+        "base_model_assets": base_assets,
+        "missing_assets": missing_dependencies,
+        "missing_dependency_assets": missing_dependencies,
+        "missing_base_model_assets": missing_base,
+        "models_dir": str(settings.models_dir),
+        "custom_nodes_dir": str(settings.custom_nodes_dir),
+        "estimated_missing_dependency_bytes": sum(int(item.get("size_bytes") or item.get("size_bytes_min") or 0) for item in missing_dependencies),
+        "estimated_missing_base_model_bytes": sum(int(item.get("size_bytes") or item.get("size_bytes_min") or 0) for item in missing_base),
+        "restart_recommended": bool(missing_custom_nodes),
+        "note": "WAN Motion Capture is optional. Dependencies are separate from base/checkpoint assets. DWPose/Fun-Control motion requires compatible WAN Fun-Control or WAN Animate models; Nexus does not auto-download base/checkpoint models.",
+    }
+
+
+def _wan22_status_snapshot() -> dict[str, Any]:
+    assets = [_wan22_artifact_status(key) for key in WAN22_HF_ARTIFACTS]
+    dependency_assets = [item for item in assets if item.get("scope") != "base_model"]
+    base_assets = [item for item in assets if item.get("scope") == "base_model"]
+    missing_dependencies = [item for item in dependency_assets if not item["installed"]]
+    missing_base = [item for item in base_assets if not item["installed"]]
+    ready_core = all(item["installed"] for item in assets if item["key"] in {"clip_vision", "umt5", "vae21"})
+    ready_i2v_full = all(item["installed"] for item in assets if item["key"] in {"clip_vision", "umt5", "vae21", "high_noise", "low_noise"})
+    return {
+        "template": "Wan",
+        "label": "WAN 2.2",
+        "models_dir": str(settings.models_dir),
+        "ready_core": ready_core,
+        "ready_i2v_full": ready_i2v_full,
+        "installed": len(missing_dependencies) == 0,
+        "dependencies_installed": len(missing_dependencies) == 0,
+        "assets": assets,
+        "dependency_assets": dependency_assets,
+        "base_model_assets": base_assets,
+        "missing_assets": missing_dependencies,
+        "missing_dependency_assets": missing_dependencies,
+        "missing_base_model_assets": missing_base,
+        "estimated_missing_min_bytes": sum(int(item.get("size_bytes_min") or 0) for item in missing_dependencies),
+        "estimated_missing_dependency_min_bytes": sum(int(item.get("size_bytes_min") or 0) for item in missing_dependencies),
+        "estimated_missing_base_model_min_bytes": sum(int(item.get("size_bytes_min") or 0) for item in missing_base),
+        "restart_recommended": True,
+        "note": "WAN 2.2 template dependency assets are optional and downloaded only after UI confirmation. Base/checkpoint diffusion models are not treated as template dependencies.",
+    }
+
+
+async def _run_wan22_assets_download_job(job_id: str, keys: list[str] | None = None) -> None:
+    try:
+        selected_keys = [key for key in (keys or list(WAN22_HF_ARTIFACTS)) if key in WAN22_HF_ARTIFACTS]
+        if not selected_keys:
+            raise ValueError("No valid WAN 2.2 dependency assets selected.")
+        _update_download_job(job_id, {"status": "downloading", "progress": 0, "message": "Preparing WAN 2.2 dependency asset downloads."})
+        completed = []
+        total = len(selected_keys)
+        for index, key in enumerate(selected_keys, start=1):
+            status = _wan22_artifact_status(key)
+            if status["installed"]:
+                completed.append({**status, "already_downloaded": True})
+                _update_download_job(job_id, {"message": f"WAN asset already present: {status['filename']}", "progress": round((index / total) * 100, 2)})
+                continue
+            artifact = WAN22_HF_ARTIFACTS[key]
+            target = _wan22_artifact_target(key)
+            _update_download_job(job_id, {"message": f"Downloading {artifact['label']}: {artifact['filename']}"})
+            result = await asyncio.to_thread(_download_url_to_file, str(artifact["url"]), target, job_id)
+            completed.append({**result, "key": key, "label": artifact["label"]})
+        ensure_model_tree(settings)
+        _update_download_job(
+            job_id,
+            {
+                "status": "downloaded",
+                "progress": 100,
+                "message": "WAN 2.2 dependency assets ready.",
+                "assets": completed,
+                "status_snapshot": _wan22_status_snapshot(),
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
+            },
+        )
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/wan22/assets/status")
+async def wan22_assets_status() -> dict[str, Any]:
+    return _wan22_status_snapshot()
+
+
+@app.post("/api/wan22/assets/download/start")
+async def wan22_assets_download_start(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    selected = payload.get("assets") if isinstance(payload, dict) else None
+    selected_keys = [str(item).strip().lower() for item in selected] if isinstance(selected, list) else None
+    if selected_keys is None:
+        selected_keys = [item["key"] for item in _wan22_status_snapshot()["missing_dependency_assets"]]
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "kind": "wan22_assets",
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued WAN 2.2 optional dependency asset download.",
+        "assets": selected_keys,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_wan22_assets_download_job(job_id, selected_keys))
+    return download_jobs[job_id]
+
+
+async def _run_wan_motion_capture_download_job(
+    job_id: str,
+    keys: list[str] | None = None,
+    *,
+    install_nodes: bool = True,
+    include_base_model: bool = False,
+) -> None:
+    try:
+        selected_keys = [key for key in (keys or list(WAN_MOTION_CAPTURE_ARTIFACTS)) if key in WAN_MOTION_CAPTURE_ARTIFACTS]
+        if not include_base_model:
+            selected_keys = [
+                key
+                for key in selected_keys
+                if WAN_MOTION_CAPTURE_ARTIFACTS[key].get("scope") != "base_model"
+            ]
+        _update_download_job(job_id, {"status": "downloading", "progress": 0, "message": "Preparing WAN Motion Capture optional dependencies."})
+        completed_nodes: list[dict[str, Any]] = []
+        errors: dict[str, str] = {}
+        if install_nodes:
+            root = settings.custom_nodes_dir.resolve()
+            root.mkdir(parents=True, exist_ok=True)
+            total_nodes = max(1, len(WAN_MOTION_CAPTURE_CUSTOM_NODES))
+            for index, node in enumerate(WAN_MOTION_CAPTURE_CUSTOM_NODES.values(), start=1):
+                target = (root / node["folder"]).resolve()
+                if not target.is_relative_to(root):
+                    errors[node["folder"]] = "Invalid custom node destination."
+                    continue
+                _update_download_job(
+                    job_id,
+                    {
+                        "message": f"Preparing {node['label']}",
+                        "progress": round((index / (total_nodes + max(1, len(selected_keys)))) * 40, 2),
+                    },
+                )
+                try:
+                    if target.exists() and (target / ".git").exists():
+                        result = await asyncio.to_thread(_run_git, ["pull", "--ff-only"], target, 600)
+                    elif target.exists():
+                        completed_nodes.append({"label": node["label"], "path": str(target), "already_present": True})
+                        continue
+                    else:
+                        result = await asyncio.to_thread(_run_git, ["clone", node["repo"], str(target)], root, 900)
+                    if result.returncode != 0:
+                        raise RuntimeError((result.stderr or result.stdout or "git operation failed").strip()[-1200:])
+                    completed_nodes.append({"label": node["label"], "path": str(target), "repo": node["repo"]})
+                except Exception as exc:
+                    errors[node["folder"]] = str(exc)[-1200:]
+            try:
+                installed, dep_errors = await asyncio.to_thread(
+                    install_custom_node_dependencies,
+                    settings,
+                    node_names=[node["folder"] for node in WAN_MOTION_CAPTURE_CUSTOM_NODES.values()],
+                    all_enabled=False,
+                )
+                if installed:
+                    completed_nodes.append({"label": "Python requirements", "installed_dependencies": installed})
+                errors.update(dep_errors)
+            except Exception as exc:
+                errors["python_requirements"] = str(exc)[-1200:]
+
+        completed_assets = []
+        total_assets = len(selected_keys)
+        for index, key in enumerate(selected_keys, start=1):
+            status = _wan_motion_artifact_status(key)
+            if status["installed"]:
+                completed_assets.append({**status, "already_downloaded": True})
+                _update_download_job(job_id, {"message": f"WAN Motion asset already present: {status['filename']}", "progress": 45 + round((index / max(1, total_assets)) * 50, 2)})
+                continue
+            artifact = WAN_MOTION_CAPTURE_ARTIFACTS[key]
+            target = _wan_motion_artifact_target(key)
+            _update_download_job(job_id, {"message": f"Downloading {artifact['label']}: {artifact['filename']}"})
+            result = await asyncio.to_thread(_download_url_to_file, str(artifact["url"]), target, job_id)
+            completed_assets.append({**result, "key": key, "label": artifact["label"]})
+
+        ensure_model_tree(settings)
+        snapshot = await _wan_motion_status_snapshot()
+        final_status = "downloaded" if not errors else "completed"
+        _update_download_job(
+            job_id,
+            {
+                "status": final_status,
+                "progress": 100,
+                "message": "WAN Motion Capture optional setup finished." if not errors else "WAN Motion Capture setup finished with warnings.",
+                "custom_nodes": completed_nodes,
+                "assets": completed_assets,
+                "errors": errors,
+                "status_snapshot": snapshot,
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
+            },
+        )
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/wan22/motion-capture/status")
+async def wan22_motion_capture_status() -> dict[str, Any]:
+    return await _wan_motion_status_snapshot()
+
+
+@app.post("/api/wan22/motion-capture/download/start")
+async def wan22_motion_capture_download_start(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = payload or {}
+    raw_keys = payload.get("assets")
+    install_nodes = not (payload.get("install_nodes") is False)
+    if isinstance(raw_keys, list) and raw_keys:
+        selected_keys = [
+            str(item)
+            for item in raw_keys
+            if str(item) in WAN_MOTION_CAPTURE_ARTIFACTS
+            and WAN_MOTION_CAPTURE_ARTIFACTS[str(item)].get("scope") != "base_model"
+        ]
+    else:
+        snapshot = await _wan_motion_status_snapshot()
+        selected_keys = [item["key"] for item in snapshot["missing_dependency_assets"]]
+    if not selected_keys and not install_nodes:
+        raise HTTPException(status_code=400, detail="No missing WAN Motion Capture dependency assets selected.")
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "kind": "wan22_motion_capture",
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued WAN Motion Capture optional setup.",
+        "assets": selected_keys,
+        "install_nodes": install_nodes,
+        "include_base_model": False,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(
+        _run_wan_motion_capture_download_job(
+            job_id,
+            selected_keys,
+            install_nodes=install_nodes,
+            include_base_model=False,
+        )
+    )
+    return download_jobs[job_id]
+
+
+async def _run_controlnet_assets_download_job(job_id: str, keys: list[str]) -> None:
+    try:
+        selected = [key for key in keys if key in CONTROLNET_OPTIONAL_ARTIFACTS]
+        if not selected:
+            raise ValueError("No valid ControlNet dependency assets selected.")
+        _update_download_job(job_id, {"status": "downloading", "progress": 0, "message": "Preparing ControlNet dependency downloads."})
+        completed = []
+        total = len(selected)
+        for index, key in enumerate(selected, start=1):
+            status = _controlnet_artifact_status(key)
+            if status["installed"]:
+                completed.append({**status, "already_downloaded": True})
+                _update_download_job(job_id, {"message": f"ControlNet already present: {status['filename']}", "progress": round((index / total) * 100, 2)})
+                continue
+            artifact = CONTROLNET_OPTIONAL_ARTIFACTS[key]
+            target = _controlnet_artifact_target(key)
+            _update_download_job(job_id, {"message": f"Downloading {artifact['label']}: {artifact['filename']}"})
+            result = await asyncio.to_thread(_download_url_to_file, str(artifact["url"]), target, job_id)
+            completed.append({**result, "key": key, "label": artifact["label"]})
+        ensure_model_tree(settings)
+        _update_download_job(
+            job_id,
+            {
+                "status": "downloaded",
+                "progress": 100,
+                "message": "ControlNet dependency assets ready.",
+                "assets": completed,
+                "status_snapshot": _controlnet_status_snapshot(),
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
+            },
+        )
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/controlnet/assets/status")
+async def controlnet_assets_status(preset: str | None = None, type: str | None = None) -> dict[str, Any]:
+    return _controlnet_status_snapshot(preset=preset, control_type=type)
+
+
+@app.post("/api/controlnet/assets/download/start")
+async def controlnet_assets_download_start(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = payload or {}
+    raw_keys = payload.get("assets")
+    if isinstance(raw_keys, list) and raw_keys:
+        selected_keys = [str(item) for item in raw_keys if str(item) in CONTROLNET_OPTIONAL_ARTIFACTS]
+    else:
+        preset = str(payload.get("preset") or "").strip()
+        control_type = str(payload.get("type") or payload.get("control_type") or "").strip()
+        selected_keys = [item["key"] for item in _controlnet_status_snapshot(preset=preset, control_type=control_type)["missing_assets"]]
+    if not selected_keys:
+        raise HTTPException(status_code=400, detail="No missing ControlNet dependency assets selected.")
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "kind": "controlnet_assets",
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued optional ControlNet dependency download.",
+        "assets": selected_keys,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_controlnet_assets_download_job(job_id, selected_keys))
+    return download_jobs[job_id]
 
 
 def _nvidia_pid_profile(profile: str | None = None, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -6185,6 +7025,535 @@ async def _run_nvidia_pid_download_job(job_id: str, profile: str, overrides: dic
         _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
 
 
+def _pose_root() -> Path:
+    return settings.output_dir / "poses"
+
+
+def _pose_slug(value: Any, fallback: str = "pose") -> str:
+    text = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(value or "").strip()).strip("._-")
+    return text[:80] or fallback
+
+
+def _pose_data_url_bytes(value: Any) -> tuple[bytes, str] | None:
+    text = str(value or "").strip()
+    if not text.startswith("data:image/") or "," not in text:
+        return None
+    header, encoded = text.split(",", 1)
+    ext = "png"
+    media = header.split(";", 1)[0].split(":", 1)[-1].lower()
+    if media.endswith("jpeg"):
+        ext = "jpg"
+    elif media.endswith("webp"):
+        ext = "webp"
+    elif media.endswith("gif"):
+        ext = "gif"
+    try:
+        return base64.b64decode(encoded), ext
+    except Exception:
+        return None
+
+
+def _pose_qwen_lora_target() -> Path:
+    return settings.models_dir / "loras" / "qwen" / "VNCCS" / POSE_QWEN_LORA_ARTIFACT["filename"]
+
+
+def _pose_qwen_controlnet_target() -> Path:
+    return settings.models_dir / "controlnet" / "qwen" / POSE_QWEN_CONTROLNET_ARTIFACT["filename"]
+
+
+def _pose_file_record(path: Path) -> dict[str, Any] | None:
+    try:
+        relative = path.relative_to(settings.output_dir).as_posix()
+    except Exception:
+        return None
+    return {
+        "filename": path.name,
+        "path": str(path),
+        "relative_path": relative,
+        "url": f"/outputs/{quote(relative, safe='/')}",
+        "modified": path.stat().st_mtime,
+        "size_bytes": path.stat().st_size,
+    }
+
+
+def _pose_library_items(limit: int = 240) -> list[dict[str, Any]]:
+    root = _pose_root()
+    if not root.exists():
+        return []
+    items: list[dict[str, Any]] = []
+    for metadata_path in sorted(root.rglob("pose.nexus.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except Exception:
+            metadata = {}
+        pose_dir = metadata_path.parent
+        preview = next((candidate for candidate in (pose_dir / "preview.png", pose_dir / "preview.jpg", pose_dir / "openpose.png", pose_dir / "dwpose.png") if candidate.exists()), None)
+        guide = next((candidate for candidate in (pose_dir / "dwpose.png", pose_dir / "openpose.png") if candidate.exists()), None)
+        lighting = pose_dir / "lighting.png"
+        folder = pose_dir.parent.name if pose_dir.parent != root else ""
+        items.append(
+            {
+                "id": f"{folder}/{pose_dir.name}".strip("/"),
+                "name": metadata.get("name") or pose_dir.name,
+                "folder": metadata.get("folder") or folder,
+                "tags": metadata.get("tags") or [],
+                "prompt": metadata.get("prompt") or "",
+                "compatibility": metadata.get("compatibility") or [],
+                "metadata": metadata,
+                "preview": _pose_file_record(preview) if preview else None,
+                "guide": _pose_file_record(guide) if guide else None,
+                "lighting": _pose_file_record(lighting) if lighting.exists() else None,
+                "json": _pose_file_record(metadata_path),
+                "modified": metadata_path.stat().st_mtime,
+            }
+        )
+        if len(items) >= limit:
+            break
+    return items
+
+
+def _pose_engine_status() -> dict[str, Any]:
+    pose_models = settings.models_dir / "pose"
+    mediapipe_model = pose_models / "mediapipe" / "pose_landmarker_full.task"
+    mediapipe_installed = importlib.util.find_spec("mediapipe") is not None
+    mediapipe_model_ready = mediapipe_model.exists() and mediapipe_model.stat().st_size >= 1 * 1024 * 1024
+    dwpose_root = pose_models / "dwpose"
+    sam_root = pose_models / "sam3d_body"
+    fast_sam_runtime = settings.project_root / "runtime" / "fast-sam3d-body"
+    sam_runtime = settings.project_root / "runtime" / "sam3d-body"
+    qwen_target = _pose_qwen_lora_target()
+    qwen_controlnet_target = _pose_qwen_controlnet_target()
+    return {
+        "paths": {
+            "library": str(_pose_root()),
+            "mediapipe": str(mediapipe_model.parent),
+            "dwpose": str(dwpose_root),
+            "sam3d_body": str(sam_root),
+            "sam3d_runtime": str(sam_runtime),
+            "fast_sam3d_runtime": str(fast_sam_runtime),
+            "qwen_lora": str(qwen_target),
+            "qwen_pose_controlnet": str(qwen_controlnet_target),
+        },
+        "engines": {
+            "automatic": {
+                "installed": True,
+                "ready": True,
+                "label": "Automatic Browser Pose",
+                "note": "Uses browser MediaPipe first; heavy server engines remain optional and isolated.",
+            },
+            "manual": {"installed": True, "ready": True, "label": "Manual"},
+            "mediapipe": {
+                "installed": mediapipe_installed,
+                "model_ready": mediapipe_model_ready,
+                "ready": mediapipe_installed and mediapipe_model_ready,
+                "label": "MediaPipe Pose",
+                "note": "Uses permissive landmark capture. The browser can use the remote model; backend capture uses this local .task model.",
+                "download": POSE_MEDIAPIPE_LANDMARKER_ARTIFACT,
+            },
+            "dwpose": {
+                "installed": dwpose_root.exists() and any(dwpose_root.rglob("*")),
+                "ready": False,
+                "label": "DWPose / MMPose",
+                "note": "Optional whole-body engine. Nexus does not install this heavy stack automatically.",
+            },
+            "sam3d_body": {
+                "installed": sam_runtime.exists() or sam_root.exists(),
+                "checkpoint_ready": any(sam_root.rglob("*.ckpt")) if sam_root.exists() else False,
+                "ready": False,
+                "label": "SAM 3D Body",
+                "note": "Optional gated Hugging Face model; install only after user confirmation and license access.",
+            },
+            "fast_sam3d_body": {
+                "installed": fast_sam_runtime.exists(),
+                "ready": False,
+                "label": "Fast SAM 3D Body",
+                "note": "Optional isolated accelerator environment; not installed into Nexus/Comfy.",
+            },
+        },
+        "qwen_lora": {
+            "installed": qwen_target.exists() and qwen_target.stat().st_size > 100 * 1024 * 1024,
+            "filename": POSE_QWEN_LORA_ARTIFACT["filename"],
+            "version": POSE_QWEN_LORA_ARTIFACT["version"],
+            "size_bytes": POSE_QWEN_LORA_ARTIFACT["size_bytes"],
+            "url": POSE_QWEN_LORA_ARTIFACT["url"],
+            "path": str(qwen_target),
+        },
+        "qwen_pose_controlnet": {
+            "installed": qwen_controlnet_target.exists() and qwen_controlnet_target.stat().st_size > 100 * 1024 * 1024,
+            "filename": POSE_QWEN_CONTROLNET_ARTIFACT["filename"],
+            "size_bytes": POSE_QWEN_CONTROLNET_ARTIFACT["size_bytes"],
+            "url": POSE_QWEN_CONTROLNET_ARTIFACT["url"],
+            "path": str(qwen_controlnet_target),
+            "label": POSE_QWEN_CONTROLNET_ARTIFACT["label"],
+        },
+    }
+
+
+def _pose_capture_from_image(payload: dict[str, Any]) -> dict[str, Any]:
+    image_value = str(payload.get("image") or "")
+    engine = str(payload.get("engine") or "mediapipe").strip().lower()
+    decoded = _pose_data_url_bytes(image_value)
+    width = int(payload.get("width") or 768)
+    height = int(payload.get("height") or 1024)
+    if decoded:
+        try:
+            from PIL import Image
+
+            with Image.open(BytesIO(decoded[0])) as image:
+                width, height = image.size
+        except Exception:
+            pass
+    known_engines = {"automatic", "manual", "mediapipe", "dwpose", "sam3d_body", "fast_sam3d_body"}
+    normalized_engine = engine if engine in known_engines else "automatic"
+    if normalized_engine == "manual":
+        return {
+            "status": "manual",
+            "engine": "manual",
+            "engine_used": "manual",
+            "message": "Manual mode does not auto-retarget. Use Auto or MediaPipe to capture from an image.",
+            "image_size": {"width": width, "height": height},
+        }
+    if normalized_engine in {"automatic", "mediapipe"}:
+        if importlib.util.find_spec("mediapipe") is None:
+            return {
+                "status": "missing_dependency",
+                "engine": "mediapipe",
+                "engine_used": "none",
+                "message": "Browser MediaPipe failed and the backend MediaPipe package is not installed. Confirm the optional dependency before server-side capture.",
+                "image_size": {"width": width, "height": height},
+                "dependency": {
+                    "package": "mediapipe",
+                    "destination": str(settings.models_dir / "pose" / "mediapipe"),
+                    "optional": True,
+                },
+            }
+        if not decoded:
+            return {
+                "status": "invalid_image",
+                "engine": "mediapipe",
+                "engine_used": "none",
+                "message": "Pose capture needs an image data URL.",
+                "image_size": {"width": width, "height": height},
+            }
+        try:
+            import mediapipe as mp
+            import numpy as np
+            from PIL import Image
+
+            with Image.open(BytesIO(decoded[0])) as image:
+                rgb_image = image.convert("RGB")
+                width, height = rgb_image.size
+                frame = np.ascontiguousarray(np.asarray(rgb_image))
+
+            landmark_list = None
+            engine_used = "mediapipe-backend"
+            if hasattr(mp, "solutions") and hasattr(getattr(mp, "solutions", None), "pose"):
+                for complexity, confidence in ((2, 0.35), (1, 0.25), (0, 0.15)):
+                    with mp.solutions.pose.Pose(
+                        static_image_mode=True,
+                        model_complexity=complexity,
+                        enable_segmentation=False,
+                        min_detection_confidence=confidence,
+                    ) as pose:
+                        result = pose.process(frame)
+                    pose_landmarks = getattr(result, "pose_landmarks", None)
+                    if pose_landmarks and getattr(pose_landmarks, "landmark", None):
+                        landmark_list = pose_landmarks.landmark
+                        engine_used = f"mediapipe-solutions-c{complexity}"
+                        break
+            else:
+                model_path = settings.models_dir / "pose" / "mediapipe" / POSE_MEDIAPIPE_LANDMARKER_ARTIFACT["filename"]
+                if not model_path.exists() or model_path.stat().st_size < 1 * 1024 * 1024:
+                    return {
+                        "status": "missing_dependency",
+                        "engine": "mediapipe",
+                        "engine_used": "none",
+                        "message": "MediaPipe Tasks is installed, but the local pose_landmarker_full.task model is missing. Confirm the small model download before server-side capture.",
+                        "image_size": {"width": width, "height": height},
+                        "dependency": {
+                            "package": "mediapipe-pose-landmarker",
+                            "source": POSE_MEDIAPIPE_LANDMARKER_ARTIFACT["url"],
+                            "size_bytes": POSE_MEDIAPIPE_LANDMARKER_ARTIFACT["size_bytes"],
+                            "destination": str(model_path),
+                            "optional": True,
+                        },
+                    }
+                from mediapipe.tasks.python import BaseOptions
+                from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions, RunningMode
+
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+                for confidence in (0.35, 0.25, 0.15):
+                    options = PoseLandmarkerOptions(
+                        base_options=BaseOptions(model_asset_path=str(model_path)),
+                        running_mode=RunningMode.IMAGE,
+                        num_poses=1,
+                        min_pose_detection_confidence=confidence,
+                        min_pose_presence_confidence=0.15,
+                        min_tracking_confidence=0.15,
+                        output_segmentation_masks=False,
+                    )
+                    with PoseLandmarker.create_from_options(options) as landmarker:
+                        result = landmarker.detect(mp_image)
+                    pose_landmarks = getattr(result, "pose_landmarks", None) or []
+                    if pose_landmarks:
+                        landmark_list = pose_landmarks[0]
+                        engine_used = f"mediapipe-tasks-{confidence:.2f}"
+                        break
+
+            if not landmark_list:
+                return {
+                    "status": "no_pose",
+                    "engine": "mediapipe",
+                    "engine_used": engine_used,
+                    "message": "MediaPipe did not detect a full body pose in the reference image.",
+                    "image_size": {"width": width, "height": height},
+                }
+            names = {
+                0: "nose",
+                11: "left_shoulder",
+                12: "right_shoulder",
+                13: "left_elbow",
+                14: "right_elbow",
+                15: "left_wrist",
+                16: "right_wrist",
+                23: "left_hip",
+                24: "right_hip",
+                25: "left_knee",
+                26: "right_knee",
+                27: "left_ankle",
+                28: "right_ankle",
+            }
+            landmarks: dict[str, list[float]] = {}
+            for index, name in names.items():
+                if index >= len(landmark_list):
+                    continue
+                item = landmark_list[index]
+                landmarks[name] = [
+                    float(getattr(item, "x", 0.0) or 0.0),
+                    float(getattr(item, "y", 0.0) or 0.0),
+                    float(getattr(item, "z", 0.0) or 0.0),
+                    float(getattr(item, "visibility", 1.0) or 0.0),
+                ]
+            if "left_shoulder" in landmarks and "right_shoulder" in landmarks:
+                left = landmarks["left_shoulder"]
+                right = landmarks["right_shoulder"]
+                landmarks["neck"] = [
+                    (left[0] + right[0]) / 2,
+                    (left[1] + right[1]) / 2,
+                    (left[2] + right[2]) / 2,
+                    min(left[3], right[3]),
+                ]
+            return {
+                "status": "ready",
+                "engine": "mediapipe",
+                "engine_used": engine_used,
+                "message": "MediaPipe backend landmarks retargeted to the mannequin.",
+                "image_size": {"width": width, "height": height},
+                "landmarks": landmarks,
+            }
+        except Exception as exc:
+            return {
+                "status": "capture_failed",
+                "engine": "mediapipe",
+                "engine_used": "mediapipe-backend",
+                "message": f"MediaPipe backend capture failed: {exc}",
+                "image_size": {"width": width, "height": height},
+            }
+    if normalized_engine in {"dwpose", "sam3d_body", "fast_sam3d_body"}:
+        return {
+            "status": "dependency_required",
+            "engine": normalized_engine,
+            "engine_used": "none",
+            "message": f"{normalized_engine} is optional and must be installed in an isolated runtime before capture.",
+            "image_size": {"width": width, "height": height},
+        }
+    return {
+        "status": "missing_dependency",
+        "engine": normalized_engine,
+        "engine_used": "none",
+        "message": "Server-side pose capture is not configured. Use browser Auto capture or install an optional pose engine.",
+        "image_size": {"width": width, "height": height},
+    }
+
+
+async def _run_pose_qwen_lora_download_job(job_id: str) -> None:
+    try:
+        target = _pose_qwen_lora_target()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() and target.stat().st_size > 100 * 1024 * 1024:
+            result = {
+                "status": "downloaded",
+                "already_downloaded": True,
+                "filename": target.name,
+                "path": str(target),
+                "relative_path": _download_relative_path(target),
+                "bytes_downloaded": target.stat().st_size,
+                "bytes_total": target.stat().st_size,
+                "progress": 100,
+            }
+        else:
+            _update_download_job(job_id, {"status": "downloading", "progress": 0, "message": f"Downloading {POSE_QWEN_LORA_ARTIFACT['label']}"})
+            result = await asyncio.to_thread(_download_url_to_file, POSE_QWEN_LORA_ARTIFACT["url"], target, job_id)
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {**result, "message": f"{POSE_QWEN_LORA_ARTIFACT['label']} ready.", "completed_at": datetime.now().isoformat(timespec="seconds")})
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/pose/status")
+async def pose_status() -> dict[str, Any]:
+    status = _pose_engine_status()
+    status["library_count"] = len(_pose_library_items())
+    return status
+
+
+@app.get("/api/pose/library")
+async def pose_library() -> list[dict[str, Any]]:
+    return _pose_library_items()
+
+
+@app.post("/api/pose/save")
+async def pose_save(payload: dict[str, Any]) -> dict[str, Any]:
+    folder = _pose_slug(payload.get("folder"), "library")
+    name = _pose_slug(payload.get("name"), f"pose_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+    target_dir = (_pose_root() / folder / name).resolve()
+    if not target_dir.is_relative_to(_pose_root().resolve()):
+        raise HTTPException(status_code=400, detail="Invalid pose path.")
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    written: dict[str, str] = {}
+    for field, filename in {
+        "preview_image": "preview",
+        "openpose_image": "openpose",
+        "dwpose_image": "dwpose",
+        "lighting_image": "lighting",
+    }.items():
+        decoded = _pose_data_url_bytes(payload.get(field))
+        if not decoded:
+            continue
+        data, ext = decoded
+        path = target_dir / f"{filename}.{ext}"
+        path.write_bytes(data)
+        written[field] = str(path)
+
+    metadata = {
+        "name": name,
+        "folder": folder,
+        "tags": payload.get("tags") or [],
+        "prompt": payload.get("prompt") or "",
+        "compatibility": payload.get("compatibility") or ["Qwen", "Flux", "SDXL", "LTX"],
+        "engine": payload.get("engine") or "manual",
+        "pose": payload.get("pose") or {},
+        "camera": payload.get("camera") or {},
+        "lights": payload.get("lights") or {},
+        "guide": payload.get("guide") or {},
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "files": written,
+    }
+    metadata_path = target_dir / "pose.nexus.json"
+    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"saved": True, "item": _pose_library_items(limit=1)[0] if _pose_library_items(limit=1) else {"metadata": metadata, "json": _pose_file_record(metadata_path)}}
+
+
+@app.post("/api/pose/capture")
+async def pose_capture(payload: dict[str, Any]) -> dict[str, Any]:
+    return _pose_capture_from_image(payload)
+
+
+@app.post("/api/pose/dependencies/download")
+async def pose_dependencies_download(payload: dict[str, Any]) -> dict[str, Any]:
+    engine = str(payload.get("engine") or "").strip().lower()
+    if engine in {"sam3d_body", "fast_sam3d_body", "dwpose", "mmpose"}:
+        return {
+            "status": "manual_required",
+            "engine": engine,
+            "message": "This engine is optional and heavy. Nexus keeps it isolated; install will be added behind a confirmed UI flow before any dependency is downloaded.",
+            "status_snapshot": _pose_engine_status(),
+        }
+    if engine == "mediapipe":
+        target = settings.models_dir / "pose" / "mediapipe" / POSE_MEDIAPIPE_LANDMARKER_ARTIFACT["filename"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() and target.stat().st_size >= 1 * 1024 * 1024:
+            return {
+                "status": "ready",
+                "engine": engine,
+                "message": "MediaPipe Pose Landmarker model is already ready.",
+                "path": str(target),
+                "status_snapshot": _pose_engine_status(),
+            }
+        job_id = uuid.uuid4().hex[:12]
+        download_jobs[job_id] = {
+            "job_id": job_id,
+            "status": "downloading",
+            "progress": 0,
+            "message": f"Downloading {POSE_MEDIAPIPE_LANDMARKER_ARTIFACT['label']}.",
+            "filename": POSE_MEDIAPIPE_LANDMARKER_ARTIFACT["filename"],
+            "url": POSE_MEDIAPIPE_LANDMARKER_ARTIFACT["url"],
+            "size_bytes": POSE_MEDIAPIPE_LANDMARKER_ARTIFACT["size_bytes"],
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        result = await asyncio.to_thread(_download_url_to_file, POSE_MEDIAPIPE_LANDMARKER_ARTIFACT["url"], target, job_id)
+        return {
+            **result,
+            "status": "ready",
+            "engine": engine,
+            "message": "MediaPipe Pose Landmarker model is ready.",
+            "status_snapshot": _pose_engine_status(),
+        }
+    if engine == "qwen_pose_controlnet":
+        target = _pose_qwen_controlnet_target()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() and target.stat().st_size > 100 * 1024 * 1024:
+            return {
+                "status": "ready",
+                "engine": engine,
+                "message": "Qwen POSE ControlNet Union is already ready.",
+                "path": str(target),
+                "status_snapshot": _pose_engine_status(),
+            }
+        job_id = uuid.uuid4().hex[:12]
+        download_jobs[job_id] = {
+            "job_id": job_id,
+            "status": "downloading",
+            "progress": 0,
+            "message": f"Downloading {POSE_QWEN_CONTROLNET_ARTIFACT['label']}.",
+            "filename": POSE_QWEN_CONTROLNET_ARTIFACT["filename"],
+            "url": POSE_QWEN_CONTROLNET_ARTIFACT["url"],
+            "size_bytes": POSE_QWEN_CONTROLNET_ARTIFACT["size_bytes"],
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        result = await asyncio.to_thread(_download_url_to_file, POSE_QWEN_CONTROLNET_ARTIFACT["url"], target, job_id)
+        ensure_model_tree(settings)
+        return {
+            **result,
+            "status": "ready",
+            "engine": engine,
+            "message": "Qwen POSE ControlNet Union is ready. Restart UI + backend if the model selector does not show it immediately.",
+            "status_snapshot": _pose_engine_status(),
+        }
+    raise HTTPException(status_code=404, detail=f"Unknown POSE dependency engine: {engine or 'empty'}")
+
+
+@app.post("/api/pose/qwen-lora/download")
+async def pose_qwen_lora_download() -> dict[str, Any]:
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": f"Queued {POSE_QWEN_LORA_ARTIFACT['label']} download.",
+        "filename": POSE_QWEN_LORA_ARTIFACT["filename"],
+        "url": POSE_QWEN_LORA_ARTIFACT["url"],
+        "size_bytes": POSE_QWEN_LORA_ARTIFACT["size_bytes"],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_pose_qwen_lora_download_job(job_id))
+    return download_jobs[job_id]
+
+
 def _ltx_hf_lora_artifact(kind: str) -> dict[str, str]:
     normalized = kind.strip().lower()
     if normalized == "ltx_detailer":
@@ -6270,7 +7639,7 @@ async def _run_ltx_hf_lora_download_job(job_id: str, kind: str) -> None:
                 "already_downloaded": True,
                 "filename": target.name,
                 "path": str(target),
-                "relative_path": str(target.relative_to(settings.project_root)),
+                "relative_path": _download_relative_path(target),
                 "bytes_downloaded": target.stat().st_size,
                 "bytes_total": target.stat().st_size,
                 "progress": 100,
@@ -6470,7 +7839,7 @@ async def _run_qwen_multiangle_lora_download_job(job_id: str) -> None:
                 "already_downloaded": True,
                 "filename": target.name,
                 "path": str(target),
-                "relative_path": str(target.relative_to(settings.project_root)),
+                "relative_path": _download_relative_path(target),
                 "bytes_downloaded": target.stat().st_size,
                 "bytes_total": target.stat().st_size,
                 "progress": 100,
@@ -7406,7 +8775,19 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 text_encoder_name = assets.get("text_encoder")
                 vae_name = assets.get("vae")
                 if not high_model_name or not low_model_name:
-                    raise ValueError("WAN 2.2 requires high-noise and low-noise Wan models in models/checkpoints, models/unet or models/diffusion_models.")
+                    missing_noise_models = []
+                    if not high_model_name:
+                        missing_noise_models.append("high-noise")
+                    if not low_model_name:
+                        missing_noise_models.append("low-noise")
+                    selected_wan_model = assets.get("primary_model") or request.model_name or request.model_path or "Automatic"
+                    raise ValueError(
+                        "WAN 2.2 cannot resolve the "
+                        + " and ".join(missing_noise_models)
+                        + " base model. Put the missing WAN model in models/checkpoints/wan, models/unet or models/diffusion_models, "
+                        "or select a compatible single-file WAN GGUF base model. Motion adapters/LoRAs/reference videos do not replace the WAN high/low base model. "
+                        f"Selected model: {selected_wan_model}."
+                    )
                 if not text_encoder_name:
                     raise ValueError("WAN 2.2 requires a UMT5 text encoder in models/text_encoders.")
                 if not vae_name:
@@ -7415,7 +8796,32 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     raise ValueError("WAN 2.2 requires clip_vision_h.safetensors or a compatible CLIP Vision encoder in models/clip_vision.")
                 wan_first_last_node = None
                 wan_loop_cycle = _truthy((request.video or {}).get("wan_loop_cycle"))
+                wan_motion_capture = _truthy((request.video or {}).get("wan_motion_capture_enabled"))
                 wan_loop_source = str((request.video or {}).get("wan_loop_source") or "").strip().lower()
+                if wan_motion_capture:
+                    missing_motion_nodes = _wan_motion_missing_node_groups(object_info)
+                    if missing_motion_nodes:
+                        missing_labels = [
+                            "/".join(str(name) for name in item.get("accepted_nodes", []) if name)
+                            for item in missing_motion_nodes
+                        ]
+                        raise ValueError(
+                            "WAN Motion Capture requires optional DWPose/Fun-Control nodes and models before generation: "
+                            + ", ".join(missing_labels)
+                            + ". Use the UI dependency prompt to install them; normal WAN remains available with Motion Capture off."
+                        )
+                    motion_model_signature = f"{high_model_name} {low_model_name}".lower()
+                    motion_fun_control_ready = (
+                        "fun" in motion_model_signature
+                        and "control" in motion_model_signature
+                    )
+                    if not motion_fun_control_ready:
+                        raise ValueError(
+                            "WAN Motion Capture DWPose control requires Wan 2.2 Fun-Control compatible high/low models. "
+                            f"The selected WAN models are not motion-control checkpoints: high={high_model_name}, low={low_model_name}. "
+                            "Nexus will not auto-download base/checkpoint models; install/select compatible WAN Fun-Control or WAN Animate models, "
+                            "or turn Motion Capture off to use normal WAN generation."
+                        )
                 if (
                     wan_loop_cycle
                     and reference_image_name
@@ -7430,16 +8836,28 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                         raise ValueError("WAN video2video requires comfyui-videohelpersuite (VHS_LoadVideo).")
                     if not _available_comfy_node(object_info, "WanAnimateToVideo"):
                         raise ValueError("WAN video2video requires the native WanAnimateToVideo node.")
-                    prompt = build_basic_wan_video_reference_workflow(
-                        request,
-                        high_model_name,
-                        low_model_name,
-                        text_encoder_name,
-                        vae_name,
-                        reference_image_name,
-                        base_video_name,
-                        clip_vision_name=assets.get("clip_vision"),
-                    )
+                    if wan_motion_capture:
+                        prompt = build_basic_wan_motion_capture_workflow(
+                            request,
+                            high_model_name,
+                            low_model_name,
+                            text_encoder_name,
+                            vae_name,
+                            reference_image_name,
+                            base_video_name,
+                            clip_vision_name=assets.get("clip_vision"),
+                        )
+                    else:
+                        prompt = build_basic_wan_video_reference_workflow(
+                            request,
+                            high_model_name,
+                            low_model_name,
+                            text_encoder_name,
+                            vae_name,
+                            reference_image_name,
+                            base_video_name,
+                            clip_vision_name=assets.get("clip_vision"),
+                        )
                 elif reference_end_image_name:
                     wan_first_last_node = _available_comfy_node(
                         object_info,
@@ -7484,6 +8902,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     controlnet_name=assets.get("controlnet_model"),
                     controlnet_image_name=assets.get("controlnet_image"),
                     controlnet_category=assets.get("controlnet_category"),
+                    available_nodes=set(object_info or {}),
                 )
             elif request.preset.lower() in {"zimageturbo", "zimage"}:
                 checkpoint_name = assets.get("primary_model") or ""
@@ -7540,6 +8959,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     flux_family=flux_family,
                     controlnet_name=assets.get("controlnet_model"),
                     controlnet_image_name=assets.get("controlnet_image"),
+                    available_nodes=set(object_info or {}),
                 )
             else:
                 prompt = build_basic_sd_workflow(
@@ -7552,6 +8972,15 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     vae_name=assets.get("vae"),
                 )
 
+        audio_normalization_bypassed = _bypass_missing_audio_normalization(prompt, object_info)
+        if audio_normalization_bypassed:
+            message = (
+                "AudioVolumeNormalization is not loaded in ComfyUI; "
+                "bypassing LTX audio volume normalization while keeping audio connected."
+            )
+            print(f"NEXUS BTA WARN {message} Nodes: {', '.join(audio_normalization_bypassed[:6])}", flush=True)
+            if job_id:
+                _update_generation_job(job_id, {"status": "building", "progress": 12, "message": message})
         ensure_inpaint_engine_route(prompt, request, available_nodes=set(object_info or {}))
         _materialize_ltx_director_audio(prompt)
         _apply_output_prefixes(prompt, request)

@@ -573,6 +573,9 @@ Invoke-NexusStep -Label "Downloading LTX 2.3 IC-LoRA Union Control" -Step {
         Write-NexusLine "LTX 2.3 IC-LoRA Union Control already present: $existing" "Ok"
         return
     }
+    if (Skip-NexusModelDownload "LTX 2.3 IC-LoRA Union Control" $ltxUnionIcLora) {
+        return
+    }
     if (Test-Path -LiteralPath $ltxUnionIcLora) {
         Remove-Item -LiteralPath $ltxUnionIcLora -Force -ErrorAction SilentlyContinue
     }
@@ -591,6 +594,9 @@ Invoke-NexusStep -Label "Downloading LTX IC-LoRA Detailer" -Step {
         Write-NexusLine "LTX IC-LoRA Detailer already present: $existing" "Ok"
         return
     }
+    if (Skip-NexusModelDownload "LTX IC-LoRA Detailer" $ltxDetailerLora) {
+        return
+    }
     if (Test-Path -LiteralPath $ltxDetailerLora) {
         Remove-Item -LiteralPath $ltxDetailerLora -Force -ErrorAction SilentlyContinue
     }
@@ -607,6 +613,9 @@ Invoke-NexusStep -Label "Downloading LTX 2.3 IC-LoRA Cameraman" -Step {
     $existing = Find-NexusLoraFile @("LTX2.3-22B_IC-LoRA-Cameraman_v1_10500.safetensors") 100MB
     if ($existing) {
         Write-NexusLine "LTX 2.3 IC-LoRA Cameraman already present: $existing" "Ok"
+        return
+    }
+    if (Skip-NexusModelDownload "LTX 2.3 IC-LoRA Cameraman" $ltxCameramanLora) {
         return
     }
     if (Test-Path -LiteralPath $ltxCameramanLora) {

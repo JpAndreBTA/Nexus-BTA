@@ -84,7 +84,7 @@ def wait_front_backend_sync(page: Page) -> dict[str, object]:
 
 
 def set_ltx_linear_defaults(page: Page) -> None:
-    page.locator("[data-preset='LTX']").click()
+    page.locator("button[data-preset='LTX']").click()
     page.locator("[data-activity='img2img']").click()
     page.wait_for_function("() => activePreset === 'LTX' && currentActivity === 'img2img'")
     page.locator("#widthInput").fill(str(WIDTH))
