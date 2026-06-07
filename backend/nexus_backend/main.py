@@ -255,6 +255,16 @@ WAN_MOTION_CAPTURE_ARTIFACTS: dict[str, dict[str, Any]] = {
         "source": "Hugging Face",
         "scope": "dependency",
     },
+    "wan_fun_5b_q4ks": {
+        "label": "WAN 2.2 Fun-Control 5B GGUF Q4_K_S base model",
+        "filename": "Wan2.2-Fun-5B-Control-Q4_K_S.gguf",
+        "url": "https://huggingface.co/QuantStack/Wan2.2-Fun-5B-Control-GGUF/resolve/main/Wan2.2-Fun-5B-Control-Q4_K_S.gguf?download=true",
+        "target": ("unet", "wan", "Wan2.2-Fun-5B-Control-Q4_K_S.gguf"),
+        "min_bytes": 2 * 1024 * 1024 * 1024,
+        "size_bytes": 3_130_000_000,
+        "source": "Hugging Face",
+        "scope": "base_model",
+    },
 }
 
 WAN_MOTION_CAPTURE_NODE_GROUPS: dict[str, tuple[str, ...]] = {
@@ -2175,9 +2185,11 @@ def _prepare_mask_image(request: GenerateRequest) -> str | None:
     model3d_view_mask = str(model3d_options.get("texture_view_mask_image") or "").strip()
     model3d_uv_mask = str(model3d_options.get("texture_mask_image") or "").strip()
     model3d_value = model3d_view_mask if model3d_texture_paint and model3d_mask_space == "viewpoint" and model3d_view_mask else model3d_uv_mask
-    value = (model3d_value if request.preset.lower() == "model3d" else "") or (request.img2img.mask_image or "").strip()
     mode = request.img2img.mode.lower()
     mask_mode = "inpaint" in mode or "outpaint" in mode or "extend" in mode
+    value = (model3d_value if request.preset.lower() == "model3d" else "") or (request.img2img.mask_image or "").strip()
+    if not value and ("outpaint" in mode or "extend" in mode):
+        value = (getattr(request.img2img, "composite_mask_image", None) or "").strip()
     if request.activity != "img2img" or not value or (not mask_mode and not model3d_texture_paint):
         return None
     if not value.startswith("data:image/"):
@@ -6384,12 +6396,14 @@ def _wan_motion_control_model_status() -> dict[str, Any]:
                 low_candidates.append(item)
             else:
                 generic_candidates.append(item)
+    single_file_ready = bool(generic_candidates)
     return {
-        "ready": bool(high_candidates and low_candidates),
+        "ready": bool((high_candidates and low_candidates) or single_file_ready),
         "high_candidates": high_candidates,
         "low_candidates": low_candidates,
         "generic_candidates": generic_candidates,
-        "note": "WAN Motion Capture generation needs compatible high/low WAN Fun-Control or Animate motion-control models. LoRAs can help speed/style but do not replace that route.",
+        "single_file_ready": single_file_ready,
+        "note": "WAN Motion Capture generation needs compatible high/low WAN Fun-Control or Animate motion-control models, or a compatible single-file WAN Fun-Control 5B/GGUF base model. LoRAs can help speed/style but do not replace that route.",
     }
 
 
@@ -6647,16 +6661,19 @@ async def wan22_motion_capture_download_start(payload: dict[str, Any] | None = N
     payload = payload or {}
     raw_keys = payload.get("assets")
     install_nodes = not (payload.get("install_nodes") is False)
+    include_base_model = bool(payload.get("include_base_model"))
     if isinstance(raw_keys, list) and raw_keys:
         selected_keys = [
             str(item)
             for item in raw_keys
             if str(item) in WAN_MOTION_CAPTURE_ARTIFACTS
-            and WAN_MOTION_CAPTURE_ARTIFACTS[str(item)].get("scope") != "base_model"
+            and (include_base_model or WAN_MOTION_CAPTURE_ARTIFACTS[str(item)].get("scope") != "base_model")
         ]
     else:
         snapshot = await _wan_motion_status_snapshot()
         selected_keys = [item["key"] for item in snapshot["missing_dependency_assets"]]
+        if include_base_model:
+            selected_keys.extend(item["key"] for item in snapshot["missing_base_model_assets"])
     if not selected_keys and not install_nodes:
         raise HTTPException(status_code=400, detail="No missing WAN Motion Capture dependency assets selected.")
     job_id = uuid.uuid4().hex[:12]
@@ -6668,7 +6685,7 @@ async def wan22_motion_capture_download_start(payload: dict[str, Any] | None = N
         "message": "Queued WAN Motion Capture optional setup.",
         "assets": selected_keys,
         "install_nodes": install_nodes,
-        "include_base_model": False,
+        "include_base_model": include_base_model,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "updated_at": datetime.now().isoformat(timespec="seconds"),
     }
@@ -6677,7 +6694,7 @@ async def wan22_motion_capture_download_start(payload: dict[str, Any] | None = N
             job_id,
             selected_keys,
             install_nodes=install_nodes,
-            include_base_model=False,
+            include_base_model=include_base_model,
         )
     )
     return download_jobs[job_id]

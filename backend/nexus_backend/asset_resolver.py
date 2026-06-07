@@ -415,7 +415,10 @@ def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str, re
     )
 
     single_file_model = selected_base if selected_base and _is_wan_single_file_model(selected_base) else None
-    if single_file_model and (not high_model or not low_model):
+    if single_file_model and _is_wan_fun_control_single_model(single_file_model):
+        high_model = single_file_model
+        low_model = single_file_model
+    elif single_file_model and (not high_model or not low_model):
         high_model = high_model or single_file_model
         low_model = low_model or single_file_model
 
@@ -518,6 +521,7 @@ def _resolve_qwen(by_category: dict[str, list[ModelFile]], selected_name: str, r
         or any(bool((value or "").strip()) for value in (request.img2img.reference_images or []))
     )
     primary = _find_name(by_category, selected_name)
+    raw_selected_edit = selected_name if has_reference and _looks_like_qwen_edit_name(selected_name) else ""
     if has_reference and primary and not _is_qwen_edit_model(primary):
         preferred_edit = (
             _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["qwen", "edit", "q4"])
@@ -527,19 +531,22 @@ def _resolve_qwen(by_category: dict[str, list[ModelFile]], selected_name: str, r
             primary = preferred_edit
     if primary and _is_qwen_edit_model(primary) and not has_reference:
         primary = None
+    if raw_selected_edit and not primary:
+        assets["primary_model"] = raw_selected_edit
     if not primary:
-        if has_reference:
+        if has_reference and not raw_selected_edit:
             primary = (
                 _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["qwen", "edit", "q4"])
                 or _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["qwen", "edit"])
             )
-        primary = primary or (
-            _first_qwen_base(by_category, ["qwen", "2512"])
-            or _first_qwen_base(by_category, ["qwen", "image", "q4"])
-            or _first_qwen_base(by_category, ["qwen", "image", "gguf"])
-            or _first_qwen_base(by_category, ["qwen", "image"])
-            or _first_qwen_base(by_category, ["qwen"])
-        )
+        if not raw_selected_edit:
+            primary = primary or (
+                _first_qwen_base(by_category, ["qwen", "2512"])
+                or _first_qwen_base(by_category, ["qwen", "image", "q4"])
+                or _first_qwen_base(by_category, ["qwen", "image", "gguf"])
+                or _first_qwen_base(by_category, ["qwen", "image"])
+                or _first_qwen_base(by_category, ["qwen"])
+            )
     if primary:
         assets["primary_model"] = _comfy_name(primary)
     selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
@@ -560,7 +567,10 @@ def _resolve_qwen(by_category: dict[str, list[ModelFile]], selected_name: str, r
     if vae:
         assets["vae"] = _comfy_name(vae)
     if has_reference:
-        edit_lightning = _first_qwen_edit_lightning_lora(by_category)
+        edit_lightning = _first_qwen_edit_lightning_lora(
+            by_category,
+            _comfy_name(primary) if primary else (raw_selected_edit or selected_name),
+        )
         if edit_lightning:
             assets["qwen_edit_lightning_lora"] = _comfy_name(edit_lightning)
     if has_reference and _truthy((request.video or {}).get("qwen_multiview")):
@@ -636,8 +646,17 @@ def _is_qwen_edit_model(item: ModelFile) -> bool:
     return "qwen" in haystack and "edit" in haystack
 
 
-def _first_qwen_edit_lightning_lora(by_category: dict[str, list[ModelFile]]) -> ModelFile | None:
+def _looks_like_qwen_edit_name(value: str | None) -> bool:
+    haystack = str(value or "").lower()
+    return "qwen" in haystack and "edit" in haystack and any(
+        haystack.endswith(extension) for extension in (".gguf", ".safetensors", ".sft")
+    )
+
+
+def _first_qwen_edit_lightning_lora(by_category: dict[str, list[ModelFile]], model_name: str | None = None) -> ModelFile | None:
     preferred: list[tuple[int, ModelFile]] = []
+    model_text = str(model_name or "").lower()
+    target_version = "2511" if "2511" in model_text else ("2509" if "2509" in model_text else "")
     for item in by_category.get("loras", []):
         haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
         if "qwen" not in haystack or "lightning" not in haystack:
@@ -645,6 +664,10 @@ def _first_qwen_edit_lightning_lora(by_category: dict[str, list[ModelFile]]) -> 
         score = 0
         if "edit" in haystack:
             score += 50
+        if target_version and target_version in haystack:
+            score += 100
+        elif target_version and any(version in haystack for version in ("2509", "2511")):
+            score -= 80
         if "2511" in haystack:
             score += 40
         if "4steps" in haystack or "4step" in haystack:
@@ -784,7 +807,12 @@ def _is_wan_single_file_model(item: ModelFile) -> bool:
     if not _is_wan_base_model(item) or item.extension.lower() != ".gguf":
         return False
     haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
-    return not any(token in haystack for token in ("fun-control", "fun_control", "animate-lora", "motion-adapter"))
+    return not any(token in haystack for token in ("animate-lora", "motion-adapter", "motion_adapter"))
+
+
+def _is_wan_fun_control_single_model(item: ModelFile) -> bool:
+    haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+    return item.extension.lower() == ".gguf" and "fun" in haystack and "control" in haystack
 
 
 def _first_wan_4step_lora(by_category: dict[str, list[ModelFile]], noise: str) -> ModelFile | None:

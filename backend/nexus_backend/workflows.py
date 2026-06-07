@@ -1371,12 +1371,13 @@ def _append_inpaint_mask(
     vae_ref: list[Any],
     sampler_node_id: str,
     mask_image_name: str | None,
+    mask_ref_override: list[Any] | None = None,
     start_id: int = 80,
     decoded_image_ref: list[Any] | None = None,
     save_node_id: str | None = None,
     available_nodes: set[str] | None = None,
 ) -> bool:
-    if not mask_image_name or not _uses_inpaint_mask_mode(request):
+    if not (mask_image_name or mask_ref_override) or not _uses_inpaint_mask_mode(request):
         return False
     mask_loader_id = str(start_id)
     mask_to_mask_id = str(start_id + 1)
@@ -1386,21 +1387,25 @@ def _append_inpaint_mask(
     next_id = start_id + 5
     grow_mask_by = max(0, min(64, int(request.img2img.mask_blur or 0)))
     available_nodes = set(available_nodes or ())
-    workflow[mask_loader_id] = {
-        "class_type": "LoadImage",
-        "inputs": {"image": mask_image_name},
-        "_meta": {"title": "Inpaint Mask"},
-    }
     workflow[reference_resize_id] = _image_scale_node([reference_node_id, 0], request.width, request.height)
     workflow[reference_resize_id]["_meta"]["title"] = "Resize Inpaint Reference To Side Menu"
-    workflow[mask_resize_id] = _image_scale_node([mask_loader_id, 0], request.width, request.height, method="nearest-exact")
-    workflow[mask_resize_id]["_meta"]["title"] = "Resize Inpaint Mask To Side Menu"
-    workflow[mask_to_mask_id] = {
-        "class_type": "ImageToMask",
-        "inputs": {"image": [mask_resize_id, 0], "channel": "red"},
-        "_meta": {"title": "Mask Channel"},
-    }
-    mask_ref: list[Any] = [mask_to_mask_id, 0]
+    if mask_ref_override:
+        mask_ref = mask_ref_override
+        next_id = start_id + 4
+    else:
+        workflow[mask_loader_id] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": mask_image_name},
+            "_meta": {"title": "Inpaint Mask"},
+        }
+        workflow[mask_resize_id] = _image_scale_node([mask_loader_id, 0], request.width, request.height, method="nearest-exact")
+        workflow[mask_resize_id]["_meta"]["title"] = "Resize Inpaint Mask To Side Menu"
+        workflow[mask_to_mask_id] = {
+            "class_type": "ImageToMask",
+            "inputs": {"image": [mask_resize_id, 0], "channel": "red"},
+            "_meta": {"title": "Mask Channel"},
+        }
+        mask_ref = [mask_to_mask_id, 0]
     if _uses_outpaint_extend_mode(request) and "GrowMaskWithBlur" in available_nodes:
         grow_mask_id = str(next_id)
         next_id += 1
@@ -1443,6 +1448,7 @@ def _append_inpaint_mask(
             save_node_id=save_node_id,
             start_id=next_id,
             available_nodes=available_nodes,
+            prefer_request_composite_mask=mask_ref_override is None,
         )
     return True
 
@@ -1457,6 +1463,7 @@ def _append_masked_output_composite(
     save_node_id: str,
     start_id: int,
     available_nodes: set[str] | None = None,
+    prefer_request_composite_mask: bool = True,
 ) -> list[Any] | None:
     save_node = workflow.get(save_node_id)
     if not isinstance(save_node, dict):
@@ -1467,19 +1474,9 @@ def _append_masked_output_composite(
         composite_id = str(start_id)
     composite_mask_ref = mask_ref
     composite_mask_image_name = ""
-    available_nodes = set(available_nodes or ())
-    use_lanpaint_blend = (
-        request is not None
-        and _uses_outpaint_extend_mode(request)
-        and "LanPaint_MaskBlend" in available_nodes
-    )
-    if request is not None and _uses_outpaint_extend_mode(request):
+    if prefer_request_composite_mask and request is not None and _uses_outpaint_extend_mode(request):
         composite_mask_image_name = str(getattr(request.img2img, "composite_mask_image", "") or "").strip()
-    if (
-        composite_mask_image_name
-        and not use_lanpaint_blend
-        and not (request is not None and _uses_outpaint_extend_mode(request))
-    ):
+    if composite_mask_image_name:
         load_mask_id = composite_id
         start_id += 1
         resize_mask_id = str(start_id)
@@ -1511,54 +1508,19 @@ def _append_masked_output_composite(
             "_meta": {"title": "Extend Composite Mask Channel"},
         }
         composite_mask_ref = [mask_to_mask_id, 0]
-    if use_lanpaint_blend:
-        workflow[composite_id] = {
-            "class_type": "LanPaint_MaskBlend",
-            "inputs": {
-                "image1": destination_image_ref,
-                "image2": source_image_ref,
-                "mask": composite_mask_ref,
-                "blend_overlap": 17,
-            },
-            "_meta": {"title": "LanPaint Blend Generated Pad With Preserved Source"},
-        }
-    else:
-        workflow[composite_id] = {
-            "class_type": "ImageCompositeMasked",
-            "inputs": {
-                "destination": destination_image_ref,
-                "source": source_image_ref,
-                "x": 0,
-                "y": 0,
-                "resize_source": False,
-                "mask": composite_mask_ref,
-            },
-            "_meta": {"title": "Composite Generated Mask Over Preserved Source"},
-        }
+    workflow[composite_id] = {
+        "class_type": "ImageCompositeMasked",
+        "inputs": {
+            "destination": destination_image_ref,
+            "source": source_image_ref,
+            "x": 0,
+            "y": 0,
+            "resize_source": False,
+            "mask": composite_mask_ref,
+        },
+        "_meta": {"title": "Composite Generated Mask Over Preserved Source"},
+    }
     output_ref: list[Any] = [composite_id, 0]
-    if (
-        request is not None
-        and _uses_outpaint_extend_mode(request)
-        and not use_lanpaint_blend
-        and "ColorMatch" in available_nodes
-    ):
-        color_match_id = str(start_id + 1)
-        while color_match_id in workflow:
-            start_id += 1
-            color_match_id = str(start_id + 1)
-        workflow[color_match_id] = {
-            "class_type": "ColorMatch",
-            "inputs": {
-                "image_ref": destination_image_ref,
-                "image_target": output_ref,
-                "method": "mkl",
-                "strength": 0.65,
-                "multithread": True,
-            },
-            "_meta": {"title": "Match Outpaint Composite Color To Source"},
-        }
-        output_ref = [color_match_id, 0]
-        start_id = int(color_match_id)
     if request is not None:
         width = max(1, int(getattr(request, "width", 0) or 0))
         height = max(1, int(getattr(request, "height", 0) or 0))
@@ -1581,13 +1543,14 @@ def _append_qwen_inpaint_noise_mask(
     base_latent_ref: list[Any],
     sampler_node_id: str,
     mask_image_name: str | None,
+    mask_ref_override: list[Any] | None = None,
     start_id: int = 80,
     base_image_ref: list[Any] | None = None,
     decoded_image_ref: list[Any] | None = None,
     save_node_id: str | None = None,
     available_nodes: set[str] | None = None,
 ) -> bool:
-    if not mask_image_name or not _uses_inpaint_mask_mode(request):
+    if not (mask_image_name or mask_ref_override) or not _uses_inpaint_mask_mode(request):
         return False
     mask_loader_id = str(start_id)
     mask_to_mask_id = str(start_id + 1)
@@ -1595,19 +1558,23 @@ def _append_qwen_inpaint_noise_mask(
     mask_resize_id = str(start_id + 4)
     next_id = start_id + 5
     available_nodes = set(available_nodes or ())
-    workflow[mask_loader_id] = {
-        "class_type": "LoadImage",
-        "inputs": {"image": mask_image_name},
-        "_meta": {"title": "Inpaint Mask"},
-    }
-    workflow[mask_resize_id] = _image_scale_node([mask_loader_id, 0], request.width, request.height, method="nearest-exact")
-    workflow[mask_resize_id]["_meta"]["title"] = "Resize Inpaint Mask To Side Menu"
-    workflow[mask_to_mask_id] = {
-        "class_type": "ImageToMask",
-        "inputs": {"image": [mask_resize_id, 0], "channel": "red"},
-        "_meta": {"title": "Mask Channel"},
-    }
-    mask_ref: list[Any] = [mask_to_mask_id, 0]
+    if mask_ref_override:
+        mask_ref = mask_ref_override
+        next_id = start_id + 3
+    else:
+        workflow[mask_loader_id] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": mask_image_name},
+            "_meta": {"title": "Inpaint Mask"},
+        }
+        workflow[mask_resize_id] = _image_scale_node([mask_loader_id, 0], request.width, request.height, method="nearest-exact")
+        workflow[mask_resize_id]["_meta"]["title"] = "Resize Inpaint Mask To Side Menu"
+        workflow[mask_to_mask_id] = {
+            "class_type": "ImageToMask",
+            "inputs": {"image": [mask_resize_id, 0], "channel": "red"},
+            "_meta": {"title": "Mask Channel"},
+        }
+        mask_ref = [mask_to_mask_id, 0]
     if _uses_outpaint_extend_mode(request) and "GrowMaskWithBlur" in available_nodes:
         grow_mask_id = str(next_id)
         next_id += 1
@@ -1645,6 +1612,7 @@ def _append_qwen_inpaint_noise_mask(
             save_node_id=save_node_id,
             start_id=next_id,
             available_nodes=available_nodes,
+            prefer_request_composite_mask=mask_ref_override is None,
         )
     return True
 
@@ -1689,37 +1657,37 @@ def _image_pad_for_outpaint_node(
 ) -> dict[str, Any]:
     pad = _extend_pad_values(request)
     available_nodes = set(available_nodes or ())
-    if "AGSoft_Img_Pad_Adv" in available_nodes:
+    if "ImagePadForOutpaint" in available_nodes or "AGSoft_Img_Pad_Adv" not in available_nodes:
         return {
-            "class_type": "AGSoft_Img_Pad_Adv",
+            "class_type": "ImagePadForOutpaint",
             "inputs": {
                 "image": image_ref,
-                "pad_left": pad["left"],
-                "pad_top": pad["top"],
-                "pad_right": pad["right"],
-                "pad_bottom": pad["bottom"],
-                "pad_mode": "edge",
-                "background_color": "gray",
-                "feathering": 0,
-                "invert_mask": False,
-                "target_width": 0,
-                "target_height": 0,
-                "keep_proportions": False,
-                "resize_position": "center",
+                "left": pad["left"],
+                "top": pad["top"],
+                "right": pad["right"],
+                "bottom": pad["bottom"],
+                "feathering": max(0, int(feathering or 0)),
             },
-            "_meta": {"title": "AGSoft Pad Base Image For Extend"},
+            "_meta": {"title": "Pad Base Image For Extend"},
         }
     return {
-        "class_type": "ImagePadForOutpaint",
+        "class_type": "AGSoft_Img_Pad_Adv",
         "inputs": {
             "image": image_ref,
-            "left": pad["left"],
-            "top": pad["top"],
-            "right": pad["right"],
-            "bottom": pad["bottom"],
+            "pad_left": pad["left"],
+            "pad_top": pad["top"],
+            "pad_right": pad["right"],
+            "pad_bottom": pad["bottom"],
+            "pad_mode": "constant",
+            "background_color": "gray",
             "feathering": 0,
+            "invert_mask": False,
+            "target_width": 0,
+            "target_height": 0,
+            "keep_proportions": False,
+            "resize_position": "center",
         },
-        "_meta": {"title": "Pad Base Image For Extend"},
+        "_meta": {"title": "AGSoft Pad Base Image For Extend"},
     }
 
 
@@ -2579,6 +2547,7 @@ def build_basic_qwen_image_workflow(
     workflow.update(qwen_lora_nodes)
     qwen_base_image_ref: list[Any] | None = None
     qwen_conditioning_image_refs: dict[int, list[Any]] = {}
+    qwen_extend_mask_ref: list[Any] | None = None
 
     if reference_image_name:
         qwen_extend_pad = is_qwen_inpaint and _uses_outpaint_extend_mode(request) and _has_extend_pad(request)
@@ -2598,7 +2567,8 @@ def build_basic_qwen_image_workflow(
                 else:
                     workflow[scale_id] = _image_pad_for_outpaint_node([load_id, 0], request, feathering=40, available_nodes=available_nodes)
                     workflow[scale_id]["_meta"]["title"] = "QWEN Pad Base For Extend"
-                    qwen_conditioning_image_refs[index] = [load_id, 0]
+                    qwen_conditioning_image_refs[index] = [scale_id, 0]
+                    qwen_extend_mask_ref = [scale_id, 1]
             elif qwen_pose_studio:
                 workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
                 workflow[scale_id]["_meta"]["title"] = f"Resize QWEN POSE Reference {index} To Output Frame"
@@ -2769,6 +2739,7 @@ def build_basic_qwen_image_workflow(
                 base_latent_ref=["7", 0],
                 sampler_node_id="10",
                 mask_image_name=mask_image_name,
+                mask_ref_override=qwen_extend_mask_ref,
                 base_image_ref=qwen_base_image_ref,
                 decoded_image_ref=["13", 0],
                 save_node_id="12",
@@ -3118,6 +3089,7 @@ def build_basic_flux_workflow(
             previous_conditioning = positive_ref
             base_loader_id: str | None = None
             base_encode_id: str | None = None
+            base_mask_ref: list[Any] | None = None
             for index, name in enumerate(flux2_reference_names[:5], start=1):
                 load_id = str(40 + (index - 1) * 4)
                 scale_id = str(41 + (index - 1) * 4)
@@ -3135,6 +3107,7 @@ def build_basic_flux_workflow(
                     else:
                         workflow[scale_id] = _image_pad_for_outpaint_node([load_id, 0], request, feathering=40, available_nodes=available_nodes)
                         workflow[scale_id]["_meta"]["title"] = "Flux.2 Pad Base For Extend"
+                        base_mask_ref = [scale_id, 1]
                 else:
                     workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
                     workflow[scale_id]["_meta"]["title"] = f"Resize Flux.2 Reference {index} To Side Menu"
@@ -3143,13 +3116,12 @@ def build_basic_flux_workflow(
                     "inputs": {"pixels": [scale_id, 0], "vae": ["3", 0]},
                     "_meta": {"title": f"Encode Flux.2 Reference {index}"},
                 }
-                if (not flux2_outpaint_mode) or index > 1:
-                    workflow[ref_id] = {
-                        "class_type": "ReferenceLatent",
-                        "inputs": {"conditioning": previous_conditioning, "latent": [encode_id, 0]},
-                        "_meta": {"title": f"Flux.2 Reference Latent {index}"},
-                    }
-                    previous_conditioning = [ref_id, 0]
+                workflow[ref_id] = {
+                    "class_type": "ReferenceLatent",
+                    "inputs": {"conditioning": previous_conditioning, "latent": [encode_id, 0]},
+                    "_meta": {"title": f"Flux.2 Reference Latent {index}"},
+                }
+                previous_conditioning = [ref_id, 0]
                 if index == 1:
                     base_loader_id = scale_id
                     base_encode_id = encode_id
@@ -3165,6 +3137,7 @@ def build_basic_flux_workflow(
                     vae_ref=["3", 0],
                     sampler_node_id="11",
                     mask_image_name=mask_image_name,
+                    mask_ref_override=base_mask_ref,
                     start_id=80,
                     decoded_image_ref=["15", 0],
                     save_node_id="13",
