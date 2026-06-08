@@ -14,6 +14,10 @@ If you are new here on Windows, start simple:
 
 Nexus supports SD 1.5, SDXL, Flux, Qwen, Z-Image Turbo, Lumina, WAN 2.2, LTX 2.3, Anima, LoRAs, ControlNet, inpaint, img2img, txt2img, video tools, workflow nodes, template customization and early 3D routes.
 
+## Offline Startup
+
+After the first dependency/runtime setup has completed, `run.bat` is expected to open the local backend and `/ui` without internet access. The legacy UI ships local copies of its startup assets under `assets/vendor/`: Tailwind, Inter, JetBrains Mono, Font Awesome, Three.js addons, MediaPipe Vision WASM and the browser pose landmarker model. Online services such as Civitai, Hugging Face downloads, Ko-fi, Google Translate and update checks are optional actions; they should not be required for the frontend to sync with the local backend.
+
 > **3D status:** the 3D workspace is still experimental. It works for testing TRELLIS/texture-paint routes, but it is not fully optimized yet and still has bugs. The next updates will continue improving 3D quality, preprocessing, cropping, background cleanup and stability.
 
 ## First Look

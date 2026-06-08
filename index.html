@@ -5,14 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NEXUS BTA - AI Studio</title>
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Fonts: Inter & JetBrains Mono -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <!-- FontAwesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Local UI dependencies for offline startup -->
+    <script src="/assets/vendor/tailwind/tailwindcss.js"></script>
+    <link href="/assets/vendor/fonts/nexus-fonts.css" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "/assets/vendor/three/three.module.js"
+            }
+        }
+    </script>
     
     <script>
         tailwind.config = {
@@ -2525,7 +2528,7 @@
                     <div id="civitaiDownloadPanel" class="hidden border border-nexus-border bg-nexus-bg p-2 text-[10px] font-mono">
                         <div class="flex items-center justify-between gap-3 mb-1">
                             <span id="civitaiDownloadName" class="text-white truncate">No active download</span>
-                            <span class="shrink-0 text-nexus-muted"><b id="civitaiDownloadPercent" class="text-white">0%</b> · <span id="civitaiDownloadSpeed">0 MB/s</span></span>
+                            <span class="shrink-0 text-nexus-muted"><b id="civitaiDownloadPercent" class="text-white">0%</b> - <span id="civitaiDownloadSpeed">0 MB/s</span></span>
                         </div>
                         <div class="h-1.5 bg-black border border-nexus-border">
                             <div id="civitaiDownloadProgressBar" class="h-full bg-nexus-red transition-all" style="width:0%"></div>
@@ -2667,7 +2670,7 @@
                         <p class="text-[9px] font-mono text-nexus-muted">Help keep local AI tools moving.</p>
                     </div>
                     <div class="p-2 space-y-2">
-                        <iframe id="donateKofiFrame" title="Donate with Ko-fi" class="block w-full h-[720px] max-h-[calc(100vh-120px)] border border-nexus-border bg-white rounded-sm" loading="lazy" scrolling="yes" src="https://ko-fi.com/jpandre/?hidefeed=true&widget=true&embed=true&preview=true"></iframe>
+                        <iframe id="donateKofiFrame" title="Donate with Ko-fi" class="block w-full h-[720px] max-h-[calc(100vh-120px)] border border-nexus-border bg-white rounded-sm" loading="lazy" scrolling="yes" src="about:blank" data-src="https://ko-fi.com/jpandre/?hidefeed=true&widget=true&embed=true&preview=true"></iframe>
                         <a href="https://ko-fi.com/jpandre" target="_blank" rel="noopener noreferrer" class="w-full h-9 bg-nexus-red hover:bg-nexus-darkRed text-white font-bold text-[10px] uppercase rounded-sm flex items-center justify-center gap-2">
                             <i class="fa-solid fa-mug-hot"></i>
                             <span>Open Ko-fi</span>
@@ -4018,8 +4021,8 @@
                                 <label class="space-y-1"><span class="mini-label">Zoom</span><select id="qwenZoomPreset" class="flat-input text-[10px]" onchange="setQwenMultiViewZoom(this.value)"><option value="1.2">wide shot</option><option value="2.1">medium shot</option><option value="6.5">close-up</option></select></label>
                             </div>
                             <div class="space-y-3">
-                                <label class="grid grid-cols-[92px_1fr_48px] items-center gap-3 text-[10px] font-mono text-nexus-muted"><span>H Angle</span><input id="qwenCameraHorizontalSlider" type="range" min="0" max="360" step="1" value="54" oninput="setQwenMultiViewHorizontal(this.value)" class="modern-slider"><b id="qwenCameraHorizontalValue" class="text-white text-right">54°</b></label>
-                                <label class="grid grid-cols-[92px_1fr_48px] items-center gap-3 text-[10px] font-mono text-nexus-muted"><span>V Angle</span><input id="qwenCameraVerticalSlider" type="range" min="-30" max="60" step="1" value="29" oninput="setQwenMultiViewVertical(this.value)" class="modern-slider"><b id="qwenCameraVerticalValue" class="text-white text-right">29°</b></label>
+                                <label class="grid grid-cols-[92px_1fr_48px] items-center gap-3 text-[10px] font-mono text-nexus-muted"><span>H Angle</span><input id="qwenCameraHorizontalSlider" type="range" min="0" max="360" step="1" value="54" oninput="setQwenMultiViewHorizontal(this.value)" class="modern-slider"><b id="qwenCameraHorizontalValue" class="text-white text-right">54 deg</b></label>
+                                <label class="grid grid-cols-[92px_1fr_48px] items-center gap-3 text-[10px] font-mono text-nexus-muted"><span>V Angle</span><input id="qwenCameraVerticalSlider" type="range" min="-30" max="60" step="1" value="29" oninput="setQwenMultiViewVertical(this.value)" class="modern-slider"><b id="qwenCameraVerticalValue" class="text-white text-right">29 deg</b></label>
                                 <label class="grid grid-cols-[92px_1fr_48px] items-center gap-3 text-[10px] font-mono text-nexus-muted"><span>Zoom</span><input id="qwenCameraZoomSlider" type="range" min="0" max="10" step="0.1" value="2.1" oninput="setQwenMultiViewZoom(this.value)" class="modern-slider"><b id="qwenCameraZoomValue" class="text-white text-right">2.1</b></label>
                             </div>
                         </div>
@@ -4444,7 +4447,7 @@
                         </div>
                     </div>
                     <div class="p-2">
-                        <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&auto=format&fit=crop" class="w-full border border-nexus-border mb-2" alt="mini output">
+                        <img src="/assets/vendor/nexus-mini-output.svg" class="w-full border border-nexus-border mb-2" alt="mini output">
                         <div class="flex justify-between items-center pt-1 border-t border-nexus-border">
                             <span class="text-[9px] text-nexus-muted">Image Output</span>
                             <div class="w-2 h-2 rounded-full bg-cyan-400"></div>
@@ -6939,8 +6942,28 @@
             return JSON.stringify(String(value ?? ''));
         }
 
+        function nexusBrowserOffline() {
+            return typeof navigator !== 'undefined' && navigator.onLine === false;
+        }
+
+        function nexusPathNeedsInternet(path, options = {}) {
+            const method = String(options?.method || 'GET').toUpperCase();
+            const target = String(path || '');
+            if (method === 'GET') return false;
+            return /\/download(?:\/start)?(?:\/|$)|\/install-dependencies(?:\?|$)|\/install-missing(?:\?|$)|\/dependencies\/download(?:\?|$)|\/qwen-lora\/download(?:\?|$)|\/civitai\/(?:resolve|search|download)(?:\/start)?(?:\?|$)/i.test(target);
+        }
+
+        function warnOfflineDependencyDownload(label = 'Required dependency', detail = '') {
+            const message = `${label} is missing locally. Connect to the internet if you want Nexus to download it, or install the file/dependency manually and refresh the model catalog.`;
+            showToast('Offline: Download Needed', detail ? `${message} ${detail}`.slice(0, 220) : message);
+            return false;
+        }
+
         async function nexusFetch(path, options = {}) {
             const { timeoutMs, ...fetchOptions } = options || {};
+            if (nexusBrowserOffline() && nexusPathNeedsInternet(path, fetchOptions)) {
+                throw new Error('Offline mode: connect to the internet to download missing models or dependencies, or install them manually and refresh.');
+            }
             const controller = timeoutMs ? new AbortController() : null;
             const timeout = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
             let response;
@@ -7733,7 +7756,7 @@
             if (!canvases.length) return;
             let THREE;
             try {
-                THREE = await import('https://esm.sh/three@0.164.1');
+                THREE = await import('/assets/vendor/three/three.module.js');
             } catch (error) {
                 return;
             }
@@ -7778,10 +7801,10 @@
             scene.add(key);
             let loaded;
             if (cleanUrl.endsWith('.obj')) {
-                const { OBJLoader } = await import('https://esm.sh/three@0.164.1/examples/jsm/loaders/OBJLoader.js');
+                const { OBJLoader } = await import('/assets/vendor/three/examples/jsm/loaders/OBJLoader.js');
                 loaded = await new OBJLoader().loadAsync(url);
             } else {
-                const { GLTFLoader } = await import('https://esm.sh/three@0.164.1/examples/jsm/loaders/GLTFLoader.js');
+                const { GLTFLoader } = await import('/assets/vendor/three/examples/jsm/loaders/GLTFLoader.js');
                 const gltf = await new GLTFLoader().loadAsync(url);
                 loaded = gltf.scene;
             }
@@ -8691,6 +8714,9 @@
                 const pid = status?.pid || {};
                 const profile = pid.profile || extrasPidOptions();
                 const gb = Number(pid.estimated_download_bytes || 0) / (1024 ** 3);
+                if (nexusBrowserOffline()) {
+                    return warnOfflineDependencyDownload(`${label} profile assets`, `Missing assets: ~${gb.toFixed(2)} GB.`);
+                }
                 const ok = confirm(`${label} profile "${profile.label || profile.profile || profile.backbone}" is not prepared.\n\nThis will download PiD source plus selected checkpoint/assets through the front. Estimated missing assets: ~${gb.toFixed(2)} GB.\n\nContinue download?`);
                 if (!ok) return false;
                 showToast(`${label} Download`, `Preparing ${profile.label || 'selected PiD profile'} through the front.`);
@@ -10174,6 +10200,7 @@
                 if (selectId) setSelectToFirstMatchingModel(selectId, pattern, status.name);
                 return true;
             }
+            if (nexusBrowserOffline()) return warnOfflineDependencyDownload(label, status?.filename ? `Missing: ${status.filename}.` : '');
             const ok = window.confirm(prompt);
             if (!ok) return false;
             showToast(`${label} Download`, fetchingMessage);
@@ -10203,6 +10230,9 @@
             const total = formatModelAssetBytes(status.estimated_missing_bytes || missing.reduce((sum, item) => sum + Number(item?.size_bytes || 0), 0));
             const list = missing.slice(0, 6).map(item => `- ${item.label || item.filename}\n  ${item.url || 'source'}\n  -> ${item.destination || item.filename}\n  ${formatModelAssetBytes(item.size_bytes)}`).join('\n');
             const extra = missing.length > 6 ? `\n- plus ${missing.length - 6} more asset(s)` : '';
+            if (nexusBrowserOffline()) {
+                return warnOfflineDependencyDownload(`${payload.preset} ${payload.controlnet.type || 'ControlNet'} model`, `Estimated download: ${total}.`);
+            }
             const ok = window.confirm(`${payload.preset} ${payload.controlnet.type || 'ControlNet'} model is missing.\n\nDownload optional ControlNet dependency now?\n\nEstimated: ${total}\nDestination: ${status.models_dir || './models'}\n\n${list}${extra}\n\nNexus will not change Torch/CUDA requirements.`);
             if (!ok) {
                 showToast('ControlNet Download Skipped', 'Generation was cancelled because the required optional ControlNet model is missing.');
@@ -10335,6 +10365,10 @@
             const total = formatModelAssetBytes(status?.estimated_missing_dependency_min_bytes || missing.reduce((sum, item) => sum + Number(item?.size_bytes_min || 0), 0));
             const list = missing.slice(0, 8).map(item => `- ${item.label || item.filename}\n  ${item.source || 'source'} -> ${item.destination || item.filename}\n  ${formatModelAssetBytes(item.size_bytes_min)}`).join('\n');
             const extra = missing.length > 8 ? `\n- plus ${missing.length - 8} more asset(s)` : '';
+            if (nexusBrowserOffline()) {
+                sessionStorage.setItem('nexus_wan22_template_assets_prompted', '1');
+                return warnOfflineDependencyDownload('WAN 2.2 optional template dependencies', `Estimated download: ${total}.`);
+            }
             const ok = window.confirm(`WAN 2.2 optional template dependencies are missing.\n\nBase/checkpoint diffusion models are not included here. Nexus will not download these dependencies automatically. Download now?\n\nEstimated minimum: ${total}\nDestination: ${status?.models_dir || './models'}\n\n${list}${extra}`);
             sessionStorage.setItem('nexus_wan22_template_assets_prompted', '1');
             if (!ok) {
@@ -10382,6 +10416,9 @@
             const baseNotice = missingBase.length
                 ? `\n\nBase/checkpoint/model assets are NOT dependency downloads and will not be downloaded by this action:\n${baseList}\nEstimated base/model size: ${baseTotal}`
                 : '';
+            if (nexusBrowserOffline()) {
+                return warnOfflineDependencyDownload('WAN Motion Capture optional setup', `Dependency assets: ${depTotal}.`);
+            }
             const ok = window.confirm(`WAN Motion Capture optional setup is not ready.\n\nThis route uses DWPose/Fun-Control motion conditioning and is isolated from normal WAN generation. LoRAs can reduce steps or improve motion, but they do not replace a compatible motion-control checkpoint/model. Nexus will not download base/checkpoint models or change Torch/CUDA requirements without confirmation.\n\nCustom nodes:\n${nodeList || '- ready or already installed'}\n\nDependency assets: ${depTotal}\n${depList || '- ready'}${baseNotice}\n\nComfy node classes still missing until restart/sync:\n${groupList || '- none detected'}\n\nDownload/install dependency assets and custom nodes now through the UI?`);
             if (!ok) {
                 showToast('WAN Motion Download Skipped', 'Motion Capture generation was cancelled because optional setup is incomplete.');
@@ -10435,6 +10472,10 @@
             const missing = statuses.filter(item => !item.status?.installed);
             if (!missing.length) return false;
             const list = missing.map(item => `- ${item.label}\n  Hugging Face -> ${item.status?.filename || item.kind}`).join('\n');
+            if (nexusBrowserOffline()) {
+                sessionStorage.setItem('nexus_ltx23_template_assets_prompted', '1');
+                return warnOfflineDependencyDownload('LTX 2.3 optional LoRA assets', `${missing.length} asset(s) missing.`);
+            }
             const ok = window.confirm(`LTX 2.3 optional LoRA assets are missing.\n\nNexus will not download them automatically. Download now for Director/Motion/Control/Detailer routes?\n\n${list}`);
             sessionStorage.setItem('nexus_ltx23_template_assets_prompted', '1');
             if (!ok) {
@@ -10472,6 +10513,10 @@
             const optionalList = missingOptional.map(item => `- ${item.label || item.filename}\n  -> ${item.destination || item.filename}\n  ${formatModelAssetBytes(item.size_bytes_min)}`).join('\n');
             const nodeList = missingNodeDeps.map(name => `- ${name}`).join('\n');
             const coreList = (status?.missing_core_nodes || []).map(name => `- ${name}`).join('\n');
+            if (nexusBrowserOffline()) {
+                sessionStorage.setItem('nexus_ideogram4_template_assets_prompted', '1');
+                return warnOfflineDependencyDownload('Ideogram 4 local assets/dependencies', `Required assets: ${requiredTotal}.`);
+            }
             const ok = window.confirm(`Ideogram-4 optional local setup is not ready.\n\nNew users are not forced to download these files. To generate locally, Nexus needs the model, unconditional model, Qwen3VL text encoder and Flux2 VAE. You can also install missing custom-node Python dependencies.\n\nRequired assets: ${requiredTotal}\n${requiredList || '- ready'}\n\nOptional assets: ${optionalTotal}\n${optionalList || '- none'}\n\nCustom-node Python dependencies:\n${nodeList || '- ready'}\n\nComfy core support still missing until runtime update/restart:\n${coreList || '- ready'}\n\nDownload selected missing assets and install missing node dependencies now?`);
             sessionStorage.setItem('nexus_ideogram4_template_assets_prompted', '1');
             if (!ok) {
@@ -10507,6 +10552,7 @@
             if (status?.installed) return true;
             const filename = status?.filename || 'qwen-image-edit-2511-multiple-angles-lora.safetensors';
             const sizeLabel = qwenMultiViewSizeLabel(status?.size_bytes || QWEN_MULTIANGLE_LORA_SIZE_BYTES);
+            if (nexusBrowserOffline()) return warnOfflineDependencyDownload('Qwen MultiView LoRA', `Missing: ${filename}.`);
             const ok = window.confirm(`Download Qwen MultiView LoRA?\n\n${filename}\n${sizeLabel}\n\nIt will be saved under ./models/loras/qwen.`);
             if (!ok) return false;
             showToast('Qwen MultiView Download', `Downloading ${filename} (${sizeLabel}).`);
@@ -10652,6 +10698,9 @@
             try {
                 const status = await nexusFetch('/model3d/trellis2/status');
                 if (!status?.installed) {
+                    if (nexusBrowserOffline()) {
+                        return warnOfflineDependencyDownload('TRELLIS.2-4B', `Missing in ${status?.path || './models/3d/trellis2'}.`);
+                    }
                     const ok = window.confirm(`TRELLIS.2-4B is not installed in ${status?.path || './models/3d/trellis2'}.\n\nDownload it now? This is a large Hugging Face model.`);
                     if (!ok) return false;
                     showToast('TRELLIS.2 Download', 'Downloading model files into ./models/3d/trellis2.');
@@ -10673,6 +10722,9 @@
                 const status = await nexusFetch('/model3d/dinov3/status');
                 if (status?.installed) return true;
                 const authHint = status?.token_configured ? 'A Hugging Face token is configured.' : `No token is configured. For gated access, paste a token in ${status?.token_file || 'config/huggingface_token.txt'}.`;
+                if (nexusBrowserOffline()) {
+                    return warnOfflineDependencyDownload('DINOv3 ViT-L/16', `Missing in ${status?.path || './models/facebook/dinov3-vitl16-pretrain-lvd1689m'}.`);
+                }
                 const ok = window.confirm(`DINOv3 ViT-L/16 is required by TRELLIS.2 and is missing at ${status?.path || './models/facebook/dinov3-vitl16-pretrain-lvd1689m'}.\n\n${authHint}\n\nTry downloading now?`);
                 if (!ok) return false;
                 showToast('DINOv3 Download', 'Downloading facebook/dinov3-vitl16-pretrain-lvd1689m.');
@@ -10688,6 +10740,9 @@
         }
 
         async function installModel3DWorkflowRequirements() {
+            if (nexusBrowserOffline()) {
+                return warnOfflineDependencyDownload('Model 3D workflow requirements', 'Custom-node Python dependencies need internet unless installed manually.');
+            }
             const ok = window.confirm('Model 3D custom node requirements can be installed now. Continue?');
             if (!ok) return false;
             try {
@@ -10796,6 +10851,10 @@
                 return true;
             }
             if (/TRELLIS\.?2|DINOv3|checkpoint|model is missing/i.test(message)) {
+                if (nexusBrowserOffline()) {
+                    warnOfflineDependencyDownload('Model 3D model files', 'Connect to download TRELLIS.2/DINOv3, or install them manually.');
+                    return true;
+                }
                 const ok = window.confirm(`${message.slice(0, 260)}\n\nTry downloading missing Model 3D model files now?`);
                 if (!ok) return true;
                 const trellis = await maybeDownloadTrellis2Model({ force: true });
@@ -10822,6 +10881,10 @@
             const message = String(error?.message || error || '');
             const nodes = parseMissingWorkflowNodes(message);
             if (!nodes.length) return false;
+            if (nexusBrowserOffline()) {
+                warnOfflineDependencyDownload('Missing workflow nodes/dependencies', nodes.slice(0, 5).join(', '));
+                return true;
+            }
             const ok = window.confirm(`${message.slice(0, 520)}\n\nInstall or repair the missing custom nodes/dependencies now and restart ComfyUI if needed?`);
             if (!ok) return true;
             showToast("Installing Missing Nodes", nodes.slice(0, 5).join(', '));
@@ -11708,7 +11771,7 @@
             qwenMultiViewScenePromise = (async () => {
                 const canvas = document.getElementById('qwenCameraCanvas');
                 if (!canvas) return null;
-                const THREE = await import('https://esm.sh/three@0.164.1');
+                const THREE = await import('/assets/vendor/three/three.module.js');
                 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
                 renderer.setClearColor(0x080910, 1);
@@ -11880,8 +11943,8 @@
             const hv = document.getElementById('qwenCameraHorizontalValue');
             const vv = document.getElementById('qwenCameraVerticalValue');
             const zv = document.getElementById('qwenCameraZoomValue');
-            if (hv) hv.innerText = `${Math.round(h)}°`;
-            if (vv) vv.innerText = `${Math.round(v)}°`;
+            if (hv) hv.innerText = `${Math.round(h)} deg`;
+            if (vv) vv.innerText = `${Math.round(v)} deg`;
             if (zv) zv.innerText = zoom.toFixed(1);
             nearestSelectValue(document.getElementById('qwenHorizontalPreset'), h);
             nearestSelectValue(document.getElementById('qwenVerticalPreset'), v);
@@ -17231,7 +17294,7 @@
                     <div class="flex items-center justify-between gap-2">
                         <button type="button" onclick="selectWorkflowNode(${jsString(node.id)})" class="min-w-0 text-left">
                             <span class="block text-white font-bold truncate">${escapeHtml(node.title || node.class_type)}</span>
-                            <span class="block text-[8px] text-nexus-muted font-mono truncate">${escapeHtml(node.class_type)} · ${(node.widgets || []).length} widgets</span>
+                            <span class="block text-[8px] text-nexus-muted font-mono truncate">${escapeHtml(node.class_type)} - ${(node.widgets || []).length} widgets</span>
                         </button>
                         <div class="flex items-center gap-1 shrink-0">
                             <button type="button" onclick='pinWorkflowNodeToSide(event, ${jsString(node.id)}, "left")' class="pin-action-btn ${workflowPinnedRecord(node.id)?.side === 'left' ? 'active text-nexus-red' : ''}" title="Pin left"><i class="fa-solid fa-table-columns text-[10px]"></i></button>
@@ -21517,7 +21580,7 @@
             updateModel3DHdriPreview(model3DViewer.environmentMapName);
             if (!model3DViewer.modules?.THREE || !model3DViewer.scene) return;
             try {
-                const { RGBELoader } = await import('https://esm.sh/three@0.164.1/examples/jsm/loaders/RGBELoader.js');
+                const { RGBELoader } = await import('/assets/vendor/three/examples/jsm/loaders/RGBELoader.js');
                 const loader = new RGBELoader();
                 const texture = await loader.loadAsync(`${NEXUS_API.replace(/\/api$/, '')}/model-assets/3d/hdri/${encodeURIComponent(model3DViewer.environmentMapName)}`);
                 texture.mapping = model3DViewer.modules.THREE.EquirectangularReflectionMapping;
@@ -21612,7 +21675,7 @@
             model3DTextureViewportElement()?.style.setProperty('--model3d-hdri-preview', textureViewportBackgroundPreset(model3DTextureViewport.environmentMapName));
             if (!model3DTextureViewport.modules?.THREE || !model3DTextureViewport.scene) return;
             try {
-                const { RGBELoader } = await import('https://esm.sh/three@0.164.1/examples/jsm/loaders/RGBELoader.js');
+                const { RGBELoader } = await import('/assets/vendor/three/examples/jsm/loaders/RGBELoader.js');
                 const loader = new RGBELoader();
                 const texture = await loader.loadAsync(`${NEXUS_API.replace(/\/api$/, '')}/model-assets/3d/hdri/${encodeURIComponent(model3DTextureViewport.environmentMapName)}`);
                 texture.mapping = model3DTextureViewport.modules.THREE.EquirectangularReflectionMapping;
@@ -21762,8 +21825,8 @@
             model3DTextureViewport.loading = true;
             try {
                 const [THREE, controlsModule] = await Promise.all([
-                    import('https://esm.sh/three@0.164.1'),
-                    import('https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js')
+                    import('/assets/vendor/three/three.module.js'),
+                    import('/assets/vendor/three/examples/jsm/controls/OrbitControls.js')
                 ]);
                 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -22946,8 +23009,8 @@
             try {
                 if (status) status.innerText = 'Loading Three.js preview modules...';
                 const [THREE, controlsModule] = await Promise.all([
-                    import('https://esm.sh/three@0.164.1'),
-                    import('https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js')
+                    import('/assets/vendor/three/three.module.js'),
+                    import('/assets/vendor/three/examples/jsm/controls/OrbitControls.js')
                 ]);
                 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -23101,10 +23164,10 @@
                 const cleanUrl = String(url || '').split('?')[0].toLowerCase();
                 let loaded;
                 if (cleanUrl.endsWith('.obj')) {
-                    const { OBJLoader } = await import('https://esm.sh/three@0.164.1/examples/jsm/loaders/OBJLoader.js');
+                    const { OBJLoader } = await import('/assets/vendor/three/examples/jsm/loaders/OBJLoader.js');
                     loaded = await new OBJLoader().loadAsync(url);
                 } else {
-                    const { GLTFLoader } = await import('https://esm.sh/three@0.164.1/examples/jsm/loaders/GLTFLoader.js');
+                    const { GLTFLoader } = await import('/assets/vendor/three/examples/jsm/loaders/GLTFLoader.js');
                     const gltf = await new GLTFLoader().loadAsync(url);
                     loaded = gltf.scene;
                 }
@@ -23578,6 +23641,10 @@
 
         function loadGoogleTranslateScript() {
             if (googleTranslateScriptLoaded || document.getElementById('googleTranslateScript')) return;
+            if (navigator.onLine === false) {
+                showToast?.('Offline Mode', 'Google Translate is unavailable offline.');
+                return;
+            }
             googleTranslateScriptLoaded = true;
             const script = document.createElement('script');
             script.id = 'googleTranslateScript';
@@ -23619,7 +23686,14 @@
             event?.stopPropagation();
             closeWorkflowTools();
             document.getElementById('languageMenu')?.classList.add('hidden');
-            document.getElementById('donateMenu')?.classList.toggle('hidden');
+            const menu = document.getElementById('donateMenu');
+            const willOpen = menu?.classList.contains('hidden');
+            menu?.classList.toggle('hidden');
+            if (willOpen && navigator.onLine !== false) {
+                const frame = document.getElementById('donateKofiFrame');
+                const src = frame?.dataset?.src || '';
+                if (frame && src && frame.getAttribute('src') === 'about:blank') frame.setAttribute('src', src);
+            }
         }
 
         function closeWorkflowTools() {
@@ -25383,11 +25457,11 @@
             poseStudioViewport.loading = true;
             try {
                 const [THREE, controlsModule, transformModule, gltfModule, skeletonModule] = await Promise.all([
-                    import('https://esm.sh/three@0.164.1'),
-                    import('https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js'),
-                    import('https://esm.sh/three@0.164.1/examples/jsm/controls/TransformControls.js'),
-                    import('https://esm.sh/three@0.164.1/examples/jsm/loaders/GLTFLoader.js'),
-                    import('https://esm.sh/three@0.164.1/examples/jsm/utils/SkeletonUtils.js')
+                    import('/assets/vendor/three/three.module.js'),
+                    import('/assets/vendor/three/examples/jsm/controls/OrbitControls.js'),
+                    import('/assets/vendor/three/examples/jsm/controls/TransformControls.js'),
+                    import('/assets/vendor/three/examples/jsm/loaders/GLTFLoader.js'),
+                    import('/assets/vendor/three/examples/jsm/utils/SkeletonUtils.js')
                 ]);
                 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -27781,21 +27855,30 @@
                 poseMediaPipeLandmarkerPromise = (async () => {
                     const sources = [
                         {
+                            label: 'mediapipe-tasks-local',
+                            module: '/assets/vendor/mediapipe/tasks-vision/vision_bundle.mjs',
+                            wasm: '/assets/vendor/mediapipe/tasks-vision/wasm',
+                            model: '/assets/vendor/mediapipe/models/pose_landmarker_full.task',
+                        },
+                        {
                             label: 'mediapipe-tasks-0.10.32',
                             module: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/vision_bundle.mjs',
                             wasm: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm',
+                            model: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
                         },
                         {
                             label: 'mediapipe-tasks-0.10.22-rc',
                             module: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/vision_bundle.mjs',
                             wasm: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm',
+                            model: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
                         },
                         {
                             label: 'mediapipe-tasks-0.10.32-unpkg',
                             module: 'https://unpkg.com/@mediapipe/tasks-vision@0.10.32/vision_bundle.mjs',
                             wasm: 'https://unpkg.com/@mediapipe/tasks-vision@0.10.32/wasm',
+                            model: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
                         },
-                    ];
+                    ].filter(source => navigator.onLine !== false || source.module.startsWith('/'));
                     let lastError = null;
                     for (const source of sources) {
                         try {
@@ -27803,7 +27886,7 @@
                             const vision = await visionModule.FilesetResolver.forVisionTasks(source.wasm);
                             const landmarker = await visionModule.PoseLandmarker.createFromOptions(vision, {
                                 baseOptions: {
-                                    modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
+                                    modelAssetPath: source.model,
                                 },
                                 runningMode: 'IMAGE',
                                 numPoses: 1,
@@ -28443,6 +28526,13 @@
         async function confirmPoseDependencyDownload() {
             const engine = posePendingDependency;
             if (!engine) return;
+            if (nexusBrowserOffline()) {
+                const label = engine === 'qwen_lora'
+                    ? 'Qwen Pose LoRA'
+                    : (engine === 'qwen_pose_controlnet' ? 'Qwen POSE ControlNet' : 'POSE optional dependency');
+                warnOfflineDependencyDownload(label, 'Install it manually or reconnect and press Download again.');
+                return;
+            }
             try {
                 if (engine === 'qwen_lora') {
                     const job = await nexusFetch('/pose/qwen-lora/download', { method: 'POST', body: '{}' });
@@ -28934,8 +29024,8 @@
                 : selected;
             const hint = document.getElementById('trainLoraMemoryHint');
             if (hint) hint.innerText = resolved === 'shared'
-                ? 'Shared usa CPU/RAM + VRAM: mais compatível em pouca VRAM, porém bem mais lento.'
-                : 'GPU Only é mais rápido e ideal quando o modelo cabe na VRAM.';
+                ? 'Shared usa CPU/RAM + VRAM: mais compativel em pouca VRAM, porem bem mais lento.'
+                : 'GPU Only e mais rapido e ideal quando o modelo cabe na VRAM.';
             if (select) select.dataset.resolvedPolicy = resolved;
         }
 
@@ -29614,7 +29704,7 @@
                     ${open ? groupItems.map(workflow => `
                         <button type="button" data-workflow-open-id="${escapeHtml(workflow.id)}" class="text-left border border-nexus-border bg-nexus-panel hover:border-nexus-red p-2 rounded-sm min-w-0">
                             <span class="block text-[11px] text-white font-bold truncate">${escapeHtml(workflow.name || workflow.id)}</span>
-                            <span class="block text-[8px] text-nexus-muted font-mono truncate">${escapeHtml(workflow.format)} · ${Number(workflow.node_count || 0)} nodes</span>
+                            <span class="block text-[8px] text-nexus-muted font-mono truncate">${escapeHtml(workflow.format)} - ${Number(workflow.node_count || 0)} nodes</span>
                         </button>
                     `).join('') : ''}
                 `;
@@ -30836,7 +30926,7 @@
                 return `
                     <div class="h-8 min-w-[170px] max-w-[260px] flex items-center border ${active ? 'border-nexus-red bg-nexus-bg text-white' : 'border-nexus-border bg-zinc-900 text-nexus-muted hover:text-white'} rounded-t-sm" data-tab-kind="workflow">
                         <button type="button" class="workflow-tab-select min-w-0 flex-1 h-full px-3 flex items-center gap-2 text-left" data-workflow-tab-id="${escapeHtml(tab.id)}">
-                            <span class="truncate text-[11px] font-bold"><i class="fa-solid fa-diagram-project text-nexus-red mr-1"></i>${escapeHtml(tab.name)}${tab.route ? ` · ${escapeHtml(workflowRouteLabel(tab.route))}` : ''}</span>
+                            <span class="truncate text-[11px] font-bold"><i class="fa-solid fa-diagram-project text-nexus-red mr-1"></i>${escapeHtml(tab.name)}${tab.route ? ` - ${escapeHtml(workflowRouteLabel(tab.route))}` : ''}</span>
                         </button>
                         <button type="button" data-workflow-close-id="${escapeHtml(tab.id)}" class="workflow-tab-close h-full w-8 text-[10px] hover:text-nexus-red shrink-0" title="Close workflow"><i class="fa-solid fa-xmark"></i></button>
                     </div>
@@ -31661,7 +31751,7 @@
             if (Number(job.elapsed_seconds) >= 0) parts.push(`Elapsed ${formatGenerationSeconds(job.elapsed_seconds)}`);
             if (Number(job.queued_seconds) >= 0) parts.push(`Waiting ${formatGenerationSeconds(job.queued_seconds)}`);
             if (!parts.length && job.queue_position) parts.push(`Queue position ${job.queue_position}`);
-            return parts.join(' · ');
+            return parts.join(' - ');
         }
 
         async function pollGenerationJob(jobId, payload, options = {}) {

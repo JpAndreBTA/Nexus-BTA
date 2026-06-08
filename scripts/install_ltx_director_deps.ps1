@@ -28,6 +28,30 @@ function Invoke-NexusStep([scriptblock]$Step, [string]$Label) {
     }
 }
 
+function Invoke-NexusNativeCommand([string]$FilePath, [string[]]$Arguments) {
+    $previousErrorActionPreference = $ErrorActionPreference
+    $nativePreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAction SilentlyContinue
+    $previousNativePreference = $null
+    try {
+        $ErrorActionPreference = "Continue"
+        if ($nativePreference) {
+            $previousNativePreference = $global:PSNativeCommandUseErrorActionPreference
+            $global:PSNativeCommandUseErrorActionPreference = $false
+        }
+        $output = & $FilePath @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+        return [pscustomobject]@{
+            ExitCode = $exitCode
+            Output = ($output | Out-String).Trim()
+        }
+    } finally {
+        if ($nativePreference) {
+            $global:PSNativeCommandUseErrorActionPreference = $previousNativePreference
+        }
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+}
+
 function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
     $resolvedArgs = @($PipArgs)
     $tempRequirements = ""
@@ -111,21 +135,20 @@ function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
         }
 
         $dryArgs = @("-m", "pip", "install", "--dry-run", "--no-input", "--disable-pip-version-check", "-q") + $resolvedArgs
-        $dryOutput = & $RuntimePython @dryArgs 2>&1
-        $dryText = ($dryOutput | Out-String).Trim()
-        if ($LASTEXITCODE -eq 0 -and [string]::IsNullOrWhiteSpace($dryText)) {
+        $dryResult = Invoke-NexusNativeCommand $RuntimePython $dryArgs
+        if ($dryResult.ExitCode -eq 0 -and [string]::IsNullOrWhiteSpace($dryResult.Output)) {
             Write-NexusLine "$Label requirements already satisfied." "Ok"
             return
         }
 
-        $installOutput = & $RuntimePython -m pip install --disable-pip-version-check -q @resolvedArgs 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            $installText = ($installOutput | Out-String).Trim()
-            if (![string]::IsNullOrWhiteSpace($installText)) {
+        $installArgs = @("-m", "pip", "install", "--disable-pip-version-check", "-q") + $resolvedArgs
+        $installResult = Invoke-NexusNativeCommand $RuntimePython $installArgs
+        if ($installResult.ExitCode -ne 0) {
+            if (![string]::IsNullOrWhiteSpace($installResult.Output)) {
                 Write-NexusLine "$Label pip output:" "Warn"
-                Write-Host $installText
+                Write-Host $installResult.Output
             }
-            throw "pip install failed with exit code $LASTEXITCODE"
+            throw "pip install failed with exit code $($installResult.ExitCode)"
         }
         Write-NexusLine "$Label requirements satisfied." "Ok"
     } finally {
@@ -283,8 +306,9 @@ def require_attention_runtime(label, module_name):
     try:
         if module_name == "xformers":
             import xformers.ops  # noqa: F401
-            if importlib.util.find_spec("xformers._C") is None:
-                raise RuntimeError("xformers._C extension is not available")
+            from xformers import _cpp_lib
+            if not getattr(_cpp_lib, "_build_metadata", None):
+                raise RuntimeError("xformers C++/CUDA extension metadata is not available")
         elif module_name == "sageattention":
             importlib.import_module("triton")
             importlib.import_module("sageattention")
@@ -393,7 +417,47 @@ function Test-NexusIsWindows {
     return [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
 }
 
+function Test-NexusAttentionRuntimeReady {
+    $probe = @'
+import importlib
+import importlib.util
+import sys
+
+checks = []
+try:
+    import xformers.ops  # noqa: F401
+    from xformers import _cpp_lib
+    if not getattr(_cpp_lib, '_build_metadata', None):
+        raise RuntimeError('xformers C++/CUDA extension metadata is not available')
+except Exception as exc:
+    checks.append(f'xFormers: {type(exc).__name__}: {exc}')
+
+try:
+    importlib.import_module('triton')
+    importlib.import_module('sageattention')
+except Exception as exc:
+    checks.append(f'SageAttention: {type(exc).__name__}: {exc}')
+
+if checks:
+    print('; '.join(checks))
+    sys.exit(1)
+sys.exit(0)
+'@
+    $result = Invoke-NexusNativeCommand $RuntimePython @("-c", $probe)
+    if ($result.ExitCode -eq 0) {
+        return $true
+    }
+    if (![string]::IsNullOrWhiteSpace($result.Output)) {
+        Write-NexusLine "Nexus attention runtime needs repair: $($result.Output)" "Warn"
+    }
+    return $false
+}
+
 Invoke-NexusStep -Label "Installing Nexus attention runtime" -Step {
+    if (Test-NexusAttentionRuntimeReady) {
+        Write-NexusLine "Nexus attention runtime already importable." "Ok"
+        return
+    }
     $attentionRuntimeArgs = @(
         "--extra-index-url",
         "https://download.pytorch.org/whl/cu130",
@@ -401,7 +465,7 @@ Invoke-NexusStep -Label "Installing Nexus attention runtime" -Step {
     )
     if (Test-NexusIsWindows) {
         $attentionRuntimeArgs += @(
-            "xformers @ https://download.pytorch.org/whl/cu130/xformers-0.0.35-py39-none-win_amd64.whl",
+            "xformers==0.0.35",
             "triton-windows>=3.7.0.post26"
         )
     } else {

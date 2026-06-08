@@ -1060,9 +1060,52 @@ a:hover {
   font-weight: 800;
 }
 
+.asset-check-list {
+  display: grid;
+  gap: 7px;
+}
+
+.asset-check {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: #0d0d10;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.asset-check.installed {
+  border-color: rgba(69, 211, 153, 0.42);
+}
+
+.asset-check span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.asset-check strong {
+  font-size: 11px;
+  color: var(--text);
+}
+
+.asset-check em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--muted);
+}
+
 .three-col {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.four-col {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1810,6 +1853,138 @@ a:hover {
 
 .linear-zoom-readout button:hover {
   border-color: var(--accent);
+}
+
+.ideogram-region-shell {
+  width: min(100%, 1120px);
+  max-height: min(100%, calc(100vh - 190px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.ideogram-region-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ideogram-region-toolbar button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  background: #0d0d10;
+  color: var(--muted);
+  border-radius: 4px;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.ideogram-region-toolbar button:disabled {
+  opacity: 0.45;
+}
+
+.ideogram-region-canvas {
+  position: relative;
+  min-height: 260px;
+  max-height: calc(100vh - 390px);
+  border: 1px solid var(--border);
+  background: #111318;
+  overflow: hidden;
+}
+
+.ideogram-region-canvas > img,
+.ideogram-region-canvas > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #090a0d;
+}
+
+.ideogram-region-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.ideogram-region-box {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px;
+  border: 2px solid #4ea1ff;
+  background: rgba(78, 161, 255, 0.16);
+  color: white;
+  padding: 4px;
+  text-align: left;
+  cursor: move;
+}
+
+.ideogram-region-box.active {
+  border-color: #86efac;
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.ideogram-region-box span,
+.ideogram-region-box strong {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.ideogram-region-box em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1.2;
+  text-shadow: 0 1px 2px black;
+}
+
+.ideogram-region-box i {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-style: normal;
+  cursor: pointer;
+}
+
+.ideogram-region-editor {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: #0d0d10;
+  padding: 8px;
+}
+
+.ideogram-region-editor textarea {
+  min-height: 68px;
+}
+
+.ideogram-region-editor.empty {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .studio-inline-status {

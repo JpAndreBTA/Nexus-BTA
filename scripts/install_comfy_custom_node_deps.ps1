@@ -42,6 +42,30 @@ if (!(Test-Path -LiteralPath $CustomNodesDir)) {
     return
 }
 
+function Invoke-NexusNativeCommand([string]$FilePath, [string[]]$Arguments) {
+    $previousErrorActionPreference = $ErrorActionPreference
+    $nativePreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAction SilentlyContinue
+    $previousNativePreference = $null
+    try {
+        $ErrorActionPreference = "Continue"
+        if ($nativePreference) {
+            $previousNativePreference = $global:PSNativeCommandUseErrorActionPreference
+            $global:PSNativeCommandUseErrorActionPreference = $false
+        }
+        $output = & $FilePath @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+        return [pscustomobject]@{
+            ExitCode = $exitCode
+            Output = ($output | Out-String).Trim()
+        }
+    } finally {
+        if ($nativePreference) {
+            $global:PSNativeCommandUseErrorActionPreference = $previousNativePreference
+        }
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+}
+
 function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
     $resolvedArgs = @($PipArgs)
     $tempRequirements = ""
@@ -125,21 +149,20 @@ function Invoke-NexusPipInstallIfNeeded([string]$Label, [string[]]$PipArgs) {
         }
 
         $dryArgs = @("-m", "pip", "install", "--dry-run", "--no-input", "--disable-pip-version-check", "-q") + $resolvedArgs
-        $dryOutput = & $RuntimePython @dryArgs 2>&1
-        $dryText = ($dryOutput | Out-String).Trim()
-        if ($LASTEXITCODE -eq 0 -and [string]::IsNullOrWhiteSpace($dryText)) {
+        $dryResult = Invoke-NexusNativeCommand $RuntimePython $dryArgs
+        if ($dryResult.ExitCode -eq 0 -and [string]::IsNullOrWhiteSpace($dryResult.Output)) {
             Write-NexusLine "$Label requirements already satisfied." "Ok"
             return
         }
 
-        $installOutput = & $RuntimePython -m pip install --disable-pip-version-check -q @resolvedArgs 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            $installText = ($installOutput | Out-String).Trim()
-            if (![string]::IsNullOrWhiteSpace($installText)) {
+        $installArgs = @("-m", "pip", "install", "--disable-pip-version-check", "-q") + $resolvedArgs
+        $installResult = Invoke-NexusNativeCommand $RuntimePython $installArgs
+        if ($installResult.ExitCode -ne 0) {
+            if (![string]::IsNullOrWhiteSpace($installResult.Output)) {
                 Write-NexusLine "$Label pip output:" "Warn"
-                Write-Host $installText
+                Write-Host $installResult.Output
             }
-            throw "pip install failed with exit code $LASTEXITCODE"
+            throw "pip install failed with exit code $($installResult.ExitCode)"
         }
         Write-NexusLine "$Label requirements satisfied." "Ok"
     } finally {

@@ -57,6 +57,17 @@
     if (node) node.innerText = text;
   }
 
+  function browserOffline() {
+    return typeof navigator !== "undefined" && navigator.onLine === false;
+  }
+
+  function offlineCivitaiNotice(action = "use Civitai") {
+    const message = `Civitai needs internet to ${action}. Connect to the internet, or install the model file manually and refresh Nexus.`;
+    status(message);
+    window.showToast?.("Offline: Civitai Unavailable", message);
+    return false;
+  }
+
   function normalizedCivitaiQuery(value) {
     return String(value || "")
       .normalize("NFKC")
@@ -299,6 +310,9 @@
   }
 
   async function post(path, body, signal = null, timeoutMs = 25000) {
+    if (browserOffline()) {
+      throw new Error(`Offline mode: connect to the internet to ${path.includes("download") ? "download from Civitai" : "browse Civitai"}.`);
+    }
     const controller = new AbortController();
     let timedOut = false;
     const timeout = setTimeout(() => {
@@ -1121,6 +1135,10 @@
   }
 
   async function resolve() {
+    if (browserOffline()) {
+      offlineCivitaiNotice("resolve model URLs");
+      return;
+    }
     const payload = formPayload();
     if (!payload.url) {
       return startFreshSearch();
@@ -1142,6 +1160,10 @@
   }
 
   async function download(urlOverride) {
+    if (browserOffline()) {
+      offlineCivitaiNotice("download models");
+      return;
+    }
     const payload = formPayload();
     if (urlOverride) payload.url = urlOverride;
     if (!payload.url) {
@@ -1156,6 +1178,12 @@
   }
 
   async function search(append = false) {
+    if (browserOffline()) {
+      offlineCivitaiNotice("browse/search models");
+      const panel = el("civitaiResultPanel");
+      if (panel && !append) panel.innerHTML = searchErrorHtml("Civitai search needs internet. Connect to the internet, or install models manually and refresh Nexus.");
+      return;
+    }
     if (append && loadingMore) return;
     if (!append && activeSearchController) activeSearchController.abort();
     const runId = ++searchRunId;

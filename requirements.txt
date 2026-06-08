@@ -114,8 +114,7 @@ zstandard
 
 # Attention/runtime acceleration. Use platform-specific Triton/xFormers packages:
 # Windows needs triton-windows to provide the triton module used by SageAttention.
-xformers @ https://download.pytorch.org/whl/cu130/xformers-0.0.35-py39-none-win_amd64.whl ; platform_system == "Windows"
-xformers==0.0.35 ; platform_system != "Windows"
+xformers==0.0.35
 triton-windows>=3.7.0.post26 ; platform_system == "Windows"
 triton>=3.0.0 ; platform_system != "Windows"
 sageattention>=1.0.6

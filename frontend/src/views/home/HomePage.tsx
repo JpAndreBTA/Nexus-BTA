@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState, type WheelEvent } from 'react';
+import { useEffect, useMemo, useState, type PointerEvent, type WheelEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Play, Save, Send, SlidersHorizontal, Workflow, X } from 'lucide-react';
+import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Play, Redo2, Save, Send, SlidersHorizontal, Undo2, Workflow, X } from 'lucide-react';
 
 import { nexusApi } from '../../api/nexusClient';
 import type { CatalogAsset, GenerateRequest, GenerationJob } from '../../api/types';
 import { useGalleryQuery, useModelCatalogQuery, useWorkflowAnalysisQuery, useWorkflowsQuery } from '../../api/queries';
 import { useLorasQuery } from '../../api/queries';
 import type { WorkflowGraphLink, WorkflowGraphNode, WorkflowSummary } from '../../api/types';
-import { useGenerationStore, type GenerationState } from '../../stores/generationStore';
+import { useGenerationStore, type GenerationState, type PromptRegion } from '../../stores/generationStore';
 import { useLoraStore } from '../../stores/loraStore';
 import { useUiStore } from '../../stores/uiStore';
 import { InpaintCanvas } from './InpaintCanvas';
@@ -28,6 +28,26 @@ function readFileAsDataUrl(file: File) {
     reader.onerror = () => reject(reader.error || new Error('Failed to read image file.'));
     reader.readAsDataURL(file);
   });
+}
+
+function formatBytes(value: number | undefined) {
+  const bytes = Number(value || 0);
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  return `${(bytes / 1024 ** index).toFixed(index >= 3 ? 2 : 1)} ${units[index]}`;
+}
+
+function clampRegion(region: PromptRegion): PromptRegion {
+  const w = Math.max(0.03, Math.min(1, region.w));
+  const h = Math.max(0.03, Math.min(1, region.h));
+  return {
+    ...region,
+    w,
+    h,
+    x: Math.max(0, Math.min(1 - w, region.x)),
+    y: Math.max(0, Math.min(1 - h, region.y)),
+  };
 }
 
 function modelOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data']) {
@@ -63,6 +83,8 @@ function modelMatchesPreset(model: { label: string; name: string }, preset: stri
     sdxl: ['sdxl', 'xl', 'illustrious'],
     flux: ['flux'],
     qwen: ['qwen'],
+    ideogram4: ['ideogram'],
+    ideogram: ['ideogram'],
     zimageturbo: ['z_image', 'zimage', 'z-image'],
     lumina: ['lumina'],
     wan: ['wan'],
@@ -211,6 +233,8 @@ function preferredWorkflow(workflows: WorkflowSummary[] | undefined, preset: str
     ltx: ['ltx23-img2vid-512-base', 'ltx'],
     wan: ['wan'],
     qwen: ['qwen-img2img-base', 'qwen'],
+    ideogram4: ['ideogram4-kj-prompt-builder', 'ideogram4', 'ideogram'],
+    ideogram: ['ideogram4-kj-prompt-builder', 'ideogram4', 'ideogram'],
     anima: ['anima-base', 'anima'],
     zimageturbo: ['zimage-turbo-base', 'zimage'],
     flux: ['flux'],
@@ -348,6 +372,145 @@ function StudioWorkflowGraph({
   );
 }
 
+function IdeogramRegionEditor({
+  generation,
+  sourceUrl,
+  previewIsVideo,
+}: {
+  generation: GenerationState;
+  sourceUrl: string;
+  previewIsVideo: boolean;
+}) {
+  const [activeId, setActiveId] = useState('');
+  const [dragState, setDragState] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
+  const activeRegion = generation.promptRegions.find((region) => region.id === activeId) || generation.promptRegions[0];
+  const aspectRatio = `${Math.max(64, generation.width)} / ${Math.max(64, generation.height)}`;
+
+  function addRegion(type: 'obj' | 'text' = 'obj') {
+    const region = {
+      id: `region-${Date.now()}-${Math.round(Math.random() * 10000)}`,
+      type,
+      x: 0.18 + Math.min(0.18, generation.promptRegions.length * 0.04),
+      y: 0.18 + Math.min(0.18, generation.promptRegions.length * 0.04),
+      w: type === 'text' ? 0.42 : 0.34,
+      h: type === 'text' ? 0.16 : 0.3,
+      prompt: type === 'text' ? 'Localized text element' : 'Localized object or subject',
+      text: type === 'text' ? 'TEXT' : '',
+    };
+    generation.addPromptRegion(region);
+    setActiveId(region.id);
+  }
+
+  function updateRegion(id: string, updates: Partial<PromptRegion>) {
+    const current = generation.promptRegions.find((region) => region.id === id);
+    if (!current) return;
+    generation.updatePromptRegion(id, clampRegion({ ...current, ...updates }));
+  }
+
+  function pointerPosition(event: PointerEvent, element: Element | null) {
+    const rect = (element || event.currentTarget).getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) / Math.max(1, rect.width),
+      y: (event.clientY - rect.top) / Math.max(1, rect.height),
+    };
+  }
+
+  return (
+    <div className="ideogram-region-shell">
+      <div className="ideogram-region-toolbar">
+        <button type="button" onClick={() => addRegion('obj')}><FilePlus2 size={13} /> ADD obj</button>
+        <button type="button" onClick={() => addRegion('text')}><FilePlus2 size={13} /> ADD text</button>
+        <button type="button" onClick={generation.undoPromptRegion} disabled={!generation.promptRegionHistory.length}><Undo2 size={13} /></button>
+        <button type="button" onClick={generation.redoPromptRegion} disabled={!generation.promptRegionFuture.length}><Redo2 size={13} /></button>
+        <button type="button" onClick={generation.clearPromptRegions} disabled={!generation.promptRegions.length}>Clear</button>
+      </div>
+      <div
+        className="ideogram-region-canvas"
+        style={{ aspectRatio }}
+        onPointerMove={(event) => {
+          if (!dragState) return;
+          const point = pointerPosition(event, event.currentTarget);
+          updateRegion(dragState.id, {
+            x: dragState.x + point.x - dragState.startX,
+            y: dragState.y + point.y - dragState.startY,
+          });
+        }}
+        onPointerUp={() => setDragState(null)}
+        onPointerCancel={() => setDragState(null)}
+      >
+        {sourceUrl ? (
+          previewIsVideo ? <video src={sourceUrl} muted playsInline /> : <img src={sourceUrl} alt="Ideogram regional guide" />
+        ) : (
+          <div className="ideogram-region-empty"><Images size={34} /><span>{generation.activity === 'img2img' ? 'Load img2img reference' : 'Regional prompt canvas'}</span></div>
+        )}
+        {generation.promptRegions.map((region, index) => (
+          <button
+            type="button"
+            key={region.id}
+            className={region.id === activeRegion?.id ? 'ideogram-region-box active' : 'ideogram-region-box'}
+            style={{
+              left: `${region.x * 100}%`,
+              top: `${region.y * 100}%`,
+              width: `${region.w * 100}%`,
+              height: `${region.h * 100}%`,
+            }}
+            onClick={() => setActiveId(region.id)}
+            onPointerDown={(event) => {
+              const point = pointerPosition(event, event.currentTarget.parentElement);
+              setActiveId(region.id);
+              setDragState({ id: region.id, startX: point.x, startY: point.y, x: region.x, y: region.y });
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+          >
+            <span>{String(index + 1).padStart(2, '0')}</span>
+            <strong>{region.type}</strong>
+            <em>{region.text || region.prompt || 'region'}</em>
+            <i
+              role="presentation"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                generation.removePromptRegion(region.id);
+              }}
+            >
+              x
+            </i>
+          </button>
+        ))}
+      </div>
+      {activeRegion ? (
+        <div className="ideogram-region-editor">
+          <div className="two-col">
+            <label className="field">
+              <span>Type</span>
+              <select value={activeRegion.type} onChange={(event) => updateRegion(activeRegion.id, { type: event.currentTarget.value as 'obj' | 'text' })}>
+                <option value="obj">obj</option>
+                <option value="text">text</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Text</span>
+              <input value={activeRegion.text || ''} onChange={(event) => updateRegion(activeRegion.id, { text: event.currentTarget.value })} placeholder="literal text" />
+            </label>
+          </div>
+          <label className="field">
+            <span>Region prompt</span>
+            <textarea value={activeRegion.prompt} onChange={(event) => updateRegion(activeRegion.id, { prompt: event.currentTarget.value })} placeholder="description of this region" />
+          </label>
+          <div className="four-col">
+            <label className="field"><span>X %</span><input type="number" min={0} max={100} value={Math.round(activeRegion.x * 100)} onChange={(event) => updateRegion(activeRegion.id, { x: Number(event.currentTarget.value) / 100 })} /></label>
+            <label className="field"><span>Y %</span><input type="number" min={0} max={100} value={Math.round(activeRegion.y * 100)} onChange={(event) => updateRegion(activeRegion.id, { y: Number(event.currentTarget.value) / 100 })} /></label>
+            <label className="field"><span>W %</span><input type="number" min={3} max={100} value={Math.round(activeRegion.w * 100)} onChange={(event) => updateRegion(activeRegion.id, { w: Number(event.currentTarget.value) / 100 })} /></label>
+            <label className="field"><span>H %</span><input type="number" min={3} max={100} value={Math.round(activeRegion.h * 100)} onChange={(event) => updateRegion(activeRegion.id, { h: Number(event.currentTarget.value) / 100 })} /></label>
+          </div>
+        </div>
+      ) : (
+        <div className="ideogram-region-editor empty">ADD creates localized prompt boxes for Ideogram 4 JSON layout guidance.</div>
+      )}
+    </div>
+  );
+}
+
 export function HomePage() {
   const catalog = useModelCatalogQuery();
   const gallery = useGalleryQuery();
@@ -362,6 +525,7 @@ export function HomePage() {
   const [loraModalOpen, setLoraModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'director' | 'linear' | 'inpaint' | 'workflow'>('linear');
   const [linearZoom, setLinearZoom] = useState(1);
+  const [ideogramAssetSelection, setIdeogramAssetSelection] = useState<string[]>([]);
 
   const allModels = useMemo(() => modelOptions(catalog.data), [catalog.data]);
   const vaeOptions = useMemo(() => assetSelectOptions(catalog.data, ['vae']), [catalog.data]);
@@ -378,6 +542,7 @@ export function HomePage() {
   const controlNetCompatible = controlNetCompatiblePreset(generation.preset);
   const videoMode = videoPreset(generation.preset);
   const qwenImageEdit = generation.preset.toLowerCase() === 'qwen';
+  const ideogram4Mode = ['ideogram4', 'ideogram'].includes(generation.preset.toLowerCase());
   const ltxDirectorView = generation.preset.toLowerCase() === 'ltx' && viewMode === 'director';
   const directorMode = generation.preset.toLowerCase() === 'ltx' && generation.directorEnabled;
   const alignedFrames = alignVideoFrames(generation.preset, generation.videoFrames);
@@ -387,6 +552,23 @@ export function HomePage() {
   );
   const directorFrames = alignVideoFrames('ltx', Math.round(generation.directorDuration * generation.videoFps));
   const controlNetModels = useMemo(() => controlNetModelOptions(catalog.data, generation.preset, generation.controlNetType), [catalog.data, generation.preset, generation.controlNetType]);
+  const ideogram4Status = useQuery({
+    queryKey: ['ideogram4-assets-status'],
+    queryFn: nexusApi.ideogram4AssetsStatus,
+    enabled: ideogram4Mode,
+    refetchInterval: ideogram4Mode ? 5000 : false,
+  });
+  const ideogram4Download = useMutation({
+    mutationFn: (assets: string[]) => nexusApi.startIdeogram4AssetDownload({ assets, install_node_dependencies: true }),
+    onSuccess: () => {
+      void ideogram4Status.refetch();
+    },
+    onError: (error) => setLocalError(error instanceof Error ? error.message : 'Ideogram 4 dependency download failed.'),
+  });
+  const ideogramAssets = ideogram4Status.data?.assets ?? [];
+  const selectedIdeogramAssets = ideogramAssetSelection.length
+    ? ideogramAssetSelection
+    : (ideogram4Status.data?.missing_required_assets ?? []).map((asset) => asset.key);
   const studioWorkflowGraph = useMemo(() => {
     const graph = workflowAnalysis.data?.visual_graph;
     return buildStudioWorkflowGraph(graph?.nodes ?? [], graph?.links ?? [], generation, alignedFrames, directorFrames);
@@ -479,8 +661,16 @@ export function HomePage() {
         high_threshold: 0.8,
         balance: generation.controlNetBalance,
       },
-      video: videoMode
+      video: videoMode || ideogram4Mode
         ? {
+            ...(ideogram4Mode
+              ? {
+                  ideogram_regions: generation.promptRegions,
+                  ideogram_reference_mode: generation.activity === 'img2img' ? 'layout_reference_only' : 'txt2img',
+                }
+              : {}),
+            ...(videoMode
+              ? {
             frames: alignedFrames,
             fps: generation.videoFps,
             seconds: generation.videoSeconds,
@@ -497,6 +687,8 @@ export function HomePage() {
             decode_tiles_y: generation.decodeTilesY,
             decode_overlap: generation.decodeOverlap,
             director_timeline: directorMode,
+              }
+              : {}),
           }
         : {},
       director: directorMode
@@ -530,9 +722,18 @@ export function HomePage() {
             }),
           }
         : {},
-      runtime: {},
+      runtime: ideogram4Mode
+        ? {
+            vram_policy: 'shared',
+            attention_backend: 'pytorch',
+            disable_xformers: false,
+            enable_sage_attention: false,
+            enable_flash_attention: false,
+            precision: 'auto',
+          }
+        : {},
     }),
-    [alignedFrames, allReferenceImages, controlNetCompatible, directorFrames, directorMode, generation, loraStore.activeLoras, videoMode],
+    [alignedFrames, allReferenceImages, controlNetCompatible, directorFrames, directorMode, generation, ideogram4Mode, loraStore.activeLoras, videoMode],
   );
 
   const startMutation = useMutation({
@@ -571,7 +772,7 @@ export function HomePage() {
       setLocalError('Prompt is required.');
       return;
     }
-    if (!generation.modelPath && !generation.modelName) {
+    if (!generation.modelPath && !generation.modelName && !ideogram4Mode) {
       setLocalError('Select a model before generating.');
       return;
     }
@@ -581,6 +782,10 @@ export function HomePage() {
     }
     if (generation.activity === 'img2img' && generation.img2imgMode === 'inpaint' && !generation.inpaintMaskImage) {
       setLocalError('Paint an inpaint mask before generating.');
+      return;
+    }
+    if (ideogram4Mode && generation.activity === 'img2img' && generation.img2imgMode === 'inpaint') {
+      setLocalError('Ideogram 4 local route does not support true mask inpaint yet. Use Linear Viewer ADD boxes as regional guides.');
       return;
     }
     if (videoMode && generation.activity === 'img2img' && !generation.referenceImage) {
@@ -659,10 +864,10 @@ export function HomePage() {
                   const file = event.currentTarget.files?.[0];
                   if (!file) return;
                   generation.setReferenceImage(await readFileAsDataUrl(file), file.name);
-                  if (qwenImageEdit) generation.setActivity('img2img');
+                  if (qwenImageEdit || ideogram4Mode) generation.setActivity('img2img');
                 }}
               />
-              <span>{generation.referenceImageName || (qwenImageEdit ? 'Select Qwen edit reference image' : 'Select reference image')}</span>
+              <span>{generation.referenceImageName || (qwenImageEdit ? 'Select Qwen edit reference image' : ideogram4Mode ? 'Select Ideogram layout reference' : 'Select reference image')}</span>
             </label>
             <label className="dropzone small-dropzone multi-reference-dropzone">
               <input
@@ -737,6 +942,62 @@ export function HomePage() {
               </>
             )}
           </div>
+
+          {ideogram4Mode && (
+            <details className="control-section" open>
+              <summary>Ideogram 4 Dependencies <span>{ideogram4Status.data?.generation_ready ? 'Ready' : 'Optional'}</span></summary>
+              <div className="control-stack ideogram-assets-panel">
+                <div className={ideogram4Status.data?.generation_ready ? 'studio-inline-status' : 'studio-inline-status error'}>
+                  {ideogram4Status.isLoading
+                    ? 'Checking Ideogram 4 assets...'
+                    : ideogram4Status.data?.generation_ready
+                      ? 'Required Ideogram 4 assets detected.'
+                      : (ideogram4Status.data?.missing_core_nodes?.length ?? 0) > 0
+                        ? `Comfy runtime needs Ideogram 4 support: ${ideogram4Status.data?.missing_core_nodes?.join(', ')}.`
+                        : `${formatBytes(ideogram4Status.data?.estimated_missing_required_bytes)} required assets missing.`}
+                </div>
+                {ideogram4Status.data?.runtime_checked === false && (
+                  <p className="compact-note">Comfy core support is checked after the runtime starts.</p>
+                )}
+                <div className="asset-check-list">
+                  {ideogramAssets.map((asset) => {
+                    const checked = selectedIdeogramAssets.includes(asset.key);
+                    return (
+                      <label key={asset.key} className={asset.installed ? 'asset-check installed' : 'asset-check'}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={asset.installed || ideogram4Download.isPending}
+                          onChange={(event) => {
+                            setIdeogramAssetSelection((current) => {
+                              const base = current.length ? current : (ideogram4Status.data?.missing_required_assets ?? []).map((item) => item.key);
+                              return event.currentTarget.checked
+                                ? Array.from(new Set([...base, asset.key]))
+                                : base.filter((key) => key !== asset.key);
+                            });
+                          }}
+                        />
+                        <span>
+                          <strong>{asset.label}</strong>
+                          <em>{asset.installed ? 'installed' : `${asset.scope || asset.kind} - ${formatBytes(asset.size_bytes_min || asset.size_bytes)}`}</em>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={ideogram4Download.isPending || !selectedIdeogramAssets.length}
+                  onClick={() => ideogram4Download.mutate(selectedIdeogramAssets)}
+                >
+                  {ideogram4Download.isPending ? <LoaderCircle className="spin" size={14} /> : <FilePlus2 size={14} />}
+                  Download selected
+                </button>
+                <p className="compact-note">The local img2img image is shown as a layout guide for regional JSON; current open Ideogram 4 Comfy route is text-to-image.</p>
+              </div>
+            </details>
+          )}
 
           <details className="control-section" open>
             <summary>Concepts (LoRA) <button className="mini-button" type="button" onClick={(event) => { event.preventDefault(); setLoraModalOpen(true); }}><FilePlus2 size={13} /> Add</button></summary>
@@ -1146,7 +1407,9 @@ export function HomePage() {
           {viewMode === 'linear' && (
             <div className="studio-preview-content linear-viewer" onWheel={handleLinearViewerWheel}>
               <div className="linear-zoom-stage" style={{ transform: `scale(${linearZoom})` }}>
-                {previewUrl ? (
+                {ideogram4Mode ? (
+                  <IdeogramRegionEditor generation={generation} sourceUrl={generation.activity === 'img2img' ? generation.referenceImage || previewUrl : previewUrl} previewIsVideo={previewIsVideo && generation.activity !== 'img2img'} />
+                ) : previewUrl ? (
                   previewIsVideo ? <video className="extras-media" src={previewUrl} controls playsInline /> : <img className="extras-media" src={previewUrl} alt="Studio output preview" />
                 ) : (
                   <div className="preview-empty"><Images size={38} /><p>No output loaded</p><span>Generated files appear from ./output</span></div>

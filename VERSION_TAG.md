@@ -1,16 +1,16 @@
-# NexusBTA v0.2.26
+# NexusBTA v0.2.27
 
-`NexusBTA v0.2.26 - Ideogram-4, Regional Prompt Builder and Runtime Compatibility`
+`NexusBTA v0.2.27 - Offline UI Hotfix, xFormers Runtime and Ideogram-4 Stability`
 
 Short release summary:
 
-- Ideogram-4: dedicated legacy `/ui` template beside Anima with fp8 low-VRAM defaults.
-- Prompt Builder: KJ-compatible structured JSON route with obj/text regional boxes.
-- Linear Viewer: Ideogram regional canvas, ADD boxes, resize/move, undo/redo, delete and layer ordering.
-- Backend sync: side-menu dimensions, img2img reference image, VAE/text encoder/checkpoint selectors and regional bbox payloads.
-- Runtime: KJNodes auto-update support without duplicating custom_nodes, plus Sage/xFormers-compatible workflow route.
-- Defaults: CFG 1, Euler/Simple, 12 steps, conservative img2img denoise default.
+- Offline UI: `/ui` starts with local Tailwind, fonts, Font Awesome, Three.js, MediaPipe WASM and pose model assets.
+- Backend sync: offline browser mode still reaches local Nexus and embedded ComfyUI APIs.
+- Dependency guard: missing online assets now ask users to reconnect or install manually instead of failing silently.
+- Runtime: xFormers installs through normal pip resolution and skips network when the runtime is already import-ready.
+- PowerShell: native pip retry warnings are handled without red `NativeCommandError` noise.
+- Ideogram-4: functional frontend route, asset status/download contract and regional prompt controls are included.
 
 Complete version:
 
-[docs/releases/v0.2.26.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.26/docs/releases/v0.2.26.md)
+[docs/releases/v0.2.27.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.27/docs/releases/v0.2.27.md)

@@ -6,6 +6,18 @@ interface ReferenceImage {
   name: string;
 }
 
+export interface PromptRegion {
+  id: string;
+  type: 'obj' | 'text';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  prompt: string;
+  text?: string;
+  colors?: string[];
+}
+
 export interface GenerationState {
   activity: 'txt2img' | 'img2img';
   img2imgMode: 'image' | 'inpaint';
@@ -34,6 +46,9 @@ export interface GenerationState {
   referenceImage: string | null;
   referenceImageName: string;
   extraReferenceImages: ReferenceImage[];
+  promptRegions: PromptRegion[];
+  promptRegionHistory: PromptRegion[][];
+  promptRegionFuture: PromptRegion[][];
   inpaintMaskImage: string | null;
   controlNetEnabled: boolean;
   controlNetType: string;
@@ -98,6 +113,12 @@ export interface GenerationState {
   addExtraReferenceImages: (images: ReferenceImage[]) => void;
   removeExtraReferenceImage: (index: number) => void;
   clearExtraReferenceImages: () => void;
+  addPromptRegion: (region?: Partial<PromptRegion>) => void;
+  updatePromptRegion: (id: string, updates: Partial<PromptRegion>) => void;
+  removePromptRegion: (id: string) => void;
+  clearPromptRegions: () => void;
+  undoPromptRegion: () => void;
+  redoPromptRegion: () => void;
   setInpaintMaskImage: (dataUrl: string | null) => void;
   setControlNetEnabled: (enabled: boolean) => void;
   setControlNetType: (type: string) => void;
@@ -158,6 +179,9 @@ export const useGenerationStore = create<GenerationState>()(
   referenceImage: null,
   referenceImageName: '',
   extraReferenceImages: [],
+  promptRegions: [],
+  promptRegionHistory: [],
+  promptRegionFuture: [],
   inpaintMaskImage: null,
   controlNetEnabled: false,
   controlNetType: 'canny',
@@ -242,6 +266,20 @@ export const useGenerationStore = create<GenerationState>()(
           decodeOverlap: 6,
         };
       }
+      if (lower === 'ideogram4' || lower === 'ideogram') {
+        return {
+          ...state,
+          preset,
+          width: 512,
+          height: 512,
+          steps: 4,
+          cfg: 1,
+          sampler: 'euler',
+          scheduler: 'simple',
+          latentUpscaleEnabled: false,
+          distilledLoraEnabled: false,
+        };
+      }
       return { preset };
     }),
   setWorkflow: (workflowId, workflowName) => set({ workflowId, workflowName }),
@@ -266,6 +304,57 @@ export const useGenerationStore = create<GenerationState>()(
   addExtraReferenceImages: (images) => set((state) => ({ extraReferenceImages: [...state.extraReferenceImages, ...images].slice(0, 6) })),
   removeExtraReferenceImage: (index) => set((state) => ({ extraReferenceImages: state.extraReferenceImages.filter((_, itemIndex) => itemIndex !== index) })),
   clearExtraReferenceImages: () => set({ extraReferenceImages: [] }),
+  addPromptRegion: (region = {}) => set((state) => ({
+    promptRegionHistory: [...state.promptRegionHistory, state.promptRegions].slice(-40),
+    promptRegionFuture: [],
+    promptRegions: [
+      ...state.promptRegions,
+      {
+        id: region.id || `region-${Date.now()}-${Math.round(Math.random() * 10000)}`,
+        type: region.type || 'obj',
+        x: region.x ?? 0.18,
+        y: region.y ?? 0.18,
+        w: region.w ?? 0.34,
+        h: region.h ?? 0.3,
+        prompt: region.prompt || '',
+        text: region.text || '',
+        colors: region.colors || [],
+      },
+    ].slice(0, 24),
+  })),
+  updatePromptRegion: (id, updates) => set((state) => ({
+    promptRegionHistory: [...state.promptRegionHistory, state.promptRegions].slice(-40),
+    promptRegionFuture: [],
+    promptRegions: state.promptRegions.map((region) => (region.id === id ? { ...region, ...updates } : region)),
+  })),
+  removePromptRegion: (id) => set((state) => ({
+    promptRegionHistory: [...state.promptRegionHistory, state.promptRegions].slice(-40),
+    promptRegionFuture: [],
+    promptRegions: state.promptRegions.filter((region) => region.id !== id),
+  })),
+  clearPromptRegions: () => set((state) => ({
+    promptRegionHistory: [...state.promptRegionHistory, state.promptRegions].slice(-40),
+    promptRegionFuture: [],
+    promptRegions: [],
+  })),
+  undoPromptRegion: () => set((state) => {
+    const previous = state.promptRegionHistory.at(-1);
+    if (!previous) return {};
+    return {
+      promptRegions: previous,
+      promptRegionHistory: state.promptRegionHistory.slice(0, -1),
+      promptRegionFuture: [state.promptRegions, ...state.promptRegionFuture].slice(0, 40),
+    };
+  }),
+  redoPromptRegion: () => set((state) => {
+    const next = state.promptRegionFuture[0];
+    if (!next) return {};
+    return {
+      promptRegions: next,
+      promptRegionHistory: [...state.promptRegionHistory, state.promptRegions].slice(-40),
+      promptRegionFuture: state.promptRegionFuture.slice(1),
+    };
+  }),
   setInpaintMaskImage: (inpaintMaskImage) => set({ inpaintMaskImage }),
   setControlNetEnabled: (controlNetEnabled) => set({ controlNetEnabled }),
   setControlNetType: (controlNetType) => set({ controlNetType }),
@@ -322,6 +411,7 @@ export const useGenerationStore = create<GenerationState>()(
         differentialStrength: state.differentialStrength,
         lanpaintThinkingSteps: state.lanpaintThinkingSteps,
         brushSize: state.brushSize,
+        promptRegions: state.promptRegions,
         controlNetEnabled: state.controlNetEnabled,
         controlNetType: state.controlNetType,
         controlNetModel: state.controlNetModel,

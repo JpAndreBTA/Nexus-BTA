@@ -138,6 +138,38 @@ export interface NvidiaExtrasStatus {
   notes?: string;
 }
 
+export interface TemplateAssetStatusItem {
+  key: string;
+  label: string;
+  filename: string;
+  url?: string;
+  kind?: string;
+  scope?: string;
+  destination?: string;
+  path?: string;
+  installed: boolean;
+  size_bytes_min?: number;
+  size_bytes?: number;
+}
+
+export interface Ideogram4AssetsStatus {
+  template: 'Ideogram4' | string;
+  label: string;
+  installed: boolean;
+  generation_ready: boolean;
+  dependencies_installed: boolean;
+  assets: TemplateAssetStatusItem[];
+  missing_assets: TemplateAssetStatusItem[];
+  missing_required_assets: TemplateAssetStatusItem[];
+  missing_optional_assets: TemplateAssetStatusItem[];
+  missing_custom_node_dependencies?: string[];
+  missing_core_nodes?: string[];
+  runtime_checked?: boolean;
+  estimated_missing_required_bytes?: number;
+  estimated_missing_optional_bytes?: number;
+  note?: string;
+}
+
 export interface GalleryItem {
   title: string;
   filename: string;

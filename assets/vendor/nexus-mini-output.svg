@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220" role="img" aria-label="Nexus local preview">
+  <rect width="320" height="220" fill="#0b0b0d"/>
+  <path d="M0 168 74 96l44 38 56-68 146 128v26H0z" fill="#24242a"/>
+  <path d="M0 184 82 116l48 38 45-46 145 104v8H0z" fill="#34343c"/>
+  <circle cx="238" cy="58" r="22" fill="#ef4444"/>
+  <path d="M42 42h92v8H42zm0 18h144v7H42zm0 17h114v7H42z" fill="#8b8b96"/>
+</svg>
