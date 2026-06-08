@@ -67,6 +67,7 @@ from .workflows import (
     WorkflowRegistry,
     build_basic_anima_workflow,
     build_basic_flux_workflow,
+    build_basic_ideogram4_workflow,
     build_basic_ltx_img2video_workflow,
     build_basic_qwen_image_workflow,
     build_basic_sd_workflow,
@@ -208,6 +209,62 @@ WAN22_HF_ARTIFACTS: dict[str, dict[str, Any]] = {
         "scope": "base_model",
     },
 }
+
+IDEOGRAM4_HF_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "checkpoint": {
+        "label": "Ideogram 4 FP8 model",
+        "filename": "ideogram4_fp8_scaled.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Ideogram-4/resolve/main/diffusion_models/ideogram4_fp8_scaled.safetensors?download=true",
+        "target": ("diffusion_models", "ideogram4", "ideogram4_fp8_scaled.safetensors"),
+        "min_bytes": 8 * 1024 * 1024 * 1024,
+        "kind": "checkpoint",
+        "scope": "model",
+    },
+    "unconditional_checkpoint": {
+        "label": "Ideogram 4 unconditional FP8 model",
+        "filename": "ideogram4_unconditional_fp8_scaled.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Ideogram-4/resolve/main/diffusion_models/ideogram4_unconditional_fp8_scaled.safetensors?download=true",
+        "target": ("diffusion_models", "ideogram4", "ideogram4_unconditional_fp8_scaled.safetensors"),
+        "min_bytes": 8 * 1024 * 1024 * 1024,
+        "kind": "checkpoint",
+        "scope": "model",
+    },
+    "qwen3vl": {
+        "label": "Ideogram 4 Qwen3-VL text encoder",
+        "filename": "qwen3vl_8b_fp8_scaled.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Qwen3-VL/resolve/main/text_encoders/qwen3vl_8b_fp8_scaled.safetensors?download=true",
+        "target": ("text_encoders", "qwen3vl_8b_fp8_scaled.safetensors"),
+        "min_bytes": 9 * 1024 * 1024 * 1024,
+        "kind": "text_encoder",
+        "scope": "text_encoder",
+    },
+    "vae": {
+        "label": "Flux2 VAE for Ideogram 4",
+        "filename": "flux2-vae.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors?download=true",
+        "target": ("vae", "flux2-vae.safetensors"),
+        "min_bytes": 300 * 1024 * 1024,
+        "kind": "vae",
+        "scope": "vae",
+    },
+    "gemma4": {
+        "label": "Gemma 4 prompt helper encoder",
+        "filename": "gemma4_e4b_it_fp8_scaled.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/gemma-4/resolve/main/text_encoders/gemma4_e4b_it_fp8_scaled.safetensors?download=true",
+        "target": ("text_encoders", "gemma4_e4b_it_fp8_scaled.safetensors"),
+        "min_bytes": 8 * 1024 * 1024 * 1024,
+        "kind": "text_encoder",
+        "scope": "optional_prompt_helper",
+    },
+}
+
+IDEOGRAM4_REQUIRED_COMFY_NODES = (
+    "ModelSamplingAuraFlow",
+    "BasicScheduler",
+    "ExtendIntermediateSigmas",
+    "CFGOverride",
+    "DualModelGuider",
+)
 
 WAN_MOTION_CAPTURE_CUSTOM_NODES: dict[str, dict[str, str]] = {
     "wan_animate_preprocess": {
@@ -6197,6 +6254,166 @@ def _download_url_to_file(url: str, target: Path, job_id: str) -> dict[str, Any]
     }
 
 
+def _ideogram4_artifact_target(key: str) -> Path:
+    artifact = IDEOGRAM4_HF_ARTIFACTS[key]
+    parts = [str(part) for part in artifact["target"]]
+    return settings.models_dir.joinpath(*parts)
+
+
+def _ideogram4_artifact_status(key: str) -> dict[str, Any]:
+    artifact = IDEOGRAM4_HF_ARTIFACTS[key]
+    target = _ideogram4_artifact_target(key)
+    min_bytes = int(artifact.get("min_bytes") or 1024 * 1024)
+    installed = target.exists() and target.stat().st_size >= min_bytes
+    return {
+        "key": key,
+        "label": artifact["label"],
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "kind": artifact.get("kind") or "model",
+        "scope": artifact.get("scope") or "dependency",
+        "destination": str(target),
+        "path": str(target) if installed else "",
+        "installed": bool(installed),
+        "size_bytes_min": min_bytes,
+        "size_bytes": target.stat().st_size if target.exists() else min_bytes,
+    }
+
+
+def _ideogram4_missing_core_support(object_info: dict[str, Any] | None) -> list[str]:
+    registry = object_info or {}
+    missing = [name for name in IDEOGRAM4_REQUIRED_COMFY_NODES if name not in registry]
+    clip_info = registry.get("CLIPLoader") or {}
+    clip_type_options = (
+        ((clip_info.get("input") or {}).get("required") or {}).get("type") or [[], {}]
+    )
+    try:
+        clip_types = set(str(item) for item in (clip_type_options[0] or []))
+    except (TypeError, IndexError):
+        clip_types = set()
+    if "ideogram4" not in clip_types:
+        missing.append("CLIPLoader type ideogram4")
+    return missing
+
+
+async def _ideogram4_status_snapshot() -> dict[str, Any]:
+    assets = [_ideogram4_artifact_status(key) for key in IDEOGRAM4_HF_ARTIFACTS]
+    required_keys = {"checkpoint", "unconditional_checkpoint", "qwen3vl", "vae"}
+    missing_required = [item for item in assets if item["key"] in required_keys and not item["installed"]]
+    missing_optional = [item for item in assets if item["key"] not in required_keys and not item["installed"]]
+    dependency_status = custom_node_dependency_status(settings)
+    relevant_nodes = {
+        name: status
+        for name, status in dependency_status.items()
+        if name.lower() in {"comfyui-kjnodes", "rgthree-comfy", "res4lyf", "comfymath"}
+    }
+    missing_node_dependencies = [name for name, status in relevant_nodes.items() if not status.get("installed")]
+    runtime_checked = await comfy.is_running()
+    missing_core_nodes: list[str] = []
+    if runtime_checked:
+        try:
+            missing_core_nodes = _ideogram4_missing_core_support(await comfy.object_info())
+        except Exception as exc:
+            missing_core_nodes = [f"Comfy object_info unavailable: {exc}"]
+    return {
+        "template": "Ideogram4",
+        "label": "Ideogram 4",
+        "installed": not missing_required,
+        "generation_ready": not missing_required and not missing_core_nodes,
+        "dependencies_installed": not missing_required and not missing_node_dependencies and not missing_core_nodes,
+        "assets": assets,
+        "missing_assets": missing_required + missing_optional,
+        "missing_required_assets": missing_required,
+        "missing_optional_assets": missing_optional,
+        "custom_node_dependencies": relevant_nodes,
+        "missing_custom_node_dependencies": missing_node_dependencies,
+        "runtime_checked": runtime_checked,
+        "missing_core_nodes": missing_core_nodes,
+        "models_dir": str(settings.models_dir),
+        "estimated_missing_required_bytes": sum(int(item.get("size_bytes_min") or 0) for item in missing_required),
+        "estimated_missing_optional_bytes": sum(int(item.get("size_bytes_min") or 0) for item in missing_optional),
+        "restart_recommended": bool(missing_core_nodes),
+        "note": "Ideogram 4 downloads are optional for new users. Generation requires the main FP8 model, unconditional FP8 model, Qwen3-VL text encoder and Flux2 VAE. Gemma 4 is optional for prompt-helper workflows.",
+    }
+
+
+async def _run_ideogram4_assets_download_job(job_id: str, keys: list[str] | None = None, install_node_dependencies: bool = False) -> None:
+    try:
+        selected_keys = [key for key in (keys or []) if key in IDEOGRAM4_HF_ARTIFACTS]
+        if not selected_keys:
+            selected_keys = [item["key"] for item in (await _ideogram4_status_snapshot())["missing_required_assets"]]
+        if not selected_keys and not install_node_dependencies:
+            raise ValueError("No valid Ideogram 4 dependency assets selected.")
+        completed: list[dict[str, Any]] = []
+        total = max(1, len(selected_keys) + (1 if install_node_dependencies else 0))
+        step = 0
+        for key in selected_keys:
+            step += 1
+            status = _ideogram4_artifact_status(key)
+            if status["installed"]:
+                completed.append({**status, "already_downloaded": True})
+                _update_download_job(job_id, {"message": f"Ideogram 4 asset already present: {status['filename']}", "progress": round((step / total) * 100, 2)})
+                continue
+            artifact = IDEOGRAM4_HF_ARTIFACTS[key]
+            target = _ideogram4_artifact_target(key)
+            _update_download_job(job_id, {"status": "downloading", "message": f"Downloading {artifact['label']}: {artifact['filename']}"})
+            result = await asyncio.to_thread(_download_url_to_file, str(artifact["url"]), target, job_id)
+            completed.append({**result, "key": key, "label": artifact["label"]})
+        dependency_errors: dict[str, str] = {}
+        dependencies_installed: list[str] = []
+        if install_node_dependencies:
+            step += 1
+            _update_download_job(job_id, {"message": "Installing Ideogram 4 custom-node Python dependencies.", "progress": round((step / total) * 100, 2)})
+            dependencies_installed, dependency_errors = await asyncio.to_thread(
+                install_custom_node_dependencies,
+                settings,
+                ["ComfyUI-KJNodes", "rgthree-comfy", "RES4LYF", "ComfyMath"],
+                False,
+            )
+        ensure_model_tree(settings)
+        _update_download_job(
+            job_id,
+            {
+                "status": "downloaded",
+                "progress": 100,
+                "message": "Ideogram 4 selected dependencies ready.",
+                "assets": completed,
+                "dependencies_installed": dependencies_installed,
+                "dependency_errors": dependency_errors,
+                "status_snapshot": await _ideogram4_status_snapshot(),
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
+            },
+        )
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/ideogram4/assets/status")
+async def ideogram4_assets_status() -> dict[str, Any]:
+    return await _ideogram4_status_snapshot()
+
+
+@app.post("/api/ideogram4/assets/download/start")
+async def ideogram4_assets_download_start(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = payload or {}
+    raw_keys = payload.get("assets")
+    selected_keys = [str(item).strip() for item in raw_keys] if isinstance(raw_keys, list) else None
+    install_node_dependencies = bool(payload.get("install_node_dependencies"))
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "kind": "ideogram4_assets",
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued Ideogram 4 optional dependency download.",
+        "assets": selected_keys or [],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ideogram4_assets_download_job(job_id, selected_keys, install_node_dependencies))
+    return download_jobs[job_id]
+
+
 def _nvidia_pid_dir() -> Path:
     return settings.custom_nodes_dir / "ComfyUI-PiD" / "vendor" / "PiD"
 
@@ -8531,6 +8748,24 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 missing_zimage_assets.append("ae.safetensors")
             if missing_zimage_assets:
                 raise ValueError("Z-Image Turbo missing required assets: " + ", ".join(missing_zimage_assets) + ".")
+        if request.preset.lower() in {"ideogram4", "ideogram"}:
+            missing_ideogram_assets: list[str] = []
+            if not assets.get("primary_model"):
+                missing_ideogram_assets.append("ideogram4_fp8_scaled.safetensors")
+            if not assets.get("ideogram4_unconditional_model"):
+                missing_ideogram_assets.append("ideogram4_unconditional_fp8_scaled.safetensors")
+            if Path(str(assets.get("text_encoder") or "")).name.lower() != "qwen3vl_8b_fp8_scaled.safetensors":
+                missing_ideogram_assets.append("qwen3vl_8b_fp8_scaled.safetensors")
+            if Path(str(assets.get("vae") or "")).name.lower() != "flux2-vae.safetensors":
+                missing_ideogram_assets.append("flux2-vae.safetensors")
+            if missing_ideogram_assets:
+                raise ValueError("Ideogram 4 missing required assets: " + ", ".join(missing_ideogram_assets) + ".")
+            img2img_mode = str(getattr(request.img2img, "mode", "") or "").strip().lower()
+            if "inpaint" in img2img_mode:
+                raise ValueError(
+                    "Ideogram 4 local Comfy route does not support true mask inpaint yet. "
+                    "Use Linear Viewer ADD boxes as regional JSON guides."
+                )
         _apply_inpaint_intent_prompt(request)
         reference_image_names = _prepare_reference_images(request)
         ltx_director_frame_guides: list[dict[str, Any]] = []
@@ -8658,6 +8893,14 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 missing = ", ".join(node_status["missing"][:8])
                 print(f"NEXUS BTA WARN Model 3D required custom nodes missing: {missing}", flush=True)
                 raise ValueError(f"Model 3D required custom nodes are missing: {missing}. Install Model 3D workflow requirements or open update.bat.")
+        if request.preset.lower() in {"ideogram4", "ideogram"}:
+            missing_ideogram_core = _ideogram4_missing_core_support(object_info)
+            if missing_ideogram_core:
+                missing = ", ".join(missing_ideogram_core[:8])
+                raise ValueError(
+                    "Ideogram 4 requires a newer ComfyUI core with official Day-0 Ideogram nodes. "
+                    f"Missing runtime support: {missing}. Update the embedded ComfyUI runtime, then restart Nexus."
+                )
         director_segment_response = await _run_ltx_director_segment_render(request, assets, object_info, job_id=job_id)
         if director_segment_response:
             _cleanup_generation_temp()
@@ -8941,6 +9184,27 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     controlnet_name=assets.get("controlnet_model"),
                     controlnet_image_name=assets.get("controlnet_image"),
                     controlnet_category=assets.get("controlnet_category"),
+                )
+            elif request.preset.lower() in {"ideogram4", "ideogram"}:
+                checkpoint_name = assets.get("primary_model") or ""
+                unconditional_name = assets.get("ideogram4_unconditional_model") or ""
+                text_encoder_name = assets.get("text_encoder")
+                vae_name = assets.get("vae")
+                if not checkpoint_name:
+                    raise ValueError("Ideogram 4 requires ideogram4_fp8_scaled.safetensors in models/diffusion_models/ideogram4.")
+                if not unconditional_name:
+                    raise ValueError("Ideogram 4 requires ideogram4_unconditional_fp8_scaled.safetensors in models/diffusion_models/ideogram4.")
+                if not text_encoder_name:
+                    raise ValueError("Ideogram 4 requires qwen3vl_8b_fp8_scaled.safetensors in models/text_encoders.")
+                if not vae_name:
+                    raise ValueError("Ideogram 4 requires flux2-vae.safetensors in models/vae.")
+                prompt = build_basic_ideogram4_workflow(
+                    request,
+                    checkpoint_name,
+                    unconditional_name,
+                    text_encoder_name,
+                    vae_name,
+                    reference_image_name=reference_image_name if request.activity == "img2img" else None,
                 )
             elif request.preset.lower() == "flux":
                 clip_l_name = assets.get("flux_clip_l")

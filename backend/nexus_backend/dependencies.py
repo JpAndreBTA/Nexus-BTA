@@ -71,27 +71,44 @@ def _normalize_package_name(value: str) -> str:
     return value.lower().replace("_", "-")
 
 
-def _installed_requirement(package: str) -> bool:
+def _requirement_version_ok(package: str, installed_version: str) -> bool:
+    normalized = _normalize_package_name(package)
+    floor = _REQUIREMENT_VERSION_FLOORS.get(normalized)
+    if floor:
+        floor_package = _requirement_package_name(floor)
+        if floor_package and _normalize_package_name(floor_package) == normalized:
+            exact_match = re.search(r"==\s*([A-Za-z0-9_.!+-]+)", floor)
+            floor_match = re.search(r">=\s*([A-Za-z0-9_.!+-]+)", floor)
+            ceiling_match = re.search(r"<\s*([A-Za-z0-9_.!+-]+)", floor)
+            if exact_match and Version(installed_version) != Version(exact_match.group(1)):
+                return False
+            if floor_match and Version(installed_version) < Version(floor_match.group(1)):
+                return False
+            if ceiling_match and Version(installed_version) >= Version(ceiling_match.group(1)):
+                return False
+    return True
+
+
+def _installed_requirement(package: str, installed_versions: dict[str, str] | None = None) -> bool:
     normalized = _normalize_package_name(package)
     if normalized in _OPTIONAL_REQUIREMENT_SKIPS:
         return True
-    floor = _REQUIREMENT_VERSION_FLOORS.get(normalized)
+    if installed_versions is not None:
+        for candidate in dict.fromkeys((package, normalized)):
+            version = installed_versions.get(_normalize_package_name(candidate))
+            if version and _requirement_version_ok(package, version):
+                return True
+        fallback = _OPTIONAL_REQUIREMENT_FALLBACKS.get(normalized)
+        fallback_package = _requirement_package_name(fallback or "")
+        if fallback_package:
+            version = installed_versions.get(_normalize_package_name(fallback_package))
+            return bool(version)
+        return False
     for candidate in dict.fromkeys((package, normalized)):
         try:
             installed_version = metadata.version(candidate)
-            if floor:
-                floor_package = _requirement_package_name(floor)
-                if floor_package and _normalize_package_name(floor_package) == normalized:
-                    exact_match = re.search(r"==\s*([A-Za-z0-9_.!+-]+)", floor)
-                    floor_match = re.search(r">=\s*([A-Za-z0-9_.!+-]+)", floor)
-                    ceiling_match = re.search(r"<\s*([A-Za-z0-9_.!+-]+)", floor)
-                    if exact_match and Version(installed_version) != Version(exact_match.group(1)):
-                        return False
-                    if floor_match and Version(installed_version) < Version(floor_match.group(1)):
-                        return False
-                    if ceiling_match and Version(installed_version) >= Version(ceiling_match.group(1)):
-                        return False
-            return True
+            if _requirement_version_ok(package, installed_version):
+                return True
         except metadata.PackageNotFoundError:
             pass
     fallback = _OPTIONAL_REQUIREMENT_FALLBACKS.get(normalized)
@@ -105,6 +122,30 @@ def _installed_requirement(package: str) -> bool:
         return True
     except metadata.PackageNotFoundError:
         return False
+
+
+def _runtime_installed_versions(settings: NexusSettings) -> dict[str, str] | None:
+    python_exe = runtime_python(settings)
+    if not python_exe.exists():
+        return None
+    script = (
+        "import json, importlib.metadata as m\n"
+        "print(json.dumps({d.metadata.get('Name', d.name).lower().replace('_','-'): d.version for d in m.distributions()}))\n"
+    )
+    try:
+        result = subprocess.run(
+            [str(python_exe), "-c", script],
+            cwd=str(settings.project_root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout or "{}")
+        return {str(key): str(value) for key, value in data.items()}
+    except Exception:
+        return None
 
 
 def _sanitized_requirements_file(requirements_path: Path, temp_dir: Path) -> Path:
@@ -136,6 +177,7 @@ def _sanitized_requirements_file(requirements_path: Path, temp_dir: Path) -> Pat
 
 def custom_node_dependency_status(settings: NexusSettings) -> dict[str, dict[str, Any]]:
     status: dict[str, dict[str, Any]] = {}
+    runtime_versions = _runtime_installed_versions(settings)
     for name, path in custom_node_requirements(settings).items():
         missing: list[str] = []
         packages: list[str] = []
@@ -151,7 +193,7 @@ def custom_node_dependency_status(settings: NexusSettings) -> dict[str, dict[str
             if _normalize_package_name(package) in _OPTIONAL_REQUIREMENT_SKIPS:
                 continue
             packages.append(package)
-            if not _installed_requirement(package):
+            if not _installed_requirement(package, runtime_versions):
                 missing.append(package)
         status[name] = {
             "path": str(path),
@@ -170,6 +212,12 @@ def install_custom_node_dependencies(
     requested_targets = list(node_names or [])
     cloned: list[str] = []
     clone_errors: dict[str, str] = {}
+    if any(str(target).lower() in {"comfyui-kjnodes", "kjnodes"} for target in requested_targets):
+        name, error = ensure_kjnodes_updated(settings)
+        if error:
+            clone_errors["ComfyUI-KJNodes"] = error
+        elif name:
+            cloned.append(name)
     for target in requested_targets:
         if not str(target).lower().startswith(("http://", "https://", "git@")):
             continue
@@ -210,6 +258,53 @@ def install_custom_node_dependencies(
             except Exception as exc:
                 errors[name] = str(exc)
     return installed, errors
+
+
+def ensure_kjnodes_updated(settings: NexusSettings) -> tuple[str | None, str | None]:
+    settings.custom_nodes_dir.mkdir(parents=True, exist_ok=True)
+    candidates = [
+        path for path in settings.custom_nodes_dir.iterdir()
+        if path.is_dir() and _normalize_name(path.name) in {"comfyuikjnodes", "comfyuikjnode", "kjnodes"}
+    ]
+    target = candidates[0] if candidates else settings.custom_nodes_dir / "comfyui-kjnodes"
+    repo = "https://github.com/kijai/ComfyUI-KJNodes.git"
+    if target.exists() and (target / ".git").exists():
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(target), "pull", "--ff-only"],
+                cwd=str(settings.custom_nodes_dir),
+                capture_output=True,
+                text=True,
+                timeout=900,
+            )
+            if result.returncode != 0:
+                return None, (result.stderr or result.stdout or "git pull failed").strip()[-2000:]
+            return target.name, None
+        except Exception as exc:
+            return None, str(exc)
+    if target.exists() and not (target / ".git").exists():
+        backup = target.with_name(f"{target.name}_backup_pre_kj_update")
+        suffix = 1
+        while backup.exists():
+            backup = target.with_name(f"{target.name}_backup_pre_kj_update_{suffix}")
+            suffix += 1
+        try:
+            target.rename(backup)
+        except Exception as exc:
+            return None, f"Could not backup old KJNodes folder {target}: {exc}"
+    try:
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", repo, str(target)],
+            cwd=str(settings.custom_nodes_dir),
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        if result.returncode != 0:
+            return None, (result.stderr or result.stdout or "git clone failed").strip()[-2000:]
+        return target.name, None
+    except Exception as exc:
+        return None, str(exc)
 
 
 def _clone_custom_node_repo(settings: NexusSettings, repo: str) -> tuple[str | None, str | None]:

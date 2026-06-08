@@ -121,6 +121,7 @@
         .dots-bg { background-color: var(--nexus-canvas) !important; }
         .modal-surface,
         #templateToolsPanel,
+        #workflowToolsPanel,
         #languageMenu,
         #donateMenu { background-color: var(--nexus-modal) !important; }
 
@@ -1719,6 +1720,122 @@
             display: none !important;
         }
 
+        .ideogram-region-panel {
+            position: absolute;
+            left: 12px;
+            bottom: 12px;
+            z-index: 18;
+            width: min(420px, calc(100vw - 96px));
+            max-height: 42vh;
+            overflow: auto;
+            background: rgba(15, 15, 17, 0.94);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 4px;
+            padding: 10px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+        }
+
+        .ideogram-region-toolbar {
+            position: absolute;
+            left: -46px;
+            top: 0;
+            z-index: 18;
+            display: flex;
+            flex-direction: column;
+            flex-wrap: wrap;
+            gap: 6px;
+            max-width: 40px;
+            background: rgba(15, 15, 17, 0.90);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 4px;
+            padding: 6px;
+            backdrop-filter: blur(10px);
+        }
+
+        .ideogram-region-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 16;
+            pointer-events: auto;
+        }
+
+        .ideogram-region-box {
+            position: absolute;
+            min-width: 36px;
+            min-height: 36px;
+            border: 2px solid #3b82f6;
+            background: rgba(59, 130, 246, 0.12);
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45);
+            cursor: move;
+            pointer-events: auto;
+        }
+
+        .ideogram-region-box[data-type="text"] {
+            border-color: #f97316;
+            background: rgba(249, 115, 22, 0.13);
+        }
+
+        .ideogram-region-box.is-active {
+            outline: 2px solid rgba(255, 255, 255, 0.85);
+            outline-offset: 2px;
+        }
+
+        .ideogram-region-chip {
+            position: absolute;
+            left: 4px;
+            top: 4px;
+            bottom: 4px;
+            right: 28px;
+            max-width: none;
+            overflow: hidden;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            background: rgba(0, 0, 0, 0.76);
+            color: #fff;
+            font: 700 8px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace;
+            padding: 3px 5px;
+            text-transform: uppercase;
+        }
+
+        .ideogram-region-close {
+            position: absolute;
+            right: 4px;
+            top: 4px;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.78);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            color: rgba(255, 255, 255, 0.75);
+            border-radius: 3px;
+        }
+
+        .ideogram-region-close:hover {
+            color: #ff3b3b;
+            border-color: rgba(255, 59, 59, 0.8);
+        }
+
+        .ideogram-region-handle {
+            position: absolute;
+            right: -5px;
+            bottom: -5px;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #fff;
+            background: #3b82f6;
+            cursor: nwse-resize;
+        }
+
+        .ideogram-region-box[data-type="text"] .ideogram-region-handle {
+            background: #f97316;
+        }
+
         body.model3d-template #referenceImagePanel {
             display: none !important;
         }
@@ -2471,6 +2588,7 @@
                 <button data-preset="Wan" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Wan')">WAN</button>
                 <button data-preset="LTX" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'LTX')">LTX 2.3</button>
                 <button data-preset="Anima" class="preset-btn active px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white bg-nexus-red rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Anima')">ANIMA</button>
+                <button data-preset="Ideogram4" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Ideogram4')">IDEOGRAM 4</button>
                 <button data-preset="Model3D" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Model3D')">3D MODEL</button>
             </div>
 
@@ -2512,14 +2630,17 @@
                 <i class="fa-solid fa-cloud-arrow-down text-nexus-red"></i>
                 <span class="hidden 2xl:inline text-[10px]">Civitai</span>
             </button>
-            <button onclick="openWorkflowPicker()" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Load ComfyUI workflow">
-                <i class="fa-solid fa-folder-open text-nexus-red"></i>
-                <span class="hidden 2xl:inline text-[10px]">Load Workflow</span>
-            </button>
-            <button onclick="saveActiveWorkflow()" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Save active Nexus workflow">
-                <i class="fa-solid fa-floppy-disk text-nexus-red"></i>
-                <span class="hidden 2xl:inline text-[10px]">Save Workflow</span>
-            </button>
+            <div class="relative" id="workflowToolsDropdown">
+                <button id="workflowToolsButton" type="button" onclick="toggleWorkflowTools(event)" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Workflow actions">
+                    <i class="fa-solid fa-diagram-project text-nexus-red"></i>
+                    <span class="hidden 2xl:inline text-[10px]">Workflow</span>
+                    <i class="fa-solid fa-chevron-down text-[8px]"></i>
+                </button>
+                <div id="workflowToolsPanel" class="hidden absolute right-0 top-full mt-2 w-48 z-50 border border-nexus-border bg-nexus-panel shadow-2xl rounded-sm p-1.5 space-y-1">
+                    <button type="button" onclick="closeWorkflowTools();openWorkflowPicker()" class="w-full flat-button h-9 px-3 text-[10px] font-bold uppercase flex items-center gap-2 justify-start" title="Load ComfyUI workflow"><i class="fa-solid fa-folder-open text-nexus-red w-4"></i><span>Load Workflow</span></button>
+                    <button type="button" onclick="closeWorkflowTools();saveActiveWorkflow()" class="w-full flat-button h-9 px-3 text-[10px] font-bold uppercase flex items-center gap-2 justify-start" title="Save active Nexus workflow"><i class="fa-solid fa-floppy-disk text-nexus-red w-4"></i><span>Save Workflow</span></button>
+                </div>
+            </div>
             <div class="relative" id="languageSelector">
                 <button onclick="toggleLanguageMenu(event)" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Translate page">
                     <i class="fa-solid fa-language text-nexus-red"></i>
@@ -3765,6 +3886,35 @@
                         </div>
                         <img id="mainImageDisplay" src="" alt="Generated Output" class="hidden max-w-full max-h-[75vh] object-contain border border-nexus-border shadow-xl">
                         <video id="mainVideoDisplay" src="" controls loop class="hidden max-w-full max-h-[75vh] object-contain border border-nexus-border shadow-xl"></video>
+                        <div id="ideogramRegionLayer" class="ideogram-region-layer hidden" onpointerdown="beginIdeogramRegionCanvasPointer(event)"></div>
+                        <div id="ideogramRegionToolbar" class="ideogram-region-toolbar hidden">
+                            <button id="ideogramSelectToolBtn" type="button" onclick="setIdeogramRegionTool('select')" class="flat-button h-8 w-8 text-[10px]" title="Select / move boxes"><i class="fa-solid fa-hand"></i></button>
+                            <button id="ideogramObjToolBtn" type="button" onclick="setIdeogramRegionTool('obj')" class="flat-button h-8 w-8 text-[10px]" title="ADD object box: click and drag on canvas"><i class="fa-solid fa-vector-square"></i></button>
+                            <button id="ideogramTextToolBtn" type="button" onclick="setIdeogramRegionTool('text')" class="flat-button h-8 w-8 text-[10px]" title="ADD text box: click and drag on canvas"><i class="fa-solid fa-font"></i></button>
+                            <button id="ideogramLayerDownBtn" type="button" onclick="moveIdeogramActiveRegionLayer(-1)" class="flat-button h-8 w-8 text-[10px]" title="Send active box backward"><i class="fa-solid fa-arrow-down"></i></button>
+                            <button id="ideogramLayerUpBtn" type="button" onclick="moveIdeogramActiveRegionLayer(1)" class="flat-button h-8 w-8 text-[10px]" title="Bring active box forward"><i class="fa-solid fa-arrow-up"></i></button>
+                            <button type="button" onclick="closeIdeogramRegionEditor()" class="flat-button h-8 w-8 text-[10px]" title="Close region editor"><i class="fa-solid fa-eye-slash"></i></button>
+                            <button id="ideogramUndoBtn" type="button" onclick="undoIdeogramRegion()" class="flat-button h-7 w-7 text-[9px]" title="Undo region edit"><i class="fa-solid fa-rotate-left"></i></button>
+                            <button id="ideogramRedoBtn" type="button" onclick="redoIdeogramRegion()" class="flat-button h-7 w-7 text-[9px]" title="Redo region edit"><i class="fa-solid fa-rotate-right"></i></button>
+                            <button type="button" onclick="closeIdeogramRegionEditor()" class="flat-button h-7 w-7 text-[9px]" title="Close region editor"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div id="ideogramRegionEditor" class="ideogram-region-panel hidden">
+                            <div class="flex items-center justify-between gap-2 mb-2">
+                                <span id="ideogramRegionTitle" class="text-[10px] font-bold uppercase tracking-wider text-white">Ideogram region guide</span>
+                                <button type="button" onclick="closeIdeogramRegionEditor()" class="h-7 w-7 flex items-center justify-center bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Close region editor"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 mb-2">
+                                <label class="space-y-1"><span class="mini-label">type</span><select id="ideogramRegionType" class="flat-input" onchange="updateIdeogramActiveRegionField('type', this.value)"><option value="obj">obj</option><option value="text">text</option></select></label>
+                                <label class="space-y-1"><span class="mini-label">colors</span><input id="ideogramRegionColor" class="flat-input" value="" placeholder="+ optional" oninput="updateIdeogramActiveRegionField('color', this.value)"></label>
+                            </div>
+                            <textarea id="ideogramRegionPrompt" class="flat-input min-h-24 font-mono text-[11px]" placeholder="description of this region" oninput="updateIdeogramActiveRegionField('prompt', this.value)"></textarea>
+                            <div class="grid grid-cols-4 gap-2 mt-2">
+                                <label class="space-y-1"><span class="mini-label">x%</span><input id="ideogramRegionX" type="number" min="0" max="100" step="1" class="flat-input" oninput="updateIdeogramActiveRegionNumber('x', this.value)"></label>
+                                <label class="space-y-1"><span class="mini-label">y%</span><input id="ideogramRegionY" type="number" min="0" max="100" step="1" class="flat-input" oninput="updateIdeogramActiveRegionNumber('y', this.value)"></label>
+                                <label class="space-y-1"><span class="mini-label">w%</span><input id="ideogramRegionW" type="number" min="4" max="100" step="1" class="flat-input" oninput="updateIdeogramActiveRegionNumber('w', this.value)"></label>
+                                <label class="space-y-1"><span class="mini-label">h%</span><input id="ideogramRegionH" type="number" min="4" max="100" step="1" class="flat-input" oninput="updateIdeogramActiveRegionNumber('h', this.value)"></label>
+                            </div>
+                        </div>
 
                         <!-- Quick Actions Hover Bar -->
                         <div class="absolute left-1/2 bottom-4 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 bg-nexus-panel/90 border border-nexus-border p-1.5 rounded-sm backdrop-blur">
@@ -6153,6 +6303,13 @@
         let referenceBaseVideoDataUrl = '';
         let referenceBaseVideoMeta = { src: '', label: '', width: 0, height: 0, duration: 0 };
         let referenceImageExtraDataUrls = [];
+        let ideogramRegions = nexusSafeStorage.json('nexus_ideogram_regions_v1', []);
+        let ideogramRegionActiveId = nexusSafeStorage.get('nexus_ideogram_region_active_v1', '');
+        let ideogramRegionTool = nexusSafeStorage.get('nexus_ideogram_region_tool_v1', 'select');
+        let ideogramRegionEditorOpen = false;
+        let ideogramRegionUndoStack = [];
+        let ideogramRegionRedoStack = [];
+        let ideogramRegionDrag = null;
         let resizePercentBaseSnapshot = null;
         let resizePercentApplying = false;
         let controlNetImageDataUrl = '';
@@ -6427,6 +6584,7 @@
             Wan: 'WAN 2.2',
             LTX: 'LTX 2.3',
             Anima: 'ANIMA',
+            Ideogram4: 'IDEOGRAM 4',
             Model3D: '3D MODEL'
         };
 
@@ -6703,6 +6861,35 @@
                 distilledRoute: 'Anima can optionally use a Lightning LoRA for preview speed.',
                 summary: 'Anima template tuned for anime concepts, Qwen-style encoder routing, LoRA stacks and 512px smoke checks.',
                 chips: ['ANIMA', 'LoRA', 'VAE Auto', 'Preview'],
+                video: ''
+            },
+            Ideogram4: {
+                template: 'IDEOGRAM4_T2I',
+                type: 'image',
+                folder: './models/diffusion_models/ideogram4',
+                checkpoint: 'ideogram4_fp8_scaled.safetensors',
+                models: ['ideogram4_fp8_scaled.safetensors', 'ideogram4_unconditional_fp8_scaled.safetensors'],
+                width: 512,
+                height: 512,
+                steps: 12,
+                cfg: 1,
+                denoise: 0.45,
+                batchSize: 1,
+                sampler: 'Euler',
+                samplers: ['Euler', 'FlowMatch Euler', 'UniPC'],
+                scheduler: 'Simple',
+                schedulers: ['Simple', 'Normal'],
+                vae: ['flux2-vae.safetensors', 'Automatic', 'None'],
+                encoder: ['qwen3vl_8b_fp8_scaled.safetensors', 'Automatic'],
+                variants: ['Base', 'Regional guide', 'Low VRAM fp8'],
+                precision: ['Auto', 'bf16', 'fp16', 'fp8'],
+                refiners: ['Off'],
+                supportsExtend: false,
+                supportsControlNet: false,
+                distilledLoras: ['None'],
+                distilledRoute: 'Ideogram-4 uses the paired main/unconditional model route with Qwen3VL text encoding and Flux2 VAE. Regional guide boxes are sent as structured prompt regions.',
+                summary: 'Ideogram-4 template for 512px txt2img/img2img layout smoke checks with CFG 1, 12-step Turbo defaults and optional regional prompt boxes.',
+                chips: ['IDEOGRAM 4', 'Qwen3VL', 'Flux2 VAE', 'Regions'],
                 video: ''
             },
             Model3D: {
@@ -7025,6 +7212,7 @@
                 wan: ['wan'],
                 ltx: ['ltx', 'eros', 'sulphur'],
                 anima: ['anima', 'anime', 'pencil', 'cel'],
+                ideogram4: ['ideogram4', 'ideogram-4', 'ideogram 4', 'ideogram'],
                 model3d: ['trellis', '3d', 'glb', 'mesh']
             };
             return (rules[preset] || [preset]).some(token => haystack.includes(token));
@@ -7129,6 +7317,7 @@
                 Flux: [/flux|ae/i],
                 Qwen: [/qwen/i],
                 ZImageTurbo: [/^ae\.safetensors$/i, /z.?image/i, /ae/i],
+                Ideogram4: [/flux2-vae/i, /flux.*2.*vae/i],
                 Anima: [/qwen_3/i, /qwen3/i, /qwen/i],
                 Wan: [/wan_2\.1|wan2_1|wan2\.1/i, /wan/i],
                 XL: [/sdxl|xl/i],
@@ -7144,6 +7333,7 @@
                 Flux: [/t5.*fp8/i, /t5/i],
                 Qwen: [/qwen_2\.5/i, /qwen.*vl/i, /qwen/i],
                 ZImageTurbo: [/qwen_3_4b/i, /qwen.*3.*4b/i, /qwen3/i],
+                Ideogram4: [/qwen3vl/i, /qwen.*3.*vl/i, /qwen/i],
                 Anima: [/qwen/i],
                 Wan: [/umt5/i, /t5/i],
                 XL: [/clip/i],
@@ -7167,7 +7357,10 @@
             if (kind === 'text') {
                 if (presetName === 'Anima' && !/qwen_3|qwen3/i.test(raw)) return preferred || raw;
                 if (presetName === 'ZImageTurbo' && !/qwen_3_4b|qwen3_4b/i.test(raw)) return preferred || raw;
+                if (presetName === 'Ideogram4' && !/qwen3vl|qwen.*3.*vl/i.test(raw)) return preferred || raw;
                 if (presetName === 'LTX' && /projection|proj/i.test(raw)) return preferred || raw;
+            } else if (kind === 'vae' && presetName === 'Ideogram4' && !/flux2-vae|flux.*2.*vae/i.test(raw)) {
+                return preferred || raw;
             }
             const exact = options.find(option => option === raw) || cleanAvailable.find(option => option === raw);
             return exact || preferred || raw;
@@ -9256,8 +9449,9 @@
                 shell.classList.toggle('flex', !!mediaUrl);
             }
             if (clearButton) {
-                clearButton.classList.toggle('hidden', !mediaUrl);
-                clearButton.classList.toggle('flex', !!mediaUrl);
+                const protectIdeogramGuide = ideogramRegionPresetActive();
+                clearButton.classList.toggle('hidden', !mediaUrl || protectIdeogramGuide);
+                clearButton.classList.toggle('flex', !!mediaUrl && !protectIdeogramGuide);
             }
             if (image) {
                 image.classList.toggle('hidden', !mediaUrl || isVideo);
@@ -9281,13 +9475,567 @@
                 renderQwenMultiViewOutput(item);
             }
             applyLinearViewerZoom();
+            requestAnimationFrame(renderIdeogramRegions);
         }
 
         function clearLinearOutput() {
+            if (ideogramRegionPresetActive()) {
+                ensureIdeogramLinearGuideOutput({ force: true });
+                showToast("Ideogram Guide Locked", "The regional guide canvas stays open while Ideogram-4 is active.");
+                return;
+            }
             setLinearOutput(null);
             clearLtxMotionPreprocess({ quiet: true });
             resetLinearViewerZoom();
             showToast("Linear View Cleared", "Current preview was removed from the viewer.");
+        }
+
+        function ideogramRegionPresetActive() {
+            return activePreset === 'Ideogram4' && (currentActivity === 'txt2img' || currentActivity === 'img2img');
+        }
+
+        function normalizeIdeogramRegions(regions = ideogramRegions) {
+            return (Array.isArray(regions) ? regions : [])
+                .map((region, index) => ({
+                    id: String(region?.id || `ig_${Date.now()}_${index}`),
+                    type: String(region?.type || 'obj').toLowerCase() === 'text' ? 'text' : 'obj',
+                    prompt: String(region?.prompt || ''),
+                    color: String(region?.color || ''),
+                    x: Math.max(0, Math.min(96, Number(region?.x ?? (12 + index * 5)) || 0)),
+                    y: Math.max(0, Math.min(96, Number(region?.y ?? (12 + index * 5)) || 0)),
+                    w: Math.max(4, Math.min(100, Number(region?.w ?? 34) || 34)),
+                    h: Math.max(4, Math.min(100, Number(region?.h ?? 34) || 34))
+                }))
+                .map(region => ({
+                    ...region,
+                    w: Math.min(region.w, 100 - region.x),
+                    h: Math.min(region.h, 100 - region.y)
+                }));
+        }
+
+        function persistIdeogramRegions() {
+            ideogramRegions = normalizeIdeogramRegions();
+            nexusSafeStorage.set('nexus_ideogram_regions_v1', JSON.stringify(ideogramRegions));
+            nexusSafeStorage.set('nexus_ideogram_region_active_v1', ideogramRegionActiveId || '');
+        }
+
+        function pushIdeogramRegionHistory() {
+            ideogramRegionUndoStack.push(JSON.stringify(normalizeIdeogramRegions()));
+            if (ideogramRegionUndoStack.length > 60) ideogramRegionUndoStack.shift();
+            ideogramRegionRedoStack = [];
+            updateIdeogramHistoryButtons();
+        }
+
+        function updateIdeogramHistoryButtons() {
+            const undo = document.getElementById('ideogramUndoBtn');
+            const redo = document.getElementById('ideogramRedoBtn');
+            undo?.classList.toggle('opacity-40', ideogramRegionUndoStack.length === 0);
+            redo?.classList.toggle('opacity-40', ideogramRegionRedoStack.length === 0);
+            document.getElementById('ideogramSelectToolBtn')?.classList.toggle('bg-nexus-red', ideogramRegionTool === 'select');
+            document.getElementById('ideogramObjToolBtn')?.classList.toggle('bg-nexus-red', ideogramRegionTool === 'obj');
+            document.getElementById('ideogramTextToolBtn')?.classList.toggle('bg-nexus-red', ideogramRegionTool === 'text');
+            const activeIndex = ideogramRegions.findIndex(region => region.id === ideogramRegionActiveId);
+            const hasActive = activeIndex >= 0;
+            document.getElementById('ideogramLayerDownBtn')?.classList.toggle('opacity-40', !hasActive || activeIndex === 0);
+            document.getElementById('ideogramLayerUpBtn')?.classList.toggle('opacity-40', !hasActive || activeIndex === ideogramRegions.length - 1);
+        }
+
+        function setIdeogramRegionTool(tool = 'select') {
+            ideogramRegionTool = ['select', 'obj', 'text'].includes(tool) ? tool : 'select';
+            nexusSafeStorage.set('nexus_ideogram_region_tool_v1', ideogramRegionTool);
+            ensureIdeogramLinearGuideOutput();
+            updateIdeogramHistoryButtons();
+        }
+
+        function displayedImageRectWithinShell() {
+            const shell = document.getElementById('linearMediaShell');
+            const image = document.getElementById('mainImageDisplay');
+            const video = document.getElementById('mainVideoDisplay');
+            const media = image && !image.classList.contains('hidden') ? image : (video && !video.classList.contains('hidden') ? video : null);
+            if (!shell || !media) return null;
+            const shellRect = shell.getBoundingClientRect();
+            const mediaRect = media.getBoundingClientRect();
+            if (!shellRect.width || !shellRect.height || !mediaRect.width || !mediaRect.height) return null;
+            return {
+                left: mediaRect.left - shellRect.left,
+                top: mediaRect.top - shellRect.top,
+                width: mediaRect.width,
+                height: mediaRect.height
+            };
+        }
+
+        function currentIdeogramRegion() {
+            return ideogramRegions.find(region => region.id === ideogramRegionActiveId) || ideogramRegions[0] || null;
+        }
+
+        function syncIdeogramRegionEditor() {
+            const region = currentIdeogramRegion();
+            const editor = document.getElementById('ideogramRegionEditor');
+            if (!editor) return;
+            const visible = ideogramRegionPresetActive() && !!region && ideogramRegionEditorOpen;
+            editor.classList.toggle('hidden', !visible);
+            if (!visible) return;
+            document.getElementById('ideogramRegionTitle').innerText = `Ideogram region ${ideogramRegions.findIndex(item => item.id === region.id) + 1}`;
+            document.getElementById('ideogramRegionType').value = region.type;
+            document.getElementById('ideogramRegionColor').value = region.color || '';
+            document.getElementById('ideogramRegionPrompt').value = region.prompt || '';
+            document.getElementById('ideogramRegionX').value = String(Math.round(region.x));
+            document.getElementById('ideogramRegionY').value = String(Math.round(region.y));
+            document.getElementById('ideogramRegionW').value = String(Math.round(region.w));
+            document.getElementById('ideogramRegionH').value = String(Math.round(region.h));
+        }
+
+        function syncIdeogramRegionUiVisibility() {
+            const active = ideogramRegionPresetActive();
+            document.getElementById('ideogramRegionToolbar')?.classList.toggle('hidden', !active);
+            document.getElementById('ideogramRegionLayer')?.classList.toggle('hidden', !active);
+            if (!active) document.getElementById('ideogramRegionEditor')?.classList.add('hidden');
+            renderIdeogramRegions();
+        }
+
+        function renderIdeogramRegions() {
+            ideogramRegions = normalizeIdeogramRegions();
+            if (!ideogramRegions.some(region => region.id === ideogramRegionActiveId)) {
+                ideogramRegionActiveId = ideogramRegions[0]?.id || '';
+            }
+            const layer = document.getElementById('ideogramRegionLayer');
+            if (!layer) return;
+            const active = ideogramRegionPresetActive();
+            const rect = active ? displayedImageRectWithinShell() : null;
+            layer.classList.toggle('hidden', !active);
+            if (!active || !rect) {
+                layer.innerHTML = '';
+                syncIdeogramRegionEditor();
+                updateIdeogramHistoryButtons();
+                return;
+            }
+            layer.innerHTML = ideogramRegions.map((region, index) => {
+                const left = rect.left + rect.width * region.x / 100;
+                const top = rect.top + rect.height * region.y / 100;
+                const width = rect.width * region.w / 100;
+                const height = rect.height * region.h / 100;
+                const label = `${String(index + 1).padStart(2, '0')} ${region.prompt || region.type}`;
+                const chipFontSize = Math.max(7, Math.min(9, Math.floor(Math.min(width, height) / 18) + 6));
+                const chipLineClamp = Math.max(1, Math.floor(Math.max(14, height - 14) / Math.max(9, chipFontSize * 1.25)));
+                return `
+                    <div class="ideogram-region-box ${region.id === ideogramRegionActiveId ? 'is-active' : ''}" data-id="${escapeHtml(region.id)}" data-type="${escapeHtml(region.type)}" data-layer="${index}" style="left:${left}px;top:${top}px;width:${width}px;height:${height}px;z-index:${index + 1}" onpointerdown="beginIdeogramRegionDrag(event, '${escapeHtml(region.id)}', 'move')">
+                        <span class="ideogram-region-chip" style="font-size:${chipFontSize}px;-webkit-line-clamp:${chipLineClamp}">${escapeHtml(label)}</span>
+                        <button type="button" class="ideogram-region-close" onpointerdown="event.preventDefault();event.stopPropagation();" onclick="event.preventDefault();event.stopPropagation();removeIdeogramRegion('${escapeHtml(region.id)}')" title="Remove region"><i class="fa-solid fa-xmark text-[9px]"></i></button>
+                        <span class="ideogram-region-handle" onpointerdown="beginIdeogramRegionDrag(event, '${escapeHtml(region.id)}', 'resize-se')"></span>
+                    </div>
+                `;
+            }).join('');
+            syncIdeogramRegionEditor();
+            updateIdeogramHistoryButtons();
+        }
+
+        function addIdeogramRegion(type = 'obj') {
+            ensureIdeogramLinearGuideOutput();
+            pushIdeogramRegionHistory();
+            const index = ideogramRegions.length;
+            const region = {
+                id: `ig_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                type: String(type).toLowerCase() === 'text' ? 'text' : 'obj',
+                prompt: '',
+                color: '',
+                x: Math.min(72, 10 + index * 7),
+                y: Math.min(72, 10 + index * 7),
+                w: type === 'text' ? 38 : 30,
+                h: type === 'text' ? 22 : 36
+            };
+            ideogramRegions.push(region);
+            ideogramRegionActiveId = region.id;
+            ideogramRegionEditorOpen = false;
+            persistIdeogramRegions();
+            renderIdeogramRegions();
+            document.getElementById('ideogramRegionPrompt')?.focus();
+        }
+
+        function beginIdeogramRegionCanvasPointer(event) {
+            if (!ideogramRegionPresetActive() || !['obj', 'text'].includes(ideogramRegionTool)) return;
+            if (event.target !== document.getElementById('ideogramRegionLayer')) return;
+            const rect = displayedImageRectWithinShell();
+            if (!rect) return;
+            const px = ((event.clientX - rect.left - document.getElementById('linearMediaShell').getBoundingClientRect().left) / rect.width) * 100;
+            const py = ((event.clientY - rect.top - document.getElementById('linearMediaShell').getBoundingClientRect().top) / rect.height) * 100;
+            const x = Math.max(0, Math.min(96, px));
+            const y = Math.max(0, Math.min(96, py));
+            event.preventDefault();
+            event.stopPropagation();
+            pushIdeogramRegionHistory();
+            const region = {
+                id: `ig_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                type: ideogramRegionTool,
+                prompt: '',
+                color: '',
+                x,
+                y,
+                w: 4,
+                h: 4
+            };
+            ideogramRegions.push(region);
+            ideogramRegionActiveId = region.id;
+            persistIdeogramRegions();
+            renderIdeogramRegions();
+            ideogramRegionDrag = {
+                id: region.id,
+                mode: 'draw',
+                startX: event.clientX,
+                startY: event.clientY,
+                rect,
+                anchorX: x,
+                anchorY: y,
+                region: { ...region }
+            };
+            window.addEventListener('pointermove', moveIdeogramRegionDrag);
+            window.addEventListener('pointerup', endIdeogramRegionDrag, { once: true });
+        }
+
+        function removeIdeogramRegion(id) {
+            if (!id) return;
+            pushIdeogramRegionHistory();
+            ideogramRegions = ideogramRegions.filter(region => region.id !== id);
+            ideogramRegionActiveId = ideogramRegions[0]?.id || '';
+            persistIdeogramRegions();
+            renderIdeogramRegions();
+        }
+
+        function removeActiveIdeogramRegion() {
+            removeIdeogramRegion(ideogramRegionActiveId);
+        }
+
+        function clearIdeogramRegions() {
+            if (!ideogramRegions.length) return;
+            pushIdeogramRegionHistory();
+            ideogramRegions = [];
+            ideogramRegionActiveId = '';
+            persistIdeogramRegions();
+            renderIdeogramRegions();
+        }
+
+        function moveIdeogramActiveRegionLayer(direction = 1) {
+            const index = ideogramRegions.findIndex(region => region.id === ideogramRegionActiveId);
+            if (index < 0) return;
+            const target = Math.max(0, Math.min(ideogramRegions.length - 1, index + (Number(direction) < 0 ? -1 : 1)));
+            if (target === index) return;
+            pushIdeogramRegionHistory();
+            const [region] = ideogramRegions.splice(index, 1);
+            ideogramRegions.splice(target, 0, region);
+            ideogramRegionActiveId = region.id;
+            persistIdeogramRegions();
+            renderIdeogramRegions();
+            updateWorkflowPreview();
+        }
+
+        function undoIdeogramRegion() {
+            if (!ideogramRegionUndoStack.length) return;
+            ideogramRegionRedoStack.push(JSON.stringify(normalizeIdeogramRegions()));
+            ideogramRegions = normalizeIdeogramRegions(JSON.parse(ideogramRegionUndoStack.pop() || '[]'));
+            ideogramRegionActiveId = ideogramRegions[0]?.id || '';
+            persistIdeogramRegions();
+            renderIdeogramRegions();
+        }
+
+        function redoIdeogramRegion() {
+            if (!ideogramRegionRedoStack.length) return;
+            ideogramRegionUndoStack.push(JSON.stringify(normalizeIdeogramRegions()));
+            ideogramRegions = normalizeIdeogramRegions(JSON.parse(ideogramRegionRedoStack.pop() || '[]'));
+            ideogramRegionActiveId = ideogramRegions[0]?.id || '';
+            persistIdeogramRegions();
+            renderIdeogramRegions();
+        }
+
+        function ideogramRegionHotkeyTargetIsEditable(event) {
+            const target = event?.target instanceof Element ? event.target : null;
+            if (!target) return false;
+            return !!target.closest('input, textarea, select, [contenteditable="true"]');
+        }
+
+        function handleIdeogramRegionKeyboard(event) {
+            if (!ideogramRegionPresetActive() || ideogramRegionHotkeyTargetIsEditable(event)) return;
+            const key = String(event.key || '').toLowerCase();
+            if ((event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey) {
+                event.preventDefault();
+                undoIdeogramRegion();
+                return;
+            }
+            if ((event.ctrlKey || event.metaKey) && (key === 'y' || (key === 'z' && event.shiftKey))) {
+                event.preventDefault();
+                redoIdeogramRegion();
+                return;
+            }
+            if (key === 'delete' || key === 'backspace') {
+                if (!ideogramRegionActiveId || !ideogramRegions.length) return;
+                event.preventDefault();
+                removeActiveIdeogramRegion();
+            }
+        }
+
+        function selectIdeogramRegion(id) {
+            if (!ideogramRegions.some(region => region.id === id)) return;
+            ideogramRegionActiveId = id;
+            ideogramRegionEditorOpen = true;
+            persistIdeogramRegions();
+            renderIdeogramRegions();
+        }
+
+        function closeIdeogramRegionEditor() {
+            const editor = document.getElementById('ideogramRegionEditor');
+            const active = document.activeElement instanceof Element ? document.activeElement : null;
+            if (editor && active && editor.contains(active)) active.blur();
+            ideogramRegionEditorOpen = false;
+            syncIdeogramRegionEditor();
+        }
+
+        function updateIdeogramRegion(id, patch, options = {}) {
+            const index = ideogramRegions.findIndex(region => region.id === id);
+            if (index < 0) return;
+            if (!options.skipHistory) pushIdeogramRegionHistory();
+            ideogramRegions[index] = normalizeIdeogramRegions([{ ...ideogramRegions[index], ...patch }])[0];
+            ideogramRegionActiveId = id;
+            persistIdeogramRegions();
+            renderIdeogramRegions();
+            updateWorkflowPreview();
+        }
+
+        function updateIdeogramActiveRegionField(field, value) {
+            const region = currentIdeogramRegion();
+            if (!region) return;
+            updateIdeogramRegion(region.id, { [field]: value });
+        }
+
+        function updateIdeogramActiveRegionNumber(field, value) {
+            const region = currentIdeogramRegion();
+            if (!region) return;
+            updateIdeogramRegion(region.id, { [field]: Number(value) || 0 });
+        }
+
+        function beginIdeogramRegionDrag(event, id, mode = 'move') {
+            if (!ideogramRegionPresetActive()) return;
+            const region = ideogramRegions.find(item => item.id === id);
+            const rect = displayedImageRectWithinShell();
+            if (!region || !rect) return;
+            event.preventDefault();
+            event.stopPropagation();
+            pushIdeogramRegionHistory();
+            let resizeMode = mode;
+            let openEditorOnEnd = false;
+            if (mode === 'move') {
+                const box = event.currentTarget?.getBoundingClientRect?.();
+                const edge = 12;
+                if (box) {
+                    const left = event.clientX - box.left <= edge;
+                    const right = box.right - event.clientX <= edge;
+                    const top = event.clientY - box.top <= edge;
+                    const bottom = box.bottom - event.clientY <= edge;
+                    const onBorder = left || right || top || bottom;
+                    if (!onBorder) openEditorOnEnd = true;
+                }
+            }
+            if (resizeMode === 'draw') {
+                ideogramRegionEditorOpen = false;
+            } else {
+                ideogramRegionActiveId = id;
+                persistIdeogramRegions();
+                renderIdeogramRegions();
+            }
+            ideogramRegionDrag = {
+                id,
+                mode: resizeMode,
+                openEditorOnEnd,
+                startX: event.clientX,
+                startY: event.clientY,
+                rect,
+                region: { ...region }
+            };
+            window.addEventListener('pointermove', moveIdeogramRegionDrag);
+            window.addEventListener('pointerup', endIdeogramRegionDrag, { once: true });
+        }
+
+        function moveIdeogramRegionDrag(event) {
+            if (!ideogramRegionDrag) return;
+            const { id, mode, startX, startY, rect, region } = ideogramRegionDrag;
+            const dx = ((event.clientX - startX) / rect.width) * 100;
+            const dy = ((event.clientY - startY) / rect.height) * 100;
+            const patch = mode.startsWith('resize-')
+                ? (() => {
+                    let x = region.x;
+                    let y = region.y;
+                    let w = region.w;
+                    let h = region.h;
+                    if (mode.includes('e')) w = region.w + dx;
+                    if (mode.includes('s')) h = region.h + dy;
+                    if (mode.includes('w')) {
+                        x = region.x + dx;
+                        w = region.w - dx;
+                    }
+                    if (mode.includes('n')) {
+                        y = region.y + dy;
+                        h = region.h - dy;
+                    }
+                    x = Math.max(0, Math.min(region.x + region.w - 4, x));
+                    y = Math.max(0, Math.min(region.y + region.h - 4, y));
+                    w = Math.max(4, Math.min(100 - x, w));
+                    h = Math.max(4, Math.min(100 - y, h));
+                    return { x, y, w, h };
+                })()
+                : mode === 'draw'
+                ? {
+                    x: Math.max(0, Math.min(region.x + dx, ideogramRegionDrag.anchorX)),
+                    y: Math.max(0, Math.min(region.y + dy, ideogramRegionDrag.anchorY)),
+                    w: Math.max(4, Math.min(100, Math.abs(dx))),
+                    h: Math.max(4, Math.min(100, Math.abs(dy)))
+                }
+                : {
+                    x: Math.max(0, Math.min(100 - region.w, region.x + dx)),
+                    y: Math.max(0, Math.min(100 - region.h, region.y + dy))
+                };
+            updateIdeogramRegion(id, patch, { skipHistory: true });
+        }
+
+        function endIdeogramRegionDrag() {
+            const mode = ideogramRegionDrag?.mode || '';
+            const openEditorOnEnd = !!ideogramRegionDrag?.openEditorOnEnd;
+            window.removeEventListener('pointermove', moveIdeogramRegionDrag);
+            ideogramRegionDrag = null;
+            persistIdeogramRegions();
+            if (mode === 'draw') ideogramRegionEditorOpen = true;
+            if (mode !== 'draw' && openEditorOnEnd) ideogramRegionEditorOpen = true;
+            if (mode === 'draw') setIdeogramRegionTool('select');
+            renderIdeogramRegions();
+            updateWorkflowPreview();
+        }
+
+        function collectIdeogramRegionsForPayload() {
+            return normalizeIdeogramRegions()
+                .filter(region => String(region.prompt || region.color || '').trim())
+                .map(region => ({
+                    id: region.id,
+                    type: region.type,
+                    prompt: region.prompt,
+                    color: region.color,
+                    x: Number(region.x.toFixed(2)),
+                    y: Number(region.y.toFixed(2)),
+                    w: Number(region.w.toFixed(2)),
+                    h: Number(region.h.toFixed(2)),
+                    bbox: [
+                        Number(region.y.toFixed(2)),
+                        Number(region.x.toFixed(2)),
+                        Number((region.y + region.h).toFixed(2)),
+                        Number((region.x + region.w).toFixed(2))
+                    ],
+                    width: parseInt(document.getElementById('widthInput')?.value || '512', 10),
+                    height: parseInt(document.getElementById('heightInput')?.value || '512', 10)
+                }));
+        }
+
+        function ideogramGuideCanvasDataUrl() {
+            const width = Math.max(64, parseInt(document.getElementById('widthInput')?.value || '512', 10));
+            const height = Math.max(64, parseInt(document.getElementById('heightInput')?.value || '512', 10));
+            const scale = Math.min(1, 1024 / Math.max(width, height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(width * scale));
+            canvas.height = Math.max(1, Math.round(height * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#111113';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+            ctx.lineWidth = 1;
+            const cols = 8;
+            const rows = 8;
+            for (let i = 1; i < cols; i += 1) {
+                const x = Math.round(canvas.width * i / cols);
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let i = 1; i < rows; i += 1) {
+                const y = Math.round(canvas.height * i / rows);
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            ctx.strokeStyle = 'rgba(255,59,59,0.72)';
+            ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
+            ctx.fillStyle = 'rgba(255,255,255,0.72)';
+            ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
+            ctx.fillText(`${width} x ${height} Ideogram-4 guide`, 12, 24);
+            return canvas.toDataURL('image/png');
+        }
+
+        function ideogramDrawReferencePreview(src, label = 'Ideogram reference') {
+            const width = Math.max(64, parseInt(document.getElementById('widthInput')?.value || '512', 10));
+            const height = Math.max(64, parseInt(document.getElementById('heightInput')?.value || '512', 10));
+            const scale = Math.min(1, 1024 / Math.max(width, height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(width * scale));
+            canvas.height = Math.max(1, Math.round(height * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#09090b';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            return new Promise(resolve => {
+                const image = new Image();
+                image.onload = () => {
+                    const coverScale = Math.max(canvas.width / image.width, canvas.height / image.height);
+                    const drawWidth = image.width * coverScale;
+                    const drawHeight = image.height * coverScale;
+                    const dx = (canvas.width - drawWidth) / 2;
+                    const dy = (canvas.height - drawHeight) / 2;
+                    ctx.drawImage(image, dx, dy, drawWidth, drawHeight);
+                    ctx.strokeStyle = 'rgba(255,59,59,0.82)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
+                    ctx.fillStyle = 'rgba(0,0,0,0.70)';
+                    ctx.fillRect(8, 8, Math.min(canvas.width - 16, 280), 26);
+                    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+                    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
+                    ctx.fillText(`${width} x ${height} ${label}`.slice(0, 42), 16, 26);
+                    resolve(canvas.toDataURL('image/png'));
+                };
+                image.onerror = () => resolve(ideogramGuideCanvasDataUrl());
+                image.src = src;
+            });
+        }
+
+        function ensureIdeogramLinearGuideOutput(options = {}) {
+            if (!ideogramRegionPresetActive()) return;
+            const image = document.getElementById('mainImageDisplay');
+            const currentSrc = image?.src || '';
+            const shouldUseReference = currentActivity === 'img2img' && !!referenceImageDataUrl;
+            if (shouldUseReference) {
+                ideogramDrawReferencePreview(referenceImageDataUrl, referenceImageMeta.label || 'Ideogram reference').then(nextSrc => {
+                    const latestShouldUseReference = activePreset === 'Ideogram4' && currentActivity === 'img2img' && !!referenceImageDataUrl;
+                    if (!latestShouldUseReference) return;
+                    if (!options.force && currentSrc === nextSrc) {
+                        syncIdeogramRegionUiVisibility();
+                        return;
+                    }
+                    setLinearOutput({
+                        url: nextSrc,
+                        mediaType: 'image',
+                        filename: referenceImageMeta.label || 'ideogram reference',
+                        activity: currentActivity,
+                        modified: Date.now()
+                    });
+                    syncIdeogramRegionUiVisibility();
+                });
+                return;
+            }
+            const nextSrc = ideogramGuideCanvasDataUrl();
+            if (!options.force && currentSrc === nextSrc) {
+                syncIdeogramRegionUiVisibility();
+                return;
+            }
+            setLinearOutput({
+                url: nextSrc,
+                mediaType: 'image',
+                filename: shouldUseReference ? (referenceImageMeta.label || 'ideogram reference') : 'ideogram regional guide canvas',
+                activity: currentActivity,
+                modified: Date.now()
+            });
+            syncIdeogramRegionUiVisibility();
         }
 
         function setLtxMotionPreprocessReady(item) {
@@ -9704,11 +10452,52 @@
             return true;
         }
 
+        async function maybePrepareIdeogram4TemplateAssets() {
+            if (!backendOnline) return false;
+            if (sessionStorage.getItem('nexus_ideogram4_template_assets_prompted') === '1') return false;
+            let status = null;
+            try {
+                status = await nexusFetch('/ideogram4/assets/status');
+            } catch (error) {
+                showToast('Ideogram 4 Asset Check Failed', String(error?.message || error).slice(0, 160));
+                return false;
+            }
+            const missingRequired = Array.isArray(status?.missing_required_assets) ? status.missing_required_assets : [];
+            const missingOptional = Array.isArray(status?.missing_optional_assets) ? status.missing_optional_assets : [];
+            const missingNodeDeps = Array.isArray(status?.missing_custom_node_dependencies) ? status.missing_custom_node_dependencies : [];
+            if (!missingRequired.length && !missingOptional.length && !missingNodeDeps.length && !status?.missing_core_nodes?.length) return false;
+            const requiredTotal = formatModelAssetBytes(status?.estimated_missing_required_bytes || missingRequired.reduce((sum, item) => sum + Number(item?.size_bytes_min || 0), 0));
+            const optionalTotal = formatModelAssetBytes(status?.estimated_missing_optional_bytes || missingOptional.reduce((sum, item) => sum + Number(item?.size_bytes_min || 0), 0));
+            const requiredList = missingRequired.map(item => `- ${item.label || item.filename}\n  -> ${item.destination || item.filename}\n  ${formatModelAssetBytes(item.size_bytes_min)}`).join('\n');
+            const optionalList = missingOptional.map(item => `- ${item.label || item.filename}\n  -> ${item.destination || item.filename}\n  ${formatModelAssetBytes(item.size_bytes_min)}`).join('\n');
+            const nodeList = missingNodeDeps.map(name => `- ${name}`).join('\n');
+            const coreList = (status?.missing_core_nodes || []).map(name => `- ${name}`).join('\n');
+            const ok = window.confirm(`Ideogram-4 optional local setup is not ready.\n\nNew users are not forced to download these files. To generate locally, Nexus needs the model, unconditional model, Qwen3VL text encoder and Flux2 VAE. You can also install missing custom-node Python dependencies.\n\nRequired assets: ${requiredTotal}\n${requiredList || '- ready'}\n\nOptional assets: ${optionalTotal}\n${optionalList || '- none'}\n\nCustom-node Python dependencies:\n${nodeList || '- ready'}\n\nComfy core support still missing until runtime update/restart:\n${coreList || '- ready'}\n\nDownload selected missing assets and install missing node dependencies now?`);
+            sessionStorage.setItem('nexus_ideogram4_template_assets_prompted', '1');
+            if (!ok) {
+                showToast('Ideogram 4 Downloads Skipped', 'Template loaded without downloading optional local assets.');
+                return false;
+            }
+            const assetKeys = [...missingRequired, ...missingOptional].map(item => item.key).filter(Boolean);
+            const started = await nexusFetch('/ideogram4/assets/download/start', {
+                method: 'POST',
+                body: JSON.stringify({ assets: assetKeys, install_node_dependencies: missingNodeDeps.length > 0 })
+            });
+            await pollDownloadJob(started.job_id, 'Ideogram 4 Dependencies');
+            await refreshModelCatalog();
+            await refreshManagerPanel().catch(() => {});
+            showToast('Ideogram 4 Ready', 'Selected dependencies downloaded and catalog refreshed.');
+            await maybeRestartBackendAfterDependencyInstall('Ideogram 4 dependency install');
+            return true;
+        }
+
         function maybePrepareTemplateOptionalAssets(presetName) {
             if (presetName === 'Wan') {
                 maybePrepareWan22TemplateAssets().catch(error => showToast('WAN 2.2 Download Failed', String(error?.message || error).slice(0, 180)));
             } else if (presetName === 'LTX') {
                 maybePrepareLtx23TemplateAssets().catch(error => showToast('LTX 2.3 Download Failed', String(error?.message || error).slice(0, 180)));
+            } else if (presetName === 'Ideogram4') {
+                maybePrepareIdeogram4TemplateAssets().catch(error => showToast('Ideogram 4 Download Failed', String(error?.message || error).slice(0, 180)));
             }
         }
 
@@ -10355,6 +11144,12 @@
             updateResizePercentGuide();
             updateInpaintAreaLabel();
             syncInpaintOverlayBounds();
+            if (activePreset === 'Ideogram4' && currentActivity === 'txt2img') {
+                ensureIdeogramLinearGuideOutput({ force: true });
+            } else if (activePreset === 'Ideogram4') {
+                ensureIdeogramLinearGuideOutput({ force: true });
+            }
+            if (activePreset === 'Ideogram4') requestAnimationFrame(renderIdeogramRegions);
         }
 
         function syncLtxOutpaintSurfaceFromSideMenu() {
@@ -10657,7 +11452,11 @@
                 document.getElementById('batchCountInput').value = savedFields.batchCountInput || String(profile.batchSize);
             }
 
-            document.getElementById('stepsSlider').value = savedFields.stepsSlider || profile.steps;
+            let profileStepsValue = savedFields.stepsSlider || profile.steps;
+            if (presetName === 'Ideogram4' && String(savedFields.stepsSlider || '') === '4') {
+                profileStepsValue = profile.steps;
+            }
+            document.getElementById('stepsSlider').value = profileStepsValue;
             document.getElementById('cfgSlider').value = savedFields.cfgSlider || (presetName === 'LTX' ? 1 : profile.cfg);
             updateRangeLabel('steps');
             updateRangeLabel('cfg');
@@ -10670,6 +11469,11 @@
             updateModel3DTemplateUi();
             updateOmnicineStatus();
             syncReferenceImageSurfaces();
+            if (presetName === 'Ideogram4') {
+                ensureIdeogramLinearGuideOutput({ force: true });
+            } else {
+                syncIdeogramRegionUiVisibility();
+            }
             const restoredWorkflowState = restoreWorkflow ? restoreWorkflowStateForPreset(presetName, savedState) : false;
             if (!restoredWorkflowState && (previousPreset !== presetName || !activeWorkflowGraph || activeWorkflowGraph.nexus_preset !== presetName)) {
                 primeWorkflowGraphForPreset(presetName);
@@ -11300,12 +12104,14 @@
         }
 
         function referenceExtraSlotsEnabled() {
+            if (activePreset === 'Ideogram4') return true;
             if (isModel3DTemplateActive()) return true;
             if (poseGenerationHandoffActive && activePreset === 'Qwen') return true;
             return isQwenImageEditTemplateActive() || isFlux2ImageEditTemplateActive() || isStartEndFrameMode();
         }
 
         function referenceExtraSlotNumbers() {
+            if (activePreset === 'Ideogram4') return [2, 3];
             if (isModel3DTemplateActive()) return [2, 3, 4];
             if (poseGenerationHandoffActive && activePreset === 'Qwen') return [2, 3];
             if (isFlux2ImageEditTemplateActive()) return [2, 3, 4, 5];
@@ -11341,6 +12147,10 @@
                 if (slot === 2) return 'Left';
                 if (slot === 3) return 'Right';
                 return 'Back';
+            }
+            if (activePreset === 'Ideogram4') {
+                if (slot === 1) return 'Base';
+                return `Image ${slot}`;
             }
             return slot === 1 ? 'Picture 1' : `Image ${slot}`;
         }
@@ -17887,7 +18697,7 @@
                 const extraCount = (referenceImageExtraDataUrls || []).filter(item => item?.src).length;
                 const extraLabel = startEndFrame
                     ? (extraCount ? ' + End Frame' : '')
-                    : (extraCount ? ` + ${extraCount} Qwen ref` : '');
+                    : (extraCount ? ` + ${extraCount} ${activePreset === 'Ideogram4' ? 'Ideogram ref' : 'Qwen ref'}` : '');
                 loadedLabel.innerText = hasBaseVideo
                     ? `${referenceBaseVideoMeta.label || 'base video'}${referenceBaseVideoMeta.duration ? ` - ${referenceBaseVideoMeta.duration.toFixed(1)}s` : ''}${extraCount ? ' + Image Reference' : ''}`
                     : hasImage
@@ -18031,6 +18841,7 @@
             clearLtxMotionPreprocess({ quiet: true });
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
+            if (activePreset === 'Ideogram4') ensureIdeogramLinearGuideOutput({ force: true });
             if (!options.quiet) showToast("Motion Video Cleared", "Motion video source was removed.");
         }
 
@@ -18040,6 +18851,7 @@
             referenceImageExtraDataUrls = [];
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
+            if (activePreset === 'Ideogram4') ensureIdeogramLinearGuideOutput({ force: true });
             if (!options.quiet) showToast("Target Image Cleared", "Target/reference image was removed.");
         }
 
@@ -18064,6 +18876,7 @@
             syncLtxLinearMotionTransferTimeLock();
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
+            if (activePreset === 'Ideogram4') ensureIdeogramLinearGuideOutput({ force: true });
             if (!options.quiet) showToast("Reference Cleared", `${img2imgActivityLabel()}/inpaint source image was removed.`);
         }
 
@@ -18271,6 +19084,9 @@
             image.onerror = () => showToast("Reference Load Failed", "The selected image could not be read.");
             image.src = src;
             updateWorkflowPreview();
+            if (activePreset === 'Ideogram4' && currentActivity === 'img2img') {
+                ensureIdeogramLinearGuideOutput({ force: true });
+            }
         }
 
         function addReferenceImageExtraSource(src, label = 'reference image') {
@@ -19300,7 +20116,11 @@
             });
             const hint = isStartEndFrameMode()
                 ? 'Use the first image as Start Frame and the second as End Frame.'
-                : (isModel3DTemplateActive() ? 'Use Front, Left, Right and Back when available.' : 'Use Picture 1, Image 2 and Image 3 in Qwen prompts.');
+                : (isModel3DTemplateActive()
+                    ? 'Use Front, Left, Right and Back when available.'
+                    : (activePreset === 'Ideogram4'
+                        ? 'Use Base, Image 2 and Image 3 as visual references, then place regional prompt boxes in Linear View.'
+                        : 'Use Picture 1, Image 2 and Image 3 in Qwen prompts.'));
             showToast("References Loaded", `${loaded.length} image reference${loaded.length === 1 ? '' : 's'} ready. ${hint}`);
         }
 
@@ -22571,6 +23391,7 @@
                     updateWorkflowPreview();
                 }
                 switchView(activeWorkspace);
+                if (activePreset === 'Ideogram4') ensureIdeogramLinearGuideOutput({ force: true });
                 const motionLabel = isMotionTemplateActive() ? 'img2video' : 'img2img';
                 showToast("Workspace", activity === 'img2img' ? `${motionLabel} controls synced with Linear/Inpaint/Node.` : "txt2img workspace ready.");
                 return;
@@ -22636,6 +23457,7 @@
             updateResizePercentGuide();
             updateInpaintAreaLabel();
             if (id === 'width' || id === 'height') syncLtxOutpaintSurfaceFromSideMenu();
+            if (activePreset === 'Ideogram4' && (id === 'width' || id === 'height')) ensureIdeogramLinearGuideOutput({ force: true });
             if (isDirectorWorkspaceActive() && (id === 'width' || id === 'height')) {
                 ltxDirectorState[id] = Math.max(0, Math.round(Number(inputVal || 0)));
                 persistLtxDirectorState();
@@ -22654,6 +23476,7 @@
             updateResizePercentGuide();
             updateInpaintAreaLabel();
             if (id === 'width' || id === 'height') syncLtxOutpaintSurfaceFromSideMenu();
+            if (activePreset === 'Ideogram4' && (id === 'width' || id === 'height')) ensureIdeogramLinearGuideOutput({ force: true });
             if (isDirectorWorkspaceActive() && (id === 'width' || id === 'height')) {
                 ltxDirectorState[id] = Math.max(0, Math.round(Number(sliderVal || 0)));
                 persistLtxDirectorState();
@@ -22785,6 +23608,7 @@
         function toggleLanguageMenu(event) {
             event?.preventDefault();
             event?.stopPropagation();
+            closeWorkflowTools();
             document.getElementById('donateMenu')?.classList.add('hidden');
             renderLanguageMenu();
             document.getElementById('languageMenu')?.classList.toggle('hidden');
@@ -22793,8 +23617,22 @@
         function toggleDonateMenu(event) {
             event?.preventDefault();
             event?.stopPropagation();
+            closeWorkflowTools();
             document.getElementById('languageMenu')?.classList.add('hidden');
             document.getElementById('donateMenu')?.classList.toggle('hidden');
+        }
+
+        function closeWorkflowTools() {
+            document.getElementById('workflowToolsPanel')?.classList.add('hidden');
+        }
+
+        function toggleWorkflowTools(event) {
+            event?.preventDefault();
+            event?.stopPropagation();
+            document.getElementById('languageMenu')?.classList.add('hidden');
+            document.getElementById('donateMenu')?.classList.add('hidden');
+            closeTemplateTools();
+            document.getElementById('workflowToolsPanel')?.classList.toggle('hidden');
         }
 
         function applyGoogleTranslateLanguage(lang, options = {}) {
@@ -22824,10 +23662,13 @@
             if (donateSelector && !donateSelector.contains(event.target)) document.getElementById('donateMenu')?.classList.add('hidden');
             const templateSelector = document.getElementById('templateToolsDropdown');
             if (templateSelector && !templateSelector.contains(event.target)) closeTemplateTools();
+            const workflowSelector = document.getElementById('workflowToolsDropdown');
+            if (workflowSelector && !workflowSelector.contains(event.target)) closeWorkflowTools();
         });
         document.getElementById('templateToolsButton')?.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
+            closeWorkflowTools();
             toggleTemplateTools();
         });
         renderLanguageMenu();
@@ -30384,6 +31225,10 @@
                     qwen_camera_zoom: qwenMultiViewRoute ? qwenMultiViewNumber(qwenMultiViewState.zoom, 2.1) : undefined,
                     qwen_camera_prompt: qwenMultiViewRoute ? qwenMultiViewCameraPrompt() : undefined,
                     qwen_multiangle_lora_strength: qwenMultiViewRoute ? 1.0 : undefined,
+                    ideogram_regions: activePreset === 'Ideogram4' ? collectIdeogramRegionsForPayload() : undefined,
+                    ideogram_reference_mode: activePreset === 'Ideogram4'
+                        ? (currentActivity === 'img2img' ? 'base_image_plus_regional_boxes' : 'regional_boxes')
+                        : undefined,
                     wan_loop_cycle: activePreset === 'Wan' && currentActivity === 'img2img' ? !!wanLoopCycleEnabled : undefined,
                     wan_loop_source: activePreset === 'Wan' && currentActivity === 'img2img' && wanLoopCycleEnabled ? 'start_frame_as_end_frame' : undefined,
                     wan_motion_capture_enabled: activePreset === 'Wan' && currentActivity === 'img2img' ? !!wanMotionCaptureEnabled : undefined,
@@ -31980,6 +32825,20 @@
                 event.stopPropagation();
             }
         });
+        document.addEventListener('pointerdown', event => {
+            if (!ideogramRegionPresetActive() || !ideogramRegionEditorOpen) return;
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target) return;
+            if (
+                target.closest('#ideogramRegionEditor')
+                || target.closest('#ideogramRegionToolbar')
+                || target.closest('.ideogram-region-box')
+            ) {
+                return;
+            }
+            closeIdeogramRegionEditor();
+        });
+        document.addEventListener('keydown', handleIdeogramRegionKeyboard);
         document.getElementById('controlNetImageDrop')?.addEventListener('click', event => {
             if (event.target.closest('#clearControlNetImageBtn')) return;
             document.getElementById('controlNetImageInput')?.click();

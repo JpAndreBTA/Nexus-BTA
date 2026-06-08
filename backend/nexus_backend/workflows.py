@@ -2961,6 +2961,283 @@ def build_basic_zimage_turbo_workflow(
     return workflow
 
 
+def _ideogram4_regions_prompt(request: GenerateRequest) -> str:
+    regions = (request.video or {}).get("ideogram_regions")
+    side_prompt = request.prompt.strip()
+    if (not isinstance(regions, list) or not regions) and not side_prompt:
+        return request.prompt
+
+    def _region_unit(value: float | None, default: float = 0.0) -> float:
+        if value is None:
+            return default
+        number = float(value)
+        if number > 1.0:
+            number /= 100.0
+        return max(0.0, min(1.0, number))
+
+    elements: list[dict[str, Any]] = []
+    if side_prompt:
+        elements.append(
+            {
+                "type": "obj",
+                "bbox": [0, 0, 1000, 1000],
+                "desc": f"Complete full-canvas natural image scene based on: {side_prompt}",
+            }
+        )
+    for item in (regions if isinstance(regions, list) else [])[:24]:
+        if not isinstance(item, dict):
+            continue
+        raw_x = _number_or_none(item.get("x"))
+        raw_y = _number_or_none(item.get("y"))
+        raw_w = _number_or_none(item.get("w"))
+        raw_h = _number_or_none(item.get("h"))
+        if raw_x is None or raw_y is None or raw_w is None or raw_h is None:
+            continue
+        x = _region_unit(raw_x)
+        y = _region_unit(raw_y)
+        w = max(0.01, min(1.0 - x, _region_unit(raw_w, 0.25)))
+        h = max(0.01, min(1.0 - y, _region_unit(raw_h, 0.25)))
+        desc = str(item.get("prompt") or item.get("desc") or "").strip()
+        text = str(item.get("text") or "").strip()
+        element_type = str(item.get("type") or "obj").strip().lower()
+        bbox = [
+            int(round(y * 1000)),
+            int(round(x * 1000)),
+            int(round((y + h) * 1000)),
+            int(round((x + w) * 1000)),
+        ]
+        colors = item.get("colors")
+        color_palette = [str(color).strip().upper() for color in colors if str(color).strip()] if isinstance(colors, list) else []
+        if not color_palette and item.get("color"):
+            color_palette = [str(item.get("color")).strip().upper()]
+        if element_type == "text" or text:
+            display_text = text or desc or "TEXT"
+            element = {
+                "type": "text",
+                "bbox": bbox,
+                "text": display_text,
+                "desc": f'Large clear legible text reading "{display_text}" placed precisely inside this region.',
+            }
+            if color_palette:
+                element["color_palette"] = color_palette[:5]
+            elements.append(element)
+        else:
+            element = {
+                "type": "obj",
+                "bbox": bbox,
+                "desc": desc or "Object or subject placed precisely inside this region.",
+            }
+            if color_palette:
+                element["color_palette"] = color_palette[:5]
+            elements.append(element)
+
+    if not elements:
+        return request.prompt
+
+    video_config = request.video or {}
+    style = video_config.get("ideogram_style") if isinstance(video_config, dict) else {}
+    style = style if isinstance(style, dict) else {}
+    background = str(video_config.get("ideogram_background") or request.prompt or "").strip()
+    if not background:
+        background = "Scene background consistent with the high level description."
+    prompt = {
+        "high_level_description": side_prompt or "A structured Ideogram 4 composition guided by regional bounding boxes.",
+        "style_description": {
+            "aesthetics": str(style.get("aesthetics") or "clean, coherent, high detail"),
+            "lighting": str(style.get("lighting") or "natural balanced lighting"),
+            "photo": str(style.get("photo") or "high quality image with clear composition"),
+            "medium": str(style.get("medium") or "photograph"),
+        },
+        "compositional_deconstruction": {
+            "background": background,
+            "elements": elements,
+        },
+    }
+    return json.dumps(prompt, ensure_ascii=False, indent=2)
+
+
+def build_basic_ideogram4_workflow(
+    request: GenerateRequest,
+    model_name: str,
+    unconditional_model_name: str,
+    text_encoder_name: str,
+    vae_name: str,
+    reference_image_name: str | None = None,
+) -> dict[str, Any]:
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    width = max(256, int(request.width))
+    height = max(256, int(request.height))
+    width = max(256, ((width + 15) // 16) * 16)
+    height = max(256, ((height + 15) // 16) * 16)
+    steps = max(1, int(request.steps or 4))
+    cfg = float(request.cfg or 1.0)
+    prompt_text = _ideogram4_regions_prompt(request)
+    regions = (request.video or {}).get("ideogram_regions") if isinstance(request.video, dict) else None
+    use_prompt_builder = bool(request.prompt.strip()) or (isinstance(regions, list) and bool(regions))
+
+    model_ref: list[Any] = ["1", 0]
+    lora_nodes: dict[str, Any] = {}
+    next_lora_id = 30
+    for lora_name, strength_model, _strength_clip in _active_lora_selections(request):
+        node_id = str(next_lora_id)
+        lora_nodes[node_id] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": model_ref,
+                "lora_name": lora_name,
+                "strength_model": float(strength_model),
+            },
+            "_meta": {"title": f"Ideogram 4 LoRA - {Path(lora_name).name}"},
+        }
+        model_ref = [node_id, 0]
+        next_lora_id += 1
+
+    latent_ref: list[Any] = ["7", 0]
+    workflow: dict[str, Any] = {
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": {"unet_name": model_name, "weight_dtype": "default"},
+            "_meta": {"title": "Load Ideogram 4 Model"},
+        },
+        "2": {
+            "class_type": "UNETLoader",
+            "inputs": {"unet_name": unconditional_model_name, "weight_dtype": "default"},
+            "_meta": {"title": "Load Ideogram 4 Unconditional Model"},
+        },
+        "3": {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": text_encoder_name, "type": "ideogram4", "device": "default"},
+            "_meta": {"title": "Ideogram 4 Qwen3-VL Text Encoder"},
+        },
+        "4": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": vae_name},
+            "_meta": {"title": "Flux2 VAE"},
+        },
+        "5": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": ["3", 0], "text": prompt_text},
+            "_meta": {"title": "Ideogram 4 Prompt Encode"},
+        },
+        "6": {
+            "class_type": "ConditioningZeroOut",
+            "inputs": {"conditioning": ["5", 0]},
+            "_meta": {"title": "Asymmetric Empty Negative"},
+        },
+        "7": {
+            "class_type": "EmptyFlux2LatentImage",
+            "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
+            "_meta": {"title": "Ideogram 4 Latent"},
+        },
+        "8": {
+            "class_type": "RandomNoise",
+            "inputs": {"noise_seed": seed},
+            "_meta": {"title": "Noise"},
+        },
+        "9": {
+            "class_type": "KSamplerSelect",
+            "inputs": {"sampler_name": normalize_sampler(request.sampler or "euler")},
+            "_meta": {"title": "Sampler"},
+        },
+        "10": {
+            "class_type": "ModelSamplingAuraFlow",
+            "inputs": {"model": model_ref, "shift": 7.0},
+            "_meta": {"title": "Ideogram 4 AuraFlow Sampling"},
+        },
+        "11": {
+            "class_type": "CFGOverride",
+            "inputs": {"model": ["10", 0], "cfg": cfg, "start_percent": 0.0, "end_percent": 1.0},
+            "_meta": {"title": "Ideogram 4 CFG Override"},
+        },
+        "12": {
+            "class_type": "DualModelGuider",
+            "inputs": {"model": ["11", 0], "positive": ["5", 0], "model_negative": ["2", 0], "negative": ["6", 0], "cfg": 7.0},
+            "_meta": {"title": "Ideogram 4 Dual Model Guider"},
+        },
+        "13": {
+            "class_type": "BasicScheduler",
+            "inputs": {"model": ["10", 0], "scheduler": normalize_scheduler(request.scheduler or "simple"), "steps": steps, "denoise": float(request.denoise or 1.0)},
+            "_meta": {"title": "Ideogram 4 Basic Scheduler"},
+        },
+        "14": {
+            "class_type": "ExtendIntermediateSigmas",
+            "inputs": {"sigmas": ["13", 0], "steps": 2, "start_at_sigma": 1.0, "end_at_sigma": 0.98, "spacing": "linear"},
+            "_meta": {"title": "Ideogram 4 KJ Sigma Extension"},
+        },
+        "15": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {"noise": ["8", 0], "guider": ["12", 0], "sampler": ["9", 0], "sigmas": ["14", 0], "latent_image": ["7", 0]},
+            "_meta": {"title": "Ideogram 4 Sampler"},
+        },
+        "16": {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["15", 0], "vae": ["4", 0]},
+            "_meta": {"title": "VAE Decode"},
+        },
+        "17": {
+            "class_type": "SaveImage",
+            "inputs": {"filename_prefix": "NEXUS_BTA_IDEOGRAM4", "images": ["16", 0]},
+            "_meta": {"title": "Save Image"},
+        },
+    }
+    if use_prompt_builder:
+        workflow["5"] = {
+            "class_type": "Ideogram4PromptBuilderKJ",
+            "inputs": {
+                "width": width,
+                "height": height,
+                "high_level_description": request.prompt.strip(),
+                "background": request.prompt.strip() or "A coherent high quality scene.",
+                "style": "photo",
+                "style.photo": "high resolution, clear photo",
+                "aesthetics": "clean, detailed, natural",
+                "lighting": "natural balanced lighting",
+                "medium": "photograph",
+                "import_json": prompt_text,
+                "import_mode": "always",
+                "style_palette_data": "",
+                "elements_data": "",
+                "bg_brightness": 25,
+            },
+            "_meta": {"title": "Ideogram 4 KJ Prompt Builder"},
+        }
+        workflow["21"] = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": ["3", 0], "text": ["5", 0]},
+            "_meta": {"title": "Ideogram 4 Structured Prompt Encode"},
+        }
+        workflow["6"]["inputs"]["conditioning"] = ["21", 0]
+        workflow["12"]["inputs"]["positive"] = ["21", 0]
+    if reference_image_name:
+        workflow["18"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": reference_image_name},
+            "_meta": {"title": "Ideogram 4 Base Reference"},
+        }
+        workflow["19"] = {
+            "class_type": "ImageScale",
+            "inputs": {
+                "image": ["18", 0],
+                "upscale_method": "lanczos",
+                "width": width,
+                "height": height,
+                "crop": "center",
+            },
+            "_meta": {"title": "Scale Reference To Side Menu Resolution"},
+        }
+        workflow["20"] = {
+            "class_type": "VAEEncode",
+            "inputs": {"pixels": ["19", 0], "vae": ["4", 0]},
+            "_meta": {"title": "Ideogram 4 Img2Img Latent"},
+        }
+        latent_ref = ["20", 0]
+        workflow["15"]["inputs"]["latent_image"] = latent_ref
+        if use_prompt_builder:
+            workflow["5"]["inputs"]["image"] = ["19", 0]
+    workflow.update(lora_nodes)
+    return workflow
+
+
 def build_basic_flux_workflow(
     request: GenerateRequest,
     model_name: str,

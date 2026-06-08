@@ -177,6 +177,8 @@ foreach ($dir in @(
     "checkpoints\wan",
     "checkpoints\ltx",
     "checkpoints\anima",
+    "checkpoints\ideogram4",
+    "diffusion_models\ideogram4",
     "loras",
     "vae",
     "text_encoders",

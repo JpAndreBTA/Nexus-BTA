@@ -93,6 +93,7 @@ foreach ($dir in $requiredDirs) {
 $modelDirs = @(
     "checkpoints",
     "diffusion_models",
+    "diffusion_models\ideogram4",
     "unet",
     "loras",
     "vae",
@@ -124,7 +125,8 @@ $checkpointPresetDirs = @(
     "lumina",
     "wan",
     "ltx",
-    "anima"
+    "anima",
+    "ideogram4"
 )
 
 foreach ($dir in $checkpointPresetDirs) {

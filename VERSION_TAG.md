@@ -1,17 +1,16 @@
-# NexusBTA v0.2.22
+# NexusBTA v0.2.26
 
-`NexusBTA v0.2.22 - Qwen, WAN/LTX Video, Extras, Civitai and Runtime Update`
+`NexusBTA v0.2.26 - Ideogram-4, Regional Prompt Builder and Runtime Compatibility`
 
 Short release summary:
 
-- Qwen: inpaint, MultiView, Lightning LoRA and camera sync between frontend/backend.
-- Flux: multiple references, inpaint and route isolation.
-- WAN 2.2: loop cycle/start-end frame mode while keeping normal workflows isolated.
-- LTX 2.3: loop cycle/FLF2V, start/end frame, motion transfer and compatibility with Omnicine, latent upscale and detailer LoRA.
-- Extras: RTX upscale, PiD image upscale, FlashVSR, SeedVR2, refine/denoise/detail and face restoration.
-- Civitai: search, filters, mature/blur, installed, previews, autofolder and custom folders fixed.
-- Runtime: bootstrap without fixed `D:\NexusBTA`, `StartLAN`, `StartTunnel`, Docker/RunPod and `Decode Frames` fix.
+- Ideogram-4: dedicated legacy `/ui` template beside Anima with fp8 low-VRAM defaults.
+- Prompt Builder: KJ-compatible structured JSON route with obj/text regional boxes.
+- Linear Viewer: Ideogram regional canvas, ADD boxes, resize/move, undo/redo, delete and layer ordering.
+- Backend sync: side-menu dimensions, img2img reference image, VAE/text encoder/checkpoint selectors and regional bbox payloads.
+- Runtime: KJNodes auto-update support without duplicating custom_nodes, plus Sage/xFormers-compatible workflow route.
+- Defaults: CFG 1, Euler/Simple, 12 steps, conservative img2img denoise default.
 
 Complete version:
 
-[docs/releases/v0.2.22.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.22/docs/releases/v0.2.22.md)
+[docs/releases/v0.2.26.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.26/docs/releases/v0.2.26.md)

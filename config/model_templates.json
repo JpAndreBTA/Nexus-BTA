@@ -74,7 +74,7 @@
     ],
     "sampler": "euler",
     "scheduler": "simple",
-    "steps": 4,
+    "steps": 12,
     "cfg": 1.0,
     "supports": [
       "multimodal_edit",
@@ -135,8 +135,9 @@
     ],
     "sampler": "euler",
     "scheduler": "simple",
-    "steps": 4,
+    "steps": 12,
     "cfg": 1.0,
+    "denoise": 0.45,
     "supports": [
       "text_to_video",
       "image_to_video",
@@ -188,6 +189,28 @@
       "gallery_metadata"
     ],
     "workflow_hint": "anima"
+  },
+  "Ideogram4": {
+    "label": "IDEOGRAM 4",
+    "family": "ideogram4",
+    "type": "image",
+    "model_folder": "./models/diffusion_models/ideogram4",
+    "native_size": [
+      512,
+      512
+    ],
+    "sampler": "euler",
+    "scheduler": "simple",
+    "steps": 4,
+    "cfg": 1.0,
+    "supports": [
+      "structured_json",
+      "regional_bbox",
+      "qwen3vl_encoder",
+      "flux2_vae",
+      "low_vram_fp8"
+    ],
+    "workflow_hint": "ideogram4"
   },
   "Model3D": {
     "label": "3D MODEL",

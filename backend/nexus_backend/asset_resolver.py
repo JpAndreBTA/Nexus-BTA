@@ -33,6 +33,8 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
         assets.update(_resolve_flux(by_category, selected_name, request))
     elif preset == "anima":
         assets.update(_resolve_anima(by_category, selected_name, request))
+    elif preset in {"ideogram4", "ideogram"}:
+        assets.update(_resolve_ideogram4(by_category, selected_name, request))
     elif preset == "qwen":
         assets.pop("primary_model", None)
         assets.update(_resolve_qwen(by_category, selected_name, request))
@@ -514,6 +516,54 @@ def _resolve_anima(by_category: dict[str, list[ModelFile]], selected_name: str, 
     return assets
 
 
+def _resolve_ideogram4(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
+    assets: dict[str, str] = {}
+    primary = _find_name(by_category, selected_name)
+    if primary and not _is_ideogram4_model(primary):
+        primary = None
+    if not primary:
+        primary = (
+            _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["ideogram4", "fp8"])
+            or _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["ideogram", "4"])
+        )
+    if primary:
+        assets["primary_model"] = _comfy_name(primary)
+
+    unconditional = (
+        _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["ideogram4", "unconditional"])
+        or _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["ideogram", "unconditional"])
+    )
+    if unconditional:
+        assets["ideogram4_unconditional_model"] = _comfy_name(unconditional)
+
+    selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    if selected_text_encoder and not _is_ideogram4_qwen3vl_encoder(selected_text_encoder):
+        selected_text_encoder = None
+    text_encoder = (
+        selected_text_encoder
+        or _first_exact(by_category, ["text_encoders", "clip"], "qwen3vl_8b_fp8_scaled.safetensors")
+        or _first(by_category, ["text_encoders", "clip"], ["qwen3vl"])
+        or _first(by_category, ["text_encoders", "clip"], ["qwen3", "vl"])
+    )
+    if text_encoder:
+        assets["text_encoder"] = _comfy_name(text_encoder)
+
+    selected_vae = _selected_model_choice(by_category, request.vae)
+    if selected_vae and not _is_exact_model_name(selected_vae, "flux2-vae.safetensors"):
+        selected_vae = None
+    vae = selected_vae or _first_exact(by_category, ["vae"], "flux2-vae.safetensors") or _first(by_category, ["vae"], ["flux2", "vae"])
+    if vae:
+        assets["vae"] = _comfy_name(vae)
+
+    gemma = (
+        _first_exact(by_category, ["text_encoders", "clip"], "gemma4_e4b_it_fp8_scaled.safetensors")
+        or _first(by_category, ["text_encoders", "clip"], ["gemma4"])
+    )
+    if gemma:
+        assets["ideogram4_gemma_prompt_encoder"] = _comfy_name(gemma)
+    return assets
+
+
 def _resolve_qwen(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
     assets: dict[str, str] = {}
     has_reference = request.activity == "img2img" and (
@@ -620,6 +670,16 @@ def _selected_model_choice(by_category: dict[str, list[ModelFile]], value: str |
 
 def _is_exact_model_name(item: ModelFile, name: str) -> bool:
     return Path(item.name).name.lower() == name.lower()
+
+
+def _is_ideogram4_model(item: ModelFile) -> bool:
+    haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+    return "ideogram" in haystack and "4" in haystack and "unconditional" not in haystack
+
+
+def _is_ideogram4_qwen3vl_encoder(item: ModelFile) -> bool:
+    haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+    return "qwen3vl" in haystack or ("qwen3" in haystack and "vl" in haystack)
 
 
 def _first_exact(by_category: dict[str, list[ModelFile]], categories: list[str], name: str) -> ModelFile | None:
