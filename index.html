@@ -6313,6 +6313,7 @@
         let ideogramRegionUndoStack = [];
         let ideogramRegionRedoStack = [];
         let ideogramRegionDrag = null;
+        let ideogramLinearOutputIsGuide = false;
         let resizePercentBaseSnapshot = null;
         let resizePercentApplying = false;
         let controlNetImageDataUrl = '';
@@ -9463,6 +9464,7 @@
             const video = document.getElementById('mainVideoDisplay');
             const empty = document.getElementById('linearEmptyState');
             const clearButton = document.getElementById('clearLinearOutputBtn');
+            ideogramLinearOutputIsGuide = !!(item && (item.ideogramGuide || options.ideogramGuide));
             const mediaUrl = item?.image || item?.url || '';
             const isVideo = item && isVideoOutput(item);
             const cacheSafeUrl = mediaUrl && !/^data:/i.test(mediaUrl)
@@ -9613,9 +9615,10 @@
 
         function syncIdeogramRegionUiVisibility() {
             const active = ideogramRegionPresetActive();
+            const layerActive = active && ideogramLinearOutputIsGuide;
             document.getElementById('ideogramRegionToolbar')?.classList.toggle('hidden', !active);
-            document.getElementById('ideogramRegionLayer')?.classList.toggle('hidden', !active);
-            if (!active) document.getElementById('ideogramRegionEditor')?.classList.add('hidden');
+            document.getElementById('ideogramRegionLayer')?.classList.toggle('hidden', !layerActive);
+            if (!layerActive) document.getElementById('ideogramRegionEditor')?.classList.add('hidden');
             renderIdeogramRegions();
         }
 
@@ -9626,7 +9629,7 @@
             }
             const layer = document.getElementById('ideogramRegionLayer');
             if (!layer) return;
-            const active = ideogramRegionPresetActive();
+            const active = ideogramRegionPresetActive() && ideogramLinearOutputIsGuide;
             const rect = active ? displayedImageRectWithinShell() : null;
             layer.classList.toggle('hidden', !active);
             if (!active || !rect) {
@@ -10035,6 +10038,7 @@
                     const latestShouldUseReference = activePreset === 'Ideogram4' && currentActivity === 'img2img' && !!referenceImageDataUrl;
                     if (!latestShouldUseReference) return;
                     if (!options.force && currentSrc === nextSrc) {
+                        ideogramLinearOutputIsGuide = true;
                         syncIdeogramRegionUiVisibility();
                         return;
                     }
@@ -10043,14 +10047,16 @@
                         mediaType: 'image',
                         filename: referenceImageMeta.label || 'ideogram reference',
                         activity: currentActivity,
-                        modified: Date.now()
-                    });
+                        modified: Date.now(),
+                        ideogramGuide: true
+                    }, { ideogramGuide: true });
                     syncIdeogramRegionUiVisibility();
                 });
                 return;
             }
             const nextSrc = ideogramGuideCanvasDataUrl();
             if (!options.force && currentSrc === nextSrc) {
+                ideogramLinearOutputIsGuide = true;
                 syncIdeogramRegionUiVisibility();
                 return;
             }
@@ -10059,8 +10065,9 @@
                 mediaType: 'image',
                 filename: shouldUseReference ? (referenceImageMeta.label || 'ideogram reference') : 'ideogram regional guide canvas',
                 activity: currentActivity,
-                modified: Date.now()
-            });
+                modified: Date.now(),
+                ideogramGuide: true
+            }, { ideogramGuide: true });
             syncIdeogramRegionUiVisibility();
         }
 
