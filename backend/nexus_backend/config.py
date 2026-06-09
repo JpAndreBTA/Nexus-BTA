@@ -59,6 +59,7 @@ class RuntimeSettings(BaseModel):
     disable_xformers: bool = False
     enable_sage_attention: bool = True
     enable_flash_attention: bool = False
+    enable_pytorch_attention: bool = True
     acceleration_profile_version: int = 2
     idle_unload_seconds: int = 90
     idle_stop_seconds: int = 300

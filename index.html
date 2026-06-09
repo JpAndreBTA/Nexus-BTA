@@ -5731,7 +5731,7 @@
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">xFormers<span class="toggle-switch"><input id="xformersToggle" class="attention-toggle" value="xFormers" type="checkbox" checked><span class="toggle-track"></span></span></label>
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">PyTorch SDPA<span class="toggle-switch"><input id="pytorchAttentionToggle" class="attention-toggle" value="PyTorch SDPA" type="checkbox" checked><span class="toggle-track"></span></span></label>
                         <button type="button" onclick="saveRuntimeSettings()" class="flat-button py-2 text-[10px] font-bold uppercase w-full"><i class="fa-solid fa-floppy-disk mr-1 text-nexus-red"></i> Save Runtime</button>
-                        <p id="settingsRuntimeStatus" class="text-[10px] text-nexus-muted leading-4">Priority follows Sage for supported video nodes, then xFormers, then PyTorch SDPA fallback.</p>
+                        <p id="settingsRuntimeStatus" class="text-[10px] text-nexus-muted leading-4">Choose a compatible set. Priority follows Sage, then Flash, then xFormers, then PyTorch SDPA.</p>
                     </section>
                     <section class="data-card p-3 space-y-3">
                         <span class="mini-label">Model Paths</span>
@@ -7184,7 +7184,7 @@
                 });
                 renderRuntimeSettings(platformSettings);
                 if (status) status.innerText = 'Runtime saved. Restart happens automatically when generation needs it.';
-                showToast('Runtime Saved', 'SageAttention and xFormers preferences are synced with the backend.');
+                showToast('Runtime Saved', 'Attention preferences are synced with the backend.');
             } catch (error) {
                 if (status) {
                     status.classList.add('text-nexus-red');
@@ -29380,6 +29380,7 @@
             const flashAvailable = !!options.flashAvailable;
             const enableSage = options.enableSage !== false && sageAvailable;
             const enableFlash = !!options.enableFlash && flashAvailable;
+            const enablePytorch = options.enablePytorch !== false;
             const disableXformers = !!options.disableXformers || !xformersAvailable;
             document.querySelectorAll('.attention-toggle').forEach(input => {
                 const value = input.value;
@@ -29387,7 +29388,7 @@
                     (value === 'SageAttention' && (normalized === 'sage' || enableSage)) ||
                     (value === 'FlashAttention' && (normalized === 'flash' || enableFlash)) ||
                     (value === 'xFormers' && !disableXformers) ||
-                    (value === 'PyTorch SDPA');
+                    (value === 'PyTorch SDPA' && (normalized === 'pytorch' || enablePytorch));
             });
             if (![...document.querySelectorAll('.attention-toggle')].some(input => input.checked)) {
                 const sdpa = [...document.querySelectorAll('.attention-toggle')].find(input => input.value === 'PyTorch SDPA');
@@ -29417,13 +29418,18 @@
                 disable_xformers: !document.getElementById('xformersToggle')?.checked,
                 enable_sage_attention: !!document.getElementById('sageAttentionToggle')?.checked,
                 enable_flash_attention: !!document.getElementById('flashAttentionToggle')?.checked,
+                enable_pytorch_attention: !!document.getElementById('pytorchAttentionToggle')?.checked,
                 acceleration_profile_version: 2,
                 precision: document.getElementById('precisionSelect')?.value || 'Auto'
             };
-            if (shouldPreferXformersForPreset(activePreset) && document.getElementById('xformersToggle')?.checked) {
+            if (
+                shouldPreferXformersForPreset(activePreset)
+                && document.getElementById('xformersToggle')?.checked
+                && !document.getElementById('sageAttentionToggle')?.checked
+                && !document.getElementById('flashAttentionToggle')?.checked
+            ) {
                 runtime.attention_backend = 'auto';
                 runtime.disable_xformers = false;
-                runtime.enable_sage_attention = false;
             }
             return runtime;
         }
@@ -29437,7 +29443,8 @@
                 flashAvailable: !!modules.flash_attn?.available,
                 disableXformers: !!runtime.disable_xformers,
                 enableSage: runtime.enable_sage_attention !== false,
-                enableFlash: !!runtime.enable_flash_attention
+                enableFlash: !!runtime.enable_flash_attention,
+                enablePytorch: runtime.enable_pytorch_attention !== false
             });
             if (runtime.vram_policy) {
                 const label = { shared: 'VRAM Shared', gpu_only: 'GPU Only' }[runtime.vram_policy] || runtime.vram_policy;
@@ -29508,7 +29515,8 @@
                         flashAvailable: !!modules.flash_attn?.available,
                         disableXformers: !!recommended.disable_xformers,
                         enableSage: recommended.enable_sage_attention !== false,
-                        enableFlash: !!recommended.enable_flash_attention
+                        enableFlash: !!recommended.enable_flash_attention,
+                        enablePytorch: recommended.enable_pytorch_attention !== false
                     });
                     const vramSelect = document.getElementById('vramPolicySelect');
                     if (vramSelect && recommended.vram_policy) {

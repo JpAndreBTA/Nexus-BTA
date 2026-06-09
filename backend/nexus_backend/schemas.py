@@ -119,6 +119,7 @@ class RuntimeOptions(BaseModel):
     disable_xformers: bool = False
     enable_sage_attention: bool = True
     enable_flash_attention: bool = False
+    enable_pytorch_attention: bool = True
     acceleration_profile_version: int = 2
     precision: str = "auto"
 

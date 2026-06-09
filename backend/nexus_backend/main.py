@@ -5095,6 +5095,7 @@ def _apply_runtime_options(options: RuntimeOptions | None) -> bool:
     next_disable_xformers = bool(options.disable_xformers)
     next_enable_sage = bool(getattr(options, "enable_sage_attention", True))
     next_enable_flash = bool(getattr(options, "enable_flash_attention", False))
+    next_enable_pytorch = bool(getattr(options, "enable_pytorch_attention", True))
     next_profile_version = max(2, int(getattr(options, "acceleration_profile_version", 2) or 2))
     changed = (
         _canonical_vram_policy(settings.runtime.vram_policy) != next_vram
@@ -5104,6 +5105,7 @@ def _apply_runtime_options(options: RuntimeOptions | None) -> bool:
         or bool(settings.runtime.disable_xformers) != next_disable_xformers
         or bool(settings.runtime.enable_sage_attention) != next_enable_sage
         or bool(settings.runtime.enable_flash_attention) != next_enable_flash
+        or bool(getattr(settings.runtime, "enable_pytorch_attention", True)) != next_enable_pytorch
         or int(getattr(settings.runtime, "acceleration_profile_version", 0) or 0) != next_profile_version
     )
     settings.runtime.vram_policy = next_vram
@@ -5113,6 +5115,7 @@ def _apply_runtime_options(options: RuntimeOptions | None) -> bool:
     settings.runtime.disable_xformers = next_disable_xformers
     settings.runtime.enable_sage_attention = next_enable_sage or next_attention == "sage"
     settings.runtime.enable_flash_attention = next_enable_flash or next_attention == "flash"
+    settings.runtime.enable_pytorch_attention = next_enable_pytorch or next_attention == "pytorch"
     settings.runtime.acceleration_profile_version = next_profile_version
     if changed:
         save_settings(settings)
@@ -5433,6 +5436,7 @@ def _runtime_attention_capabilities() -> dict[str, Any]:
             "disable_xformers": not modules["xformers"]["available"],
             "enable_sage_attention": modules["sageattention"]["available"],
             "enable_flash_attention": modules["flash_attn"]["available"],
+            "enable_pytorch_attention": True,
             "acceleration_profile_version": 2,
             "vram_policy": recommended_vram,
             "gpu_memory_gb": recommended_gpu_memory_gb,

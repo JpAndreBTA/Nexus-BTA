@@ -403,6 +403,7 @@ class ComfyClient:
             "attention_backend": runtime.attention_backend.lower(),
             "enable_sage_attention": bool(runtime.enable_sage_attention),
             "enable_flash_attention": bool(runtime.enable_flash_attention),
+            "enable_pytorch_attention": bool(getattr(runtime, "enable_pytorch_attention", True)),
         }
         return json.dumps(payload, sort_keys=True)
 
@@ -463,6 +464,8 @@ class ComfyClient:
             flags.append("--use-flash-attention")
         elif attention in {"pytorch", "pytorchsdpa", "sdpa"}:
             flags.append("--use-pytorch-cross-attention")
+        elif not bool(getattr(runtime, "enable_pytorch_attention", True)) and (runtime.disable_xformers or not _module_available("xformers")):
+            flags.append("--use-split-cross-attention")
         return flags
 
     def _reserve_vram_gb(self) -> float | None:
