@@ -1,15 +1,14 @@
-# NexusBTA v0.2.28
+# NexusBTA v0.2.29
 
-`NexusBTA v0.2.28 - Ideogram-4 Functional Hotfix`
+`NexusBTA v0.2.29 - Blackwell xFormers Runtime Hotfix`
 
 Short release summary:
 
-- Ideogram-4: regional boxes now use the native KJ `elements_data` contract instead of leaking guide JSON into generation.
-- Ideogram-4 txt2img/img2img: text regions, object regions and reference-preserve prompts stay synchronized with the backend.
-- Ideogram-4 output guard: unintended marks, borders, watermarks and random text are blocked unless the prompt or region explicitly asks for brand/logo/signage details.
-- Legacy `/ui`: Ideogram region overlays remain editor-only and do not cover generated outputs.
-- Hotfix scope: keeps the offline UI, xFormers runtime and dependency behavior from `v0.2.27`.
+- Runtime attention: xFormers availability now requires a real CUDA `memory_efficient_attention` kernel probe, not only import success.
+- RTX 5090 / Blackwell: broken xFormers wheels are detected before generation so auto/Sage paths can fall back instead of crashing with `memory_efficient_attention_forward`.
+- Runtime capabilities: `/api/runtime/capabilities` now reports the actual xFormers operator error for diagnostics.
+- Hotfix scope: keeps the Ideogram-4 functional behavior from `v0.2.28`.
 
 Complete version:
 
-[docs/releases/v0.2.28.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.28/docs/releases/v0.2.28.md)
+[docs/releases/v0.2.29.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.29/docs/releases/v0.2.29.md)

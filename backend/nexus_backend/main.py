@@ -5334,6 +5334,26 @@ async def _runtime_memory_snapshot() -> dict[str, Any]:
 
 
 def _runtime_attention_capabilities() -> dict[str, Any]:
+    def xformers_cuda_probe_error() -> str:
+        try:
+            import torch
+            import xformers.ops as xops  # type: ignore
+
+            if importlib.util.find_spec("xformers._C") is None:
+                return "xFormers CUDA/C++ extension is not available."
+            if not torch.cuda.is_available():
+                return "CUDA is not available for xFormers."
+
+            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            q = torch.randn((1, 32, 30, 128), device="cuda", dtype=dtype)
+            k = torch.randn_like(q)
+            v = torch.randn_like(q)
+            xops.memory_efficient_attention(q, k, v)
+            torch.cuda.synchronize()
+            return ""
+        except Exception as exc:
+            return f"{type(exc).__name__}: {str(exc)[:180]}"
+
     def module_status(module_name: str) -> dict[str, Any]:
         available = importlib.util.find_spec(module_name) is not None
         result: dict[str, Any] = {"available": available, "version": "", "error": ""}
@@ -5345,9 +5365,10 @@ def _runtime_attention_capabilities() -> dict[str, Any]:
             if module_name == "xformers":
                 import xformers.ops  # noqa: F401
 
-                if importlib.util.find_spec("xformers._C") is None:
+                probe_error = xformers_cuda_probe_error()
+                if probe_error:
                     result["available"] = False
-                    result["error"] = "xFormers CUDA/C++ extension is not available."
+                    result["error"] = probe_error
             elif module_name == "sageattention":
                 if importlib.util.find_spec("triton") is None:
                     result["available"] = False

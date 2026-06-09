@@ -18,12 +18,31 @@ import httpx
 from .config import NexusSettings, runtime_python
 
 
+def _xformers_cuda_probe_error() -> str:
+    try:
+        import torch  # type: ignore
+        import xformers.ops as xops  # type: ignore
+
+        if importlib.util.find_spec("xformers._C") is None:
+            return "xformers._C extension is not available"
+        if not torch.cuda.is_available():
+            return "CUDA is not available for xFormers"
+
+        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        q = torch.randn((1, 32, 30, 128), device="cuda", dtype=dtype)
+        k = torch.randn_like(q)
+        v = torch.randn_like(q)
+        xops.memory_efficient_attention(q, k, v)
+        torch.cuda.synchronize()
+        return ""
+    except Exception as exc:
+        return f"{type(exc).__name__}: {str(exc)[:220]}"
+
+
 def _module_available(module_name: str) -> bool:
     try:
         if module_name == "xformers":
-            import xformers.ops  # noqa: F401
-
-            return importlib.util.find_spec("xformers._C") is not None
+            return _xformers_cuda_probe_error() == ""
         if importlib.util.find_spec(module_name) is None:
             return False
         if module_name == "sageattention" and importlib.util.find_spec("triton") is None:
