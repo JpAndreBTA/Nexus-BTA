@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 $root = $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProjectRoot)
 $python = Join-Path $root "runtime\.venv\Scripts\python.exe"
 $backend = Join-Path $root "backend\run_backend.py"
+$backendLauncher = Join-Path $root "scripts\run_backend.ps1"
 $comfyMain = Join-Path $root "runtime\ComfyUI\main.py"
 $comfyRoot = Join-Path $root "runtime\ComfyUI"
 $bootstrap = Join-Path $root "scripts\bootstrap_nexus_runtime.ps1"
@@ -22,6 +23,8 @@ $wan22Deps = Join-Path $root "scripts\install_wan22_deps.ps1"
 $terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
 $settingsPath = Join-Path $root "config\nexus_settings.json"
 $dependencyStatePath = Join-Path $root "config\nexus_dependency_state.json"
+$backendStdoutLog = Join-Path $root "logs\backend.stdout.log"
+$backendStderrLog = Join-Path $root "logs\backend.stderr.log"
 $uiUrl = "http://127.0.0.1:7861/ui"
 
 if (Test-Path -LiteralPath $terminalHelpers) {
@@ -127,6 +130,54 @@ function Wait-NexusHealth {
         Start-Sleep -Milliseconds 750
     }
     return $false
+}
+
+function Start-NexusBackendProcess {
+    New-Item -ItemType Directory -Force -Path (Join-Path $root "logs") | Out-Null
+    Remove-Item -LiteralPath $backendStdoutLog, $backendStderrLog -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $backendLauncher) {
+        Start-Process -FilePath "powershell" `
+            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $backendLauncher, "-ProjectRoot", $root) `
+            -WorkingDirectory $root `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $backendStdoutLog `
+            -RedirectStandardError $backendStderrLog
+        return
+    }
+    Start-Process -FilePath $python `
+        -ArgumentList @($backend) `
+        -WorkingDirectory $root `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $backendStdoutLog `
+        -RedirectStandardError $backendStderrLog
+}
+
+function Show-NexusBackendLogTail {
+    foreach ($logPath in @($backendStderrLog, $backendStdoutLog)) {
+        if (!(Test-Path -LiteralPath $logPath)) {
+            continue
+        }
+        $tail = @(Get-Content -LiteralPath $logPath -Tail 12 -ErrorAction SilentlyContinue)
+        if ($tail.Count -gt 0) {
+            Write-NexusLine "Backend log: $logPath" "Warn"
+            $tail | ForEach-Object { Write-Host $_ }
+        }
+    }
+}
+
+function Repair-NexusBackendRequirements {
+    $requirementsPath = Join-Path $root "requirements.txt"
+    if (!(Test-Path -LiteralPath $requirementsPath)) {
+        Write-NexusLine "requirements.txt not found; backend dependency repair skipped." "Warn"
+        return $false
+    }
+    Write-NexusLine "Backend did not answer; repairing Python requirements once..." "Warn"
+    & $python -m pip install --disable-pip-version-check -r $requirementsPath
+    if ($LASTEXITCODE -ne 0) {
+        Write-NexusLine "Backend dependency repair failed. Check internet connection and pip output." "Error"
+        return $false
+    }
+    return $true
 }
 
 function Test-NexusComfyDirect {
@@ -531,12 +582,21 @@ if ($comfyPortOwner) {
 
 if (!(Test-NexusHealth)) {
     Write-NexusLine "Starting backend..." "Info"
-    Start-Process -FilePath $python -ArgumentList @($backend) -WorkingDirectory $root -WindowStyle Hidden
+    Start-NexusBackendProcess
 }
 
 Write-NexusLine "Waiting for API..." "Info"
 if (!(Wait-NexusHealth -Seconds 180)) {
-    throw "Backend did not become ready at http://127.0.0.1:7861/api/health. Open update.bat to repair or refresh dependencies, then run run.bat again."
+    Show-NexusBackendLogTail
+    if (Repair-NexusBackendRequirements) {
+        Stop-NexusRuntimeProcesses
+        Start-NexusBackendProcess
+        Write-NexusLine "Waiting for API after dependency repair..." "Info"
+    }
+    if (!(Wait-NexusHealth -Seconds 180)) {
+        Show-NexusBackendLogTail
+        throw "Backend did not become ready at http://127.0.0.1:7861/api/health. Check logs\backend.stderr.log, open update.bat to repair dependencies, then run run.bat again."
+    }
 }
 
 Write-NexusLine "Model folders and catalog are ready." "Info"

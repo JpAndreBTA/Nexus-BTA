@@ -11,11 +11,11 @@ from visual_checks import RESULTS, analyze_image, local_output_path
 
 ROOT = Path(__file__).resolve().parents[2]
 BASE = "http://127.0.0.1:7861/ui"
-BASE_IMAGE = Path(os.environ.get("QWEN_SMOKE_BASE_IMAGE") or (ROOT / "input" / "SmokeTeste_BaseMultipleReference.png"))
+BASE_IMAGE = Path(os.environ.get("QWEN_SMOKE_BASE_IMAGE") or (ROOT / "input" / "SmokeTest.png"))
 TEST_DENOISE = os.environ.get("QWEN_SMOKE_DENOISE", "0.78")
 TEST_CASES = {item.strip() for item in os.environ.get("QWEN_SMOKE_CASES", "linear,multiview,inpaint").split(",") if item.strip()}
-TEST_WIDTH = int(os.environ.get("QWEN_SMOKE_WIDTH", "208"))
-TEST_HEIGHT = int(os.environ.get("QWEN_SMOKE_HEIGHT", "218"))
+TEST_WIDTH = int(os.environ.get("QWEN_SMOKE_WIDTH", "912"))
+TEST_HEIGHT = int(os.environ.get("QWEN_SMOKE_HEIGHT", "512"))
 TEST_H_ANGLE = int(os.environ.get("QWEN_SMOKE_H_ANGLE", "132"))
 TEST_V_ANGLE = int(os.environ.get("QWEN_SMOKE_V_ANGLE", "41"))
 TEST_ZOOM = float(os.environ.get("QWEN_SMOKE_ZOOM", "6.4"))

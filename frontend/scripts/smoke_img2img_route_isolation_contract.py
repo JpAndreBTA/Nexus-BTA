@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "test-results"
 RESULTS.mkdir(exist_ok=True)
 BASE = "http://127.0.0.1:7861/ui"
-BASE_IMAGE = ROOT / "input" / "SmokeTeste_BaseMultipleReference.png"
+BASE_IMAGE = ROOT / "input" / "SmokeTest.png"
 PRESETS = ["Qwen", "Flux", "Wan", "LTX", "SDXL"]
 
 

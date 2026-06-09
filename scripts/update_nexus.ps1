@@ -141,6 +141,16 @@ if (Test-Path -LiteralPath $python) {
     } else {
         Invoke-NexusPipInstall "Backend Python requirements" $python @("uvicorn[standard]>=0.30", "fastapi", "pydantic", "python-multipart", "httpx", "websockets", "pillow", "soundfile", "opencv-contrib-python")
     }
+    $env:PYTHONPATH = Join-Path $root "backend"
+    $backendProbe = & $python -c "import nexus_backend.main; print('backend import ok')" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $text = ($backendProbe | Out-String).Trim()
+        if (![string]::IsNullOrWhiteSpace($text)) {
+            Write-NexusLine "Backend import probe output:" "Error"
+            Write-Host $text
+        }
+        throw "Backend import probe failed after dependency update."
+    }
     Write-NexusLine "Backend Python requirements satisfied." "Ok"
 
     $comfyRequirements = Join-Path $comfyRoot "requirements.txt"

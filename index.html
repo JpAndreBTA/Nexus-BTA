@@ -2887,6 +2887,21 @@
                         </button>
                     </div>
 
+                    <div id="ideogramMethod2Panel" class="hidden grid grid-cols-[1fr_auto] gap-2 items-end">
+                        <label class="space-y-1">
+                            <span class="mini-label">Method 2 sampler</span>
+                            <select id="ideogramMethod2NoiseSamplerSelect" class="flat-input" onchange="savePresetRuntimeState()">
+                                <option value="pyramid">pyramid</option>
+                                <option value="gaussian">gaussian</option>
+                                <option value="uniform">uniform</option>
+                                <option value="brownian">brownian</option>
+                            </select>
+                        </label>
+                        <button type="button" onclick="maybePrepareIdeogram4TemplateAssets()" class="h-8 w-8 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm" title="Install Ideogram 4 Method 2 requirements">
+                            <i class="fa-solid fa-download text-[10px]"></i>
+                        </button>
+                    </div>
+
                     <div id="referenceImagePanel" class="hidden relative border border-dashed border-nexus-border bg-nexus-bg rounded-sm p-2 text-center cursor-pointer hover:border-nexus-red transition-colors">
                         <button id="clearReferenceImageBtn" type="button" class="hidden absolute top-1.5 right-1.5 z-10 w-6 h-6 items-center justify-center bg-nexus-panel/95 border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red rounded-sm" title="Clear reference image">
                             <i class="fa-solid fa-xmark text-[10px]"></i>
@@ -6590,6 +6605,7 @@
         let qwenMultiViewScene = null;
         let qwenMultiViewScenePromise = null;
         const QWEN_MULTIANGLE_LORA_SIZE_BYTES = 295140688;
+        const FLUX_MULTIANGLE_LORA_SIZE_BYTES = 87070312;
         let qwenMultiViewState = nexusSafeStorage.json('nexus_qwen_multiview_state', {
             split: 50,
             horizontal: 54,
@@ -6915,8 +6931,8 @@
                 template: 'LTX_DIRECTOR_SUITE',
                 type: 'video',
                 folder: './models/checkpoints/ltx',
-                checkpoint: 'LTX_Video_13B.safetensors',
-                models: ['LTX_Video_13B.safetensors', 'LTX_Video_Distilled.safetensors', 'LTX_Video_Turbo.safetensors'],
+                checkpoint: 'DasiwaLTX23Lightspeed_solsticecoinV2.safetensors',
+                models: ['DasiwaLTX23Lightspeed_solsticecoinV2.safetensors', '10Eros_v1-fp8mixed_learned.safetensors', 'LTX_Video_13B.safetensors', 'LTX_Video_Distilled.safetensors', 'LTX_Video_Turbo.safetensors'],
                 width: 512,
                 height: 512,
                 steps: 8,
@@ -6985,6 +7001,7 @@
                 cfg: 1,
                 denoise: 0.45,
                 batchSize: 1,
+                ideogramMethod2NoiseSampler: 'pyramid',
                 sampler: 'Euler',
                 samplers: ['Euler', 'FlowMatch Euler', 'UniPC'],
                 scheduler: 'Simple',
@@ -7386,9 +7403,12 @@
                 .sort((a, b) => {
                     const aLtxGguf = presetName === 'LTX' && /\.gguf$/i.test(a.name) ? 1 : 0;
                     const bLtxGguf = presetName === 'LTX' && /\.gguf$/i.test(b.name) ? 1 : 0;
+                    const aLtxPreferred = presetName === 'LTX' && /dasiwa|lightspeed/i.test([a.name, a.relative_path].join(' ')) ? 1 : 0;
+                    const bLtxPreferred = presetName === 'LTX' && /dasiwa|lightspeed/i.test([b.name, b.relative_path].join(' ')) ? 1 : 0;
                     const aQwenEdit = presetName === 'Qwen' && /edit/i.test([a.name, a.folder, a.relative_path].join(' ')) ? 1 : 0;
                     const bQwenEdit = presetName === 'Qwen' && /edit/i.test([b.name, b.folder, b.relative_path].join(' ')) ? 1 : 0;
                     return aLtxGguf - bLtxGguf
+                        || bLtxPreferred - aLtxPreferred
                         || bQwenEdit - aQwenEdit
                         || (categoryPriority[a.category] ?? 3) - (categoryPriority[b.category] ?? 3)
                         || a.folder.localeCompare(b.folder)
@@ -11008,22 +11028,31 @@
             const missingRequired = Array.isArray(status?.missing_required_assets) ? status.missing_required_assets : [];
             const missingOptional = Array.isArray(status?.missing_optional_assets) ? status.missing_optional_assets : [];
             const missingNodeDeps = Array.isArray(status?.missing_custom_node_dependencies) ? status.missing_custom_node_dependencies : [];
-            if (!missingRequired.length && !missingOptional.length && !missingNodeDeps.length && !status?.missing_core_nodes?.length) return false;
+            const missingMethod2Nodes = Array.isArray(status?.missing_method2_custom_nodes) ? status.missing_method2_custom_nodes : [];
+            if (!missingRequired.length && !missingOptional.length && !missingNodeDeps.length && !missingMethod2Nodes.length && !status?.missing_core_nodes?.length) return false;
             const requiredTotal = formatModelAssetBytes(status?.estimated_missing_required_bytes || missingRequired.reduce((sum, item) => sum + Number(item?.size_bytes_min || 0), 0));
             const optionalTotal = formatModelAssetBytes(status?.estimated_missing_optional_bytes || missingOptional.reduce((sum, item) => sum + Number(item?.size_bytes_min || 0), 0));
             const requiredList = missingRequired.map(item => `- ${item.label || item.filename}\n  -> ${item.destination || item.filename}\n  ${formatModelAssetBytes(item.size_bytes_min)}`).join('\n');
             const optionalList = missingOptional.map(item => `- ${item.label || item.filename}\n  -> ${item.destination || item.filename}\n  ${formatModelAssetBytes(item.size_bytes_min)}`).join('\n');
             const nodeList = missingNodeDeps.map(name => `- ${name}`).join('\n');
+            const method2List = missingMethod2Nodes.map(item => `- ${item.label || item.class_type}\n  ${item.repo || ''}`).join('\n');
             const coreList = (status?.missing_core_nodes || []).map(name => `- ${name}`).join('\n');
             if (nexusBrowserOffline()) {
                 sessionStorage.setItem('nexus_ideogram4_template_assets_prompted', '1');
                 return warnOfflineDependencyDownload('Ideogram 4 local assets/dependencies', `Required assets: ${requiredTotal}.`);
             }
-            const ok = window.confirm(`Ideogram-4 optional local setup is not ready.\n\nNew users are not forced to download these files. To generate locally, Nexus needs the model, unconditional model, Qwen3VL text encoder and Flux2 VAE. You can also install missing custom-node Python dependencies.\n\nRequired assets: ${requiredTotal}\n${requiredList || '- ready'}\n\nOptional assets: ${optionalTotal}\n${optionalList || '- none'}\n\nCustom-node Python dependencies:\n${nodeList || '- ready'}\n\nComfy core support still missing until runtime update/restart:\n${coreList || '- ready'}\n\nDownload selected missing assets and install missing node dependencies now?`);
+            const ok = window.confirm(`Ideogram-4 optional local setup is not ready.\n\nNew users are not forced to download these files. To generate locally, Nexus needs the model, unconditional model, Qwen3VL text encoder and Flux2 VAE. Method 2 uses Extra Samplers LCM + More Math noise x2 when those nodes are installed.\n\nRequired assets: ${requiredTotal}\n${requiredList || '- ready'}\n\nOptional assets: ${optionalTotal}\n${optionalList || '- none'}\n\nMethod 2 custom nodes:\n${method2List || '- ready'}\n\nCustom-node Python dependencies:\n${nodeList || '- ready'}\n\nComfy core support still missing until runtime update/restart:\n${coreList || '- ready'}\n\nDownload selected missing assets and install missing node dependencies now?`);
             sessionStorage.setItem('nexus_ideogram4_template_assets_prompted', '1');
             if (!ok) {
                 showToast('Ideogram 4 Downloads Skipped', 'Template loaded without downloading optional local assets.');
                 return false;
+            }
+            if (missingMethod2Nodes.length) {
+                const nodeNames = missingMethod2Nodes.map(item => item.class_type).filter(Boolean);
+                await nexusFetch('/custom-nodes/install-missing?restart_comfy=true', {
+                    method: 'POST',
+                    body: JSON.stringify({ node_names: nodeNames, all_enabled: false })
+                });
             }
             const assetKeys = [...missingRequired, ...missingOptional].map(item => item.key).filter(Boolean);
             const started = await nexusFetch('/ideogram4/assets/download/start', {
@@ -11051,6 +11080,7 @@
         async function ensureQwenMultiViewLoraInstalled(options = {}) {
             if (!isQwenImageEditTemplateActive()) return false;
             const status = await nexusFetch('/qwen/multiview/status');
+            if (!await ensureMultiViewCameraNode(status, 'Qwen MultiView')) return false;
             if (status?.installed) return true;
             const filename = status?.filename || 'qwen-image-edit-2511-multiple-angles-lora.safetensors';
             const sizeLabel = qwenMultiViewSizeLabel(status?.size_bytes || QWEN_MULTIANGLE_LORA_SIZE_BYTES);
@@ -11065,9 +11095,56 @@
             return true;
         }
 
+        async function ensureFluxMultiViewRequirementsInstalled(options = {}) {
+            if (!isFluxMultiViewTemplateActive()) return false;
+            const status = await nexusFetch('/flux/multiview/status');
+            if (!await ensureMultiViewCameraNode(status, 'Flux MultiView')) return false;
+            if (status?.installed) return true;
+            const filename = status?.filename || 'multiple-angles-flux-klein-9b.safetensors';
+            const sizeLabel = qwenMultiViewSizeLabel(status?.size_bytes || FLUX_MULTIANGLE_LORA_SIZE_BYTES);
+            if (nexusBrowserOffline()) return warnOfflineDependencyDownload('Flux MultiView LoRA', `Missing: ${filename}.`);
+            const ok = options.passive
+                ? window.confirm(`Download Flux MultiView LoRA now?\n\n${filename}\n${sizeLabel}\n\nIt will be saved under ./models/loras/flux.`)
+                : window.confirm(`Flux MultiView requires this LoRA:\n\n${filename}\n${sizeLabel}\n\nDownload now to ./models/loras/flux?`);
+            if (!ok) return false;
+            showToast('Flux MultiView Download', `Downloading ${filename} (${sizeLabel}).`);
+            const started = await nexusFetch('/flux/multiview/download/start', { method: 'POST' });
+            await pollDownloadJob(started.job_id, 'Flux MultiView LoRA');
+            await refreshModelCatalog();
+            showToast('Flux MultiView Ready', `${filename} is ready.`);
+            return true;
+        }
+
+        async function ensureMultiViewCameraNode(status, label = 'MultiView') {
+            if (status?.node_installed !== false) return true;
+            const missing = (status?.missing_custom_nodes || []).map(item => item.class_type || 'QwenMultiangleCameraNode').filter(Boolean);
+            if (!missing.length) return true;
+            if (nexusBrowserOffline()) return warnOfflineDependencyDownload(`${label} custom node`, 'Missing: ComfyUI-qwenmultiangle.');
+            const ok = window.confirm(`${label} requires the ComfyUI-qwenmultiangle custom node.\n\nInstall/update it now and restart ComfyUI if needed?`);
+            if (!ok) return false;
+            showToast(`${label} Setup`, 'Installing ComfyUI-qwenmultiangle.');
+            const result = await nexusFetch('/custom-nodes/install-missing?restart_comfy=true', {
+                method: 'POST',
+                body: JSON.stringify({ node_names: missing, all_enabled: false })
+            });
+            const stillMissing = Array.isArray(result?.missing_after_install) ? result.missing_after_install : [];
+            if (stillMissing.length) {
+                showToast(`${label} Setup`, `Still missing: ${stillMissing.join(', ')}`);
+                return false;
+            }
+            showToast(`${label} Setup`, 'Custom node is ready.');
+            return true;
+        }
+
+        async function ensureActiveMultiViewRequirements(options = {}) {
+            if (isQwenImageEditTemplateActive()) return ensureQwenMultiViewLoraInstalled(options);
+            if (isFluxMultiViewTemplateActive()) return ensureFluxMultiViewRequirementsInstalled(options);
+            return false;
+        }
+
         async function generateQwenMultiView() {
-            if (!isQwenImageEditTemplateActive()) {
-                showToast('MultiView Unavailable', 'Select Qwen Image Edit first.');
+            if (!isMultiViewTemplateActive()) {
+                showToast('MultiView Unavailable', 'Select Qwen Image Edit or Flux2 Klein first.');
                 return;
             }
             if (!referenceImageDataUrl) {
@@ -12016,6 +12093,7 @@
             if (profile.batchSize !== undefined && document.getElementById('batchCountInput')) {
                 document.getElementById('batchCountInput').value = savedFields.batchCountInput || String(profile.batchSize);
             }
+            setSelectValue('ideogramMethod2NoiseSamplerSelect', savedFields.ideogramMethod2NoiseSamplerSelect || profile.ideogramMethod2NoiseSampler || 'pyramid');
 
             let profileStepsValue = savedFields.stepsSlider || profile.steps;
             if (presetName === 'Ideogram4' && (parseInt(savedFields.stepsSlider || '0', 10) || 0) < 12) {
@@ -12123,6 +12201,7 @@
             const ltxUpscaleControls = document.getElementById('ltxUpscaleControls');
             const ltxDetailerControls = document.getElementById('ltxDetailerControls');
             const ltxTransitionLoraWrapper = document.getElementById('ltxTransitionLoraWrapper');
+            const ideogramMethod2Panel = document.getElementById('ideogramMethod2Panel');
 
             if (videoPanel) videoPanel.classList.toggle('hidden', !isVideo);
             if (framesWrapper) framesWrapper.classList.toggle('hidden', ltxOnly);
@@ -12134,6 +12213,7 @@
             if (ltxUpscaleControls) ltxUpscaleControls.classList.toggle('hidden', !ltxOnly);
             if (ltxDetailerControls) ltxDetailerControls.classList.toggle('hidden', !ltxOnly);
             if (ltxTransitionLoraWrapper) ltxTransitionLoraWrapper.classList.toggle('hidden', !ltxOnly);
+            if (ideogramMethod2Panel) ideogramMethod2Panel.classList.toggle('hidden', activePreset !== 'Ideogram4');
             updateExtrasModeUi();
             updateEmbeddingButtonState();
             if (dimensionsTitle) dimensionsTitle.innerText = isVideo ? 'Frame Dimensions' : 'Image Dimensions';
@@ -12193,8 +12273,16 @@
             return /flux[-_. ]?2|flux2|flux\.2|klein/i.test(String(selectedModel));
         }
 
+        function isFluxMultiViewTemplateActive() {
+            return isFlux2ImageEditTemplateActive();
+        }
+
+        function isMultiViewTemplateActive() {
+            return isQwenImageEditTemplateActive() || isFluxMultiViewTemplateActive();
+        }
+
         function isQwenMultiViewActive() {
-            return isQwenImageEditTemplateActive() && currentActivity === 'img2img' && activeWorkspace === 'multiview';
+            return isMultiViewTemplateActive() && currentActivity === 'img2img' && activeWorkspace === 'multiview';
         }
 
         function qwenMultiViewSizeLabel(bytes = QWEN_MULTIANGLE_LORA_SIZE_BYTES) {
@@ -12842,7 +12930,7 @@
             const tabMultiView = document.getElementById('tab-multiview');
             const tabCanvas = document.getElementById('tab-canvas');
             const tabWorkflow = document.getElementById('tab-workflow');
-            const qwenMultiViewVisible = isQwenImageEditTemplateActive() && (currentActivity === 'img2img' || activeWorkspace === 'multiview');
+            const qwenMultiViewVisible = isMultiViewTemplateActive() && (currentActivity === 'img2img' || activeWorkspace === 'multiview');
             if (tabViewer) tabViewer.innerHTML = active ? '<i class="fa-solid fa-cube"></i> 3D View' : '<i class="fa-regular fa-image"></i> Linear Viewer';
             if (tabMultiView) {
                 tabMultiView.classList.toggle('hidden', !qwenMultiViewVisible);
@@ -23836,12 +23924,12 @@
                 showToast("Director Suite Hidden", "Select the LTX_DIRECTOR_SUITE template to open the LTX 2.3 Director tab.");
                 viewId = 'viewer';
             }
-            if (viewId === 'multiview' && !isQwenImageEditTemplateActive()) {
-                showToast("MultiView Hidden", "Select the Qwen Image Edit template to use MultiView.");
+            if (viewId === 'multiview' && !isMultiViewTemplateActive()) {
+                showToast("MultiView Hidden", "Select Qwen Image Edit or Flux2 Klein to use MultiView.");
                 viewId = 'viewer';
             }
             const directorTabVisible = isLtxDirectorTemplateActive();
-            const qwenMultiViewVisible = isQwenImageEditTemplateActive() && currentActivity === 'img2img';
+            const qwenMultiViewVisible = isMultiViewTemplateActive() && currentActivity === 'img2img';
             if (!['txt2img', 'img2img'].includes(currentActivity)) {
                 currentActivity = 'txt2img';
                 localStorage.setItem('nexus_current_activity', currentActivity);
@@ -23906,7 +23994,7 @@
             }
             if (viewId === 'multiview') {
                 renderQwenMultiView();
-                ensureQwenMultiViewLoraInstalled({ passive: true }).catch(error => showToast('MultiView Check Failed', String(error?.message || error).slice(0, 160)));
+                ensureActiveMultiViewRequirements({ passive: true }).catch(error => showToast('MultiView Check Failed', String(error?.message || error).slice(0, 160)));
             }
             renderWorkflowTabs();
         }
@@ -24766,7 +24854,7 @@
             'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
             'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'ltxMotionTransferToggle', 'ltxMotionTransferModeSelect',
             'controlNetEnabledToggle', 'controlNetTypeSelect', 'controlNetModelSelect', 'controlNetBalanceSelect',
-            'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'
+            'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput', 'ideogramMethod2NoiseSamplerSelect'
         ];
 
         function persistPresetRuntimeStates() {
@@ -31638,21 +31726,23 @@
             const poseStudioRoute = !!(poseGenerationHandoffActive && controlNetImageMeta?.label === 'Nexus POSE guide');
             const poseStudioControlNetRoute = !!(poseStudioRoute && document.getElementById('controlNetEnabledToggle')?.checked);
             const qwenMultiViewRoute = activePreset === 'Qwen' && currentActivity === 'img2img' && activeWorkspace === 'multiview';
+            const fluxMultiViewRoute = activePreset === 'Flux' && currentActivity === 'img2img' && activeWorkspace === 'multiview' && isFluxMultiViewTemplateActive();
+            const multiViewRoute = qwenMultiViewRoute || fluxMultiViewRoute;
             const basePrompt = document.getElementById('posPrompt')?.value || '';
             const baseNegativePrompt = document.getElementById('negPrompt')?.value || '';
-            const effectivePrompt = qwenMultiViewRoute
+            const effectivePrompt = multiViewRoute
                 ? qwenMultiViewCameraPrompt()
                 : genericOutpaintRoute
                 ? mergePromptPrefix(outpaintContinuityPromptPrefix(), basePrompt)
                 : basePrompt;
-            const effectiveNegativePrompt = qwenMultiViewRoute
+            const effectiveNegativePrompt = multiViewRoute
                 ? ''
                 : genericOutpaintRoute
                 ? mergePromptPrefix(outpaintContinuityNegativePromptPrefix(), baseNegativePrompt)
                 : baseNegativePrompt;
             const sideDenoise = parseFloat(document.getElementById('denoiseSlider')?.value || '0.75');
             const qwenMultiViewDenoise = 1;
-            const effectiveDenoise = qwenMultiViewRoute ? qwenMultiViewDenoise : (genericOutpaintRoute ? 1 : sideDenoise);
+            const effectiveDenoise = multiViewRoute ? qwenMultiViewDenoise : (genericOutpaintRoute ? 1 : sideDenoise);
             const ltxStepFloor = activePreset === 'LTX'
                 ? (ltxCanvasOutpaintRoute ? 4 : ltxMinimumSteps(selectedOption?.dataset?.model || profile.checkpoint || modelSelect?.value || ''))
                 : 8;
@@ -31835,6 +31925,7 @@
                     audio_vae: document.getElementById('audioVaeSelect')?.value || 'Automatic',
                     active_audio: !!document.getElementById('activeAudioToggle')?.checked,
                     qwen_multiview: qwenMultiViewRoute,
+                    flux_multiview: fluxMultiViewRoute,
                     pose_studio: poseStudioRoute,
                     pose_studio_mode: poseStudioRoute
                         ? (poseStudioControlNetRoute ? 'identity_reference_controlnet_pose' : 'identity_reference_pose_guide')
@@ -31844,9 +31935,17 @@
                     qwen_camera_zoom: qwenMultiViewRoute ? qwenMultiViewNumber(qwenMultiViewState.zoom, 2.1) : undefined,
                     qwen_camera_prompt: qwenMultiViewRoute ? qwenMultiViewCameraPrompt() : undefined,
                     qwen_multiangle_lora_strength: qwenMultiViewRoute ? 1.0 : undefined,
+                    flux_camera_horizontal: fluxMultiViewRoute ? Math.round(qwenMultiViewNumber(qwenMultiViewState.horizontal, 54)) : undefined,
+                    flux_camera_vertical: fluxMultiViewRoute ? Math.round(qwenMultiViewNumber(qwenMultiViewState.vertical, 29)) : undefined,
+                    flux_camera_zoom: fluxMultiViewRoute ? qwenMultiViewNumber(qwenMultiViewState.zoom, 2.1) : undefined,
+                    flux_camera_prompt: fluxMultiViewRoute ? qwenMultiViewCameraPrompt() : undefined,
+                    flux_multiangle_lora_strength: fluxMultiViewRoute ? 1.3 : undefined,
                     ideogram_regions: activePreset === 'Ideogram4' ? collectIdeogramRegionsForPayload() : undefined,
                     ideogram_reference_mode: activePreset === 'Ideogram4'
                         ? (currentActivity === 'img2img' ? 'base_image_plus_regional_boxes' : 'regional_boxes')
+                        : undefined,
+                    ideogram_method2_noise_sampler: activePreset === 'Ideogram4'
+                        ? (document.getElementById('ideogramMethod2NoiseSamplerSelect')?.value || 'pyramid')
                         : undefined,
                     wan_loop_cycle: activePreset === 'Wan' && currentActivity === 'img2img' ? !!wanLoopCycleEnabled : undefined,
                     wan_loop_source: activePreset === 'Wan' && currentActivity === 'img2img' && wanLoopCycleEnabled ? 'start_frame_as_end_frame' : undefined,
@@ -32521,8 +32620,8 @@
                 return;
             }
 
-            if (activePreset === 'Qwen' && activeWorkspace === 'multiview') {
-                const ready = await ensureQwenMultiViewLoraInstalled();
+            if (activeWorkspace === 'multiview' && isMultiViewTemplateActive()) {
+                const ready = await ensureActiveMultiViewRequirements();
                 if (!ready) return;
             }
 

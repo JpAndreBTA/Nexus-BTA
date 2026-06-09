@@ -272,6 +272,21 @@ IDEOGRAM4_REQUIRED_COMFY_NODES = (
     "DualModelGuider",
 )
 
+IDEOGRAM4_METHOD2_CUSTOM_NODES: tuple[dict[str, str], ...] = (
+    {
+        "class_type": "SamplerLCMCustom",
+        "label": "ComfyUI-Extra-Samplers",
+        "repo": "https://github.com/Clybius/ComfyUI-Extra-Samplers.git",
+        "folder": "ComfyUI-Extra-Samplers",
+    },
+    {
+        "class_type": "mrmth_ag_NoiseMathNode",
+        "label": "more_math",
+        "repo": "https://github.com/mcDandy/more_math.git",
+        "folder": "more_math",
+    },
+)
+
 WAN_MOTION_CAPTURE_CUSTOM_NODES: dict[str, dict[str, str]] = {
     "wan_animate_preprocess": {
         "label": "ComfyUI Wan Animate Preprocess",
@@ -442,11 +457,18 @@ CONTROLNET_OPTIONAL_ARTIFACTS: dict[str, dict[str, Any]] = {
     },
 }
 
-QWEN_MULTIANGLE_LORA_ARTIFACT: dict[str, str] = {
+QWEN_MULTIANGLE_LORA_ARTIFACT: dict[str, Any] = {
     "label": "Qwen Image Edit 2511 Multiple Angles LoRA",
     "filename": "qwen-image-edit-2511-multiple-angles-lora.safetensors",
     "url": "https://huggingface.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA/resolve/main/qwen-image-edit-2511-multiple-angles-lora.safetensors",
-    "size_bytes": "295140688",
+    "size_bytes": 295_140_688,
+}
+
+FLUX_MULTIANGLE_LORA_ARTIFACT: dict[str, Any] = {
+    "label": "Flux2 Klein Multiple Angles LoRA",
+    "filename": "multiple-angles-flux-klein-9b.safetensors",
+    "url": "https://huggingface.co/Alexali/multiple-angles-flux2K/resolve/main/multiple-angles-flux-klein-9b.safetensors?download=true",
+    "size_bytes": 87_070_312,
 }
 
 TRELLIS2_REPO_ID = "microsoft/TRELLIS.2-4B"
@@ -1195,6 +1217,11 @@ def _is_qwen_multiangle_lora_name(value: object) -> bool:
     return "qwen" in text and any(token in text for token in ("multiangle", "multi-angle", "multiple-angle", "multiple-angles", "angles-lora"))
 
 
+def _is_flux_multiangle_lora_name(value: object) -> bool:
+    text = str(value or "").lower()
+    return "flux" in text and any(token in text for token in ("multiangle", "multi-angle", "multiple-angle", "multiple-angles", "angles-flux"))
+
+
 def _ensure_qwen_multiangle_lora(request: GenerateRequest, assets: dict[str, str]) -> None:
     if request.preset.lower() != "qwen" or request.activity != "img2img":
         return
@@ -1221,6 +1248,34 @@ def _ensure_qwen_multiangle_lora(request: GenerateRequest, assets: dict[str, str
         strength_value = float(strength)
     except (TypeError, ValueError):
         strength_value = 1.0
+    request.loras.append({"name": name, "relative_name": name, "strength": strength_value, "strength_model": strength_value})
+
+
+def _ensure_flux_multiangle_lora(request: GenerateRequest, assets: dict[str, str]) -> None:
+    if request.preset.lower() != "flux" or request.activity != "img2img":
+        return
+    video_options = request.video or {}
+    enabled = video_options.get("flux_multiview", False)
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() not in {"", "false", "0", "off", "none", "no"}
+    if not enabled:
+        return
+    name = assets.get("flux_multiangle_lora")
+    if not name:
+        return
+    normalized = _normalize_lora_key(name)
+    existing = {
+        _normalize_lora_key(item.get("relative_name") or item.get("relative_path") or item.get("lora_name") or item.get("name"))
+        for item in request.loras
+        if isinstance(item, dict)
+    }
+    if normalized in existing:
+        return
+    strength = video_options.get("flux_multiangle_lora_strength", 1.3)
+    try:
+        strength_value = float(strength)
+    except (TypeError, ValueError):
+        strength_value = 1.3
     request.loras.append({"name": name, "relative_name": name, "strength": strength_value, "strength_model": strength_value})
 
 
@@ -6341,11 +6396,29 @@ async def _ideogram4_status_snapshot() -> dict[str, Any]:
     missing_node_dependencies = [name for name, status in relevant_nodes.items() if not status.get("installed")]
     runtime_checked = await comfy.is_running()
     missing_core_nodes: list[str] = []
+    object_info: dict[str, Any] | None = None
     if runtime_checked:
         try:
-            missing_core_nodes = _ideogram4_missing_core_support(await comfy.object_info())
+            object_info = await comfy.object_info()
+            missing_core_nodes = _ideogram4_missing_core_support(object_info)
         except Exception as exc:
             missing_core_nodes = [f"Comfy object_info unavailable: {exc}"]
+    available_node_names = set(object_info or {})
+    method2_noise_node_ready = "mrmth_ag_NoiseMathNode" in available_node_names or "mrmth_NoiseMathNode" in available_node_names
+    method2_sampler_ready = "SamplerLCMCustom" in available_node_names
+    if runtime_checked:
+        missing_method2_nodes = [
+            item
+            for item in IDEOGRAM4_METHOD2_CUSTOM_NODES
+            if (item["class_type"] == "SamplerLCMCustom" and not method2_sampler_ready)
+            or (item["class_type"] == "mrmth_ag_NoiseMathNode" and not method2_noise_node_ready)
+        ]
+    else:
+        missing_method2_nodes = [
+            item
+            for item in IDEOGRAM4_METHOD2_CUSTOM_NODES
+            if not (settings.custom_nodes_dir / item["folder"]).exists()
+        ]
     return {
         "template": "Ideogram4",
         "label": "Ideogram 4",
@@ -6358,6 +6431,9 @@ async def _ideogram4_status_snapshot() -> dict[str, Any]:
         "missing_optional_assets": missing_optional,
         "custom_node_dependencies": relevant_nodes,
         "missing_custom_node_dependencies": missing_node_dependencies,
+        "method2_ready": bool(method2_noise_node_ready and method2_sampler_ready),
+        "method2_custom_nodes": list(IDEOGRAM4_METHOD2_CUSTOM_NODES),
+        "missing_method2_custom_nodes": missing_method2_nodes,
         "runtime_checked": runtime_checked,
         "missing_core_nodes": missing_core_nodes,
         "models_dir": str(settings.models_dir),
@@ -8715,6 +8791,19 @@ def _qwen_multiangle_lora_installed_path() -> Path:
     return candidates[0]
 
 
+async def _qwenmultiangle_node_installed() -> bool:
+    try:
+        object_info = await _optional_comfy_object_info()
+        if _available_comfy_node(object_info, "QwenMultiangleCameraNode"):
+            return True
+    except Exception:
+        pass
+    try:
+        return any("qwenmultiangle" in item.name.lower() for item in settings.custom_nodes_dir.iterdir() if item.is_dir())
+    except Exception:
+        return False
+
+
 async def _run_qwen_multiangle_lora_download_job(job_id: str) -> None:
     try:
         artifact = QWEN_MULTIANGLE_LORA_ARTIFACT
@@ -8745,8 +8834,12 @@ async def qwen_multiview_status() -> dict[str, Any]:
     artifact = QWEN_MULTIANGLE_LORA_ARTIFACT
     target = _qwen_multiangle_lora_installed_path()
     installed = target.exists() and target.stat().st_size > 1024 * 1024
+    node_installed = await _qwenmultiangle_node_installed()
     return {
         "installed": installed,
+        "ready": bool(installed and node_installed),
+        "node_installed": node_installed,
+        "missing_custom_nodes": [] if node_installed else [{"class_type": "QwenMultiangleCameraNode", "label": "ComfyUI-qwenmultiangle", "repo": "https://github.com/jtydhr88/ComfyUI-qwenmultiangle"}],
         "name": str(target.relative_to(settings.models_dir / "loras")).replace("/", "\\"),
         "filename": artifact["filename"],
         "label": artifact["label"],
@@ -8772,6 +8865,87 @@ async def qwen_multiview_download_start() -> dict[str, Any]:
         "updated_at": datetime.now().isoformat(timespec="seconds"),
     }
     asyncio.create_task(_run_qwen_multiangle_lora_download_job(job_id))
+    return download_jobs[job_id]
+
+
+def _flux_multiangle_lora_target() -> Path:
+    return settings.models_dir / "loras" / "flux" / FLUX_MULTIANGLE_LORA_ARTIFACT["filename"]
+
+
+def _flux_multiangle_lora_installed_path() -> Path:
+    filename = FLUX_MULTIANGLE_LORA_ARTIFACT["filename"]
+    candidates = (
+        settings.models_dir / "loras" / "flux" / filename,
+        settings.models_dir / "loras" / filename,
+    )
+    for candidate in candidates:
+        if candidate.exists() and candidate.stat().st_size > 1024 * 1024:
+            return candidate
+    return candidates[0]
+
+
+async def _run_flux_multiangle_lora_download_job(job_id: str) -> None:
+    try:
+        artifact = FLUX_MULTIANGLE_LORA_ARTIFACT
+        target = _flux_multiangle_lora_installed_path()
+        if target.exists() and target.stat().st_size > 1024 * 1024:
+            result = {
+                "status": "downloaded",
+                "already_downloaded": True,
+                "filename": target.name,
+                "path": str(target),
+                "relative_path": _download_relative_path(target),
+                "bytes_downloaded": target.stat().st_size,
+                "bytes_total": target.stat().st_size,
+                "progress": 100,
+            }
+        else:
+            target = _flux_multiangle_lora_target()
+            _update_download_job(job_id, {"status": "downloading", "progress": 0, "message": f"Downloading {artifact['label']}"})
+            result = await asyncio.to_thread(_download_url_to_file, artifact["url"], target, job_id)
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {**result, "message": f"{artifact['label']} ready.", "completed_at": datetime.now().isoformat(timespec="seconds")})
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/flux/multiview/status")
+async def flux_multiview_status() -> dict[str, Any]:
+    artifact = FLUX_MULTIANGLE_LORA_ARTIFACT
+    target = _flux_multiangle_lora_installed_path()
+    installed = target.exists() and target.stat().st_size > 1024 * 1024
+    node_installed = await _qwenmultiangle_node_installed()
+    return {
+        "installed": installed,
+        "ready": bool(installed and node_installed),
+        "node_installed": node_installed,
+        "missing_custom_nodes": [] if node_installed else [{"class_type": "QwenMultiangleCameraNode", "label": "ComfyUI-qwenmultiangle", "repo": "https://github.com/jtydhr88/ComfyUI-qwenmultiangle"}],
+        "name": str(target.relative_to(settings.models_dir / "loras")).replace("/", "\\"),
+        "filename": artifact["filename"],
+        "label": artifact["label"],
+        "path": str(target) if installed else "",
+        "url": artifact["url"],
+        "size_bytes": int(artifact["size_bytes"]),
+        "requirements": ["ComfyUI-qwenmultiangle", artifact["filename"]],
+    }
+
+
+@app.post("/api/flux/multiview/download/start")
+async def flux_multiview_download_start() -> dict[str, Any]:
+    artifact = FLUX_MULTIANGLE_LORA_ARTIFACT
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued Flux MultiView LoRA download.",
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "bytes_total": int(artifact["size_bytes"]),
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_flux_multiangle_lora_download_job(job_id))
     return download_jobs[job_id]
 
 
@@ -9356,7 +9530,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         _prepare_runtime_for_generation(request)
         runtime_changed = _apply_runtime_options(request.runtime)
         _resolve_generation_seed(request)
-        if (runtime_changed or comfy.runtime_changed_since_start()) and await comfy.is_running():
+        attention_changed = comfy.use_preset_attention_backend(request.preset)
+        if (runtime_changed or attention_changed or comfy.runtime_changed_since_start()) and await comfy.is_running():
             if job_id:
                 _update_generation_job(job_id, {"status": "starting", "progress": 2, "message": "Restarting ComfyUI runtime"}, force=True)
             cleanup_embedded_comfy_artifacts()
@@ -9371,6 +9546,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         _ensure_wan_4step_loras(request, assets)
         _ensure_qwen_edit_lightning_lora(request, assets)
         _ensure_qwen_multiangle_lora(request, assets)
+        _ensure_flux_multiangle_lora(request, assets)
         if request.preset.lower() == "model3d":
             requested_model = str((request.model3d or {}).get("model") or request.model_name or "microsoft/TRELLIS.2-4B")
             model3d_preflight = await _model3d_preflight_report(requested_model=requested_model)
@@ -9857,6 +10033,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     text_encoder_name,
                     vae_name,
                     reference_image_name=reference_image_name if request.activity == "img2img" else None,
+                    available_nodes=set(object_info or {}),
                 )
             elif request.preset.lower() == "flux":
                 clip_l_name = assets.get("flux_clip_l")

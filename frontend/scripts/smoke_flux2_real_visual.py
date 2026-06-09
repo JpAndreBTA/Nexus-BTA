@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -10,8 +11,12 @@ from visual_checks import RESULTS, analyze_image, local_output_path
 
 ROOT = Path(__file__).resolve().parents[2]
 BASE = "http://127.0.0.1:7861/ui"
-BASE_IMAGE = ROOT / "input" / "SmokeTeste_BaseMultipleReference.png"
-REF2 = ROOT / "input" / "SmokeTeste_BaseMultipleReference2.png"
+BASE_IMAGE = ROOT / "input" / "SmokeTest.png"
+REF2 = BASE_IMAGE
+TEST_WIDTH = int(os.environ.get("FLUX2_SMOKE_WIDTH", "912"))
+TEST_HEIGHT = int(os.environ.get("FLUX2_SMOKE_HEIGHT", "512"))
+TEST_LORA = os.environ.get("FLUX2_SMOKE_LORA", r"flux\klein4b-deepthroat-22epoc-k3nk.safetensors")
+TEST_CASES = {item.strip() for item in os.environ.get("FLUX2_SMOKE_CASES", "linear,multiview,inpaint").split(",") if item.strip()}
 
 
 def select_option_by_hint(page: Page, selector: str, hint: str) -> str:
@@ -36,17 +41,19 @@ def select_option_by_hint(page: Page, selector: str, hint: str) -> str:
 
 def setup_flux(page: Page, workspace: str, prompt: str) -> dict[str, object]:
     page.evaluate(
-        """([workspace, prompt]) => {
+        """([workspace, prompt, width, height, loraName]) => {
           setPreset(document.querySelector('[data-preset="Flux"]'), 'Flux');
           switchActivity('img2img', document.querySelector('[data-activity="img2img"]'));
           document.querySelector(workspace === 'canvas' ? '#tab-canvas' : '#tab-viewer').click();
           document.querySelector('#posPrompt').value = prompt;
           document.querySelector('#negPrompt').value = 'blur, artifacts, wrong color, identity drift, leak outside mask';
-          document.querySelector('#widthInput').value = '208';
-          document.querySelector('#heightInput').value = '218';
+          document.querySelector('#widthInput').value = String(width);
+          document.querySelector('#heightInput').value = String(height);
           document.querySelector('#stepsValue').value = '4';
           document.querySelector('#cfgValue').value = '1';
           document.querySelector('#denoiseValue').value = '0.78';
+          activeLoras = loraName ? [{ name: loraName, relative_name: loraName, strength: 0.65, strength_model: 0.65, strength_clip: 0 }] : [];
+          renderActiveLoras();
           syncSlider('width');
           syncSlider('height');
           updateSliderFromNumber('steps');
@@ -55,12 +62,16 @@ def setup_flux(page: Page, workspace: str, prompt: str) -> dict[str, object]:
           syncGenerationActionUi();
           updateWorkflowPreview();
         }""",
-        [workspace, prompt],
+        [workspace, prompt, TEST_WIDTH, TEST_HEIGHT, TEST_LORA],
     )
-    page.wait_for_function(f"() => activePreset === 'Flux' && activeWorkspace === '{workspace}'", timeout=60000)
+    expected_workspace = "viewer" if workspace == "multiview" else workspace
+    page.wait_for_function(f"() => activePreset === 'Flux' && activeWorkspace === '{expected_workspace}'", timeout=60000)
     select_option_by_hint(page, "#modelSelect", "Klein")
     select_option_by_hint(page, "#vaeSelect", "flux2-vae")
     select_option_by_hint(page, "#textEncoderSelect", "qwen_3_4b")
+    if workspace == "multiview":
+        page.locator("#tab-multiview").click()
+        page.wait_for_function("() => activeWorkspace === 'multiview'", timeout=30000)
     page.locator("#referenceImageInput").set_input_files([str(BASE_IMAGE), str(REF2)])
     page.wait_for_function("() => !!referenceImageDataUrl && collectGenerationPayload()?.img2img?.reference_images?.length >= 2", timeout=60000)
     return page.evaluate("() => collectGenerationPayload()")
@@ -76,7 +87,13 @@ def paint_robe_mask(page: Page) -> None:
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.fillStyle = 'rgba(255,255,255,1)';
           ctx.beginPath();
-          ctx.ellipse(canvas.width * 0.50, canvas.height * 0.58, canvas.width * 0.22, canvas.height * 0.24, 0, 0, Math.PI * 2);
+          ctx.moveTo(canvas.width * 0.38, canvas.height * 0.41);
+          ctx.lineTo(canvas.width * 0.62, canvas.height * 0.41);
+          ctx.lineTo(canvas.width * 0.67, canvas.height * 0.78);
+          ctx.lineTo(canvas.width * 0.57, canvas.height * 0.88);
+          ctx.lineTo(canvas.width * 0.43, canvas.height * 0.88);
+          ctx.lineTo(canvas.width * 0.33, canvas.height * 0.78);
+          ctx.closePath();
           ctx.fill();
           inpaintMaskDirty = true;
           updateWorkflowPreview();
@@ -94,8 +111,12 @@ def pink_fraction(path: Path) -> float:
 
 def run_generation(page: Page, case: str) -> dict[str, object]:
     payload = page.evaluate("() => collectGenerationPayload()")
-    if payload["width"] != 208 or payload["height"] != 218 or payload["steps"] != 4 or float(payload["cfg"]) != 1.0:
+    if payload["width"] != TEST_WIDTH or payload["height"] != TEST_HEIGHT or payload["steps"] != 4 or float(payload["cfg"]) != 1.0:
         raise AssertionError(f"{case}: payload did not respect side menu: {payload!r}")
+    if not any("klein" in str(item.get("name", "")).lower() for item in payload.get("loras") or [] if isinstance(item, dict)):
+        raise AssertionError(f"{case}: Flux2 Klein LoRA missing from frontend payload: {payload!r}")
+    if "multiview" in case and payload.get("video", {}).get("flux_multiview") is not True:
+        raise AssertionError(f"{case}: Flux MultiView route missing from payload: {payload!r}")
     if len(payload.get("img2img", {}).get("reference_images") or []) < 2:
         raise AssertionError(f"{case}: multiple references missing from payload: {payload!r}")
     job = page.evaluate(
@@ -111,8 +132,8 @@ def run_generation(page: Page, case: str) -> dict[str, object]:
     output_path = local_output_path(outputs[0])
     metrics = analyze_image(output_path, case)
     image = Image.open(output_path)
-    if image.size != (208, 218):
-        raise AssertionError(f"{case}: output size {image.size} does not match requested 208x218")
+    if image.size != (TEST_WIDTH, TEST_HEIGHT):
+        raise AssertionError(f"{case}: output size {image.size} does not match requested {TEST_WIDTH}x{TEST_HEIGHT}")
     page.screenshot(path=str(RESULTS / f"{case}.png"), full_page=True)
     return {"case": case, "payload": payload, "job": job, "output": str(output_path), "metrics": metrics}
 
@@ -129,17 +150,23 @@ def main() -> None:
         page.wait_for_function("() => document.querySelector('#appBootOverlay')?.classList.contains('hidden')", timeout=120000)
         page.wait_for_function("() => backendOnline === true && typeof collectGenerationPayload === 'function'", timeout=120000)
 
-        setup_flux(page, "viewer", "change the green robe clothing to bright pink, keep face, pose and background unchanged, use Image 2 as color/style reference")
-        linear = run_generation(page, "flux2_linear_multiref_pink_real")
-        results.append(linear)
+        if "linear" in TEST_CASES:
+            setup_flux(page, "viewer", "change the green robe clothing to bright pink, keep face, pose and background unchanged, use Image 2 as color/style reference")
+            results.append(run_generation(page, "flux2_linear_multiref_pink_real"))
 
-        setup_flux(page, "canvas", "change only the masked robe clothing to bright pink, keep unmasked face, hands and background unchanged, use Image 2 as color/style reference")
-        paint_robe_mask(page)
-        payload = page.evaluate("() => collectGenerationPayload()")
-        if not payload.get("img2img", {}).get("mask_image"):
-            raise AssertionError("flux2_inpaint_multiref_pink_real: mask missing before generation")
-        inpaint = run_generation(page, "flux2_inpaint_multiref_pink_real")
-        results.append(inpaint)
+        if "multiview" in TEST_CASES:
+            setup_flux(page, "multiview", "preserve the same person and scene while changing the camera angle")
+            page.evaluate("() => { setQwenMultiViewHorizontal(132); setQwenMultiViewVertical(41); setQwenMultiViewZoom(6.4); }")
+            page.wait_for_function("() => collectGenerationPayload()?.video?.flux_multiview === true && collectGenerationPayload()?.video?.flux_camera_horizontal === 132", timeout=30000)
+            results.append(run_generation(page, "flux2_multiview_angle_real"))
+
+        if "inpaint" in TEST_CASES:
+            setup_flux(page, "canvas", "change only the masked robe clothing to bright pink, keep unmasked face, hands and background unchanged, use Image 2 as color/style reference")
+            paint_robe_mask(page)
+            payload = page.evaluate("() => collectGenerationPayload()")
+            if not payload.get("img2img", {}).get("mask_image"):
+                raise AssertionError("flux2_inpaint_multiref_pink_real: mask missing before generation")
+            results.append(run_generation(page, "flux2_inpaint_multiref_pink_real"))
         browser.close()
     (RESULTS / "flux2_real_visual.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
     print("ok flux2 real visual: " + ", ".join(item["output"] for item in results))

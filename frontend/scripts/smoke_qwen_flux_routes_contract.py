@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "test-results"
 RESULTS.mkdir(exist_ok=True)
 BASE = "http://127.0.0.1:7861/ui"
-BASE_IMAGE = ROOT / "input" / "SmokeTeste_BaseMultipleReference.png"
-REF2 = ROOT / "input" / "SmokeTeste_BaseMultipleReference2.png"
+BASE_IMAGE = ROOT / "input" / "SmokeTest.png"
+REF2 = BASE_IMAGE
 
 
 def job_body(job_id: str) -> str:

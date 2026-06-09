@@ -47,6 +47,31 @@ function Link-Directory([string]$Source, [string]$Target) {
     }
 }
 
+function Install-ComfyCoreFromGitHub([string]$Target) {
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git $Target
+        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath (Join-Path $Target "main.py"))) {
+            return
+        }
+        if (Test-Path -LiteralPath $Target) {
+            Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $zipUrl = "https://github.com/comfyanonymous/ComfyUI/archive/refs/heads/master.zip"
+    $zipPath = Join-Path ([System.IO.Path]::GetTempPath()) "nexus_comfyui_master.zip"
+    $extractPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nexus_comfyui_" + [System.Guid]::NewGuid().ToString("N"))
+    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
+    Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
+    $source = Join-Path $extractPath "ComfyUI-master"
+    if (!(Test-Path -LiteralPath (Join-Path $source "main.py"))) {
+        throw "Downloaded ComfyUI archive did not contain main.py."
+    }
+    Copy-Directory $source $Target
+    Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Resolve-BootstrapPython {
     $candidates = @(
         @{ File = "py"; Args = @("-3.11") },
@@ -137,7 +162,7 @@ $comfyTarget = Join-Path $root "runtime\ComfyUI"
 if (Test-Path -LiteralPath $ComfyCoreSource) {
     Copy-Directory $ComfyCoreSource $comfyTarget
 } elseif (!(Test-Path -LiteralPath (Join-Path $comfyTarget "main.py"))) {
-    git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git $comfyTarget
+    Install-ComfyCoreFromGitHub $comfyTarget
 }
 
 if ($CopyPythonEnv -and (Test-Path -LiteralPath $PythonEnvSource)) {

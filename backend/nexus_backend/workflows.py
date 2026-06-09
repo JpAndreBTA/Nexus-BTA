@@ -1516,6 +1516,34 @@ def _append_masked_output_composite(
             "_meta": {"title": "Extend Composite Mask Channel"},
         }
         composite_mask_ref = [mask_to_mask_id, 0]
+    if request is not None:
+        try:
+            composite_blur = max(0, min(64, int(getattr(request.img2img, "mask_blur", 0) or 0)))
+        except (TypeError, ValueError):
+            composite_blur = 0
+        if composite_blur > 0 and "GrowMaskWithBlur" in set(available_nodes or ()):
+            blur_id = composite_id
+            workflow[blur_id] = {
+                "class_type": "GrowMaskWithBlur",
+                "inputs": {
+                    "mask": composite_mask_ref,
+                    "expand": 0,
+                    "incremental_expandrate": 0.0,
+                    "tapered_corners": True,
+                    "flip_input": False,
+                    "blur_radius": float(composite_blur),
+                    "lerp_alpha": 1.0,
+                    "decay_factor": 1.0,
+                    "fill_holes": False,
+                },
+                "_meta": {"title": "Soften Inpaint Composite Mask"},
+            }
+            composite_mask_ref = [blur_id, 0]
+            start_id += 1
+            composite_id = str(start_id)
+            while composite_id in workflow:
+                start_id += 1
+                composite_id = str(start_id)
     workflow[composite_id] = {
         "class_type": "ImageCompositeMasked",
         "inputs": {
@@ -1904,6 +1932,31 @@ def _qwen_multiview_options(request: GenerateRequest) -> dict[str, Any]:
         "vertical": vertical,
         "zoom": zoom,
         "camera_view": _truthy_option(video_options.get("qwen_camera_view")),
+        "prompt": _qwen_multiangle_prompt(horizontal, vertical, zoom),
+    }
+
+
+def _flux_multiview_options(request: GenerateRequest) -> dict[str, Any]:
+    video_options = request.video or {}
+    enabled = request.preset.lower() == "flux" and request.activity == "img2img" and _truthy_option(video_options.get("flux_multiview"))
+    try:
+        horizontal = int(round(float(video_options.get("flux_camera_horizontal", video_options.get("qwen_camera_horizontal", 54))))) % 360
+    except (TypeError, ValueError):
+        horizontal = 54
+    try:
+        vertical = max(-30, min(60, int(round(float(video_options.get("flux_camera_vertical", video_options.get("qwen_camera_vertical", 29)))))))
+    except (TypeError, ValueError):
+        vertical = 29
+    try:
+        zoom = max(0.0, min(10.0, float(video_options.get("flux_camera_zoom", video_options.get("qwen_camera_zoom", 2.1)))))
+    except (TypeError, ValueError):
+        zoom = 2.1
+    return {
+        "enabled": enabled,
+        "horizontal": horizontal,
+        "vertical": vertical,
+        "zoom": zoom,
+        "camera_view": _truthy_option(video_options.get("flux_camera_view", video_options.get("qwen_camera_view"))),
         "prompt": _qwen_multiangle_prompt(horizontal, vertical, zoom),
     }
 
@@ -3319,6 +3372,7 @@ def build_basic_ideogram4_workflow(
     text_encoder_name: str,
     vae_name: str,
     reference_image_name: str | None = None,
+    available_nodes: set[str] | None = None,
 ) -> dict[str, Any]:
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     width = max(256, int(request.width))
@@ -3338,6 +3392,14 @@ def build_basic_ideogram4_workflow(
     effective_denoise = float((request.img2img.denoise if reference_image_name else request.denoise) or 1.0)
     if request.activity.lower() == "txt2img" and not reference_image_name:
         effective_denoise = 1.0
+    available_nodes = set(available_nodes or ())
+    noise_math_node = (
+        "mrmth_ag_NoiseMathNode"
+        if "mrmth_ag_NoiseMathNode" in available_nodes
+        else ("mrmth_NoiseMathNode" if "mrmth_NoiseMathNode" in available_nodes else "")
+    )
+    use_method2 = bool(noise_math_node and "SamplerLCMCustom" in available_nodes)
+    method2_noise_sampler = str((request.video or {}).get("ideogram_method2_noise_sampler") or "pyramid").strip() or "pyramid"
 
     model_ref: list[Any] = ["1", 0]
     lora_nodes: dict[str, Any] = {}
@@ -3521,6 +3583,43 @@ def build_basic_ideogram4_workflow(
         workflow["15"]["inputs"]["latent_image"] = latent_ref
         if use_prompt_builder:
             workflow["5"]["inputs"]["image"] = ["19", 0]
+    if use_method2:
+        method2_noise_expr = "a*2" if not reference_image_name else "a"
+        noise_math_inputs = (
+            {"V.V0": ["8", 0], "Noise": method2_noise_expr, "remember_stack": False}
+            if noise_math_node == "mrmth_ag_NoiseMathNode"
+            else {"a": ["8", 0], "Noise": method2_noise_expr}
+        )
+        method2_split_step = int((request.video or {}).get("ideogram_method2_split_step") or 1)
+        workflow["90"] = {
+            "class_type": noise_math_node,
+            "inputs": noise_math_inputs,
+            "_meta": {"title": "Ideogram 4 Method 2 Initial Noise"},
+        }
+        workflow["91"] = {
+            "class_type": "SamplerLCMCustom",
+            "inputs": {"noise_sampler_type": method2_noise_sampler},
+            "_meta": {"title": "Ideogram 4 Method 2 LCM Sampler"},
+        }
+        workflow["92"] = {
+            "class_type": "SplitSigmas",
+            "inputs": {"sigmas": ["13", 0], "step": max(1, min(3, method2_split_step))},
+            "_meta": {"title": "Ideogram 4 Method 2 Sigma Split"},
+        }
+        workflow["93"] = {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {"noise": ["90", 0], "guider": ["12", 0], "sampler": ["91", 0], "sigmas": ["92", 0], "latent_image": latent_ref},
+            "_meta": {"title": "Ideogram 4 Method 2 High Sigma Pass"},
+        }
+        workflow["94"] = {
+            "class_type": "DisableNoise",
+            "inputs": {},
+            "_meta": {"title": "No Extra Noise For Low Sigma Pass"},
+        }
+        workflow["15"]["inputs"]["noise"] = ["94", 0]
+        workflow["15"]["inputs"]["sigmas"] = ["92", 1]
+        workflow["15"]["inputs"]["latent_image"] = ["93", 0]
+        workflow.pop("14", None)
     workflow.update(lora_nodes)
     return workflow
 
@@ -3549,6 +3648,7 @@ def build_basic_flux_workflow(
     flux_family = flux_family or _flux_family_from_name(model_name)
     is_flux2 = flux_family.startswith("flux2")
     is_klein = "klein" in flux_family
+    flux_multiview = _flux_multiview_options(request)
     loader = (
         {
             "class_type": "UnetLoaderGGUF",
@@ -3689,6 +3789,20 @@ def build_basic_flux_workflow(
                 if index == 1:
                     base_loader_id = scale_id
                     base_encode_id = encode_id
+                    if flux_multiview["enabled"]:
+                        workflow["90"] = {
+                            "class_type": "QwenMultiangleCameraNode",
+                            "inputs": {
+                                "image": [scale_id, 0],
+                                "horizontal_angle": int(round(float(flux_multiview["horizontal"]))),
+                                "vertical_angle": int(round(float(flux_multiview["vertical"]))),
+                                "zoom": float(flux_multiview["zoom"]),
+                                "default_prompts": True,
+                                "camera_view": bool(flux_multiview["camera_view"]),
+                            },
+                            "_meta": {"title": "Flux Multiangle Camera"},
+                        }
+                        workflow["4"]["inputs"]["text"] = ["90", 0]
             if previous_conditioning != positive_ref:
                 workflow["10"]["inputs"]["conditioning"] = previous_conditioning
             if base_encode_id:
@@ -4558,7 +4672,11 @@ def _effective_ltx_lora_strength(checkpoint_name: str, lora_name: str, requested
     if "distill" not in lower and "distilled" not in lower:
         return strength
 
-    recommended = LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH if "condsafe" in lower else LTX_DISTILLED_384_DEFAULT_STRENGTH
+    checkpoint_lower = str(checkpoint_name or "").lower()
+    if "10eros" in checkpoint_lower:
+        recommended = 0.45 if "condsafe" in lower else 0.35
+    else:
+        recommended = LTX_DISTILLED_CONDSAFE_DEFAULT_STRENGTH if "condsafe" in lower else LTX_DISTILLED_384_DEFAULT_STRENGTH
     if strength >= 0.95:
         return recommended
     return min(strength, recommended)
@@ -4820,6 +4938,19 @@ def build_basic_ltx_img2video_workflow(
 
     positive_prompt_text = request.prompt
     if request.preset.lower() == "ltx":
+        if (
+            not str(positive_prompt_text or "").strip()
+            and not text_to_video
+            and (reference_image_name or "").strip()
+            and not has_end_reference
+            and not frame_guides
+            and not (base_video_name or "").strip()
+            and not loop_cycle
+        ):
+            positive_prompt_text = (
+                "preserve the same subject, identity, pose, clothing, room and lighting from the reference image; "
+                "natural subtle video motion, clean recognizable details"
+            )
         active_lora_names = [name.lower() for name, _strength, _clip_strength in _active_lora_selections(request)]
         if any("livewallpaper_ltx23_r64_6250" in name for name in active_lora_names) and "l1v3w4llp4p3r" not in str(positive_prompt_text).lower():
             positive_prompt_text = f"{positive_prompt_text}, l1v3w4llp4p3r" if str(positive_prompt_text or "").strip() else "l1v3w4llp4p3r"

@@ -208,6 +208,10 @@ def _resolve_flux(by_category: dict[str, list[ModelFile]], selected_name: str, r
             assets["text_encoder"] = _comfy_name(text_encoder)
         if vae:
             assets["vae"] = _comfy_name(vae)
+        if _truthy((request.video or {}).get("flux_multiview")):
+            multiangle_lora = _first_flux_multiangle_lora(by_category)
+            if multiangle_lora:
+                assets["flux_multiangle_lora"] = _comfy_name(multiangle_lora)
         return assets
 
     clip_l = (
@@ -760,6 +764,26 @@ def _first_qwen_multiangle_lora(by_category: dict[str, list[ModelFile]]) -> Mode
             score += 20
         if "fal" in haystack:
             score += 5
+        preferred.append((score, item))
+    if not preferred:
+        return None
+    preferred.sort(key=lambda pair: pair[0], reverse=True)
+    return preferred[0][1]
+
+
+def _first_flux_multiangle_lora(by_category: dict[str, list[ModelFile]]) -> ModelFile | None:
+    preferred: list[tuple[int, ModelFile]] = []
+    for item in by_category.get("loras", []):
+        haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+        if "flux" not in haystack:
+            continue
+        if not any(token in haystack for token in ("multiangle", "multi-angle", "multiple-angle", "multiple-angles", "angles-flux")):
+            continue
+        score = 0
+        if "klein" in haystack:
+            score += 40
+        if "9b" in haystack:
+            score += 10
         preferred.append((score, item))
     if not preferred:
         return None

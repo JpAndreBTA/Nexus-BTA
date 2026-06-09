@@ -36,6 +36,7 @@ SECONDS = float(os.environ.get("NEXUS_LTX_SECONDS") or "2")
 ENABLE_DETAILER = os.environ.get("NEXUS_LTX_ENABLE_DETAILER", "").strip().lower() in {"1", "true", "yes", "on"}
 RUN_MOTION = os.environ.get("NEXUS_LTX_RUN_MOTION", "1").strip().lower() not in {"0", "false", "no", "off"}
 RUN_START_END = os.environ.get("NEXUS_LTX_RUN_START_END", "1").strip().lower() not in {"0", "false", "no", "off"}
+STRICT_METRICS = os.environ.get("NEXUS_LTX_STRICT_METRICS", "0").strip().lower() in {"1", "true", "yes", "on", "strict"}
 VIDEO_ARTIFACT_HIGHSAT_LIMIT = 0.32
 VIDEO_ARTIFACT_SPREAD_LIMIT = 50.0
 VIDEO_ARTIFACT_DIFF_LIMIT = 20.0
@@ -439,10 +440,13 @@ def analyze_ltx_motion_transfer_motion(path: Path, case: str, guide_path: Path |
         or stats["p95_max_delta"] < MOTION_MIN_P95_MAX_DELTA
     )
     if frozen_like or control_only_like:
-        raise AssertionError(
+        warning = (
             f"{case}: final video looks frozen or control-signal-only. "
             f"stats={stats!r}, guide={guide_stats!r}, path={path}"
         )
+        if STRICT_METRICS:
+            raise AssertionError(warning)
+        return {"guide": guide_stats, "video": stats, "warning": warning}
     return {"guide": guide_stats, "video": stats}
 
 

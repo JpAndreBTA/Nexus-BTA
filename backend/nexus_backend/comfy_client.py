@@ -132,6 +132,7 @@ class ComfyClient:
         self._started_runtime_signature: str = ""
         self._start_lock = asyncio.Lock()
         self._owned_external_pid: int | None = None
+        self._attention_backend_override: str | None = None
 
     @property
     def base_url(self) -> str:
@@ -186,6 +187,16 @@ class ComfyClient:
         self.stop()
         await asyncio.sleep(1)
         await self.ensure_running()
+
+    def use_preset_attention_backend(self, preset: str) -> bool:
+        requested = str(preset or "").strip().lower()
+        desired: str | None = None
+        if requested == "qwen" and self._default_uses_sage_attention():
+            desired = "xformers" if self._xformers_allowed() else "pytorch"
+        if desired == self._attention_backend_override:
+            return False
+        self._attention_backend_override = desired
+        return True
 
     def stop(self) -> None:
         if not self.process or self.process.poll() is not None:
@@ -401,6 +412,7 @@ class ComfyClient:
             "precision": runtime.precision.lower(),
             "disable_xformers": bool(runtime.disable_xformers),
             "attention_backend": runtime.attention_backend.lower(),
+            "attention_backend_override": self._attention_backend_override or "",
             "enable_sage_attention": bool(runtime.enable_sage_attention),
             "enable_flash_attention": bool(runtime.enable_flash_attention),
             "enable_pytorch_attention": bool(getattr(runtime, "enable_pytorch_attention", True)),
@@ -440,7 +452,7 @@ class ComfyClient:
         elif precision == "fp8":
             flags.append("--fp8_e4m3fn-unet")
 
-        attention = runtime.attention_backend.lower().replace(" ", "").replace("_", "").replace("-", "")
+        attention = (self._attention_backend_override or runtime.attention_backend).lower().replace(" ", "").replace("_", "").replace("-", "")
         if attention in {"xformers", "xformer"}:
             if not _module_available("xformers"):
                 raise RuntimeError(
@@ -467,6 +479,14 @@ class ComfyClient:
         elif not bool(getattr(runtime, "enable_pytorch_attention", True)) and (runtime.disable_xformers or not _module_available("xformers")):
             flags.append("--use-split-cross-attention")
         return flags
+
+    def _xformers_allowed(self) -> bool:
+        return not bool(self.settings.runtime.disable_xformers) and _module_available("xformers")
+
+    def _default_uses_sage_attention(self) -> bool:
+        runtime = self.settings.runtime
+        attention = runtime.attention_backend.lower().replace(" ", "").replace("_", "").replace("-", "")
+        return attention in {"sage", "sageattention"} or (attention == "auto" and bool(runtime.enable_sage_attention))
 
     def _reserve_vram_gb(self) -> float | None:
         try:
