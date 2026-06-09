@@ -105,6 +105,60 @@
         .hover\:text-nexus-red:hover { color: var(--nexus-red) !important; }
         .text-white { color: var(--nexus-text) !important; }
         .hover\:text-white:hover { color: var(--nexus-text) !important; }
+        .prompt-enhance-menu {
+            position: relative;
+        }
+        .prompt-enhance-dropdown {
+            display: none;
+            position: fixed;
+            left: var(--prompt-enhance-left, 384px);
+            top: var(--prompt-enhance-top, 112px);
+            z-index: 320;
+            width: min(310px, calc(100vw - 24px));
+            padding: 8px;
+            border: 1px solid var(--nexus-border);
+            background: var(--nexus-panel);
+            border-radius: 2px;
+        }
+        .prompt-enhance-option-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .prompt-enhance-option-list .prompt-enhance-choice {
+            width: 100%;
+            justify-content: flex-start;
+            text-align: left;
+        }
+        .prompt-enhance-choice-main {
+            display: block;
+            color: inherit;
+            font-size: 9px;
+            font-weight: 800;
+            line-height: 1.1;
+        }
+        .prompt-enhance-choice-sub {
+            display: block;
+            color: var(--nexus-muted);
+            font-size: 8px;
+            font-weight: 600;
+            line-height: 1.2;
+            margin-top: 2px;
+            text-transform: none;
+        }
+        .prompt-enhance-choice.active .prompt-enhance-choice-sub {
+            color: rgba(255, 255, 255, 0.82);
+        }
+        .prompt-enhance-menu:hover .prompt-enhance-dropdown,
+        .prompt-enhance-menu:focus-within .prompt-enhance-dropdown,
+        .prompt-enhance-menu.open .prompt-enhance-dropdown {
+            display: flex;
+        }
+        .prompt-enhance-choice.active {
+            background: var(--nexus-red) !important;
+            border-color: var(--nexus-red) !important;
+            color: #fff !important;
+        }
         .bg-nexus-red.text-white,
         .extras-mode-tab.active,
         .workspace-tab.active,
@@ -2760,11 +2814,63 @@
                     <div class="flex justify-between items-center text-[10px] font-bold text-white uppercase tracking-wider">
                         <span id="promptPanelTitle">Prompt</span>
                         <!-- Save/Load & Enhance Prompt Buttons -->
-                        <div class="flex gap-2 text-nexus-muted">
+                        <div class="flex flex-wrap justify-end gap-1 text-nexus-muted">
                             <i class="fa-solid fa-folder-open hover:text-nexus-red cursor-pointer" title="Load Prompt" onclick="openLoadPromptModal()"></i>
                             <i class="fa-solid fa-floppy-disk hover:text-nexus-red cursor-pointer" title="Save Prompt" onclick="saveCurrentPrompt()"></i>
                             <div class="w-px h-3 bg-nexus-border self-center"></div>
-                            <i class="fa-solid fa-wand-magic-sparkles hover:text-nexus-red cursor-pointer" title="Enhance Prompt"></i>
+                            <div id="promptEnhanceControls" class="prompt-enhance-menu flex items-center justify-end" onmouseenter="openPromptEnhanceDropdown()" onmouseleave="schedulePromptEnhanceDropdownClose()" onfocusin="openPromptEnhanceDropdown()">
+                                <div class="flex items-center gap-1">
+                                    <button id="promptEnhanceActionBtn" type="button" class="h-6 px-2 bg-zinc-950 border border-nexus-border text-[9px] font-bold text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm" title="Enhance Prompt" onclick="runEnhancePrompt()">
+                                        <i class="fa-solid fa-wand-magic-sparkles text-nexus-red mr-1"></i> Enhance
+                                    </button>
+                                    <button id="ideogramMagicPromptBtn" type="button" class="hidden h-6 px-2 bg-zinc-950 border border-nexus-border text-[9px] font-bold text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm" title="Ideogram 4 Magic Prompt JSON" onclick="runEnhancePrompt()">
+                                        <i class="fa-solid fa-wand-magic-sparkles text-nexus-red mr-1"></i> Magic JSON
+                                    </button>
+                                    <button id="promptEnhanceUnloadBtn" type="button" class="h-6 w-6 bg-zinc-950 border border-nexus-border text-[9px] text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm" title="Unload selected Ollama prompt model" onclick="unloadPromptEnhanceModel()">
+                                        <i class="fa-solid fa-memory"></i>
+                                    </button>
+                                </div>
+                                <div id="promptEnhanceDropdown" class="prompt-enhance-dropdown flex-col gap-2" onmouseenter="openPromptEnhanceDropdown()" onmouseleave="schedulePromptEnhanceDropdownClose()">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="text-[9px] font-bold uppercase text-nexus-muted">Magic Prompt</span>
+                                        <span id="promptEnhanceSelectedLabel" class="text-[9px] font-mono text-nexus-red truncate">Gemma4 E4B FP8</span>
+                                    </div>
+                                    <div class="text-[8px] font-bold uppercase text-nexus-muted tracking-wider">Local</div>
+                                    <div class="prompt-enhance-option-list">
+                                        <button id="promptEnhanceProviderComfyBtn" type="button" class="prompt-enhance-choice min-h-10 px-2 py-1 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center" onclick="selectPromptEnhanceAndRun('comfy_gemma4')" title="Use Comfy TextGenerate with local Gemma4 text encoder, no Ollama required">
+                                            <span><span class="prompt-enhance-choice-main">gemma4 e4b fp8</span><span class="prompt-enhance-choice-sub">Comfy TextGenerate, no Ollama</span></span>
+                                        </button>
+                                        <button id="promptEnhanceProviderOllamaBtn" type="button" class="prompt-enhance-choice min-h-10 px-2 py-1 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center" onclick="selectPromptEnhanceAndRun('ollama', 'gemma4:e2b')" title="Use Gemma4 E2B through Ollama">
+                                            <span><span class="prompt-enhance-choice-main">gemma4:e2b</span><span class="prompt-enhance-choice-sub">Ollama local</span></span>
+                                        </button>
+                                        <button id="promptEnhanceModelGemma3Btn" type="button" class="prompt-enhance-choice min-h-10 px-2 py-1 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center" onclick="selectPromptEnhanceAndRun('ollama', 'gemma3:4b')" title="Use installed Gemma3 4B through Ollama">
+                                            <span><span class="prompt-enhance-choice-main">gemma3:4b</span><span class="prompt-enhance-choice-sub">Ollama balanced</span></span>
+                                        </button>
+                                        <button id="promptEnhanceModelLowBtn" type="button" class="prompt-enhance-choice min-h-10 px-2 py-1 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center" onclick="selectPromptEnhanceAndRun('ollama', 'gemma3:1b')" title="Low VRAM CPU model">
+                                            <span><span class="prompt-enhance-choice-main">gemma3:1b</span><span class="prompt-enhance-choice-sub">Ollama low VRAM</span></span>
+                                        </button>
+                                        <button id="promptEnhanceModelCustomBtn" type="button" class="prompt-enhance-choice min-h-10 px-2 py-1 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center" onclick="selectPromptEnhanceAndRun('ollama', 'custom')" title="Custom Ollama model">
+                                            <span><span class="prompt-enhance-choice-main">custom model</span><span class="prompt-enhance-choice-sub">Ollama model id</span></span>
+                                        </button>
+                                        <button id="promptEnhanceProviderTemplateBtn" type="button" class="prompt-enhance-choice min-h-10 px-2 py-1 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center" onclick="selectPromptEnhanceAndRun('template')" title="Use offline local template, no model required">
+                                            <span><span class="prompt-enhance-choice-main">offline template</span><span class="prompt-enhance-choice-sub">No model, no Ollama</span></span>
+                                        </button>
+                                    </div>
+                                    <div class="text-[8px] font-bold uppercase text-nexus-muted tracking-wider pt-1">Online API</div>
+                                    <div class="prompt-enhance-option-list">
+                                        <button id="promptEnhanceProviderIdeogramBtn" type="button" class="prompt-enhance-choice min-h-10 px-2 py-1 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center" onclick="selectPromptEnhanceAndRun('ideogram_magic')" title="Use Ideogram Magic Prompt API">
+                                            <span><span class="prompt-enhance-choice-main">ideogram api</span><span class="prompt-enhance-choice-sub">Official Magic Prompt API</span></span>
+                                        </button>
+                                        <button id="promptEnhanceProviderPublicBtn" type="button" class="prompt-enhance-choice min-h-10 px-2 py-1 bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm flex items-center" onclick="selectPromptEnhanceAndRun('openai_compatible')" title="Use OpenAI-compatible endpoint">
+                                            <span><span class="prompt-enhance-choice-main">public api</span><span class="prompt-enhance-choice-sub">OpenAI-compatible endpoint</span></span>
+                                        </button>
+                                    </div>
+                                    <div id="promptEnhanceAdvancedControls" class="grid grid-cols-2 gap-1">
+                                        <input id="promptEnhanceModelInput" class="h-7 bg-zinc-950 border border-nexus-border text-[9px] text-white px-2 rounded-sm focus:outline-none focus:border-nexus-red" placeholder="model id" onchange="savePromptEnhanceControlInputs()" oninput="savePromptEnhanceControlInputs()">
+                                        <input id="promptEnhanceEndpointInput" class="h-7 bg-zinc-950 border border-nexus-border text-[9px] text-white px-2 rounded-sm focus:outline-none focus:border-nexus-red" placeholder="endpoint" onchange="savePromptEnhanceControlInputs()" oninput="savePromptEnhanceControlInputs()">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="relative">
@@ -6872,7 +6978,7 @@
                 type: 'image',
                 folder: './models/diffusion_models/ideogram4',
                 checkpoint: 'ideogram4_fp8_scaled.safetensors',
-                models: ['ideogram4_fp8_scaled.safetensors', 'ideogram4_unconditional_fp8_scaled.safetensors'],
+                models: ['ideogram4_fp8_scaled.safetensors'],
                 width: 512,
                 height: 512,
                 steps: 12,
@@ -6951,7 +7057,7 @@
             const method = String(options?.method || 'GET').toUpperCase();
             const target = String(path || '');
             if (method === 'GET') return false;
-            return /\/download(?:\/start)?(?:\/|$)|\/install-dependencies(?:\?|$)|\/install-missing(?:\?|$)|\/dependencies\/download(?:\?|$)|\/qwen-lora\/download(?:\?|$)|\/civitai\/(?:resolve|search|download)(?:\/start)?(?:\?|$)/i.test(target);
+            return /\/download(?:\/start)?(?:\/|$)|\/install-dependencies(?:\?|$)|\/install-missing(?:\?|$)|\/dependencies\/download(?:\?|$)|\/qwen-lora\/download(?:\?|$)|\/ollama\/(?:install|pull)\/start(?:\?|$)|\/civitai\/(?:resolve|search|download)(?:\/start)?(?:\?|$)/i.test(target);
         }
 
         function warnOfflineDependencyDownload(label = 'Required dependency', detail = '') {
@@ -7242,6 +7348,16 @@
             return (rules[preset] || [preset]).some(token => haystack.includes(token));
         }
 
+        function isIdeogram4PrimaryModel(model) {
+            const haystack = catalogAssetText(model).toLowerCase();
+            return haystack.includes('ideogram') && haystack.includes('4') && !haystack.includes('unconditional');
+        }
+
+        function isPrimaryModelForPreset(model, presetName) {
+            if (presetName === 'Ideogram4') return isIdeogram4PrimaryModel(model);
+            return true;
+        }
+
         function catalogAssetText(asset) {
             return [
                 asset?.name,
@@ -7265,6 +7381,7 @@
                 : { checkpoints: 0, unet: 1, diffusion_models: 2 };
             const matched = candidates
                 .filter(model => modelMatchesPreset(model, presetName))
+                .filter(model => isPrimaryModelForPreset(model, presetName))
                 .filter(model => presetName !== 'LTX' || !/projection|text_projection|proj/i.test([model.name, model.relative_path].join(' ')))
                 .sort((a, b) => {
                     const aLtxGguf = presetName === 'LTX' && /\.gguf$/i.test(a.name) ? 1 : 0;
@@ -9616,6 +9733,7 @@
         function syncIdeogramRegionUiVisibility() {
             const active = ideogramRegionPresetActive();
             const layerActive = active && ideogramLinearOutputIsGuide;
+            syncPromptEnhanceControlsUi();
             document.getElementById('ideogramRegionToolbar')?.classList.toggle('hidden', !active);
             document.getElementById('ideogramRegionLayer')?.classList.toggle('hidden', !layerActive);
             if (!layerActive) document.getElementById('ideogramRegionEditor')?.classList.add('hidden');
@@ -9942,7 +10060,13 @@
                     id: region.id,
                     type: region.type,
                     prompt: region.prompt,
+                    desc: region.type === 'text' ? '' : region.prompt,
+                    text: region.type === 'text' ? region.prompt : '',
                     color: region.color,
+                    colors: String(region.color || '')
+                        .split(/[,\s]+/)
+                        .map(color => color.trim())
+                        .filter(Boolean),
                     x: Number(region.x.toFixed(2)),
                     y: Number(region.y.toFixed(2)),
                     w: Number(region.w.toFixed(2)),
@@ -10189,6 +10313,377 @@
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
             throw new Error(`${label} download timed out`);
+        }
+
+        const PROMPT_ENHANCE_DEFAULT_PROVIDER = 'comfy_gemma4';
+        const PROMPT_ENHANCE_DEFAULT_OLLAMA_MODEL = 'gemma4:e2b';
+        const PROMPT_ENHANCE_BALANCED_OLLAMA_MODEL = 'gemma3:4b';
+        const PROMPT_ENHANCE_LOW_VRAM_MODEL = 'gemma3:1b';
+        const PROMPT_ENHANCE_DEFAULT_ENDPOINT = 'http://127.0.0.1:11434';
+
+        function normalizePromptEnhanceProvider(provider) {
+            const value = String(provider || '').trim().toLowerCase();
+            return ['comfy_gemma4', 'ollama', 'ideogram_magic', 'openai_compatible', 'template'].includes(value) ? value : PROMPT_ENHANCE_DEFAULT_PROVIDER;
+        }
+
+        function getPromptEnhanceProvider() {
+            return normalizePromptEnhanceProvider(nexusSafeStorage.get('nexus_prompt_enhance_provider', PROMPT_ENHANCE_DEFAULT_PROVIDER));
+        }
+
+        function setPromptEnhanceProvider(provider) {
+            nexusSafeStorage.set('nexus_prompt_enhance_provider', normalizePromptEnhanceProvider(provider));
+            syncPromptEnhanceControlsUi();
+        }
+
+        function currentPromptEnhanceOllamaModel() {
+            const input = document.getElementById('promptEnhanceModelInput');
+            const fromInput = String(input?.value || '').trim();
+            const explicitChoice = nexusSafeStorage.get('nexus_prompt_enhance_model_choice', '');
+            const savedRaw = nexusSafeStorage.get('nexus_prompt_enhance_ollama_model', PROMPT_ENHANCE_DEFAULT_OLLAMA_MODEL) || PROMPT_ENHANCE_DEFAULT_OLLAMA_MODEL;
+            const saved = !explicitChoice && [PROMPT_ENHANCE_BALANCED_OLLAMA_MODEL, PROMPT_ENHANCE_LOW_VRAM_MODEL].includes(savedRaw) ? PROMPT_ENHANCE_DEFAULT_OLLAMA_MODEL : savedRaw;
+            return fromInput || saved || PROMPT_ENHANCE_DEFAULT_OLLAMA_MODEL;
+        }
+
+        function currentPromptEnhanceEndpoint() {
+            const input = document.getElementById('promptEnhanceEndpointInput');
+            const fromInput = String(input?.value || '').trim();
+            const provider = getPromptEnhanceProvider();
+            if (provider === 'openai_compatible') {
+                return fromInput || nexusSafeStorage.get('nexus_prompt_enhance_public_endpoint', '') || '';
+            }
+            return fromInput || nexusSafeStorage.get('nexus_prompt_enhance_ollama_endpoint', PROMPT_ENHANCE_DEFAULT_ENDPOINT) || PROMPT_ENHANCE_DEFAULT_ENDPOINT;
+        }
+
+        function setPromptEnhanceModelChoice(choice) {
+            setPromptEnhanceProvider('ollama');
+            const input = document.getElementById('promptEnhanceModelInput');
+            const normalized = String(choice || '').trim().toLowerCase();
+            if (normalized === 'custom') {
+                nexusSafeStorage.set('nexus_prompt_enhance_model_choice', 'custom');
+                if (input) {
+                    input.value = currentPromptEnhanceOllamaModel();
+                    input.focus();
+                    input.select();
+                }
+            } else {
+                const model = normalized === PROMPT_ENHANCE_LOW_VRAM_MODEL
+                    ? PROMPT_ENHANCE_LOW_VRAM_MODEL
+                    : normalized === PROMPT_ENHANCE_BALANCED_OLLAMA_MODEL
+                        ? PROMPT_ENHANCE_BALANCED_OLLAMA_MODEL
+                        : PROMPT_ENHANCE_DEFAULT_OLLAMA_MODEL;
+                nexusSafeStorage.set('nexus_prompt_enhance_model_choice', model);
+                nexusSafeStorage.set('nexus_prompt_enhance_ollama_model', model);
+                if (input) input.value = model;
+            }
+            syncPromptEnhanceControlsUi();
+        }
+
+        function selectPromptEnhanceAndRun(provider, modelChoice = '') {
+            const normalized = normalizePromptEnhanceProvider(provider);
+            setPromptEnhanceProvider(normalized);
+            if (normalized === 'ollama') {
+                setPromptEnhanceModelChoice(modelChoice || PROMPT_ENHANCE_DEFAULT_OLLAMA_MODEL);
+            }
+            if (modelChoice === 'custom') {
+                showToast('Enhance Prompt', 'Enter the custom Ollama model id, then click Enhance/Magic Prompt.');
+                return;
+            }
+            document.getElementById('promptEnhanceControls')?.classList.remove('open');
+            runEnhancePrompt();
+        }
+
+        function savePromptEnhanceControlInputs() {
+            const provider = getPromptEnhanceProvider();
+            const model = String(document.getElementById('promptEnhanceModelInput')?.value || '').trim();
+            const endpoint = String(document.getElementById('promptEnhanceEndpointInput')?.value || '').trim();
+            if (provider === 'ollama') {
+                if (model) {
+                    nexusSafeStorage.set('nexus_prompt_enhance_ollama_model', model);
+                    const choice = [PROMPT_ENHANCE_DEFAULT_OLLAMA_MODEL, PROMPT_ENHANCE_BALANCED_OLLAMA_MODEL, PROMPT_ENHANCE_LOW_VRAM_MODEL].includes(model) ? model : 'custom';
+                    nexusSafeStorage.set('nexus_prompt_enhance_model_choice', choice);
+                }
+                if (endpoint) nexusSafeStorage.set('nexus_prompt_enhance_ollama_endpoint', endpoint);
+            } else if (provider === 'openai_compatible') {
+                if (model) nexusSafeStorage.set('nexus_prompt_enhance_public_model', model);
+                if (endpoint) nexusSafeStorage.set('nexus_prompt_enhance_public_endpoint', endpoint);
+            }
+            syncPromptEnhanceControlsUi();
+        }
+
+        function setPromptEnhanceActiveButton(id, active) {
+            document.getElementById(id)?.classList.toggle('active', !!active);
+        }
+
+        let promptEnhanceDropdownCloseTimer = null;
+
+        function positionPromptEnhanceDropdown() {
+            const controls = document.getElementById('promptEnhanceControls');
+            const dropdown = document.getElementById('promptEnhanceDropdown');
+            if (!controls || !dropdown) return;
+            const rect = controls.getBoundingClientRect();
+            const width = Math.min(310, Math.max(240, window.innerWidth - 24));
+            const left = Math.min(window.innerWidth - width - 12, Math.max(12, rect.right));
+            const top = Math.min(window.innerHeight - 320, Math.max(12, rect.top - 8));
+            dropdown.style.setProperty('--prompt-enhance-left', `${left}px`);
+            dropdown.style.setProperty('--prompt-enhance-top', `${top}px`);
+        }
+
+        function openPromptEnhanceDropdown() {
+            if (promptEnhanceDropdownCloseTimer) {
+                clearTimeout(promptEnhanceDropdownCloseTimer);
+                promptEnhanceDropdownCloseTimer = null;
+            }
+            positionPromptEnhanceDropdown();
+            document.getElementById('promptEnhanceControls')?.classList.add('open');
+        }
+
+        function schedulePromptEnhanceDropdownClose() {
+            if (promptEnhanceDropdownCloseTimer) clearTimeout(promptEnhanceDropdownCloseTimer);
+            promptEnhanceDropdownCloseTimer = setTimeout(() => {
+                document.getElementById('promptEnhanceControls')?.classList.remove('open');
+            }, 220);
+        }
+
+        async function ensureComfyGemma4PromptEncoder() {
+            const status = await nexusFetch('/ideogram4/assets/status');
+            const asset = (status?.assets || []).find(item => item?.key === 'gemma4');
+            if (!asset || asset.installed) return true;
+            const size = formatBytes(Number(asset.size_bytes || asset.size_bytes_min || 0));
+            const ok = confirm(`Download Gemma 4 E4B FP8 text encoder for Comfy Magic Prompt?\n\n${asset.filename || 'gemma4_e4b_it_fp8_scaled.safetensors'}\nEstimated size: ${size}\nDestination: ${asset.destination || './models/text_encoders'}\n\nAfter download, Nexus will generate the prompt automatically.`);
+            if (!ok) return false;
+            const started = await nexusFetch('/ideogram4/assets/download/start', {
+                method: 'POST',
+                body: JSON.stringify({ assets: ['gemma4'], install_node_dependencies: false })
+            });
+            await pollDownloadJob(started.job_id, 'Gemma 4 Text Encoder');
+            await refreshModelCatalog();
+            return true;
+        }
+
+        function syncPromptEnhanceControlsUi() {
+            const provider = getPromptEnhanceProvider();
+            const isIdeogram = activePreset === 'Ideogram4';
+            document.getElementById('promptEnhanceActionBtn')?.classList.toggle('hidden', isIdeogram);
+            document.getElementById('ideogramMagicPromptBtn')?.classList.toggle('hidden', !isIdeogram);
+            document.getElementById('promptEnhanceUnloadBtn')?.classList.toggle('hidden', provider !== 'ollama');
+            setPromptEnhanceActiveButton('promptEnhanceProviderComfyBtn', provider === 'comfy_gemma4');
+            setPromptEnhanceActiveButton('promptEnhanceProviderOllamaBtn', provider === 'ollama');
+            setPromptEnhanceActiveButton('promptEnhanceProviderIdeogramBtn', provider === 'ideogram_magic');
+            setPromptEnhanceActiveButton('promptEnhanceProviderPublicBtn', provider === 'openai_compatible');
+            setPromptEnhanceActiveButton('promptEnhanceProviderTemplateBtn', provider === 'template');
+
+            const modelInput = document.getElementById('promptEnhanceModelInput');
+            const endpointInput = document.getElementById('promptEnhanceEndpointInput');
+            const advancedControls = document.getElementById('promptEnhanceAdvancedControls');
+            const showAdvanced = provider === 'ollama' || provider === 'openai_compatible';
+            advancedControls?.classList.toggle('hidden', !showAdvanced);
+
+            if (modelInput) {
+                if (provider === 'openai_compatible') {
+                    modelInput.placeholder = 'model id';
+                    modelInput.value = nexusSafeStorage.get('nexus_prompt_enhance_public_model', 'gemma-3-4b-it') || 'gemma-3-4b-it';
+                } else {
+                    modelInput.placeholder = 'Ollama model';
+                    modelInput.value = currentPromptEnhanceOllamaModel();
+                }
+            }
+            if (endpointInput) {
+                if (provider === 'openai_compatible') {
+                    endpointInput.placeholder = 'https://.../v1';
+                    endpointInput.value = nexusSafeStorage.get('nexus_prompt_enhance_public_endpoint', '') || '';
+                } else {
+                    endpointInput.placeholder = PROMPT_ENHANCE_DEFAULT_ENDPOINT;
+                    endpointInput.value = nexusSafeStorage.get('nexus_prompt_enhance_ollama_endpoint', PROMPT_ENHANCE_DEFAULT_ENDPOINT) || PROMPT_ENHANCE_DEFAULT_ENDPOINT;
+                }
+            }
+
+            const model = currentPromptEnhanceOllamaModel();
+            const choice = nexusSafeStorage.get('nexus_prompt_enhance_model_choice', model) || model;
+            setPromptEnhanceActiveButton('promptEnhanceProviderOllamaBtn', provider === 'ollama' && model === PROMPT_ENHANCE_DEFAULT_OLLAMA_MODEL && choice !== 'custom');
+            setPromptEnhanceActiveButton('promptEnhanceModelGemma3Btn', provider === 'ollama' && model === PROMPT_ENHANCE_BALANCED_OLLAMA_MODEL && choice !== 'custom');
+            setPromptEnhanceActiveButton('promptEnhanceModelLowBtn', provider === 'ollama' && model === PROMPT_ENHANCE_LOW_VRAM_MODEL && choice !== 'custom');
+            setPromptEnhanceActiveButton('promptEnhanceModelCustomBtn', provider === 'ollama' && choice === 'custom');
+            const label = document.getElementById('promptEnhanceSelectedLabel');
+            if (label) {
+                label.textContent = provider === 'ollama'
+                    ? model
+                    : provider === 'comfy_gemma4'
+                        ? 'gemma4 e4b fp8'
+                    : provider === 'ideogram_magic'
+                        ? 'Ideogram API'
+                        : provider === 'openai_compatible'
+                            ? (nexusSafeStorage.get('nexus_prompt_enhance_public_model', 'Public API') || 'Public API')
+                            : 'Offline template';
+            }
+        }
+
+        async function getPromptEnhanceSelection() {
+            savePromptEnhanceControlInputs();
+            const provider = getPromptEnhanceProvider();
+            if (provider === 'comfy_gemma4') {
+                const ready = await ensureComfyGemma4PromptEncoder();
+                if (!ready) return null;
+                return { provider, model: '', endpoint: '' };
+            }
+            if (provider === 'template' || provider === 'ideogram_magic' || provider === 'comfy_gemma4') return { provider, model: '', endpoint: '' };
+            const model = provider === 'openai_compatible'
+                ? (nexusSafeStorage.get('nexus_prompt_enhance_public_model', '') || '').trim()
+                : currentPromptEnhanceOllamaModel();
+            const endpoint = provider === 'openai_compatible'
+                ? (nexusSafeStorage.get('nexus_prompt_enhance_public_endpoint', '') || '').trim()
+                : currentPromptEnhanceEndpoint();
+            if (!model || (provider === 'openai_compatible' && !endpoint)) {
+                showToast('Enhance Prompt', 'Select a model and endpoint in the hover menu first.');
+                return null;
+            }
+            if (provider !== 'ollama') return { provider, model, endpoint };
+
+            let status = await nexusFetch(`/ideogram4/ollama/status?model=${encodeURIComponent(model)}&endpoint=${encodeURIComponent(endpoint)}`);
+            if (!status?.running) {
+                if (status?.can_start || status?.installed) {
+                    showToast('Ollama', 'Starting Ollama locally...');
+                    const started = await nexusFetch('/ideogram4/ollama/start', {
+                        method: 'POST',
+                        body: JSON.stringify({ model, endpoint })
+                    });
+                    if (!started?.running) {
+                        const fallback = confirm(`${started?.message || 'Ollama did not become ready.'}\n\nUse the local template fallback instead?`);
+                        return fallback ? { provider: 'template', model: '', endpoint: '' } : null;
+                    }
+                    status = await nexusFetch(`/ideogram4/ollama/status?model=${encodeURIComponent(model)}&endpoint=${encodeURIComponent(endpoint)}`);
+                } else {
+                    const install = confirm(`Ollama is not installed or was not found.\n\nDownload and open the official Windows installer now?\nSource: ${status?.installer_url || 'https://ollama.com/download/OllamaSetup.exe'}`);
+                    if (install) {
+                        const started = await nexusFetch('/ideogram4/ollama/install/start', { method: 'POST', body: '{}' });
+                        await pollDownloadJob(started.job_id, 'Ollama Installer');
+                        showToast('Ollama Installer', 'Finish the installer, then click Enhance/Magic Prompt again.');
+                        return null;
+                    }
+                    const fallback = confirm('Use the local template fallback without installing Ollama?');
+                    return fallback ? { provider: 'template', model: '', endpoint: '' } : null;
+                }
+            }
+            if (!status?.installed) {
+                const size = formatBytes(Number(status?.estimated_size_bytes || 0));
+                const ok = confirm(`Ollama model "${model}" is not installed.\nEstimated download size: ${size}.\n\nDownload it now?`);
+                if (!ok) {
+                    const fallback = confirm('Use the local template fallback without downloading a model?');
+                    return fallback ? { provider: 'template', model: '', endpoint: '' } : null;
+                }
+                const started = await nexusFetch('/ideogram4/ollama/pull/start', {
+                    method: 'POST',
+                    body: JSON.stringify({ model, endpoint })
+                });
+                try {
+                    await pollDownloadJob(started.job_id, `Ollama ${model}`);
+                } catch (error) {
+                    const message = String(error?.message || error);
+                    if (/newer version of Ollama|latest version|ollama/i.test(message)) {
+                        const install = confirm(`${message}\n\nDownload and open the latest Ollama Windows installer now?`);
+                        if (install) {
+                            const installer = await nexusFetch('/ideogram4/ollama/install/start', { method: 'POST', body: '{}' });
+                            await pollDownloadJob(installer.job_id, 'Ollama Installer');
+                            showToast('Ollama Installer', 'Finish the installer, then click Enhance/Magic Prompt again.');
+                        }
+                    } else {
+                        showToast('Ollama Pull Failed', message.slice(0, 180));
+                    }
+                    return null;
+                }
+                status = await nexusFetch(`/ideogram4/ollama/status?model=${encodeURIComponent(model)}&endpoint=${encodeURIComponent(endpoint)}`);
+                if (!status?.installed) {
+                    showToast('Ollama Model Missing', `${model} was not installed. Select another model or retry the download.`);
+                    return null;
+                }
+            }
+            return { provider, model, endpoint };
+        }
+
+        async function unloadPromptEnhanceModel() {
+            const model = currentPromptEnhanceOllamaModel();
+            const endpoint = currentPromptEnhanceEndpoint();
+            if (!model) {
+                showToast('Ollama Unload', 'Select an Ollama prompt model first.');
+                return;
+            }
+            try {
+                const result = await nexusFetch('/ideogram4/ollama/unload', {
+                    method: 'POST',
+                    body: JSON.stringify({ model, endpoint })
+                });
+                showToast('Ollama Unload', result?.message ? `${model}: ${result.message}` : `${model} unloaded.`);
+            } catch (error) {
+                showToast('Ollama Unload Failed', String(error?.message || error).slice(0, 180));
+            }
+        }
+
+        function setPromptEnhanceLoading(isLoading) {
+            const actionBtn = document.getElementById('promptEnhanceActionBtn');
+            const magicBtn = document.getElementById('ideogramMagicPromptBtn');
+            [
+                [actionBtn, '<i class="fa-solid fa-wand-magic-sparkles text-nexus-red mr-1"></i> Enhance'],
+                [magicBtn, '<i class="fa-solid fa-wand-magic-sparkles text-nexus-red mr-1"></i> Magic JSON']
+            ].forEach(([button, idleHtml]) => {
+                if (!button) return;
+                button.disabled = isLoading;
+                button.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+                button.classList.toggle('opacity-70', isLoading);
+                button.classList.toggle('cursor-wait', isLoading);
+                if (isLoading) {
+                    button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-nexus-red mr-1"></i> Generating...';
+                } else {
+                    button.innerHTML = idleHtml;
+                }
+            });
+        }
+
+        async function runEnhancePrompt() {
+            const promptInput = document.getElementById('posPrompt');
+            if (!promptInput) return;
+            const prompt = String(promptInput.value || '').trim();
+            if (!prompt) {
+                showToast('Enhance Prompt', 'Positive prompt is empty.');
+                return;
+            }
+            setPromptEnhanceLoading(true);
+            try {
+                const provider = await getPromptEnhanceSelection();
+                if (!provider) return;
+                if (activePreset === 'Ideogram4') {
+                    const result = await nexusFetch('/ideogram4/prompt-json', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            prompt,
+                            width: parseInt(document.getElementById('widthInput')?.value || '512', 10),
+                            height: parseInt(document.getElementById('heightInput')?.value || '512', 10),
+                            regions: collectIdeogramRegionsForPayload(),
+                            provider: provider.provider,
+                            model: provider.model,
+                            endpoint: provider.endpoint
+                        })
+                    });
+                    promptInput.value = result?.prompt_text || prompt;
+                    showToast('Ideogram Magic JSON', result?.message || 'Prompt converted to Ideogram-4 JSON.');
+                } else {
+                    const result = await nexusFetch('/prompt/enhance', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            prompt,
+                            preset: activePreset,
+                            provider: provider.provider,
+                            model: provider.model,
+                            endpoint: provider.endpoint
+                        })
+                    });
+                    promptInput.value = result?.prompt || prompt;
+                    showToast('Enhance Prompt', result?.message || 'Prompt enhanced.');
+                }
+                updateWorkflowPreview();
+            } catch (error) {
+                showToast('Enhance Prompt Failed', String(error?.message || error).slice(0, 180));
+            } finally {
+                setPromptEnhanceLoading(false);
+            }
         }
 
         async function ensureLtxHfLoraInstalled(kind, options = {}) {
@@ -11523,7 +12018,7 @@
             }
 
             let profileStepsValue = savedFields.stepsSlider || profile.steps;
-            if (presetName === 'Ideogram4' && String(savedFields.stepsSlider || '') === '4') {
+            if (presetName === 'Ideogram4' && (parseInt(savedFields.stepsSlider || '0', 10) || 0) < 12) {
                 profileStepsValue = profile.steps;
             }
             document.getElementById('stepsSlider').value = profileStepsValue;
@@ -16579,6 +17074,7 @@
                 ...(workflow.class_types || [])
             ].join(' ').toLowerCase();
             const rules = [
+                ['Ideogram4', ['ideogram4', 'ideogram 4', 'ideogram-4', 'ideogram4promptbuilderkj']],
                 ['LTX', ['ltx', 'eros', 'sulphur']],
                 ['Wan', ['wan']],
                 ['Flux', ['flux']],
@@ -16625,10 +17121,11 @@
             renderActiveLoras();
         }
 
-        function applyWorkflowSettings(analysis) {
+        function applyWorkflowSettings(analysis, options = {}) {
             if (!analysis) return;
             const settings = analysis.workflow_settings || {};
             const preset = inferPresetFromWorkflow(analysis);
+            const preserveGenerationControls = !!options.preserveGenerationControls;
             const preservedWorkflowTabs = Array.isArray(workflowTabs) ? workflowTabs.slice() : [];
             const preservedWorkflowId = activeWorkflowId;
             const preservedWorkflowAnalysis = activeWorkflowAnalysis;
@@ -16636,42 +17133,46 @@
             activeWorkflowAnalysis = null;
             applyModelProfile(preset, false, false, { restoreWorkflow: false });
 
-            if (settings.width || settings.height) {
+            if (!preserveGenerationControls && (settings.width || settings.height)) {
                 setDimensions(settings.width || document.getElementById('widthInput')?.value || modelProfiles[preset].width, settings.height || document.getElementById('heightInput')?.value || modelProfiles[preset].height);
             }
-            if (settings.prompt !== undefined) {
+            if (!preserveGenerationControls && settings.prompt !== undefined) {
                 const promptInput = document.getElementById('posPrompt');
                 if (promptInput && document.activeElement !== promptInput) promptInput.value = settings.prompt || '';
             }
-            if (settings.negative_prompt !== undefined) {
+            if (!preserveGenerationControls && settings.negative_prompt !== undefined) {
                 const negativeInput = document.getElementById('negPrompt');
                 if (negativeInput && document.activeElement !== negativeInput) negativeInput.value = settings.negative_prompt || '';
             }
-            setWorkflowNumber('framesInput', settings.frames);
-            setWorkflowNumber('fpsInput', settings.fps);
-            if (settings.seconds !== undefined) {
-                setWorkflowNumber('secondsInput', settings.seconds);
-            } else if (settings.frames && settings.fps) {
-                setWorkflowNumber('secondsInput', (Number(settings.frames) / Number(settings.fps)).toFixed(1));
+            if (!preserveGenerationControls) {
+                setWorkflowNumber('framesInput', settings.frames);
+                setWorkflowNumber('fpsInput', settings.fps);
+                if (settings.seconds !== undefined) {
+                    setWorkflowNumber('secondsInput', settings.seconds);
+                } else if (settings.frames && settings.fps) {
+                    setWorkflowNumber('secondsInput', (Number(settings.frames) / Number(settings.fps)).toFixed(1));
+                }
             }
             syncVideoMotionFields('workflow');
-            setWorkflowNumber('stepsSlider', preset === 'Wan' ? 4 : settings.steps);
-            setWorkflowNumber('cfgSlider', settings.cfg);
-            setWorkflowNumber('seedInput', settings.seed);
-            if (settings.sampler) setSelectValue('samplingMethodSelect', settings.sampler);
-            if (settings.scheduler) setSelectValue('schedulerSelect', settings.scheduler);
+            if (!preserveGenerationControls) {
+                setWorkflowNumber('stepsSlider', preset === 'Ideogram4' ? Math.max(12, parseInt(settings.steps || modelProfiles[preset]?.steps || 12, 10) || 12) : (preset === 'Wan' ? 4 : settings.steps));
+                setWorkflowNumber('cfgSlider', settings.cfg);
+                setWorkflowNumber('seedInput', settings.seed);
+                if (settings.sampler) setSelectValue('samplingMethodSelect', settings.sampler);
+                if (settings.scheduler) setSelectValue('schedulerSelect', settings.scheduler);
+            }
             const compatibleVae = compatibleSideAssetChoice(preset, 'vae', settings.vae);
             const compatibleTextEncoder = compatibleSideAssetChoice(preset, 'text', settings.text_encoder);
             if (compatibleVae) setSelectValue('vaeSelect', compatibleVae);
             if (compatibleTextEncoder) setSelectValue('textEncoderSelect', compatibleTextEncoder);
-            if (settings.video_vae) setSelectValue('videoVaeSelect', settings.video_vae);
-            if (settings.audio_vae) setSelectValue('audioVaeSelect', settings.audio_vae);
-            if (settings.active_audio !== undefined) {
+            if (!preserveGenerationControls && settings.video_vae) setSelectValue('videoVaeSelect', settings.video_vae);
+            if (!preserveGenerationControls && settings.audio_vae) setSelectValue('audioVaeSelect', settings.audio_vae);
+            if (!preserveGenerationControls && settings.active_audio !== undefined) {
                 const toggle = document.getElementById('activeAudioToggle');
                 if (toggle) toggle.checked = settings.active_audio !== false && String(settings.active_audio).toLowerCase() !== 'false';
             }
-            if (settings.latent_upscale) setSelectValue('latentUpscaleSelect', settings.latent_upscale);
-            if (Array.isArray(settings.loras)) {
+            if (!preserveGenerationControls && settings.latent_upscale) setSelectValue('latentUpscaleSelect', settings.latent_upscale);
+            if (!preserveGenerationControls && Array.isArray(settings.loras)) {
                 const distilled = settings.loras.filter(name => String(name).toLowerCase().includes('distill'));
                 if (distilled[0]) setSelectValue('distilledLoraOneSelect', distilled[0]);
                 if (distilled[1]) setSelectValue('distilledLoraTwoSelect', distilled[1]);
@@ -23261,6 +23762,7 @@
                     setActiveActivityButton(getActivityButton(currentActivity));
                     switchView('viewer');
                 }
+                syncPromptEnhanceControlsUi();
                 return;
             }
             savePresetRuntimeState(activePreset);
@@ -23272,6 +23774,7 @@
                 toggleLeftSidebar(false);
             }
             applyModelProfile(presetName);
+            syncPromptEnhanceControlsUi();
             syncLtxOutpaintUi();
             maybePrepareTemplateOptionalAssets(presetName);
             if (presetName === 'Model3D') ensureModel3DTemplateRequirements().catch(error => showToast('Model 3D Check Failed', String(error?.message || error).slice(0, 160)));
@@ -24291,7 +24794,7 @@
             });
             persistActiveWorkflowGraphSnapshot();
             presetRuntimeStates[presetName] = {
-                version: 1,
+                version: 2,
                 savedAt: new Date().toISOString(),
                 fields,
                 loras: Array.isArray(activeLoras) ? activeLoras.map(item => ({ ...item })) : [],
@@ -24332,6 +24835,13 @@
         function restorePresetRuntimeState(presetName = activePreset) {
             const state = presetRuntimeStates?.[presetName];
             if (!state?.fields) return false;
+            if (
+                presetName === 'Ideogram4'
+                && Number(state.version || 0) < 2
+                && (parseInt(state.fields.stepsSlider || '0', 10) || 0) < 12
+            ) {
+                state.fields.stepsSlider = String(modelProfiles.Ideogram4?.steps || 12);
+            }
             Object.entries(state.fields).forEach(([id, value]) => {
                 const element = document.getElementById(id);
                 if (!element) return;
@@ -30172,7 +30682,7 @@
                 if (analysis.visual_graph) analysis.visual_graph.nexus_preset = preset;
                 activeWorkflowId = analysis.workflow?.id || workflow.id;
                 addWorkflowTab(analysis, { remember: false });
-                applyWorkflowSettings(analysis);
+                applyWorkflowSettings(analysis, { preserveGenerationControls: true });
                 const graphToRender = JSON.parse(JSON.stringify(analysis.visual_graph || defaultGraphForPreset(preset)));
                 activeWorkflowId = null;
                 activeWorkflowAnalysis = analysis;
@@ -31146,7 +31656,11 @@
             const ltxStepFloor = activePreset === 'LTX'
                 ? (ltxCanvasOutpaintRoute ? 4 : ltxMinimumSteps(selectedOption?.dataset?.model || profile.checkpoint || modelSelect?.value || ''))
                 : 8;
-            const effectiveSteps = genericOutpaintRoute ? Math.max(1, rawSteps || profile.steps || 4) : (activePreset === 'LTX' ? Math.max(ltxStepFloor, rawSteps || ltxStepFloor) : (activePreset === 'Wan' ? 4 : rawSteps));
+            const effectiveSteps = genericOutpaintRoute
+                ? Math.max(1, rawSteps || profile.steps || 4)
+                : (activePreset === 'LTX'
+                    ? Math.max(ltxStepFloor, rawSteps || ltxStepFloor)
+                    : (activePreset === 'Wan' ? 4 : rawSteps));
             const effectiveImg2ImgMode = canvasInpaintActive ? selectedImg2ImgMode : 'Image to Image';
             const hasLtxEndFrame = activePreset === 'LTX'
                 && referenceExtraSlotsEnabled()
@@ -33193,6 +33707,7 @@
         renderPinnedNodes();
         switchSidebarTab(activeRightSidebarTab);
         loadPlatformSettings();
+        syncPromptEnhanceControlsUi();
         initializeBackendBridge();
     </script>
 </body>

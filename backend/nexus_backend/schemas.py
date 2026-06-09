@@ -175,6 +175,46 @@ class GenerateResponse(BaseModel):
     outputs: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class Ideogram4PromptJsonRequest(BaseModel):
+    prompt: str = ""
+    width: int = 1024
+    height: int = 1024
+    regions: list[dict[str, Any]] = Field(default_factory=list)
+    provider: Literal["template", "comfy_gemma4", "ollama", "ideogram_magic", "openai_compatible"] = "template"
+    model: str = ""
+    endpoint: str = ""
+
+
+class Ideogram4PromptJsonResponse(BaseModel):
+    provider: str
+    model: str = ""
+    json_prompt: dict[str, Any]
+    prompt_text: str
+    used_fallback: bool = False
+    message: str = ""
+
+
+class Ideogram4OllamaPullRequest(BaseModel):
+    model: str = "gemma4:e2b"
+    endpoint: str = ""
+
+
+class PromptEnhanceRequest(BaseModel):
+    prompt: str = ""
+    provider: Literal["template", "comfy_gemma4", "ollama", "ideogram_magic", "openai_compatible"] = "template"
+    model: str = ""
+    endpoint: str = ""
+    preset: str = ""
+
+
+class PromptEnhanceResponse(BaseModel):
+    provider: str
+    model: str = ""
+    prompt: str
+    used_fallback: bool = False
+    message: str = ""
+
+
 class ImportRequest(BaseModel):
     source: Path
     target_kind: Literal["models", "custom_nodes", "workflows", "comfy_core", "python_env"]

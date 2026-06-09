@@ -13,6 +13,7 @@ from typing import Any
 
 from .config import NexusSettings
 from .dependencies import custom_nodes_for_workflow, install_custom_node_dependencies, manager_suggestions_for_nodes
+from .ideogram4_prompt import is_ideogram4_prompt_json, parse_ideogram4_prompt_json, ideogram4_prompt_json_text
 from .schemas import GenerateRequest, WorkflowAnalysis, WorkflowSaveRequest, WorkflowSummary
 
 
@@ -270,7 +271,7 @@ class WorkflowRegistry:
         tags = sorted(
             {
                 tag
-                for tag in ["ltx", "anima", "wan", "flux", "qwen", "zimage", "z-image", "trellis", "3d", "mesh", "gguf", "i2v", "t2v"]
+                for tag in ["ideogram4", "ideogram", "ltx", "anima", "wan", "flux", "qwen", "zimage", "z-image", "trellis", "3d", "mesh", "gguf", "i2v", "t2v"]
                 if tag in path.name.lower() or any(tag in cls.lower() for cls in classes)
             }
         )
@@ -624,7 +625,14 @@ def workflow_settings(path: Path, object_info: dict[str, Any] | None = None) -> 
             capture_linked_constants(prompt)
     combined = " ".join(text_hints + class_types(data, fmt)).lower()
     result["is_video"] = any(token in combined for token in ["video", "frames", "fps", "ltx", "wan", "animatediff", "vhs_", "frame_rate"])
-    if "z-image" in combined or "zimage" in combined or "z_image" in combined:
+    if "ideogram4" in combined or "ideogram 4" in combined or "ideogram-4" in combined or "ideogram4promptbuilderkj" in combined:
+        result["preset"] = "Ideogram4"
+        result["is_video"] = False
+        result.setdefault("scheduler", "simple")
+        result.setdefault("sampler", "euler")
+        result.setdefault("steps", 12)
+        result.setdefault("cfg", 1)
+    elif "z-image" in combined or "zimage" in combined or "z_image" in combined:
         result["preset"] = "ZImageTurbo"
         result.setdefault("scheduler", "simple")
         result.setdefault("sampler", "res_multistep")
@@ -3041,22 +3049,22 @@ def _ideogram4_clean_output_directive(request: GenerateRequest) -> str:
     text_values = _ideogram4_text_region_values(request)
     allow_brand_marks = _ideogram4_requested_brand_marks(request)
     common = (
-        "Fill the full canvas edge to edge with a natural final image. "
-        "Keep clothing, objects, walls, tables, signs, and backgrounds free of unintended markings. "
+        "Create a natural final image that fills the full canvas edge to edge. "
+        "Render only the requested subjects, scene details, and explicitly requested text. "
     )
     if not text_values:
         mark_rule = (
-            "Include only the requested brand, logo, label, sign, or mark details described by the prompt or regional edits. "
-            "Do not add unrelated logos, signatures, stamps, captions, subtitles, decorative glyphs, interface marks, outline borders, or watermarks."
+            "Include only the requested brand, label, sign, or mark details described by the prompt or regional edits. "
+            "Keep unrelated graphic marks and UI-like annotation artifacts out of the scene."
             if allow_brand_marks
-            else "Do not add logos, signatures, stamps, captions, subtitles, decorative glyphs, interface marks, outline borders, watermarks, or visible writing anywhere."
+            else "Keep the scene free of extra UI-like overlays, annotation artifacts, unrelated graphic marks, and stray writing."
         )
         return f"{common}{mark_rule}"
     mark_rule = (
-        "Include only the requested brand, logo, label, sign, or mark details described by the prompt or regional edits. "
-        "Do not add unrelated logos, signatures, stamps, captions, subtitles, decorative glyphs, interface marks, outline borders, or watermarks."
+        "Include only the requested brand, label, sign, or mark details described by the prompt or regional edits. "
+        "Keep unrelated graphic marks and UI-like annotation artifacts out of the scene."
         if allow_brand_marks
-        else "Do not add logos, signatures, stamps, captions, subtitles, decorative glyphs, interface marks, outline borders, watermarks, or unrelated visible writing."
+        else "Keep unrelated writing, extra UI-like overlays, annotation artifacts, and unrelated graphic marks out of the scene."
     )
     quoted = ", ".join(json.dumps(value, ensure_ascii=False) for value in text_values[:8])
     return f"{common}{mark_rule} The only other visible writing must be the exact requested text region words: {quoted}."
@@ -3066,7 +3074,20 @@ def _ideogram4_join_prompt_parts(*parts: str) -> str:
     return " ".join(part.strip() for part in parts if str(part or "").strip())
 
 
+def _ideogram4_scene_element_desc(side_prompt: str, preserve_image: bool = False) -> str:
+    if preserve_image:
+        return (
+            "Preserve the source image composition, subject identity, lighting, background, and camera framing. "
+            "Apply only the explicit regional edits from the other elements."
+        )
+    prompt = str(side_prompt or "").strip().rstrip(".")
+    return f"Overall scene and style direction: {prompt}." if prompt else "Natural coherent scene."
+
+
 def _ideogram4_regions_prompt(request: GenerateRequest) -> str:
+    structured_prompt = parse_ideogram4_prompt_json(request.prompt)
+    if structured_prompt is not None:
+        return ideogram4_prompt_json_text(structured_prompt)
     regions = (request.video or {}).get("ideogram_regions")
     side_prompt = _ideogram4_effective_side_prompt(request)
     preserve_image = side_prompt.lower() == "preserve image"
@@ -3086,18 +3107,11 @@ def _ideogram4_regions_prompt(request: GenerateRequest) -> str:
 
     elements: list[dict[str, Any]] = []
     if side_prompt:
-        base_desc = (
-            "Preserve the source image composition, subject identity, lighting, background, and camera framing. "
-            "Apply only the explicit regional edits from the other elements. "
-            "Keep the final image clean and free of unintended markings."
-            if preserve_image
-            else f"Use this as the overall scene and style direction: {side_prompt}. Keep the final image clean and free of unintended markings."
-        )
         elements.append(
             {
                 "type": "obj",
                 "bbox": [0, 0, 1000, 1000],
-                "desc": base_desc,
+                "desc": _ideogram4_scene_element_desc(side_prompt, preserve_image),
             }
         )
     for item in (regions if isinstance(regions, list) else [])[:24]:
@@ -3172,10 +3186,57 @@ def _ideogram4_regions_prompt(request: GenerateRequest) -> str:
     return json.dumps(prompt, ensure_ascii=False, indent=2)
 
 
+def _ideogram4_structured_prompt_is_full_scene(caption: dict[str, Any]) -> bool:
+    comp = caption.get("compositional_deconstruction")
+    elements = comp.get("elements") if isinstance(comp, dict) else []
+    if not isinstance(elements, list) or len(elements) != 1 or not isinstance(elements[0], dict):
+        return False
+    element = elements[0]
+    bbox = element.get("bbox")
+    return (
+        str(element.get("type") or "obj").lower() != "text"
+        and not str(element.get("text") or "").strip()
+        and isinstance(bbox, list)
+        and len(bbox) == 4
+        and [int(value) for value in bbox] == [0, 0, 1000, 1000]
+    )
+
+
+def _ideogram4_flatten_structured_scene_prompt(caption: dict[str, Any]) -> str:
+    comp = caption.get("compositional_deconstruction") if isinstance(caption, dict) else {}
+    comp = comp if isinstance(comp, dict) else {}
+    style = caption.get("style_description") if isinstance(caption, dict) else {}
+    style = style if isinstance(style, dict) else {}
+    elements = comp.get("elements") if isinstance(comp, dict) else []
+    element_desc = ""
+    if isinstance(elements, list) and elements and isinstance(elements[0], dict):
+        element_desc = str(elements[0].get("desc") or "").strip()
+        element_desc = re.sub(
+            r"^\s*unified\s+full-canvas\s+wide\s+action\s+scene\s+with\s+the\s+main\s+subjects\s+visible\s+and\s+interacting\s+in\s+one\s+shared\s+environment\s*:\s*",
+            "",
+            element_desc,
+            flags=re.IGNORECASE,
+        ).strip()
+    parts = [
+        str(caption.get("high_level_description") or "").strip(),
+        element_desc,
+        str(comp.get("background") or "").strip(),
+        str(style.get("aesthetics") or "").strip(),
+        str(style.get("lighting") or "").strip(),
+        str(style.get("photo") or "").strip(),
+        str(style.get("medium") or "").strip(),
+    ]
+    prompt = _ideogram4_join_prompt_parts(*parts)
+    return _ideogram4_join_prompt_parts(
+        "Single coherent scene, all requested subjects clearly visible in one shared camera view, natural camera distance, readable composition, no collage, no split-screen, no cropped close-up.",
+        prompt,
+    )
+
+
 def _ideogram4_elements_data(request: GenerateRequest) -> str:
     regions = (request.video or {}).get("ideogram_regions")
-    if not isinstance(regions, list):
-        return ""
+    side_prompt = _ideogram4_effective_side_prompt(request)
+    preserve_image = side_prompt.lower() == "preserve image"
 
     def _region_unit(value: float | None, default: float = 0.0) -> float:
         if value is None:
@@ -3186,6 +3247,22 @@ def _ideogram4_elements_data(request: GenerateRequest) -> str:
         return max(0.0, min(1.0, number))
 
     elements: list[dict[str, Any]] = []
+    if side_prompt and not preserve_image:
+        elements.append(
+            {
+                "type": "obj",
+                "text": "",
+                "desc": _ideogram4_scene_element_desc(side_prompt),
+                "palette": [],
+                "x": 0.0,
+                "y": 0.0,
+                "w": 1.0,
+                "h": 1.0,
+            }
+        )
+    if not isinstance(regions, list):
+        return json.dumps(elements, ensure_ascii=False, separators=(",", ":")) if elements else ""
+
     for item in regions[:24]:
         if not isinstance(item, dict):
             continue
@@ -3248,14 +3325,19 @@ def build_basic_ideogram4_workflow(
     height = max(256, int(request.height))
     width = max(256, ((width + 15) // 16) * 16)
     height = max(256, ((height + 15) // 16) * 16)
-    steps = max(1, int(request.steps or 4))
+    steps = max(1, int(request.steps or 12))
     cfg = float(request.cfg or 1.0)
     effective_side_prompt = _ideogram4_effective_side_prompt(request)
     clean_directive = _ideogram4_clean_output_directive(request)
     prompt_text = _ideogram4_regions_prompt(request)
     elements_data = _ideogram4_elements_data(request)
     regions = (request.video or {}).get("ideogram_regions") if isinstance(request.video, dict) else None
-    use_prompt_builder = bool(request.prompt.strip()) or (isinstance(regions, list) and bool(regions))
+    structured_prompt = parse_ideogram4_prompt_json(request.prompt)
+    prompt_is_structured_json = structured_prompt is not None
+    use_prompt_builder = prompt_is_structured_json or bool(request.prompt.strip()) or (isinstance(regions, list) and bool(regions))
+    effective_denoise = float((request.img2img.denoise if reference_image_name else request.denoise) or 1.0)
+    if request.activity.lower() == "txt2img" and not reference_image_name:
+        effective_denoise = 1.0
 
     model_ref: list[Any] = ["1", 0]
     lora_nodes: dict[str, Any] = {}
@@ -3336,11 +3418,19 @@ def build_basic_ideogram4_workflow(
             "inputs": {"model": ["11", 0], "positive": ["5", 0], "model_negative": ["2", 0], "negative": ["6", 0], "cfg": 7.0},
             "_meta": {"title": "Ideogram 4 Dual Model Guider"},
         },
-        "13": {
-            "class_type": "BasicScheduler",
-            "inputs": {"model": ["10", 0], "scheduler": normalize_scheduler(request.scheduler or "simple"), "steps": steps, "denoise": float(request.denoise or 1.0)},
-            "_meta": {"title": "Ideogram 4 Basic Scheduler"},
-        },
+        "13": (
+            {
+                "class_type": "BasicScheduler",
+                "inputs": {"model": ["10", 0], "scheduler": normalize_scheduler(request.scheduler or "simple"), "steps": steps, "denoise": effective_denoise},
+                "_meta": {"title": "Ideogram 4 Img2Img Scheduler"},
+            }
+            if reference_image_name
+            else {
+                "class_type": "Ideogram4Scheduler",
+                "inputs": {"steps": steps, "width": width, "height": height, "mu": 0.5, "std": 1.75},
+                "_meta": {"title": "Ideogram 4 Scheduler"},
+            }
+        ),
         "14": {
             "class_type": "ExtendIntermediateSigmas",
             "inputs": {"sigmas": ["13", 0], "steps": 2, "start_at_sigma": 1.0, "end_at_sigma": 0.98, "spacing": "linear"},
@@ -3363,25 +3453,37 @@ def build_basic_ideogram4_workflow(
         },
     }
     if use_prompt_builder:
+        import_json = ""
+        import_mode = "when empty"
+        builder_high_level = _ideogram4_join_prompt_parts(effective_side_prompt, clean_directive)
+        builder_background = _ideogram4_join_prompt_parts(
+            effective_side_prompt or ("Preserve the source image background and composition." if request.activity.lower() == "img2img" else "A coherent high quality scene."),
+        )
+        builder_style_photo = "high resolution, clear photo, natural surfaces, coherent subjects"
+        builder_aesthetics = "clean, detailed, natural, edge-to-edge image"
+        builder_lighting = "natural balanced lighting"
+        builder_medium = "photograph"
+        builder_elements_data = elements_data
+        if structured_prompt is not None:
+            import_json = ideogram4_prompt_json_text(structured_prompt)
+            import_mode = "always"
+            builder_elements_data = ""
         workflow["5"] = {
             "class_type": "Ideogram4PromptBuilderKJ",
             "inputs": {
                 "width": width,
                 "height": height,
-                "high_level_description": _ideogram4_join_prompt_parts(effective_side_prompt, clean_directive),
-                "background": _ideogram4_join_prompt_parts(
-                    effective_side_prompt or ("Preserve the source image background and composition." if request.activity.lower() == "img2img" else "A coherent high quality scene."),
-                    clean_directive,
-                ),
+                "high_level_description": builder_high_level,
+                "background": builder_background,
                 "style": "photo",
-                "style.photo": "high resolution, clear photo, natural surfaces, no unintended markings",
-                "aesthetics": "clean, detailed, natural, edge-to-edge image",
-                "lighting": "natural balanced lighting",
-                "medium": "photograph",
-                "import_json": "",
-                "import_mode": "when empty",
+                "style.photo": builder_style_photo,
+                "aesthetics": builder_aesthetics,
+                "lighting": builder_lighting,
+                "medium": builder_medium,
+                "import_json": import_json,
+                "import_mode": import_mode,
                 "style_palette_data": "",
-                "elements_data": elements_data,
+                "elements_data": builder_elements_data,
                 "bg_brightness": 25,
             },
             "_meta": {"title": "Ideogram 4 KJ Prompt Builder"},

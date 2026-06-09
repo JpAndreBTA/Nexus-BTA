@@ -52,14 +52,20 @@ from .schemas import (
     DependencyInstallRequest,
     GenerateRequest,
     GenerateResponse,
+    Ideogram4OllamaPullRequest,
+    Ideogram4PromptJsonRequest,
+    Ideogram4PromptJsonResponse,
     ImportRequest,
     PluginInstallRequest,
+    PromptEnhanceRequest,
+    PromptEnhanceResponse,
     DistilledLoraSelection,
     RuntimeHealth,
     RuntimeOptions,
     SettingsUpdate,
     WorkflowSaveRequest,
 )
+from .ideogram4_prompt import build_ideogram4_template_caption, ideogram4_prompt_json_text, normalize_ideogram4_caption, normalize_ideogram4_magic_caption, parse_ideogram4_prompt_json
 from .templates import ensure_templates_file, load_templates
 from .workflows import (
     LTX_OMNICINE_DEFAULT_STRENGTH,
@@ -248,13 +254,13 @@ IDEOGRAM4_HF_ARTIFACTS: dict[str, dict[str, Any]] = {
         "scope": "vae",
     },
     "gemma4": {
-        "label": "Gemma 4 prompt helper encoder",
+        "label": "Gemma 4 E4B FP8 text encoder",
         "filename": "gemma4_e4b_it_fp8_scaled.safetensors",
         "url": "https://huggingface.co/Comfy-Org/gemma-4/resolve/main/text_encoders/gemma4_e4b_it_fp8_scaled.safetensors?download=true",
         "target": ("text_encoders", "gemma4_e4b_it_fp8_scaled.safetensors"),
         "min_bytes": 8 * 1024 * 1024 * 1024,
         "kind": "text_encoder",
-        "scope": "optional_prompt_helper",
+        "scope": "optional_text_encoder",
     },
 }
 
@@ -6358,7 +6364,7 @@ async def _ideogram4_status_snapshot() -> dict[str, Any]:
         "estimated_missing_required_bytes": sum(int(item.get("size_bytes_min") or 0) for item in missing_required),
         "estimated_missing_optional_bytes": sum(int(item.get("size_bytes_min") or 0) for item in missing_optional),
         "restart_recommended": bool(missing_core_nodes),
-        "note": "Ideogram 4 downloads are optional for new users. Generation requires the main FP8 model, unconditional FP8 model, Qwen3-VL text encoder and Flux2 VAE. Gemma 4 is optional for prompt-helper workflows.",
+        "note": "Ideogram 4 downloads are optional for new users. Generation requires the main FP8 model, unconditional FP8 model, Qwen3-VL text encoder and Flux2 VAE. Gemma 4 E4B FP8 is an optional Comfy text encoder asset, not a standalone prompt generator.",
     }
 
 
@@ -6416,6 +6422,627 @@ async def _run_ideogram4_assets_download_job(job_id: str, keys: list[str] | None
 @app.get("/api/ideogram4/assets/status")
 async def ideogram4_assets_status() -> dict[str, Any]:
     return await _ideogram4_status_snapshot()
+
+
+def _ideogram4_prompt_generator_instruction(user_prompt: str, width: int, height: int, regions: list[dict[str, Any]]) -> str:
+    regions_hint = json.dumps(regions[:24], ensure_ascii=False, separators=(",", ":")) if regions else "[]"
+    layout_rule = (
+        "Regions are provided, so preserve each region bbox exactly and generate one matching obj/text element per region."
+        if regions
+        else "No regions are provided: do not invent layout boxes. Use one full-canvas obj element with bbox [0,0,1000,1000] that describes a single continuous scene. Do not create split-screen, collage, grid, quadrant, or panel compositions unless the user explicitly asks for that layout."
+    )
+    return (
+        "Convert the user's image idea into one Ideogram 4 structured JSON caption. "
+        "Return only valid JSON, no markdown. Use exactly these top-level keys in order: "
+        "high_level_description, style_description, compositional_deconstruction. "
+        "style_description should include aesthetics, lighting, photo, medium, and optional color_palette. "
+        "compositional_deconstruction should include background and elements. "
+        "Each obj element should use keys type, bbox, desc, optional color_palette. "
+        "Each text element should use keys type, bbox, text, desc, optional color_palette. "
+        "bbox is [y_min,x_min,y_max,x_max] on a 0-1000 grid. "
+        f"{layout_rule} "
+        "Do not add unrelated text, brands, labels, people, or sensitive content not requested by the user. "
+        f"Canvas: {int(width)}x{int(height)}. User prompt: {user_prompt!r}. Regions: {regions_hint}."
+    )
+
+
+def _extract_json_object_text(text: str) -> str:
+    raw = str(text or "").strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE).strip()
+        raw = re.sub(r"\s*```$", "", raw).strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        return raw[start : end + 1]
+    return raw
+
+
+def _ideogram4_api_aspect_ratio(width: int, height: int) -> str:
+    ratio = max(1, int(width)) / max(1, int(height))
+    choices = {
+        "1x1": 1.0,
+        "16x9": 16 / 9,
+        "9x16": 9 / 16,
+        "4x3": 4 / 3,
+        "3x4": 3 / 4,
+        "3x2": 3 / 2,
+        "2x3": 2 / 3,
+    }
+    return min(choices, key=lambda key: abs(choices[key] - ratio))
+
+
+def _post_json_sync(url: str, payload: dict[str, Any], headers: dict[str, str] | None = None, timeout: int = 45) -> dict[str, Any]:
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json", **(headers or {})},
+        method="POST",
+    )
+    with urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _ollama_base_url(endpoint: str = "") -> str:
+    return (endpoint.strip() or os.environ.get("OLLAMA_BASE_URL", "").strip() or "http://127.0.0.1:11434").rstrip("/")
+
+
+OLLAMA_WINDOWS_INSTALLER_URL = "https://ollama.com/download/OllamaSetup.exe"
+
+
+def _find_ollama_executable() -> str:
+    found = shutil.which("ollama")
+    if found:
+        return found
+    candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Ollama" / "ollama.exe",
+        Path(os.environ.get("ProgramFiles", "")) / "Ollama" / "ollama.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "")) / "Ollama" / "ollama.exe",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return ""
+
+
+def _start_ollama_sync(endpoint: str = "") -> dict[str, Any]:
+    exe = _find_ollama_executable()
+    base_url = _ollama_base_url(endpoint)
+    if not exe:
+        return {
+            "started": False,
+            "installed": False,
+            "running": False,
+            "endpoint": base_url,
+            "installer_url": OLLAMA_WINDOWS_INSTALLER_URL,
+            "message": "Ollama executable was not found.",
+        }
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    try:
+        subprocess.Popen([exe, "serve"], cwd=str(Path(exe).parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, creationflags=creationflags)
+    except Exception as exc:
+        return {"started": False, "installed": True, "running": False, "endpoint": base_url, "executable": exe, "message": f"Failed to start Ollama: {exc}"}
+    for _ in range(30):
+        time.sleep(0.5)
+        try:
+            _ollama_tags_sync(base_url)
+            return {"started": True, "installed": True, "running": True, "endpoint": base_url, "executable": exe, "message": "Ollama started."}
+        except Exception:
+            continue
+    return {"started": True, "installed": True, "running": False, "endpoint": base_url, "executable": exe, "message": "Ollama start was requested, but the API is not ready yet."}
+
+
+def _ollama_model_estimate_bytes(model: str) -> int:
+    normalized = str(model or "").strip().lower()
+    estimates = {
+        "gemma3:1b": 815 * 1024 * 1024,
+        "gemma3:4b": 3_300 * 1024 * 1024,
+        "gemma4e2b": 7_200 * 1024 * 1024,
+        "gemma4:e2b": 7_200 * 1024 * 1024,
+        "gemma-4-e2b": 1_800 * 1024 * 1024,
+        "gemma-4-e2b:q2_k": 1_200 * 1024 * 1024,
+        "gemma-4-e2b:q4_k_m": 1_800 * 1024 * 1024,
+        "gemma2:2b": 1_600 * 1024 * 1024,
+        "gemma2:9b": 5_500 * 1024 * 1024,
+        "gemma:2b": 1_700 * 1024 * 1024,
+        "gemma:7b": 5_200 * 1024 * 1024,
+    }
+    return estimates.get(normalized, 3_300 * 1024 * 1024)
+
+
+def _ollama_tags_sync(base_url: str) -> dict[str, Any]:
+    request = Request(f"{base_url}/api/tags", headers={"Accept": "application/json"}, method="GET")
+    with urlopen(request, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _ollama_status_sync(model: str, endpoint: str = "") -> dict[str, Any]:
+    base_url = _ollama_base_url(endpoint)
+    exe = _find_ollama_executable()
+    try:
+        data = _ollama_tags_sync(base_url)
+        models = data.get("models") if isinstance(data, dict) else []
+    except Exception as exc:
+        return {
+            "running": False,
+            "installed": bool(exe),
+            "can_start": bool(exe),
+            "model": model,
+            "endpoint": base_url,
+            "executable": exe,
+            "installer_url": OLLAMA_WINDOWS_INSTALLER_URL,
+            "estimated_size_bytes": _ollama_model_estimate_bytes(model),
+            "message": f"Ollama is not reachable: {exc}",
+        }
+    installed = None
+    for item in models if isinstance(models, list) else []:
+        if not isinstance(item, dict):
+            continue
+        names = {str(item.get("name") or ""), str(item.get("model") or "")}
+        if model in names:
+            installed = item
+            break
+    installed_size = int(installed.get("size") or 0) if isinstance(installed, dict) else 0
+    return {
+        "running": True,
+        "installed": installed is not None,
+        "can_start": bool(exe),
+        "model": model,
+        "endpoint": base_url,
+        "executable": exe,
+        "installed_size_bytes": installed_size,
+        "estimated_size_bytes": installed_size or _ollama_model_estimate_bytes(model),
+        "message": "Ollama model is installed." if installed else "Ollama is running, but the selected model is not installed.",
+    }
+
+
+async def _run_ollama_install_job(job_id: str) -> None:
+    try:
+        target = settings.project_root / "runtime" / "downloads" / "OllamaSetup.exe"
+        _update_download_job(job_id, {"status": "downloading", "progress": 0, "message": "Downloading Ollama Windows installer."})
+        result = await asyncio.to_thread(_download_url_to_file, OLLAMA_WINDOWS_INSTALLER_URL, target, job_id)
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        subprocess.Popen([str(target)], cwd=str(target.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, creationflags=creationflags)
+        _update_download_job(
+            job_id,
+            {
+                **result,
+                "status": "downloaded",
+                "progress": 100,
+                "message": "Ollama installer downloaded and opened. Finish the installer, then click Magic Prompt again.",
+                "installer_url": OLLAMA_WINDOWS_INSTALLER_URL,
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
+            },
+        )
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+async def _run_ollama_pull_job(job_id: str, payload: Ideogram4OllamaPullRequest) -> None:
+    model = payload.model.strip() or "gemma4:e2b"
+    base_url = _ollama_base_url(payload.endpoint)
+    try:
+        _update_download_job(job_id, {"status": "downloading", "progress": 0, "message": f"Pulling Ollama model {model}."})
+        request = Request(
+            f"{base_url}/api/pull",
+            data=json.dumps({"model": model, "stream": True}).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Accept": "application/x-ndjson"},
+            method="POST",
+        )
+
+        def _pull() -> None:
+            with urlopen(request, timeout=3600) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", errors="ignore").strip()
+                    if not line:
+                        continue
+                    try:
+                        update = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if update.get("error"):
+                        raise RuntimeError(str(update.get("error")))
+                    total = int(update.get("total") or 0)
+                    completed = int(update.get("completed") or 0)
+                    progress = round((completed / total) * 100, 2) if total else None
+                    _update_download_job(
+                        job_id,
+                        {
+                            "message": str(update.get("status") or f"Pulling {model}"),
+                            "progress": progress,
+                            "bytes_downloaded": completed or None,
+                            "bytes_total": total or None,
+                        },
+                    )
+
+        await asyncio.to_thread(_pull)
+        status = await asyncio.to_thread(_ollama_status_sync, model, payload.endpoint)
+        if not status.get("installed"):
+            raise RuntimeError(f"Ollama pull finished but model {model} was not installed. {status.get('message') or ''}".strip())
+        _update_download_job(
+            job_id,
+            {
+                "status": "downloaded",
+                "progress": 100,
+                "message": f"Ollama model {model} ready.",
+                "status_snapshot": status,
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
+            },
+        )
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/ideogram4/ollama/status")
+async def ideogram4_ollama_status(model: str = Query("gemma4:e2b"), endpoint: str = Query("")) -> dict[str, Any]:
+    return await asyncio.to_thread(_ollama_status_sync, model.strip() or "gemma4:e2b", endpoint)
+
+
+@app.post("/api/ideogram4/ollama/start")
+async def ideogram4_ollama_start(payload: Ideogram4OllamaPullRequest) -> dict[str, Any]:
+    return await asyncio.to_thread(_start_ollama_sync, payload.endpoint)
+
+
+@app.post("/api/ideogram4/ollama/install/start")
+async def ideogram4_ollama_install_start() -> dict[str, Any]:
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "kind": "ideogram4_ollama_install",
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued Ollama installer download.",
+        "installer_url": OLLAMA_WINDOWS_INSTALLER_URL,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ollama_install_job(job_id))
+    return download_jobs[job_id]
+
+
+@app.post("/api/ideogram4/ollama/pull/start")
+async def ideogram4_ollama_pull_start(payload: Ideogram4OllamaPullRequest) -> dict[str, Any]:
+    model = payload.model.strip() or "gemma4:e2b"
+    job_id = uuid.uuid4().hex[:12]
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "kind": "ideogram4_ollama_pull",
+        "status": "queued",
+        "progress": 0,
+        "message": f"Queued Ollama pull for {model}.",
+        "model": model,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    asyncio.create_task(_run_ollama_pull_job(job_id, payload))
+    return download_jobs[job_id]
+
+
+@app.get("/api/ideogram4/ollama/pull/{job_id}")
+async def ideogram4_ollama_pull_job(job_id: str) -> dict[str, Any]:
+    job = download_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Ollama pull job not found.")
+    return job
+
+
+@app.post("/api/ideogram4/ollama/unload")
+async def ideogram4_ollama_unload(payload: Ideogram4OllamaPullRequest) -> dict[str, Any]:
+    model = payload.model.strip() or "gemma4:e2b"
+    base_url = _ollama_base_url(payload.endpoint)
+    try:
+        data = await asyncio.to_thread(
+            _post_json_sync,
+            f"{base_url}/api/generate",
+            {"model": model, "prompt": "", "stream": False, "keep_alive": 0, "options": {"num_gpu": 0}},
+            {},
+            30,
+        )
+        return {"ok": True, "model": model, "endpoint": base_url, "message": str(data.get("done_reason") or "unloaded")}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to unload Ollama model {model}: {exc}") from exc
+
+
+async def _run_comfy_gemma4_text_generate(instruction: str, *, max_length: int = 2048) -> str:
+    artifact_status = _ideogram4_artifact_status("gemma4")
+    if not artifact_status.get("installed"):
+        raise RuntimeError(
+            "Gemma 4 E4B FP8 text encoder is not installed. "
+            f"Download it to {artifact_status.get('destination')} before using Comfy Gemma4 Magic Prompt."
+        )
+    await comfy.ensure_running()
+    object_info = await comfy.object_info()
+    missing = [name for name in ("CLIPLoader", "TextGenerate", "SaveText|pysssss") if name not in object_info]
+    if missing:
+        raise RuntimeError("Comfy Gemma4 Magic Prompt requires missing Comfy nodes: " + ", ".join(missing))
+
+    output_file = f"nexus_ideogram4_magic_{uuid.uuid4().hex[:10]}.txt"
+    workflow = {
+        "1": {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": "gemma4_e4b_it_fp8_scaled.safetensors", "type": "ideogram4", "device": "default"},
+        },
+        "2": {
+            "class_type": "TextGenerate",
+            "inputs": {
+                "clip": ["1", 0],
+                "prompt": instruction,
+                "max_length": max(1, min(2048, int(max_length or 2048))),
+                "sampling_mode": "on",
+                "sampling_mode.temperature": 0.35,
+                "sampling_mode.top_k": 64,
+                "sampling_mode.top_p": 0.9,
+                "sampling_mode.min_p": 0.05,
+                "sampling_mode.repetition_penalty": 1.05,
+                "sampling_mode.seed": random.randint(0, 2**32 - 1),
+                "thinking": False,
+                "use_default_template": True,
+            },
+        },
+        "3": {
+            "class_type": "SaveText|pysssss",
+            "inputs": {"text": ["2", 0], "root_dir": "temp", "file": output_file, "append": "overwrite", "insert": False},
+        },
+    }
+    prompt_id = await comfy.queue_prompt(workflow, client_id=f"nexus-comfy-gemma4-{uuid.uuid4().hex[:8]}")
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        history = await comfy.history(prompt_id)
+        item = history.get(prompt_id)
+        if item:
+            status = item.get("status") or {}
+            if status.get("status_str") != "success":
+                raise RuntimeError(f"Comfy Gemma4 Magic Prompt failed: {status}")
+            break
+        await asyncio.sleep(1)
+    else:
+        await comfy.interrupt(prompt_id)
+        raise TimeoutError("Comfy Gemma4 Magic Prompt timed out.")
+
+    candidates = [
+        settings.project_root / "temp" / "temp" / output_file,
+        settings.project_root / "temp" / output_file,
+        settings.comfy_root / "temp" / output_file,
+    ]
+    text = ""
+    for path in candidates:
+        if path.is_file():
+            text = path.read_text(encoding="utf-8", errors="replace")
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            break
+    if not text.strip():
+        raise RuntimeError("Comfy Gemma4 Magic Prompt completed but did not write generated text.")
+    return text.strip()
+
+
+async def _generate_ideogram4_prompt_json_comfy(request: Ideogram4PromptJsonRequest) -> tuple[dict[str, Any], str, str]:
+    width = max(256, int(request.width or 1024))
+    height = max(256, int(request.height or 1024))
+    instruction = _ideogram4_prompt_generator_instruction(request.prompt.strip(), width, height, request.regions or [])
+    text = await _run_comfy_gemma4_text_generate(instruction, max_length=2048)
+    caption = normalize_ideogram4_magic_caption(json.loads(_extract_json_object_text(text)), request.prompt, request.regions or [])
+    return caption, "comfy_gemma4", "gemma4_e4b_it_fp8_scaled.safetensors"
+
+
+async def _generate_ideogram4_prompt_json_remote(request: Ideogram4PromptJsonRequest) -> tuple[dict[str, Any], str, str]:
+    provider = request.provider
+    prompt = request.prompt.strip()
+    width = max(256, int(request.width or 1024))
+    height = max(256, int(request.height or 1024))
+    regions = request.regions or []
+    if provider == "comfy_gemma4":
+        return await _generate_ideogram4_prompt_json_comfy(request)
+    if provider == "ideogram_magic":
+        api_key = os.environ.get("IDEOGRAM_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("IDEOGRAM_API_KEY is not configured.")
+        payload = {"text_prompt": prompt, "aspect_ratio": _ideogram4_api_aspect_ratio(width, height)}
+        data = await asyncio.to_thread(
+            _post_json_sync,
+            "https://api.ideogram.ai/v1/ideogram-v4/magic-prompt",
+            payload,
+            {"Api-Key": api_key},
+            45,
+        )
+        caption = data.get("json_prompt")
+        if not isinstance(caption, dict):
+            raise RuntimeError("Ideogram Magic Prompt did not return json_prompt.")
+        return normalize_ideogram4_magic_caption(caption, prompt, regions), "ideogram_magic", "ideogram-4-v1"
+
+    instruction = _ideogram4_prompt_generator_instruction(prompt, width, height, regions)
+    if provider == "ollama":
+        model = request.model.strip() or os.environ.get("OLLAMA_IDEOGRAM4_PROMPT_MODEL", "").strip() or "gemma4:e2b"
+        base_url = (request.endpoint.strip() or os.environ.get("OLLAMA_BASE_URL", "").strip() or "http://127.0.0.1:11434").rstrip("/")
+        url = base_url if base_url.endswith("/api/generate") else f"{base_url}/api/generate"
+        data = await asyncio.to_thread(
+            _post_json_sync,
+            url,
+            {"model": model, "prompt": instruction, "stream": False, "format": "json", "keep_alive": "2m", "options": {"temperature": 0.2, "num_gpu": 0, "num_ctx": 2048}},
+            {},
+            90,
+        )
+        response_text = _extract_json_object_text(str(data.get("response") or ""))
+        return normalize_ideogram4_magic_caption(json.loads(response_text), prompt, regions), "ollama", model
+
+    if provider == "openai_compatible":
+        model = request.model.strip() or os.environ.get("NEXUS_IDEOGRAM_JSON_MODEL", "").strip()
+        endpoint = request.endpoint.strip() or os.environ.get("NEXUS_IDEOGRAM_JSON_BASE_URL", "").strip()
+        api_key = os.environ.get("NEXUS_IDEOGRAM_JSON_API_KEY", "").strip()
+        if not endpoint or not model:
+            raise RuntimeError("NEXUS_IDEOGRAM_JSON_BASE_URL and NEXUS_IDEOGRAM_JSON_MODEL must be configured for openai_compatible.")
+        url = endpoint.rstrip("/")
+        if not url.endswith("/chat/completions"):
+            url = f"{url}/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        data = await asyncio.to_thread(
+            _post_json_sync,
+            url,
+            {
+                "model": model,
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": "You write safe, schema-valid Ideogram 4 JSON captions."},
+                    {"role": "user", "content": instruction},
+                ],
+            },
+            headers,
+            90,
+        )
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        return normalize_ideogram4_magic_caption(json.loads(_extract_json_object_text(content)), prompt, regions), "openai_compatible", model
+
+    raise RuntimeError(f"Unsupported provider: {provider}")
+
+
+@app.post("/api/ideogram4/prompt-json")
+async def ideogram4_prompt_json(request: Ideogram4PromptJsonRequest) -> Ideogram4PromptJsonResponse:
+    existing = parse_ideogram4_prompt_json(request.prompt)
+    if existing is not None:
+        return Ideogram4PromptJsonResponse(
+            provider="normalize",
+            json_prompt=existing,
+            prompt_text=ideogram4_prompt_json_text(existing, compact=False),
+            used_fallback=False,
+            message="Existing Ideogram 4 JSON prompt normalized.",
+        )
+    fallback = build_ideogram4_template_caption(request.prompt, request.width, request.height, request.regions)
+    used_fallback = request.provider == "template"
+    message = "Template JSON prompt generated locally."
+    provider = request.provider
+    model = request.model.strip()
+    caption = fallback
+    if request.provider != "template":
+        try:
+            caption, provider, model = await _generate_ideogram4_prompt_json_remote(request)
+            message = "JSON prompt generated by provider and normalized for Ideogram 4."
+        except Exception as exc:
+            used_fallback = True
+            provider = "template"
+            model = ""
+            message = f"{request.provider} prompt generator unavailable; used local template fallback. {exc}"
+    caption = normalize_ideogram4_magic_caption(caption, request.prompt, request.regions or [])
+    return Ideogram4PromptJsonResponse(
+        provider=provider,
+        model=model,
+        json_prompt=caption,
+        prompt_text=ideogram4_prompt_json_text(caption, compact=False),
+        used_fallback=used_fallback,
+        message=message,
+    )
+
+
+def _flatten_ideogram4_caption_prompt(caption: dict[str, Any]) -> str:
+    parts = [str(caption.get("high_level_description") or "").strip()]
+    style = caption.get("style_description") or {}
+    if isinstance(style, dict):
+        parts.extend(str(style.get(key) or "").strip() for key in ("aesthetics", "lighting", "photo", "medium"))
+    comp = caption.get("compositional_deconstruction") or {}
+    if isinstance(comp, dict):
+        parts.append(str(comp.get("background") or "").strip())
+        for element in comp.get("elements") or []:
+            if isinstance(element, dict):
+                parts.append(str(element.get("text") or "").strip())
+                parts.append(str(element.get("desc") or "").strip())
+    seen: set[str] = set()
+    clean = []
+    for part in parts:
+        compact = re.sub(r"\s+", " ", part).strip(" ,.;")
+        key = compact.lower()
+        if compact and key not in seen:
+            seen.add(key)
+            clean.append(compact)
+    return ", ".join(clean)[:4000]
+
+
+def _prompt_enhance_instruction(prompt: str, preset: str) -> str:
+    return (
+        "Improve this image-generation positive prompt while preserving the user's intent. "
+        "Return only valid JSON with one key named prompt. Do not add unsafe content, unrelated brands, "
+        "unrelated people, or text that was not requested. Keep it concise, visually specific, and compatible "
+        f"with a local {preset or 'image'} workflow. User prompt: {prompt!r}"
+    )
+
+
+@app.post("/api/prompt/enhance")
+async def prompt_enhance(request: PromptEnhanceRequest) -> PromptEnhanceResponse:
+    raw_prompt = request.prompt.strip()
+    fallback = raw_prompt or "A natural coherent image."
+    fallback = f"{fallback}, natural composition, clear subject, coherent lighting, detailed final image"
+    if request.provider == "template":
+        return PromptEnhanceResponse(provider="template", prompt=fallback, used_fallback=True, message="Template prompt enhancement generated locally.")
+    try:
+        if request.provider == "ideogram_magic":
+            caption, provider, model = await _generate_ideogram4_prompt_json_remote(
+                Ideogram4PromptJsonRequest(prompt=raw_prompt, provider="ideogram_magic")
+            )
+            return PromptEnhanceResponse(provider=provider, model=model, prompt=_flatten_ideogram4_caption_prompt(caption), message="Prompt enhanced with Ideogram Magic Prompt API.")
+        instruction = _prompt_enhance_instruction(raw_prompt, request.preset)
+        if request.provider == "comfy_gemma4":
+            text = await _run_comfy_gemma4_text_generate(instruction, max_length=512)
+            parsed = json.loads(_extract_json_object_text(text))
+            enhanced = re.sub(r"\s+", " ", str(parsed.get("prompt") or "")).strip()
+            if not enhanced:
+                raise RuntimeError("Comfy Gemma4 did not return a prompt.")
+            return PromptEnhanceResponse(
+                provider="comfy_gemma4",
+                model="gemma4_e4b_it_fp8_scaled.safetensors",
+                prompt=enhanced,
+                message="Prompt enhanced with Comfy Gemma4.",
+            )
+        if request.provider == "ollama":
+            model = request.model.strip() or os.environ.get("OLLAMA_IDEOGRAM4_PROMPT_MODEL", "").strip() or "gemma4:e2b"
+            base_url = _ollama_base_url(request.endpoint)
+            data = await asyncio.to_thread(
+                _post_json_sync,
+                f"{base_url}/api/generate",
+                {"model": model, "prompt": instruction, "stream": False, "format": "json", "keep_alive": "2m", "options": {"temperature": 0.35, "num_gpu": 0, "num_ctx": 2048}},
+                {},
+                90,
+            )
+            parsed = json.loads(_extract_json_object_text(str(data.get("response") or "")))
+            enhanced = re.sub(r"\s+", " ", str(parsed.get("prompt") or "")).strip()
+            if not enhanced:
+                raise RuntimeError("Ollama did not return a prompt.")
+            return PromptEnhanceResponse(provider="ollama", model=model, prompt=enhanced, message="Prompt enhanced with Ollama.")
+        if request.provider == "openai_compatible":
+            model = request.model.strip() or os.environ.get("NEXUS_IDEOGRAM_JSON_MODEL", "").strip()
+            endpoint = request.endpoint.strip() or os.environ.get("NEXUS_IDEOGRAM_JSON_BASE_URL", "").strip()
+            api_key = os.environ.get("NEXUS_IDEOGRAM_JSON_API_KEY", "").strip()
+            if not endpoint or not model:
+                raise RuntimeError("NEXUS_IDEOGRAM_JSON_BASE_URL and NEXUS_IDEOGRAM_JSON_MODEL must be configured for openai_compatible.")
+            url = endpoint.rstrip("/")
+            if not url.endswith("/chat/completions"):
+                url = f"{url}/chat/completions"
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+            data = await asyncio.to_thread(
+                _post_json_sync,
+                url,
+                {
+                    "model": model,
+                    "temperature": 0.35,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {"role": "system", "content": "You enhance image-generation prompts and return JSON only."},
+                        {"role": "user", "content": instruction},
+                    ],
+                },
+                headers,
+                90,
+            )
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            parsed = json.loads(_extract_json_object_text(content))
+            enhanced = re.sub(r"\s+", " ", str(parsed.get("prompt") or "")).strip()
+            if not enhanced:
+                raise RuntimeError("OpenAI-compatible provider did not return a prompt.")
+            return PromptEnhanceResponse(provider="openai_compatible", model=model, prompt=enhanced, message="Prompt enhanced with OpenAI-compatible provider.")
+        raise RuntimeError(f"Unsupported provider: {request.provider}")
+    except Exception as exc:
+        return PromptEnhanceResponse(provider="template", prompt=fallback, used_fallback=True, message=f"{request.provider} prompt enhancer unavailable; used local template fallback. {exc}")
 
 
 @app.post("/api/ideogram4/assets/download/start")

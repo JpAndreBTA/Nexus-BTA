@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type PointerEvent, type WheelEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Play, Redo2, Save, Send, SlidersHorizontal, Undo2, Workflow, X } from 'lucide-react';
+import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Play, Redo2, Save, Send, SlidersHorizontal, Undo2, Wand2, Workflow, X } from 'lucide-react';
 
 import { nexusApi } from '../../api/nexusClient';
-import type { CatalogAsset, GenerateRequest, GenerationJob } from '../../api/types';
+import type { CatalogAsset, GenerateRequest, GenerationJob, Ideogram4PromptJsonRequest } from '../../api/types';
 import { useGalleryQuery, useModelCatalogQuery, useWorkflowAnalysisQuery, useWorkflowsQuery } from '../../api/queries';
 import { useLorasQuery } from '../../api/queries';
 import type { WorkflowGraphLink, WorkflowGraphNode, WorkflowSummary } from '../../api/types';
@@ -92,6 +92,14 @@ function modelMatchesPreset(model: { label: string; name: string }, preset: stri
     anima: ['anima'],
   };
   return (rules[key] || [key]).some((token) => haystack.includes(token));
+}
+
+function primaryModelMatchesPreset(model: { label: string; name: string }, preset: string) {
+  const haystack = `${model.label} ${model.name}`.toLowerCase();
+  if (['ideogram4', 'ideogram'].includes(preset.toLowerCase())) {
+    return modelMatchesPreset(model, preset) && !haystack.includes('unconditional');
+  }
+  return modelMatchesPreset(model, preset);
 }
 
 function controlNetCompatiblePreset(preset: string) {
@@ -526,6 +534,10 @@ export function HomePage() {
   const [viewMode, setViewMode] = useState<'director' | 'linear' | 'inpaint' | 'workflow'>('linear');
   const [linearZoom, setLinearZoom] = useState(1);
   const [ideogramAssetSelection, setIdeogramAssetSelection] = useState<string[]>([]);
+  const [ideogramPromptProvider, setIdeogramPromptProvider] = useState<Ideogram4PromptJsonRequest['provider']>('comfy_gemma4');
+  const [ideogramPromptModel, setIdeogramPromptModel] = useState('gemma4:e2b');
+  const [ideogramPromptEndpoint, setIdeogramPromptEndpoint] = useState('');
+  const [ideogramPromptMessage, setIdeogramPromptMessage] = useState('');
 
   const allModels = useMemo(() => modelOptions(catalog.data), [catalog.data]);
   const vaeOptions = useMemo(() => assetSelectOptions(catalog.data, ['vae']), [catalog.data]);
@@ -535,7 +547,8 @@ export function HomePage() {
   const studioWorkflow = useMemo(() => preferredWorkflow(workflows.data, generation.preset, generation.workflowId), [generation.preset, generation.workflowId, workflows.data]);
   const workflowAnalysis = useWorkflowAnalysisQuery(studioWorkflow?.id || '');
   const models = useMemo(() => {
-    const filtered = allModels.filter((model) => modelMatchesPreset(model, generation.preset));
+    const filtered = allModels.filter((model) => primaryModelMatchesPreset(model, generation.preset));
+    if (['ideogram4', 'ideogram'].includes(generation.preset.toLowerCase())) return filtered;
     return filtered.length ? filtered : allModels;
   }, [allModels, generation.preset]);
   const newestGalleryItem = gallery.data?.[0];
@@ -564,6 +577,18 @@ export function HomePage() {
       void ideogram4Status.refetch();
     },
     onError: (error) => setLocalError(error instanceof Error ? error.message : 'Ideogram 4 dependency download failed.'),
+  });
+  const ideogramPromptJson = useMutation({
+    mutationFn: (request: Ideogram4PromptJsonRequest) => nexusApi.ideogram4PromptJson(request),
+    onSuccess: (result) => {
+      generation.setPrompt(result.prompt_text);
+      setIdeogramPromptMessage(result.message || `JSON prompt generated with ${result.provider}.`);
+      setLocalError('');
+    },
+    onError: (error) => {
+      setIdeogramPromptMessage('');
+      setLocalError(error instanceof Error ? error.message : 'Ideogram 4 Magic JSON prompt failed.');
+    },
   });
   const ideogramAssets = ideogram4Status.data?.assets ?? [];
   const selectedIdeogramAssets = ideogramAssetSelection.length
@@ -767,6 +792,101 @@ export function HomePage() {
     setLinearZoom((value) => Math.max(0.25, Math.min(3, Number((value + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2)))));
   }
 
+  async function waitForIdeogramOllamaPull(jobId: string) {
+    for (let attempt = 0; attempt < 720; attempt += 1) {
+      const job = await nexusApi.ideogram4OllamaPullJob(jobId);
+      setIdeogramPromptMessage(`${job.message}${Number.isFinite(job.progress) ? ` ${Math.round(job.progress)}%` : ''}`);
+      if (['downloaded', 'completed'].includes(job.status)) return;
+      if (job.status === 'failed') throw new Error(job.error || job.message || 'Ollama model download failed.');
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    }
+    throw new Error('Ollama model download timed out.');
+  }
+
+  async function ensureIdeogramOllamaModel(model: string, endpoint: string) {
+    const status = await nexusApi.ideogram4OllamaStatus(model, endpoint);
+    if (!status.running) {
+      const useFallback = window.confirm(`${status.message}\n\nUse the local template fallback instead?`);
+      return useFallback ? 'template' : '';
+    }
+    if (status.installed) return 'ollama';
+    const size = formatBytes(status.estimated_size_bytes);
+    const download = window.confirm(`Ollama model "${model}" is not installed.\nEstimated download size: ${size}.\n\nDownload it now?`);
+    if (!download) {
+      const useFallback = window.confirm('Use the local template fallback without downloading a model?');
+      return useFallback ? 'template' : '';
+    }
+    const job = await nexusApi.startIdeogram4OllamaPull({ model, endpoint });
+    await waitForIdeogramOllamaPull(job.job_id);
+    return 'ollama';
+  }
+
+  async function handleIdeogramMagicPrompt() {
+    if (!generation.prompt.trim()) {
+      setLocalError('Prompt is required.');
+      return;
+    }
+    const choice = window.prompt(
+      [
+        'Choose Magic Prompt provider:',
+        '1 - Comfy Gemma4 local',
+        '2 - Gemma / Ollama local',
+        '3 - Ideogram Magic Prompt API',
+        '4 - OpenAI-compatible public API',
+        '5 - Local template fallback',
+      ].join('\n'),
+      ideogramPromptProvider === 'ollama' ? '2' : ideogramPromptProvider === 'ideogram_magic' ? '3' : ideogramPromptProvider === 'openai_compatible' ? '4' : ideogramPromptProvider === 'template' ? '5' : '1',
+    );
+    if (choice === null) return;
+    let provider: Ideogram4PromptJsonRequest['provider'] = 'template';
+    let model = ideogramPromptModel;
+    let endpoint = ideogramPromptEndpoint;
+    const normalizedChoice = choice.trim().toLowerCase();
+    if (['1', 'comfy', 'comfy_gemma4', 'gemma4fp8'].includes(normalizedChoice)) {
+      provider = 'comfy_gemma4';
+      model = '';
+      endpoint = '';
+    } else if (['2', 'gemma', 'ollama', 'local'].includes(normalizedChoice)) {
+      provider = 'ollama';
+      model = window.prompt('Ollama model name:', model || 'gemma4:e2b')?.trim() || '';
+      if (!model) return;
+      endpoint = window.prompt('Ollama endpoint:', endpoint || 'http://127.0.0.1:11434')?.trim() || '';
+      const ensured = await ensureIdeogramOllamaModel(model, endpoint);
+      if (!ensured) return;
+      provider = ensured as Ideogram4PromptJsonRequest['provider'];
+    } else if (['3', 'ideogram', 'ideogram_magic', 'api'].includes(normalizedChoice)) {
+      provider = 'ideogram_magic';
+      model = '';
+      endpoint = '';
+    } else if (['4', 'openai', 'openai-compatible', 'public'].includes(normalizedChoice)) {
+      provider = 'openai_compatible';
+      model = window.prompt('OpenAI-compatible model id:', model || 'gemma-3-4b-it')?.trim() || '';
+      if (!model) return;
+      endpoint = window.prompt('OpenAI-compatible base URL:', endpoint || 'https://api.openai.com/v1')?.trim() || '';
+      if (!endpoint) return;
+    } else if (['5', 'template', 'fallback'].includes(normalizedChoice)) {
+      provider = 'template';
+      model = '';
+      endpoint = '';
+    } else {
+      setLocalError('Magic Prompt provider was not recognized.');
+      return;
+    }
+    setIdeogramPromptProvider(provider);
+    setIdeogramPromptModel(model);
+    setIdeogramPromptEndpoint(endpoint);
+    setIdeogramPromptMessage('');
+    await ideogramPromptJson.mutateAsync({
+      prompt: generation.prompt,
+      width: generation.width,
+      height: generation.height,
+      regions: generation.promptRegions,
+      provider,
+      model,
+      endpoint,
+    });
+  }
+
   async function generate() {
     if (!generation.prompt.trim()) {
       setLocalError('Prompt is required.');
@@ -846,7 +966,21 @@ export function HomePage() {
           )}
 
           <label className="field">
-            <span>Prompt</span>
+            <span className="field-title-row">
+              Prompt
+              {ideogram4Mode && (
+                <button
+                  className="mini-button"
+                  type="button"
+                  onClick={() => void handleIdeogramMagicPrompt()}
+                  disabled={ideogramPromptJson.isPending || !generation.prompt.trim()}
+                  title="Convert prompt to Ideogram 4 JSON"
+                >
+                  {ideogramPromptJson.isPending ? <LoaderCircle className="spin" size={13} /> : <Wand2 size={13} />}
+                  Magic JSON
+                </button>
+              )}
+            </span>
             <textarea value={generation.prompt} onChange={(event) => generation.setPrompt(event.currentTarget.value)} placeholder="Describe the image..." />
           </label>
 
@@ -995,6 +1129,47 @@ export function HomePage() {
                   Download selected
                 </button>
                 <p className="compact-note">The local img2img image is shown as a layout guide for regional JSON; current open Ideogram 4 Comfy route is text-to-image.</p>
+              </div>
+            </details>
+          )}
+
+          {ideogram4Mode && (
+            <details className="control-section" open>
+              <summary>Magic Prompt JSON <span>{ideogramPromptProvider === 'comfy_gemma4' ? 'Comfy Gemma4' : ideogramPromptProvider === 'ollama' ? 'Gemma' : ideogramPromptProvider}</span></summary>
+              <div className="control-stack ideogram-magic-panel">
+                <label className="field">
+                  <span>Provider</span>
+                  <select value={ideogramPromptProvider} onChange={(event) => setIdeogramPromptProvider(event.currentTarget.value as typeof ideogramPromptProvider)}>
+                    <option value="comfy_gemma4">Comfy Gemma4 local</option>
+                    <option value="ollama">Ollama / Gemma local</option>
+                    <option value="ideogram_magic">Ideogram Magic Prompt API</option>
+                    <option value="openai_compatible">OpenAI-compatible endpoint</option>
+                    <option value="template">Local template fallback</option>
+                  </select>
+                </label>
+                {(ideogramPromptProvider === 'ollama' || ideogramPromptProvider === 'openai_compatible') && (
+                  <label className="field">
+                    <span>Model</span>
+                    <input value={ideogramPromptModel} onChange={(event) => setIdeogramPromptModel(event.currentTarget.value)} placeholder={ideogramPromptProvider === 'ollama' ? 'gemma4:e2b, gemma3:4b or gemma3:1b' : 'model id'} />
+                  </label>
+                )}
+                {(ideogramPromptProvider === 'ollama' || ideogramPromptProvider === 'openai_compatible') && (
+                  <label className="field">
+                    <span>Endpoint</span>
+                    <input value={ideogramPromptEndpoint} onChange={(event) => setIdeogramPromptEndpoint(event.currentTarget.value)} placeholder={ideogramPromptProvider === 'ollama' ? 'http://127.0.0.1:11434' : 'https://.../v1'} />
+                  </label>
+                )}
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => void handleIdeogramMagicPrompt()}
+                  disabled={ideogramPromptJson.isPending || !generation.prompt.trim()}
+                >
+                  {ideogramPromptJson.isPending ? <LoaderCircle className="spin" size={14} /> : <Wand2 size={14} />}
+                  Convert prompt to JSON
+                </button>
+                {ideogramPromptMessage && <div className="studio-inline-status">{ideogramPromptMessage}</div>}
+                <p className="compact-note">Short prompts and pasted JSON both stay valid: JSON is normalized; plain text is expanded into the native Ideogram 4 caption schema.</p>
               </div>
             </details>
           )}

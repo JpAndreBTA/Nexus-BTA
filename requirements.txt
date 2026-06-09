@@ -44,6 +44,9 @@ protobuf>=5.29.6
 tokenizers>=0.22.2
 gguf>=0.10
 
+# Ideogram 4 Magic Prompt JSON uses stdlib HTTP for Ideogram/OpenAI-compatible APIs.
+# Local Gemma prompting is optional through an external Ollama server/model pull, not a Python package.
+
 numpy>=2.4.6
 pillow>=12.2.0
 opencv-python>=4.10.0.84

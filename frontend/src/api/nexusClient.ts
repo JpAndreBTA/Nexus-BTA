@@ -1,4 +1,4 @@
-import type { CivitaiSearchResponse, ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
+import type { CivitaiSearchResponse, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -59,6 +59,21 @@ export const nexusApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
+  ideogram4PromptJson: (payload: Ideogram4PromptJsonRequest) =>
+    nexusFetch<Ideogram4PromptJsonResponse>('/ideogram4/prompt-json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  ideogram4OllamaStatus: (model: string, endpoint = '') =>
+    nexusFetch<Ideogram4OllamaStatus>(`/ideogram4/ollama/status?model=${encodeURIComponent(model)}&endpoint=${encodeURIComponent(endpoint)}`),
+  startIdeogram4OllamaPull: (payload: { model: string; endpoint?: string }) =>
+    nexusFetch<DownloadJob>('/ideogram4/ollama/pull/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  ideogram4OllamaPullJob: (jobId: string) => nexusFetch<DownloadJob>(`/ideogram4/ollama/pull/${encodeURIComponent(jobId)}`),
   extrasJob: (jobId: string) => nexusFetch<ExtrasJob>(`/extras/${encodeURIComponent(jobId)}`),
   gallery: () => nexusFetch<GalleryItem[]>('/gallery'),
   workflows: () => nexusFetch<WorkflowSummary[]>('/workflows'),

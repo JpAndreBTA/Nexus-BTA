@@ -1576,6 +1576,22 @@ a:hover {
   text-transform: uppercase;
 }
 
+.field-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field-title-row .mini-button {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  text-transform: none;
+}
+
 .field input,
 .field select,
 .field textarea {
@@ -1995,6 +2011,10 @@ a:hover {
   padding: 8px;
   font-size: 11px;
   font-weight: 800;
+}
+
+.ideogram-magic-panel .studio-inline-status {
+  width: 100%;
 }
 
 .studio-inline-status.error {

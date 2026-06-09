@@ -224,6 +224,50 @@ export interface GenerateRequest {
   runtime?: Record<string, unknown>;
 }
 
+export interface Ideogram4PromptJsonRequest {
+  prompt: string;
+  width: number;
+  height: number;
+  regions: unknown[];
+  provider: 'template' | 'comfy_gemma4' | 'ollama' | 'ideogram_magic' | 'openai_compatible';
+  model?: string;
+  endpoint?: string;
+}
+
+export interface Ideogram4PromptJsonResponse {
+  provider: string;
+  model: string;
+  json_prompt: Record<string, unknown>;
+  prompt_text: string;
+  used_fallback: boolean;
+  message: string;
+}
+
+export interface Ideogram4OllamaStatus {
+  running: boolean;
+  installed: boolean;
+  model: string;
+  endpoint: string;
+  installed_size_bytes?: number;
+  estimated_size_bytes?: number;
+  message: string;
+}
+
+export interface DownloadJob {
+  job_id: string;
+  kind?: string;
+  status: string;
+  progress: number;
+  message: string;
+  error?: string | null;
+  bytes_downloaded?: number;
+  bytes_total?: number;
+  model?: string;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string;
+}
+
 export interface WorkflowSummary {
   id: string;
   name: string;
