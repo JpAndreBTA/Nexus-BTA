@@ -105,6 +105,20 @@ def normalize_scheduler(value: str) -> str:
     return SCHEDULER_ALIASES.get(value, value).lower().replace(" ", "_")
 
 
+def _clip_loader_node(clip_name: str, clip_type: str, title: str) -> dict[str, Any]:
+    if str(clip_name or "").lower().endswith(".gguf"):
+        return {
+            "class_type": "CLIPLoaderGGUF",
+            "inputs": {"clip_name": clip_name, "type": clip_type},
+            "_meta": {"title": title},
+        }
+    return {
+        "class_type": "CLIPLoader",
+        "inputs": {"clip_name": clip_name, "type": clip_type, "device": "default"},
+        "_meta": {"title": title},
+    }
+
+
 def workflow_id_from_path(path: Path) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", path.stem).strip("-").lower()
     return slug or path.stem.lower()
@@ -2369,11 +2383,7 @@ def build_basic_anima_workflow(
             "inputs": loader_inputs,
             "_meta": {"title": "Load Anima Model"},
         },
-        "2": {
-            "class_type": "CLIPLoader",
-            "inputs": {"clip_name": text_encoder_name, "type": "qwen_image", "device": "default"},
-            "_meta": {"title": "Anima / Qwen Text Encoder"},
-        },
+        "2": _clip_loader_node(text_encoder_name, "qwen_image", "Anima / Qwen Text Encoder"),
         "3": {
             "class_type": "VAELoader",
             "inputs": {"vae_name": vae_name},
@@ -2545,11 +2555,7 @@ def build_basic_qwen_image_workflow(
             "inputs": loader_inputs,
             "_meta": {"title": "Load QWEN Model"},
         },
-        "2": {
-            "class_type": "CLIPLoader",
-            "inputs": {"clip_name": text_encoder_name, "type": "qwen_image", "device": "default"},
-            "_meta": {"title": "QWEN Text Encoder"},
-        },
+        "2": _clip_loader_node(text_encoder_name, "qwen_image", "QWEN Text Encoder"),
         "3": {
             "class_type": "VAELoader",
             "inputs": {"vae_name": vae_name},
@@ -2906,11 +2912,7 @@ def build_basic_zimage_turbo_workflow(
             ),
             "_meta": {"title": "Load Z-Image Turbo Model"},
         },
-        "2": {
-            "class_type": "CLIPLoader",
-            "inputs": {"clip_name": text_encoder_name, "type": "lumina2", "device": "default"},
-            "_meta": {"title": "Z-Image Qwen3 Text Encoder"},
-        },
+        "2": _clip_loader_node(text_encoder_name, "lumina2", "Z-Image Qwen3 Text Encoder"),
         "3": {
             "class_type": "VAELoader",
             "inputs": {"vae_name": vae_name},
@@ -3430,11 +3432,7 @@ def build_basic_ideogram4_workflow(
             "inputs": {"unet_name": unconditional_model_name, "weight_dtype": "default"},
             "_meta": {"title": "Load Ideogram 4 Unconditional Model"},
         },
-        "3": {
-            "class_type": "CLIPLoader",
-            "inputs": {"clip_name": text_encoder_name, "type": "ideogram4", "device": "default"},
-            "_meta": {"title": "Ideogram 4 Qwen3-VL Text Encoder"},
-        },
+        "3": _clip_loader_node(text_encoder_name, "ideogram4", "Ideogram 4 Qwen3-VL Text Encoder"),
         "4": {
             "class_type": "VAELoader",
             "inputs": {"vae_name": vae_name},
@@ -3676,11 +3674,7 @@ def build_basic_flux_workflow(
         positive_ref: list[Any] = ["4", 0]
         workflow = {
             "1": loader,
-            "2": {
-                "class_type": "CLIPLoader",
-                "inputs": {"clip_name": text_encoder_name, "type": "flux2", "device": "default"},
-                "_meta": {"title": "Flux.2 Text Encoder"},
-            },
+            "2": _clip_loader_node(text_encoder_name, "flux2", "Flux.2 Text Encoder"),
             "3": {
                 "class_type": "VAELoader",
                 "inputs": {"vae_name": vae_name},
@@ -5936,12 +5930,22 @@ def build_basic_ltx_img2video_workflow(
             },
         }
 
-    workflow = {
-        "1": {
+    ltx_model_loader = (
+        {
+            "class_type": "UnetLoaderGGUF",
+            "inputs": {"unet_name": checkpoint_name},
+            "_meta": {"title": "Load LTX 2.3 GGUF Model"},
+        }
+        if checkpoint_name.lower().endswith(".gguf")
+        else {
             "class_type": "CheckpointLoaderSimple",
             "inputs": {"ckpt_name": checkpoint_name},
             "_meta": {"title": "Load LTX 2.3 Checkpoint"},
-        },
+        }
+    )
+
+    workflow = {
+        "1": ltx_model_loader,
         "2": {
             "class_type": "LTXAVTextEncoderLoader",
             "inputs": {"text_encoder": text_encoder_name, "ckpt_name": text_projection_name or checkpoint_name, "device": str(video_options.get("text_encoder_device") or "default")},
@@ -6249,7 +6253,7 @@ def patch_workflow(
                             return
         inputs[key] = value
 
-    def patch_side_menu_asset_inputs(inputs: dict[str, Any], class_lower: str, title: str) -> None:
+    def patch_side_menu_asset_inputs(node: dict[str, Any], inputs: dict[str, Any], class_lower: str, title: str) -> None:
         haystack = " ".join([class_lower, title]).lower()
         if "vae_name" in inputs:
             if "audio" in haystack and assets.get("audio_vae"):
@@ -6275,6 +6279,14 @@ def patch_workflow(
                 inputs["clip_name"] = assets["flux_clip_l"]
             elif assets.get("text_encoder"):
                 inputs["clip_name"] = assets["text_encoder"]
+            if assets.get("text_encoder"):
+                text_encoder_name = str(assets["text_encoder"])
+                if text_encoder_name.lower().endswith(".gguf"):
+                    node["class_type"] = "CLIPLoaderGGUF"
+                    inputs.pop("device", None)
+                elif class_lower == "cliploadergguf":
+                    node["class_type"] = "CLIPLoader"
+                    inputs.setdefault("device", str(video_options.get("text_encoder_device") or "default"))
         if "unet_name" in inputs and assets.get("primary_model"):
             if preset == "wan":
                 if "high" in haystack and assets.get("wan_high_model"):
@@ -6354,7 +6366,7 @@ def patch_workflow(
             if assets.get("text_projection"):
                 inputs["ckpt_name"] = assets["text_projection"]
 
-        patch_side_menu_asset_inputs(inputs, class_lower, title)
+        patch_side_menu_asset_inputs(node, inputs, class_lower, title)
 
         if preset == "ltx" and request.workflow_id == "ltx23-video-outpainting" and "value" in inputs:
             if "target_aspect_w" in title:

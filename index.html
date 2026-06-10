@@ -7397,17 +7397,22 @@
                 ? { diffusion_models: 0, unet: 1, checkpoints: 2 }
                 : { checkpoints: 0, unet: 1, diffusion_models: 2 };
             const matched = candidates
-                .filter(model => modelMatchesPreset(model, presetName))
-                .filter(model => isPrimaryModelForPreset(model, presetName))
                 .filter(model => presetName !== 'LTX' || !/projection|text_projection|proj/i.test([model.name, model.relative_path].join(' ')))
+                .filter(model => presetName !== 'Ideogram4' || !/unconditional/i.test([model.name, model.relative_path].join(' ')))
                 .sort((a, b) => {
+                    const aPresetMatch = modelMatchesPreset(a, presetName) ? 0 : 1;
+                    const bPresetMatch = modelMatchesPreset(b, presetName) ? 0 : 1;
+                    const aPrimary = isPrimaryModelForPreset(a, presetName) ? 0 : 1;
+                    const bPrimary = isPrimaryModelForPreset(b, presetName) ? 0 : 1;
                     const aLtxGguf = presetName === 'LTX' && /\.gguf$/i.test(a.name) ? 1 : 0;
                     const bLtxGguf = presetName === 'LTX' && /\.gguf$/i.test(b.name) ? 1 : 0;
                     const aLtxPreferred = presetName === 'LTX' && /dasiwa|lightspeed/i.test([a.name, a.relative_path].join(' ')) ? 1 : 0;
                     const bLtxPreferred = presetName === 'LTX' && /dasiwa|lightspeed/i.test([b.name, b.relative_path].join(' ')) ? 1 : 0;
                     const aQwenEdit = presetName === 'Qwen' && /edit/i.test([a.name, a.folder, a.relative_path].join(' ')) ? 1 : 0;
                     const bQwenEdit = presetName === 'Qwen' && /edit/i.test([b.name, b.folder, b.relative_path].join(' ')) ? 1 : 0;
-                    return aLtxGguf - bLtxGguf
+                    return aPresetMatch - bPresetMatch
+                        || aPrimary - bPrimary
+                        || aLtxGguf - bLtxGguf
                         || bLtxPreferred - aLtxPreferred
                         || bQwenEdit - aQwenEdit
                         || (categoryPriority[a.category] ?? 3) - (categoryPriority[b.category] ?? 3)
@@ -7516,12 +7521,7 @@
                 : preferredEncoderForPreset(presetName, cleanAvailable);
             if (!raw || /^(automatic|auto|none)$/i.test(raw)) return preferred || raw;
             if (kind === 'text') {
-                if (presetName === 'Anima' && !/qwen_3|qwen3/i.test(raw)) return preferred || raw;
-                if (presetName === 'ZImageTurbo' && !/qwen_3_4b|qwen3_4b/i.test(raw)) return preferred || raw;
-                if (presetName === 'Ideogram4' && !/qwen3vl|qwen.*3.*vl/i.test(raw)) return preferred || raw;
                 if (presetName === 'LTX' && /projection|proj/i.test(raw)) return preferred || raw;
-            } else if (kind === 'vae' && presetName === 'Ideogram4' && !/flux2-vae|flux.*2.*vae/i.test(raw)) {
-                return preferred || raw;
             }
             const exact = options.find(option => option === raw) || cleanAvailable.find(option => option === raw);
             return exact || preferred || raw;
@@ -30854,6 +30854,24 @@
             const clipOutputSlot = externalQwenRoute ? 0 : 1;
             const vaeOutputSlot = externalQwenRoute ? 0 : 2;
             const isLtxPreset = preset === 'LTX';
+            const clipLoaderPreviewNode = ({ id = 'clip', title, x, y, width = 260, height = 118, clipName, type, color = '#1f5f3a' }) => {
+                const isGgufClip = /\.gguf$/i.test(String(clipName || ''));
+                return {
+                    id,
+                    class_type: isGgufClip ? 'CLIPLoaderGGUF' : 'CLIPLoader',
+                    title,
+                    x,
+                    y,
+                    width,
+                    height,
+                    inputs: [],
+                    outputs: ['CLIP'],
+                    widgets: isGgufClip
+                        ? [{ name: 'clip_name', value: clipName }, { name: 'type', value: type }]
+                        : [{ name: 'clip_name', value: clipName }, { name: 'type', value: type }, { name: 'device', value: 'default' }],
+                    color
+                };
+            };
             const ltxMotionTransferEnabled = isLtxPreset && isImg2Img && !!document.getElementById('ltxMotionTransferToggle')?.checked;
             const ltxMotionTransferMode = String(document.getElementById('ltxMotionTransferModeSelect')?.value || 'pose').toLowerCase();
             const ltxTransitionEnabled = isLtxPreset && isImg2Img && !!document.getElementById('ltxTransitionLoraToggle')?.checked;
@@ -30899,7 +30917,7 @@
                 const zModelSource = hasLora ? 'lora' : 'model';
                 const zNodes = [
                     { id: 'model', class_type: 'UNETLoader', title: 'Load Z-Image Turbo Model', x: 70, y: 120, width: 260, height: 110, inputs: [], outputs: ['MODEL'], widgets: [{ name: 'unet_name', value: profile.backendModels?.[0]?.name || 'z_image_turbo_bf16.safetensors' }, { name: 'weight_dtype', value: 'default' }], color: '#1f3b63' },
-                    { id: 'clip', class_type: 'CLIPLoader', title: 'Qwen3 Text Encoder', x: 70, y: 270, width: 260, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || 'qwen_3_4b.safetensors' }, { name: 'type', value: 'lumina2' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
+                    clipLoaderPreviewNode({ title: 'Qwen3 Text Encoder', x: 70, y: 270, clipName: document.getElementById('textEncoderSelect')?.value || 'qwen_3_4b.safetensors', type: 'lumina2' }),
                     { id: 'vae', class_type: 'VAELoader', title: 'AE VAE', x: 70, y: 430, width: 240, height: 100, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || 'ae.safetensors' }], color: '#62305a' },
                     { id: 'aura', class_type: 'ModelSamplingAuraFlow', title: 'AuraFlow Shift', x: 430, y: 120, width: 240, height: 105, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'shift', value: '3' }], color: '#2f3c4f' },
                     { id: 'positive', class_type: isImg2Img ? 'TextEncodeZImageOmni' : 'CLIPTextEncode', title: 'Positive Prompt', x: 430, y: 270, width: 290, height: 130, inputs: isImg2Img ? ['clip', 'vae', 'image1', 'prompt'] : ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: isImg2Img ? 'prompt' : 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic image...' }], color: '#1f5f3a' },
@@ -30988,7 +31006,7 @@
                 const fluxNodes = [
                     { id: 'model', class_type: selectedModelName.toLowerCase().endsWith('.gguf') ? 'UnetLoaderGGUF' : 'UNETLoader', title: 'Load Flux Model', x: 70, y: 120, width: 260, height: 110, inputs: [], outputs: ['MODEL'], widgets: selectedModelName.toLowerCase().endsWith('.gguf') ? [{ name: 'unet_name', value: selectedModelName }] : [{ name: 'unet_name', value: selectedModelName }, { name: 'weight_dtype', value: 'default' }], color: '#1f3b63' },
                     fluxIsFlux2
-                        ? { id: 'clip', class_type: 'CLIPLoader', title: 'Flux.2 Text Encoder', x: 70, y: 270, width: 280, height: 135, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: fluxTextEncoder }, { name: 'type', value: 'flux2' }, { name: 'device', value: 'default' }], color: '#1f5f3a' }
+                        ? clipLoaderPreviewNode({ title: 'Flux.2 Text Encoder', x: 70, y: 270, width: 280, height: 135, clipName: fluxTextEncoder, type: 'flux2' })
                         : { id: 'clip', class_type: 'DualCLIPLoader', title: 'Flux CLIP-L + T5', x: 70, y: 270, width: 280, height: 135, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name1', value: 'clip_l.safetensors' }, { name: 'clip_name2', value: fluxTextEncoder }, { name: 'type', value: 'flux' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
                     { id: 'vae', class_type: 'VAELoader', title: fluxIsFlux2 ? 'Flux.2 VAE' : 'Flux AE VAE', x: 70, y: 450, width: 240, height: 100, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: fluxVae }], color: '#62305a' },
                     { id: 'positive', class_type: 'CLIPTextEncode', title: 'Positive Prompt', x: 430, y: 230, width: 290, height: 130, inputs: ['clip', 'text'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: document.getElementById('posPrompt')?.value || 'Cinematic image...' }], color: '#1f5f3a' },
@@ -31135,7 +31153,7 @@
                     { id: 'edit_lora', class_type: 'LoraLoaderModelOnly', title: 'QWEN Edit Lightning LoRA', x: 370, y: 110, width: 260, height: 118, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: qwenEditLoraName }, { name: 'strength_model', value: qwenEditLoraStrength }], color: '#4c1d95' },
                     { id: 'aura', class_type: 'ModelSamplingAuraFlow', title: 'QWEN AuraFlow Shift', x: 670, y: 110, width: 230, height: 105, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'shift', value: '3.1' }], color: '#2f3c4f' },
                     { id: 'cfgnorm', class_type: 'CFGNorm', title: 'QWEN CFG Norm', x: 940, y: 110, width: 210, height: 96, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'strength', value: '1' }], color: '#2f3c4f' },
-                    { id: 'clip', class_type: 'CLIPLoader', title: 'QWEN 2.5 VL Text Encoder', x: 70, y: 275, width: 260, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || compatibleSideAssetChoice(preset, 'text', '') || 'Automatic' }, { name: 'type', value: 'qwen_image' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
+                    clipLoaderPreviewNode({ title: 'QWEN 2.5 VL Text Encoder', x: 70, y: 275, clipName: document.getElementById('textEncoderSelect')?.value || compatibleSideAssetChoice(preset, 'text', '') || 'Automatic', type: 'qwen_image' }),
                     { id: 'vae', class_type: 'VAELoader', title: 'QWEN Image VAE', x: 370, y: 275, width: 230, height: 105, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || compatibleSideAssetChoice(preset, 'vae', '') || 'Automatic' }], color: '#62305a' },
                     { id: 'positive', class_type: 'TextEncodeQwenImageEditPlus', title: 'Positive Prompt + Image References', x: 660, y: 275, width: 330, height: 150, inputs: ['clip', 'vae', 'image1', 'image2', 'image3', 'prompt'], outputs: ['CONDITIONING'], widgets: [{ name: 'prompt', value: promptValue }], color: '#1f5f3a' },
                     { id: 'negative', class_type: 'TextEncodeQwenImageEditPlus', title: 'QWEN Negative Prompt + References', x: 1030, y: 295, width: 280, height: 130, inputs: ['clip', 'vae', 'image1', 'image2', 'image3', 'prompt'], outputs: ['CONDITIONING'], widgets: [{ name: 'prompt', value: document.getElementById('negPrompt')?.value || '' }], color: '#5a2c2c' },
@@ -31380,7 +31398,7 @@
             ];
             if (externalQwenRoute) {
                 nodes.push(
-                    { id: 'clip', class_type: 'CLIPLoader', title: `${presetButtonLabels[preset] || preset} Text Encoder`, x: 360, y: 95, width: 260, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || compatibleSideAssetChoice(preset, 'text', '') || 'Automatic' }, { name: 'type', value: 'qwen_image' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
+                    clipLoaderPreviewNode({ title: `${presetButtonLabels[preset] || preset} Text Encoder`, x: 360, y: 95, clipName: document.getElementById('textEncoderSelect')?.value || compatibleSideAssetChoice(preset, 'text', '') || 'Automatic', type: 'qwen_image' }),
                     { id: 'vae', class_type: 'VAELoader', title: `${presetButtonLabels[preset] || preset} VAE`, x: 650, y: 95, width: 230, height: 105, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || compatibleSideAssetChoice(preset, 'vae', '') || 'Automatic' }], color: '#62305a' }
                 );
             }

@@ -126,8 +126,11 @@ def _resolve_sd_family(
     if primary:
         assets["primary_model"] = _comfy_name(primary)
     selected_vae = _selected_model_choice(by_category, request.vae)
+    selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
     if selected_vae and selected_vae.category == "vae":
         assets["vae"] = _comfy_name(selected_vae)
+    if selected_text_encoder and selected_text_encoder.category in {"text_encoders", "clip"}:
+        assets["text_encoder"] = _comfy_name(selected_text_encoder)
     return assets
 
 
@@ -279,6 +282,7 @@ def _resolve_flux2_text_encoder(
             return selected
         if family == "flux2_klein_4b" and any(token in selected_haystack for token in ("qwen_3_4b", "qwen3_4b", "4b")):
             return selected
+        return selected
     if family == "flux2_dev":
         return (
             _first(by_category, ["text_encoders", "clip"], ["mistral", "flux2"])
@@ -303,6 +307,7 @@ def _resolve_flux2_vae(by_category: dict[str, list[ModelFile]], selected: ModelF
         haystack = " ".join([selected.name, selected.folder, selected.relative_path]).lower()
         if "flux2" in haystack or "flux-2" in haystack or "full_encoder" in haystack:
             return selected
+        return selected
     return (
         _first(by_category, ["vae"], ["flux2", "vae"])
         or _first(by_category, ["vae"], ["flux2-vae"])
@@ -457,13 +462,6 @@ def _resolve_wan(by_category: dict[str, list[ModelFile]], selected_name: str, re
         _first(by_category, ["text_encoders", "clip"], ["umt5"])
         or _first(by_category, ["text_encoders", "clip"], ["t5"])
     )
-    if selected_vae:
-        selected_vae_haystack = " ".join([selected_vae.name, selected_vae.folder, selected_vae.relative_path]).lower()
-        selected_is_wan22 = any(token in selected_vae_haystack for token in ("wan22", "wan2.2", "wan_2.2"))
-        if wan_ti2v_route and not selected_is_wan22:
-            selected_vae = None
-        elif not wan_ti2v_route and selected_is_wan22:
-            selected_vae = None
     vae = selected_vae or (
         (_first(by_category, ["vae"], ["wan22"]) or _first(by_category, ["vae"], ["wan2.2"]) if wan_ti2v_route else None)
         or (_first(by_category, ["vae"], ["wan_2.1"]) or _first(by_category, ["vae"], ["wan2.1"]))
@@ -499,10 +497,6 @@ def _resolve_anima(by_category: dict[str, list[ModelFile]], selected_name: str, 
     if primary:
         assets["primary_model"] = _comfy_name(primary)
     selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
-    if selected_text_encoder:
-        encoder_haystack = " ".join([selected_text_encoder.name, selected_text_encoder.folder, selected_text_encoder.relative_path]).lower()
-        if "qwen_3" not in encoder_haystack and "qwen3" not in encoder_haystack:
-            selected_text_encoder = None
     selected_vae = _selected_model_choice(by_category, request.vae)
     text_encoder = selected_text_encoder or _first(by_category, ["text_encoders", "clip"], ["qwen_3"]) or _first(
         by_category, ["text_encoders", "clip"], ["qwen"]
@@ -541,8 +535,6 @@ def _resolve_ideogram4(by_category: dict[str, list[ModelFile]], selected_name: s
         assets["ideogram4_unconditional_model"] = _comfy_name(unconditional)
 
     selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
-    if selected_text_encoder and not _is_ideogram4_qwen3vl_encoder(selected_text_encoder):
-        selected_text_encoder = None
     text_encoder = (
         selected_text_encoder
         or _first_exact(by_category, ["text_encoders", "clip"], "qwen3vl_8b_fp8_scaled.safetensors")
@@ -553,8 +545,6 @@ def _resolve_ideogram4(by_category: dict[str, list[ModelFile]], selected_name: s
         assets["text_encoder"] = _comfy_name(text_encoder)
 
     selected_vae = _selected_model_choice(by_category, request.vae)
-    if selected_vae and not _is_exact_model_name(selected_vae, "flux2-vae.safetensors"):
-        selected_vae = None
     vae = selected_vae or _first_exact(by_category, ["vae"], "flux2-vae.safetensors") or _first(by_category, ["vae"], ["flux2", "vae"])
     if vae:
         assets["vae"] = _comfy_name(vae)
@@ -650,15 +640,11 @@ def _resolve_zimage(by_category: dict[str, list[ModelFile]], selected_name: str,
         assets["primary_model"] = _comfy_name(primary)
 
     selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
-    if selected_text_encoder and not _is_exact_model_name(selected_text_encoder, "qwen_3_4b.safetensors"):
-        selected_text_encoder = None
     text_encoder = selected_text_encoder or _first_exact(by_category, ["text_encoders", "clip"], "qwen_3_4b.safetensors")
     if text_encoder:
         assets["text_encoder"] = _comfy_name(text_encoder)
 
     selected_vae = _selected_model_choice(by_category, request.vae)
-    if selected_vae and not _is_exact_model_name(selected_vae, "ae.safetensors"):
-        selected_vae = None
     vae = selected_vae or _first_exact(by_category, ["vae"], "ae.safetensors")
     if vae:
         assets["vae"] = _comfy_name(vae)
