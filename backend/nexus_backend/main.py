@@ -474,6 +474,39 @@ FLUX_MULTIANGLE_LORA_ARTIFACT: dict[str, Any] = {
 TRELLIS2_REPO_ID = "microsoft/TRELLIS.2-4B"
 DINOV3_REPO_ID = "facebook/dinov3-vitl16-pretrain-lvd1689m"
 DINOV3_KAGGLE_HANDLE = "x1an9l1/facebook-dinov3-vitl16-pretrain-lvd1689m/transformers/default"
+TRIPOSPLAT_REPO_ID = "VAST-AI/TripoSplat"
+TRIPOSPLAT_ARTIFACTS: tuple[dict[str, str], ...] = (
+    {
+        "repo": "Comfy-Org/BiRefNet",
+        "filename": "background_removal/birefnet.safetensors",
+        "category": "background_removal",
+        "name": "birefnet.safetensors",
+    },
+    {
+        "repo": TRIPOSPLAT_REPO_ID,
+        "filename": "diffusion_models/triposplat_fp16.safetensors",
+        "category": "diffusion_models",
+        "name": "triposplat_fp16.safetensors",
+    },
+    {
+        "repo": TRIPOSPLAT_REPO_ID,
+        "filename": "clip_vision/dino_v3_vit_h.safetensors",
+        "category": "clip_vision",
+        "name": "dino_v3_vit_h.safetensors",
+    },
+    {
+        "repo": TRIPOSPLAT_REPO_ID,
+        "filename": "vae/triposplat_vae_decoder_fp16.safetensors",
+        "category": "vae",
+        "name": "triposplat_vae_decoder_fp16.safetensors",
+    },
+    {
+        "repo": TRIPOSPLAT_REPO_ID,
+        "filename": "vae/flux2-vae.safetensors",
+        "category": "vae",
+        "name": "flux2-vae.safetensors",
+    },
+)
 HF_TOKEN_PATH = settings.project_root / "config" / "huggingface_token.txt"
 
 EXTRAS_VIDEO_RESTORE_NODES: dict[str, tuple[str, ...]] = {
@@ -2457,7 +2490,7 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
         video["ic_lora"] = assets["cameraman_lora"]
         video["motion_ic_lora"] = assets["cameraman_lora"]
     activity_label = _generation_activity_label(request)
-    return {
+    metadata = {
         "prompt": request.prompt,
         "negative": request.negative_prompt,
         "model": request.model_name or assets.get("primary_model") or Path(request.model_path or "").name,
@@ -2479,6 +2512,46 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
         "text_encoder": assets.get("text_encoder") or request.text_encoder,
         "controlnet": controlnet,
     }
+    if str(request.preset or "").lower() == "model3d":
+        model3d_options = dict(request.model3d or {})
+        engine = "triposplat" if str(model3d_options.get("engine") or "").lower() == "triposplat" else "trellis2"
+        reference_images = model3d_options.get("reference_images")
+        if isinstance(reference_images, list):
+            reference_count = len(reference_images)
+        else:
+            reference_count = 0
+        timeout_seconds = model3d_options.get("timeout_seconds") or model3d_options.get("generation_timeout")
+        if engine == "triposplat":
+            metadata.update({
+                "model": model3d_options.get("model") or "VAST-AI/TripoSplat",
+                "steps": model3d_options.get("tripo_steps", metadata.get("steps")),
+                "cfg": model3d_options.get("tripo_cfg", metadata.get("cfg")),
+                "sampler": "triposplat native",
+                "scheduler": "triposplat native",
+                "activity": "image_to_3d_gaussian_splat",
+            })
+        else:
+            metadata.update({
+                "model": model3d_options.get("model") or "microsoft/TRELLIS.2-4B",
+                "steps": model3d_options.get("think_steps", metadata.get("steps")),
+                "cfg": model3d_options.get("guidance", metadata.get("cfg")),
+                "sampler": model3d_options.get("shape_sampler") or model3d_options.get("sparse_sampler") or metadata.get("sampler"),
+                "activity": "image_to_3d_mesh",
+            })
+        metadata["model3d"] = {
+            "engine": engine,
+            "reference_mode": model3d_options.get("reference_mode") or ("single" if reference_count <= 1 else "multi"),
+            "reference_count": reference_count,
+            "timeout_seconds": timeout_seconds,
+            "low_vram": model3d_options.get("low_vram", True),
+            "voxel_resolution": model3d_options.get("voxel_resolution"),
+            "think_steps": model3d_options.get("think_steps"),
+            "tripo_num_gaussians": model3d_options.get("tripo_num_gaussians"),
+            "tripo_steps": model3d_options.get("tripo_steps"),
+            "tripo_render_size": model3d_options.get("tripo_render_size"),
+            "tripo_preview_frames": model3d_options.get("tripo_preview_frames"),
+        }
+    return metadata
 
 
 def _generation_activity_label(request: GenerateRequest) -> str:
@@ -3003,7 +3076,6 @@ def _output_node_kind(node: dict[str, Any]) -> str | None:
 
 def _apply_output_prefixes(prompt: dict[str, Any], request: GenerateRequest) -> None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model3d_timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     base = "_".join(
         part
         for part in (
@@ -3023,8 +3095,11 @@ def _apply_output_prefixes(prompt: dict[str, Any], request: GenerateRequest) -> 
         if not isinstance(inputs, dict):
             continue
         if str(request.preset or "").lower() == "model3d":
+            model3d_options = request.model3d if isinstance(request.model3d, dict) else {}
+            engine = "TRIPOSPLAT" if str(model3d_options.get("engine") or "").lower() == "triposplat" else "TRELLIS2"
+            reference_mode = "MANY" if str(model3d_options.get("reference_mode") or "").lower() == "multi" else "ONE"
             filename = "3DMODEL" if kind == "3d" else ("TEXTURE" if kind == "image" else kind.upper())
-            inputs["filename_prefix"] = f"3D/{model3d_timestamp}/{filename}"
+            inputs["filename_prefix"] = f"3D/{timestamp}_{engine}_{reference_mode}_{filename}"
             continue
         current = _output_slug(Path(str(inputs.get("filename_prefix") or "")).name, "")
         suffix = f"_{current}" if current and current.lower() not in {"comfyui", "nexus_bta"} else ""
@@ -3064,7 +3139,7 @@ def _cleanup_video_sidecar_images(outputs: list[dict[str, Any]], start_timestamp
 def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[str, Any]]:
     if not settings.output_dir.exists():
         return []
-    model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz"}
+    model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".spz", ".ksplat"}
     media_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mkv", ".mov", ".avi", *model_suffixes}
     root = settings.output_dir.resolve()
     candidates: list[Path] = []
@@ -5684,6 +5759,46 @@ def _dinov3_snapshot_files(target: Path) -> list[str]:
     return sorted(files)
 
 
+def _model_category_roots(category: str) -> list[Path]:
+    roots: list[Path] = [settings.models_dir / category]
+    roots.extend(root / category for root in settings.model_sources.get(category, []))
+    roots.extend(root / category for root in settings.reference_model_sources)
+    roots.extend(settings.model_sources.get(category, []))
+    roots.extend(settings.reference_model_sources)
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        key = str(root).lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(root)
+    return unique
+
+
+def _triposplat_artifact_path(artifact: dict[str, str]) -> Path:
+    category = artifact["category"]
+    name = artifact["name"]
+    for root in _model_category_roots(category):
+        candidate = root / name
+        if candidate.exists() and candidate.stat().st_size > 0:
+            return candidate
+    return settings.models_dir / category / name
+
+
+def _triposplat_artifact_status() -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for artifact in TRIPOSPLAT_ARTIFACTS:
+        path = _triposplat_artifact_path(artifact)
+        installed = path.exists() and path.stat().st_size > 0
+        items.append({
+            **artifact,
+            "installed": installed,
+            "path": str(path),
+            "url": f"https://huggingface.co/{artifact['repo']}/resolve/main/{artifact['filename']}",
+        })
+    return items
+
+
 def _copy_dinov3_snapshot(source_dir: Path, target_dir: Path) -> None:
     source_root = source_dir
     nested = source_dir / "facebook" / "dinov3-vitl16-pretrain-lvd1689m"
@@ -5770,6 +5885,19 @@ async def model3d_dinov3_status() -> dict[str, Any]:
     }
 
 
+@app.get("/api/model3d/triposplat/status")
+async def model3d_triposplat_status() -> dict[str, Any]:
+    artifacts = _triposplat_artifact_status()
+    missing = [item["name"] for item in artifacts if not item["installed"]]
+    return {
+        "installed": not missing,
+        "artifacts": artifacts,
+        "missing": missing,
+        "source": f"https://huggingface.co/{TRIPOSPLAT_REPO_ID}",
+        "token_configured": bool(_huggingface_token()),
+    }
+
+
 MODEL3D_REQUIRED_NODE_CLASSES = {
     "trellis2loadmodel",
     "trellis2loadimagewithtransparency",
@@ -5789,15 +5917,36 @@ MODEL3D_REQUIRED_NODE_CLASSES = {
     "preview3d",
 }
 
+MODEL3D_TRIPOSPLAT_NODE_CLASSES = {
+    "loadimage",
+    "triposplatpreprocessimage",
+    "triposplatconditioning",
+    "ksampler",
+    "unetloader",
+    "clipvisionloader",
+    "vaeloader",
+    "vaedecodetriposplat",
+    "splattofile3d",
+    "rendersplat",
+    "createcamerainfo",
+    "createvideo",
+    "savevideo",
+    "saveglb",
+    "removebackground",
+    "loadbackgroundremovalmodel",
+    "joinimagewithalpha",
+}
 
-def _model3d_node_status(object_info: dict[str, Any]) -> dict[str, Any]:
+
+def _model3d_node_status(object_info: dict[str, Any], engine: str = "trellis2") -> dict[str, Any]:
     if not object_info:
         return {"checked": False, "available": [], "missing": []}
+    required = MODEL3D_TRIPOSPLAT_NODE_CLASSES if engine == "triposplat" else MODEL3D_REQUIRED_NODE_CLASSES
     available = {str(key).lower() for key in (object_info or {}).keys()}
-    missing = sorted(name for name in MODEL3D_REQUIRED_NODE_CLASSES if name not in available)
+    missing = sorted(name for name in required if name not in available)
     return {
         "checked": bool(object_info),
-        "available": sorted(MODEL3D_REQUIRED_NODE_CLASSES - set(missing)),
+        "available": sorted(required - set(missing)),
         "missing": missing,
     }
 
@@ -5807,9 +5956,12 @@ async def _model3d_preflight_report(
     start_comfy: bool = False,
     full: bool = False,
     requested_model: str = "",
+    engine: str = "trellis2",
 ) -> dict[str, Any]:
+    engine = "triposplat" if str(engine).lower() == "triposplat" else "trellis2"
     trellis2 = await model3d_trellis2_status()
     dinov3 = await model3d_dinov3_status()
+    triposplat = await model3d_triposplat_status()
     capabilities = _runtime_attention_capabilities()
     comfy_running = await comfy.is_running()
     object_info: dict[str, Any] = {}
@@ -5826,11 +5978,15 @@ async def _model3d_preflight_report(
         except Exception as exc:
             object_info_error = f"{type(exc).__name__}: {str(exc)[:240]}"
 
-    node_status = _model3d_node_status(object_info)
+    node_status = _model3d_node_status(object_info, engine=engine)
     workflow_registry.ensure_model3d_workflow_aliases()
-    workflow_path = workflow_registry.find("model3d-trellis2-meshwithvoxel-texturing-multiview", "Model3D")
-    workflow_id = "model3d-trellis2-meshwithvoxel-texturing-multiview"
-    if workflow_path is None:
+    if engine == "triposplat":
+        workflow_id = "model3d-triposplat-image-to-gaussian-splat"
+        workflow_path = workflow_registry.find(workflow_id, "Model3D")
+    else:
+        workflow_path = workflow_registry.find("model3d-trellis2-meshwithvoxel-texturing-multiview", "Model3D")
+        workflow_id = "model3d-trellis2-meshwithvoxel-texturing-multiview"
+    if engine == "trellis2" and workflow_path is None:
         workflow_path = workflow_registry.find("model3d-trellis2-meshwithtexturing-multiview", "Model3D")
         workflow_id = "model3d-trellis2-meshwithtexturing-multiview"
     if workflow_path and object_info:
@@ -5842,18 +5998,24 @@ async def _model3d_preflight_report(
 
     blocking: list[str] = []
     warnings: list[str] = []
-    if not trellis2.get("installed"):
-        blocking.append("TRELLIS.2-4B checkpoint is missing.")
-    if not dinov3.get("installed"):
-        blocking.append("DINOv3 ViT-L/16 model is missing.")
+    if engine == "triposplat":
+        if not triposplat.get("installed"):
+            missing = ", ".join(triposplat.get("missing") or [])
+            blocking.append(f"TripoSplat model files are missing: {missing}.")
+    else:
+        if not trellis2.get("installed"):
+            blocking.append("TRELLIS.2-4B checkpoint is missing.")
+        if not dinov3.get("installed"):
+            blocking.append("DINOv3 ViT-L/16 model is missing.")
     if not capabilities.get("torch", {}).get("cuda_available"):
         blocking.append("CUDA GPU is not available for 3D generation.")
     if node_status.get("checked") and node_status.get("missing"):
-        blocking.append("Required TRELLIS.2 custom nodes are missing: " + ", ".join(node_status["missing"][:6]) + ".")
+        blocking.append(f"Required {('TripoSplat' if engine == 'triposplat' else 'TRELLIS.2')} workflow nodes are missing: " + ", ".join(node_status["missing"][:6]) + ".")
     if object_info_error:
         warnings.append(f"ComfyUI object registry could not be read: {object_info_error}")
     if not workflow_path:
-        blocking.append("Model 3D workflow is missing: workflows/comfyui/model3d_trellis2_meshwithvoxel_texturing_multiview.json.")
+        missing_workflow = "model3d_triposplat_image_to_gaussian_splat.json" if engine == "triposplat" else "model3d_trellis2_meshwithvoxel_texturing_multiview.json"
+        blocking.append(f"Model 3D workflow is missing: workflows/comfyui/{missing_workflow}.")
     if not node_status.get("checked") and not full:
         warnings.append("Custom node registry was not checked in quick mode.")
     if not comfy_running:
@@ -5865,10 +6027,12 @@ async def _model3d_preflight_report(
     return {
         "ok": not blocking,
         "mode": "full" if full or start_comfy else "quick",
+        "engine": engine,
         "blocking": blocking,
         "warnings": warnings,
         "trellis2": trellis2,
         "dinov3": dinov3,
+        "triposplat": triposplat,
         "runtime": capabilities,
         "comfy_running": comfy_running,
         "object_registry_checked": bool(object_info),
@@ -5893,11 +6057,13 @@ async def model3d_preflight(
     start_comfy: bool = Query(False),
     full: bool = Query(False),
     requested_model: str = Query(""),
+    engine: str = Query("trellis2"),
 ) -> dict[str, Any]:
     report = await _model3d_preflight_report(
         start_comfy=start_comfy,
         full=full,
         requested_model=requested_model,
+        engine=engine,
     )
     if report.get("blocking"):
         detail = " ".join(str(item) for item in report.get("blocking", []))
@@ -9323,6 +9489,54 @@ async def _run_dinov3_download_job(job_id: str) -> None:
         _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
 
 
+async def _run_triposplat_download_job(job_id: str) -> None:
+    try:
+        token = _huggingface_token()
+        total = len(TRIPOSPLAT_ARTIFACTS)
+        for index, artifact in enumerate(TRIPOSPLAT_ARTIFACTS, start=1):
+            target = settings.models_dir / artifact["category"] / artifact["name"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            progress = 5 + int((index - 1) / max(1, total) * 85)
+            _update_download_job(job_id, {
+                "status": "downloading",
+                "progress": progress,
+                "message": f"Downloading TripoSplat {artifact['name']} ({index}/{total}).",
+                "filename": artifact["name"],
+                "token_configured": bool(token),
+            })
+
+            def _download_one() -> None:
+                try:
+                    from huggingface_hub import hf_hub_download
+                except ImportError as exc:
+                    raise RuntimeError("huggingface_hub is required to download TripoSplat model files.") from exc
+                downloaded = Path(hf_hub_download(
+                    repo_id=artifact["repo"],
+                    filename=artifact["filename"],
+                    local_dir=str(settings.models_dir),
+                    local_dir_use_symlinks=False,
+                    resume_download=True,
+                    token=token,
+                ))
+                if not target.exists() and downloaded.exists():
+                    shutil.copy2(downloaded, target)
+
+            await asyncio.to_thread(_download_one)
+        status = await model3d_triposplat_status()
+        if not status.get("installed"):
+            raise RuntimeError("TripoSplat download finished, but required files are still missing: " + ", ".join(status.get("missing") or []))
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {
+            "status": "downloaded",
+            "progress": 100,
+            "message": "TripoSplat model files ready.",
+            "artifacts": status.get("artifacts") or [],
+            "completed_at": datetime.now().isoformat(timespec="seconds"),
+        })
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
 @app.post("/api/model3d/trellis2/download/start")
 async def model3d_trellis2_download_start() -> dict[str, Any]:
     status = await model3d_trellis2_status()
@@ -9364,6 +9578,27 @@ async def model3d_dinov3_download_start() -> dict[str, Any]:
         download_jobs[job_id].update({"status": "downloaded", "progress": 100, "message": "DINOv3 ViT-L/16 already installed."})
         return download_jobs[job_id]
     asyncio.create_task(_run_dinov3_download_job(job_id))
+    return download_jobs[job_id]
+
+
+@app.post("/api/model3d/triposplat/download/start")
+async def model3d_triposplat_download_start() -> dict[str, Any]:
+    status = await model3d_triposplat_status()
+    job_id = uuid.uuid4().hex
+    download_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "message": "Queued TripoSplat model download.",
+        "filename": "TripoSplat",
+        "url": f"https://huggingface.co/{TRIPOSPLAT_REPO_ID}",
+        "missing": status.get("missing") or [],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    if status["installed"]:
+        download_jobs[job_id].update({"status": "downloaded", "progress": 100, "message": "TripoSplat model files already installed."})
+        return download_jobs[job_id]
+    asyncio.create_task(_run_triposplat_download_job(job_id))
     return download_jobs[job_id]
 
 
@@ -9549,7 +9784,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         _ensure_flux_multiangle_lora(request, assets)
         if request.preset.lower() == "model3d":
             requested_model = str((request.model3d or {}).get("model") or request.model_name or "microsoft/TRELLIS.2-4B")
-            model3d_preflight = await _model3d_preflight_report(requested_model=requested_model)
+            model3d_engine = "triposplat" if str((request.model3d or {}).get("engine") or "").lower() == "triposplat" else "trellis2"
+            model3d_preflight = await _model3d_preflight_report(requested_model=requested_model, engine=model3d_engine)
             if model3d_preflight.get("blocking"):
                 detail = " ".join(str(item) for item in model3d_preflight.get("blocking", []))
                 print(f"NEXUS BTA WARN Model 3D preflight blocked before generation: {detail}", flush=True)
@@ -9716,11 +9952,12 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         object_info = await comfy.object_info()
         _raise_if_generation_cancelled(job_id)
         if request.preset.lower() == "model3d":
-            node_status = _model3d_node_status(object_info)
+            engine = "triposplat" if str((request.model3d or {}).get("engine") or "").lower() == "triposplat" else "trellis2"
+            node_status = _model3d_node_status(object_info, engine=engine)
             if node_status.get("missing"):
                 missing = ", ".join(node_status["missing"][:8])
-                print(f"NEXUS BTA WARN Model 3D required custom nodes missing: {missing}", flush=True)
-                raise ValueError(f"Model 3D required custom nodes are missing: {missing}. Install Model 3D workflow requirements or open update.bat.")
+                print(f"NEXUS BTA WARN Model 3D {engine} required nodes missing: {missing}", flush=True)
+                raise ValueError(f"Model 3D {engine} required workflow nodes are missing: {missing}. Install Model 3D workflow requirements or open update.bat.")
         if request.preset.lower() in {"ideogram4", "ideogram"}:
             missing_ideogram_core = _ideogram4_missing_core_support(object_info)
             if missing_ideogram_core:
@@ -10173,7 +10410,7 @@ async def _run_generation_job(job_id: str, request: GenerateRequest) -> None:
                 _console_generation(generation_jobs[job_id], force=True)
                 return
             _update_generation_job(job_id, {"queue_position": 1, "message": "VRAM lock acquired."}, force=True)
-            response = await _run_generation_core(request, job_id=job_id)
+            response = await asyncio.wait_for(_run_generation_core(request, job_id=job_id), timeout=_generation_timeout_seconds(request))
         if generation_jobs.get(job_id, {}).get("status") == "cancelled":
             _console_generation(generation_jobs[job_id], force=True)
             return
@@ -10436,7 +10673,7 @@ async def gallery() -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     if not settings.output_dir.exists():
         return items
-    model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz"}
+    model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".spz", ".ksplat"}
     for path in sorted(settings.output_dir.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
         if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", *model_suffixes}:
             continue

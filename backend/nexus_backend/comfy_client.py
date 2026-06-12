@@ -733,7 +733,7 @@ class ComfyClient:
         except (OSError, ValueError):
             return None
         suffix = path.suffix.lower()
-        if suffix in {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae"}:
+        if suffix in {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae", ".spz", ".ksplat"}:
             media_kind = "3d"
         elif suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"}:
             media_kind = "video"
@@ -756,7 +756,7 @@ class ComfyClient:
         output_root = self.settings.output_dir
         if not output_root.exists():
             return []
-        suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae", ".mp4", ".webm", ".mkv", ".mov", ".avi", ".png", ".jpg", ".jpeg", ".webp"}
+        suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae", ".spz", ".ksplat", ".mp4", ".webm", ".mkv", ".mov", ".avi", ".png", ".jpg", ".jpeg", ".webp"}
         records: list[dict[str, Any]] = []
         for path in output_root.rglob("*"):
             if not path.is_file() or path.suffix.lower() not in suffixes:
@@ -840,9 +840,9 @@ class ComfyClient:
 
 def extract_outputs(history_item: dict[str, Any]) -> list[dict[str, Any]]:
     outputs: list[dict[str, Any]] = []
-    model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae"}
+    model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae", ".spz", ".ksplat"}
     for node_output in history_item.get("outputs", {}).values():
-        for key in ["images", "videos", "gifs", "meshes", "models", "model_files", "files"]:
+        for key in ["images", "videos", "gifs", "meshes", "models", "model_files", "3d", "files"]:
             for item in node_output.get(key, []) or []:
                 filename = item.get("filename")
                 if not filename:

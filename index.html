@@ -12,7 +12,8 @@
     <script type="importmap">
         {
             "imports": {
-                "three": "/assets/vendor/three/three.module.js"
+                "three": "/assets/vendor/three/three.module.js",
+                "three/addons/": "/assets/vendor/three/examples/jsm/"
             }
         }
     </script>
@@ -2811,6 +2812,16 @@
                 
                 <!-- Prompt Area -->
                 <div id="globalPromptPanel" class="space-y-2" data-panel-key="prompt" data-panel-title="Prompt">
+                    <div id="model3DEnginePanel" class="hidden space-y-2">
+                        <div class="flex items-center justify-between text-[10px] font-bold text-white uppercase tracking-wider">
+                            <span>3D Model Engine</span>
+                            <span id="model3DEngineBadge" class="text-[9px] font-mono text-nexus-red">TRELLIS.2</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button type="button" onclick="setModel3DEngine('trellis2')" id="model3DEngineTrellisBtn" class="flat-button py-2 text-[10px] font-bold bg-white text-black">Trellis 2</button>
+                            <button type="button" onclick="setModel3DEngine('triposplat')" id="model3DEngineTripoBtn" class="flat-button py-2 text-[10px] font-bold">Tripo Splat</button>
+                        </div>
+                    </div>
                     <div class="flex justify-between items-center text-[10px] font-bold text-white uppercase tracking-wider">
                         <span id="promptPanelTitle">Prompt</span>
                         <!-- Save/Load & Enhance Prompt Buttons -->
@@ -2925,39 +2936,42 @@
                     <section data-model3d-workspace="viewer" class="space-y-3">
                         <div class="flex items-center justify-between">
                             <span class="text-[10px] font-bold uppercase tracking-wider text-white">Image to 3D</span>
-                            <span class="text-[9px] font-mono text-nexus-red">TRELLIS.2</span>
+                            <span id="model3DViewerEngineLabel" class="text-[9px] font-mono text-nexus-red">TRELLIS.2</span>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
                             <button type="button" onclick="setModel3DReferenceMode('single')" id="model3DSingleBtn" class="flat-button py-2 text-[10px] font-bold bg-white text-black">One</button>
                             <button type="button" onclick="setModel3DReferenceMode('multi')" id="model3DMultiBtn" class="flat-button py-2 text-[10px] font-bold">Many</button>
                         </div>
                         <div id="model3DReferenceGrid" class="grid grid-cols-3 overflow-hidden rounded-sm border border-dashed border-nexus-border bg-nexus-bg"></div>
-                        <div class="grid grid-cols-3 gap-2">
-                            <button type="button" onclick="loadModel3DTestReference('3D_Model_InputTest2.png')" class="flat-button py-2 text-[10px] font-bold uppercase" title="Load 3D_Model_InputTest2.png">
-                                <i class="fa-solid fa-vial text-nexus-red mr-1"></i> Test 2
-                            </button>
-                            <button type="button" onclick="loadModel3DTestReference('3D_Model_InputTest3.png')" class="flat-button py-2 text-[10px] font-bold uppercase" title="Load 3D_Model_InputTest3.png">
-                                <i class="fa-solid fa-vial text-nexus-red mr-1"></i> Test 3
-                            </button>
-                            <button type="button" onclick="loadModel3DTestReference('3D_Model_InputTest_FRONT.PNG', ['3D_Model_InputTest_lEFT.png'])" class="flat-button py-2 text-[10px] font-bold uppercase" title="Load FRONT and LEFT references">
-                                <i class="fa-solid fa-cubes text-nexus-red mr-1"></i> Multi
-                            </button>
-                        </div>
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">
                             <span class="font-bold">Randomize seed</span>
                             <span class="toggle-switch"><input id="model3DRandomSeedToggle" type="checkbox" checked><span class="toggle-track"></span></span>
                         </label>
-                        <div class="grid grid-cols-2 gap-2">
-                            <label class="space-y-1"><span class="mini-label">Voxel resolution</span><select id="model3DVoxelSelect" class="flat-input"><option>512</option><option selected>1024</option><option>1536</option></select></label>
+                        <div data-model3d-engine="trellis2" class="grid grid-cols-2 gap-2">
+                            <label class="space-y-1"><span class="mini-label">Voxel resolution</span><select id="model3DVoxelSelect" class="flat-input"><option selected>512</option><option>1024</option><option>1536</option></select></label>
                             <label class="space-y-1"><span class="mini-label">Texture size</span><select id="model3DTextureSizeSelect" class="flat-input"><option selected>1024</option><option>2048</option><option>4096</option></select></label>
                         </div>
-                        <div class="grid grid-cols-2 gap-2">
+                        <div data-model3d-engine="trellis2" class="grid grid-cols-2 gap-2">
                             <label class="space-y-1"><span class="mini-label">Guidance scale</span><input id="model3DGuidanceInput" class="flat-input font-mono text-center" type="number" min="1" max="12" step="0.1" value="7.5"></label>
-                            <label class="space-y-1"><span class="mini-label">Think steps</span><input id="model3DThinkStepsInput" class="flat-input font-mono text-center" type="number" min="1" max="100" step="1" value="14"></label>
+                            <label class="space-y-1"><span class="mini-label">Think steps</span><input id="model3DThinkStepsInput" class="flat-input font-mono text-center" type="number" min="1" max="100" step="1" value="8"></label>
                             <label class="space-y-1"><span class="mini-label">Texture sharp</span><input id="model3DTextureSharpInput" class="flat-input font-mono text-center" type="number" min="0" max="10" step="0.1" value="3.0"></label>
                             <label class="space-y-1"><span class="mini-label">Texture details</span><input id="model3DTextureDetailsInput" class="flat-input font-mono text-center" type="number" min="0" max="10" step="0.1" value="1.0"></label>
                         </div>
-                        <label class="space-y-1 block">
+                        <div data-model3d-engine="triposplat" class="hidden grid grid-cols-2 gap-2">
+                            <label class="space-y-1"><span class="mini-label">Gaussians</span><select id="model3DTripoGaussiansSelect" class="flat-input"><option value="131072" selected>131k</option><option value="262144">262k</option><option value="524288">524k</option></select></label>
+                            <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DTripoStepsInput" class="flat-input font-mono text-center" type="number" min="8" max="40" step="1" value="8"></label>
+                            <label class="space-y-1"><span class="mini-label">CFG</span><input id="model3DTripoCfgInput" class="flat-input font-mono text-center" type="number" min="1" max="8" step="0.1" value="3"></label>
+                            <label class="space-y-1"><span class="mini-label">Render size</span><select id="model3DTripoRenderSizeSelect" class="flat-input"><option value="768" selected>768</option><option value="1024">1024</option><option value="1280">1280</option></select></label>
+                        </div>
+                        <label data-model3d-engine="triposplat" class="hidden flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">
+                            <span><span class="font-bold block">Remove background</span><span class="text-[9px] text-nexus-muted font-mono">BiRefNet mask</span></span>
+                            <span class="toggle-switch"><input id="model3DTripoRemoveBgToggle" type="checkbox" checked><span class="toggle-track"></span></span>
+                        </label>
+                        <label data-model3d-engine="triposplat" class="hidden flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">
+                            <span><span class="font-bold block">GLB mesh export</span><span class="text-[9px] text-nexus-muted font-mono">experimental splat to mesh</span></span>
+                            <span class="toggle-switch"><input id="model3DTripoGlbToggle" type="checkbox" checked><span class="toggle-track"></span></span>
+                        </label>
+                        <label data-model3d-engine="trellis2" class="space-y-1 block">
                             <span class="mini-label">Decimation target</span>
                             <div class="model3d-range-row">
                                 <input id="model3DFacesRange" type="range" min="100000" max="1000000" step="25000" value="250000" oninput="syncModel3DNumber('model3DFacesInput', this.value)">
@@ -2965,11 +2979,11 @@
                                 <button type="button" class="model3d-range-reset" onclick="syncModel3DNumber('model3DFacesInput','250000');syncModel3DNumber('model3DFacesRange','250000')" title="Reset"><i class="fa-solid fa-rotate-left text-[10px]"></i></button>
                             </div>
                         </label>
-                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">
+                        <label data-model3d-engine="trellis2" class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">
                             <span><span class="font-bold block">Apply texture</span><span class="text-[9px] text-nexus-muted font-mono">PBR material output</span></span>
                             <span class="toggle-switch"><input id="model3DApplyTextureToggle" type="checkbox" checked><span class="toggle-track"></span></span>
                         </label>
-                        <details class="bg-nexus-bg border border-nexus-border rounded-sm p-2 space-y-3">
+                        <details data-model3d-engine="trellis2" class="bg-nexus-bg border border-nexus-border rounded-sm p-2 space-y-3">
                             <summary class="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-white">Advanced Settings</summary>
                             <div class="pt-3 space-y-3">
                                 <div class="border border-nexus-border rounded-sm p-2 space-y-2">
@@ -2977,7 +2991,7 @@
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="space-y-1"><span class="mini-label">Guidance strength</span><input id="model3DSparseGuidance" class="flat-input font-mono text-center" type="number" min="1" max="10" step="0.1" value="7.5"></label>
                                         <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DSparseRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.01" value="0.7"></label>
-                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DSparseSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="14"></label>
+                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DSparseSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="8"></label>
                                         <label class="space-y-1"><span class="mini-label">Rescale T</span><input id="model3DSparseRescaleT" class="flat-input font-mono text-center" type="number" min="1" max="6" step="1" value="5"></label>
                                     </div>
                                 </div>
@@ -2986,7 +3000,7 @@
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="space-y-1"><span class="mini-label">Guidance strength</span><input id="model3DShapeGuidance" class="flat-input font-mono text-center" type="number" min="1" max="10" step="0.1" value="7.5"></label>
                                         <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DShapeRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.01" value="0.5"></label>
-                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DShapeSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="14"></label>
+                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DShapeSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="8"></label>
                                         <label class="space-y-1"><span class="mini-label">Rescale T</span><input id="model3DShapeRescaleT" class="flat-input font-mono text-center" type="number" min="1" max="6" step="1" value="3"></label>
                                     </div>
                                 </div>
@@ -2995,7 +3009,7 @@
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="space-y-1"><span class="mini-label">Guidance strength</span><input id="model3DMaterialGuidance" class="flat-input font-mono text-center" type="number" min="1" max="10" step="0.1" value="1"></label>
                                         <label class="space-y-1"><span class="mini-label">Guidance rescale</span><input id="model3DMaterialRescale" class="flat-input font-mono text-center" type="number" min="0" max="1" step="0.05" value="0"></label>
-                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DMaterialSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="14"></label>
+                                        <label class="space-y-1"><span class="mini-label">Sampling steps</span><input id="model3DMaterialSteps" class="flat-input font-mono text-center" type="number" min="1" max="50" step="1" value="8"></label>
                                         <label class="space-y-1"><span class="mini-label">Rescale T</span><input id="model3DMaterialRescaleT" class="flat-input font-mono text-center" type="number" min="1" max="6" step="1" value="3"></label>
                                     </div>
                                 </div>
@@ -4067,15 +4081,18 @@
                             <div id="model3DViewerStatus">Three.js loads only for 3D MODEL.</div>
                         </div>
                         <div class="model3d-overlay absolute right-5 top-5 w-52 text-[10px] font-mono text-nexus-muted space-y-1">
-                            <div class="flex justify-between"><span>Topology</span><span class="text-white font-bold">Triangle</span></div>
-                            <div class="flex justify-between"><span>Faces</span><span class="text-white font-bold">15336 / 15336</span></div>
-                            <div class="flex justify-between"><span>Vertices</span><span class="text-white font-bold">10082 / 10082</span></div>
+                            <div class="flex justify-between"><span>Topology</span><span id="model3DStatsTopology" class="text-white font-bold">None</span></div>
+                            <div class="flex justify-between"><span id="model3DStatsPrimaryLabel">Faces</span><span id="model3DStatsPrimary" class="text-white font-bold">0</span></div>
+                            <div class="flex justify-between"><span id="model3DStatsSecondaryLabel">Vertices</span><span id="model3DStatsSecondary" class="text-white font-bold">0</span></div>
                         </div>
                         <div class="model3d-overlay absolute right-4 top-28 flex flex-col gap-2">
                             <div class="bg-nexus-panel/95 border border-nexus-border rounded-full p-1 flex flex-col gap-1 shadow-2xl">
                                 <button id="model3DEnvBtn" type="button" onclick="toggleModel3DEnvironmentPanel()" class="model3d-icon-button rounded-full active" title="Environment / HDRI"><i class="fa-solid fa-sun"></i></button>
                                 <button type="button" onclick="toggleModel3DGrid()" id="model3DGridBtn" class="model3d-icon-button rounded-full active" title="Toggle grid"><i class="fa-solid fa-border-all"></i></button>
                                 <button type="button" onclick="resetModel3DCamera()" class="model3d-icon-button rounded-full" title="Reset view"><i class="fa-solid fa-rotate-left"></i></button>
+                                <button type="button" onclick="setModel3DCameraAngle('front')" class="model3d-icon-button rounded-full" title="Front view"><i class="fa-solid fa-arrow-down"></i></button>
+                                <button type="button" onclick="setModel3DCameraAngle('right')" class="model3d-icon-button rounded-full" title="Right view"><i class="fa-solid fa-arrow-left"></i></button>
+                                <button type="button" onclick="setModel3DCameraAngle('top')" class="model3d-icon-button rounded-full" title="Top view"><i class="fa-solid fa-arrow-up"></i></button>
                             </div>
                             <button type="button" class="model3d-icon-button rounded-full bg-nexus-panel/95" title="Help"><i class="fa-solid fa-question"></i></button>
                         </div>
@@ -4103,6 +4120,9 @@
                             <button type="button" id="model3DUnlitBtn" onclick="setModel3DViewMode('unlit')" title="Unlit"><i class="fa-solid fa-circle"></i></button>
                             <button type="button" id="model3DAlbedoBtn" onclick="setModel3DViewMode('albedo')" title="Albedo"><i class="fa-solid fa-droplet"></i></button>
                             <button type="button" onclick="resetModel3DCamera()" title="Reset camera"><i class="fa-solid fa-crosshairs"></i></button>
+                            <button type="button" onclick="setModel3DCameraAngle('front')" title="Front view"><i class="fa-solid fa-arrow-down"></i></button>
+                            <button type="button" onclick="setModel3DCameraAngle('right')" title="Right view"><i class="fa-solid fa-arrow-left"></i></button>
+                            <button type="button" onclick="setModel3DCameraAngle('top')" title="Top view"><i class="fa-solid fa-arrow-up"></i></button>
                             <button type="button" onclick="openGalleryPanel()" title="Open generated assets"><i class="fa-solid fa-folder-open"></i></button>
                             <button type="button" title="3D print route"><i class="fa-solid fa-print"></i></button>
                             <button type="button" class="bg-indigo-600 text-white border-indigo-500" title="Export"><i class="fa-solid fa-download"></i></button>
@@ -6225,9 +6245,14 @@
         let workflowGraphRendering = false;
         let workflowLoadSerial = 0;
         let ltxMotionPreprocessReady = null;
-        const NEXUS_API = window.location.protocol.startsWith('http')
+        const NEXUS_BACKEND_ORIGIN = 'http://127.0.0.1:7861';
+        const NEXUS_API = (
+            window.location.protocol.startsWith('http')
+            && /^(127\.0\.0\.1|localhost)$/i.test(window.location.hostname)
+            && window.location.port === '7861'
+        )
             ? `${window.location.origin}/api`
-            : 'http://127.0.0.1:7861/api';
+            : `${NEXUS_BACKEND_ORIGIN}/api`;
         let backendOnline = false;
         let comfyRuntimeReady = false;
         let comfyReadyTimer = null;
@@ -6261,6 +6286,8 @@
         let workflowDefaultDrawerCollapsed = nexusSafeStorage.get('nexus_workflow_default_drawer_collapsed', '0') === '1';
         let workflowNodeFilter = nexusSafeStorage.get('nexus_workflow_node_filter', '');
         let sideMenuWorkflowSyncTimer = null;
+        let backendBridgeInFlight = false;
+        let backendBridgeEverReady = false;
         let workflowCanvasLibraryCollapsed = nexusSafeStorage.get('nexus_workflow_canvas_library_collapsed', '0') === '1';
         let workflowFolderOpenState = nexusSafeStorage.json('nexus_workflow_folder_open_state', { Default: true, Saved: true, Custom: true, Loaded: true });
         let templateWorkflowSelections = nexusSafeStorage.json('nexus_template_workflows', {});
@@ -6511,6 +6538,11 @@
             scene: null,
             camera: null,
             renderer: null,
+            sparkRenderer: null,
+            spzRenderTimer: null,
+            spzRenderBusy: false,
+            viewportWidth: 0,
+            viewportHeight: 0,
             controls: null,
             root: null,
             mannequin: null,
@@ -7140,7 +7172,7 @@
         async function refreshComfyObjectInfo(options = {}) {
             if (!backendOnline && !options.force) return null;
             try {
-                comfyObjectInfo = await nexusFetch(`/comfy/object-info${options.start ? '?start=true' : ''}`);
+                comfyObjectInfo = await nexusFetch(`/comfy/object-info${options.start ? '?start=true' : ''}`, { timeoutMs: options.timeoutMs || 15000 });
                 comfyObjectInfoChecked = true;
                 if (ltxAudioVolumeNormalizationAvailable()) ltxAudioNormalizationFallbackNotified = false;
                 return comfyObjectInfo;
@@ -7396,9 +7428,14 @@
             const categoryPriority = presetName === 'ZImageTurbo'
                 ? { diffusion_models: 0, unet: 1, checkpoints: 2 }
                 : { checkpoints: 0, unet: 1, diffusion_models: 2 };
-            const matched = candidates
+            const filtered = candidates
                 .filter(model => presetName !== 'LTX' || !/projection|text_projection|proj/i.test([model.name, model.relative_path].join(' ')))
                 .filter(model => presetName !== 'Ideogram4' || !/unconditional/i.test([model.name, model.relative_path].join(' ')))
+                .filter(model => presetName !== 'Flux' || !/pid_|res2k|sr4x|upscale|super.?resolution|model_ema/i.test([model.name, model.folder, model.relative_path].join(' ')));
+            const strictModelPresets = new Set(['SD', 'XL', 'Flux', 'Qwen', 'ZImageTurbo', 'Lumina', 'Wan', 'LTX', 'Anima', 'Ideogram4', 'Model3D']);
+            const compatible = filtered.filter(model => modelMatchesPreset(model, presetName) && isPrimaryModelForPreset(model, presetName));
+            const source = strictModelPresets.has(presetName) && compatible.length ? compatible : filtered;
+            const matched = source
                 .sort((a, b) => {
                     const aPresetMatch = modelMatchesPreset(a, presetName) ? 0 : 1;
                     const bPresetMatch = modelMatchesPreset(b, presetName) ? 0 : 1;
@@ -7508,6 +7545,69 @@
             return tests.map(test => encoders.find(name => test.test(name))).find(Boolean) || encoders[0];
         }
 
+        function selectedFluxFamilyName() {
+            const select = document.getElementById('modelSelect');
+            return String(select?.selectedOptions?.[0]?.dataset?.model || select?.value || modelProfiles.Flux?.backendModels?.[0]?.name || '').toLowerCase();
+        }
+
+        function fluxFamilyFromName(value) {
+            const lower = String(value || '').toLowerCase();
+            if (/flux[-_. ]?2|flux2|flux\.2|klein/.test(lower)) {
+                if (/klein/.test(lower)) return /9b/.test(lower) ? 'flux2_klein_9b' : 'flux2_klein_4b';
+                return 'flux2_dev';
+            }
+            return 'flux1';
+        }
+
+        function fluxLoraCompatibleWithSelectedModel(name) {
+            const raw = String(loraLookupName(name) || name || '').replace(/\\/g, '/').toLowerCase();
+            if (!raw || /^(none|off|disabled|automatic|auto)$/i.test(raw)) return false;
+            const family = fluxFamilyFromName(selectedFluxFamilyName());
+            const flux2Model = family.startsWith('flux2');
+            const loraIsFlux2 = /flux[-_. ]?2|flux2|flux\.2|klein/.test(raw);
+            const loraIsFlux1 = /flux[-_. ]?1|flux1|flux\.1|schnell|krea|kontext|fill/.test(raw);
+            if (flux2Model) {
+                if (loraIsFlux1 && !loraIsFlux2) return false;
+                if (family.includes('klein')) return raw.includes('klein');
+                return loraIsFlux2 && !raw.includes('klein');
+            }
+            return !loraIsFlux2;
+        }
+
+        function installedLoraName(value) {
+            const normalized = normalizeLoraToken(loraLookupName(value) || value).replace(/^loras\//, '');
+            if (!normalized) return '';
+            const installed = [
+                ...(backendCatalog?.categories?.loras || []).map(asset => asset.relative_path || asset.name || asset.path),
+                ...(Array.isArray(loraLibrary) ? loraLibrary.map(lora => lora.relativeName || lora.name || lora.path) : [])
+            ].map(name => normalizeLoraToken(name).replace(/^loras\//, ''));
+            return installed.find(name => name === normalized || name.endsWith(`/${normalized}`) || normalized.endsWith(`/${name}`)) || '';
+        }
+
+        function preferredFlux2SideAsset(kind, available) {
+            const selected = selectedFluxFamilyName();
+            if (!/flux[-_. ]?2|flux2|klein/.test(selected)) return '';
+            const tests = kind === 'vae'
+                ? [/flux[-_. ]?2.*vae/i, /flux2.*vae/i, /full_encoder/i]
+                : (/klein/.test(selected)
+                    ? (/9b/.test(selected)
+                        ? [/qwen[_\-. ]?3.*8b/i, /qwen3.*8b/i, /qwen.*8b/i]
+                        : [/qwen[_\-. ]?3.*4b/i, /qwen3.*4b/i, /qwen.*4b/i])
+                    : [/mistral.*flux[-_. ]?2/i, /mistral_3_small/i, /mistral/i]);
+            return tests.map(test => available.find(name => test.test(name))).find(Boolean) || '';
+        }
+
+        function isFlux2CompatibleSideAsset(kind, value) {
+            const selected = selectedFluxFamilyName();
+            const raw = String(value || '');
+            if (!/flux[-_. ]?2|flux2|klein/.test(selected)) return true;
+            if (/^(automatic|auto|none)$/i.test(raw)) return true;
+            if (kind === 'vae') return /flux[-_. ]?2.*vae|flux2.*vae|full_encoder/i.test(raw);
+            if (!/klein/.test(selected)) return /mistral/i.test(raw);
+            if (/9b/.test(selected)) return /qwen[_\-. ]?3.*8b|qwen3.*8b|qwen.*8b/i.test(raw);
+            return /qwen[_\-. ]?3.*4b|qwen3.*4b|qwen.*4b/i.test(raw);
+        }
+
         function compatibleSideAssetChoice(presetName, kind, value) {
             const profile = modelProfiles[presetName] || {};
             const selectId = kind === 'vae' ? 'vaeSelect' : 'textEncoderSelect';
@@ -7517,9 +7617,10 @@
             const cleanAvailable = available.filter(name => !/^(automatic|auto|none)$/i.test(String(name || '')));
             const raw = String(value || '').trim();
             const preferred = kind === 'vae'
-                ? preferredVaeForPreset(presetName, cleanAvailable)
-                : preferredEncoderForPreset(presetName, cleanAvailable);
+                ? (presetName === 'Flux' ? (preferredFlux2SideAsset('vae', cleanAvailable) || preferredVaeForPreset(presetName, cleanAvailable)) : preferredVaeForPreset(presetName, cleanAvailable))
+                : (presetName === 'Flux' ? (preferredFlux2SideAsset('text', cleanAvailable) || preferredEncoderForPreset(presetName, cleanAvailable)) : preferredEncoderForPreset(presetName, cleanAvailable));
             if (!raw || /^(automatic|auto|none)$/i.test(raw)) return preferred || raw;
+            if (presetName === 'Flux' && !isFlux2CompatibleSideAsset(kind === 'vae' ? 'vae' : 'text', raw)) return preferred || raw;
             if (kind === 'text') {
                 if (presetName === 'LTX' && /projection|proj/i.test(raw)) return preferred || raw;
             }
@@ -7726,7 +7827,7 @@
             }
         }
 
-        function applyBackendCatalog(catalog) {
+        function applyBackendCatalog(catalog, options = {}) {
             const preservedOutpaintSide = activePreset === 'LTX'
                 && currentActivity === 'img2img'
                 && activeWorkspace === 'canvas'
@@ -7773,7 +7874,7 @@
                 setDimensions(preservedOutpaintSide.width || activeProfile.width, preservedOutpaintSide.height || activeProfile.height);
                 syncLtxOutpaintUi();
             }
-            updateWorkflowPreview();
+            if (!options.skipWorkflowPreview) updateWorkflowPreview();
             populateExtrasModelControls();
         }
 
@@ -7938,7 +8039,23 @@
             key.position.set(3, 4, 5);
             scene.add(key);
             let loaded;
-            if (cleanUrl.endsWith('.obj')) {
+            if (cleanUrl.endsWith('.spz')) {
+                const decoded = await decodeLegacySpz(url, 70000);
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.BufferAttribute(decoded.positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(decoded.colors, 3));
+                geometry.computeBoundingBox();
+                geometry.computeBoundingSphere();
+                loaded = new THREE.Points(geometry, new THREE.PointsMaterial({
+                    size: 0.014,
+                    sizeAttenuation: true,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.98,
+                    depthWrite: false,
+                }));
+                loaded.userData.isSpzPointCloud = true;
+            } else if (cleanUrl.endsWith('.obj')) {
                 const { OBJLoader } = await import('/assets/vendor/three/examples/jsm/loaders/OBJLoader.js');
                 loaded = await new OBJLoader().loadAsync(url);
             } else {
@@ -8123,7 +8240,7 @@
         function is3DOutput(item) {
             const kind = String(item.media_type || item.mediaType || item.kind || '').toLowerCase();
             const filename = String(item.filename || item.title || item.image || item.url || '').toLowerCase();
-            return kind.includes('3d') || kind.includes('model') || /\.(glb|gltf|obj|fbx|stl|ply|usdz)$/.test(filename);
+            return kind.includes('3d') || kind.includes('model') || /\.(glb|gltf|obj|fbx|stl|ply|usdz|spz|ksplat)$/.test(filename);
         }
 
         function isVideoFile(file) {
@@ -9891,7 +10008,7 @@
             ideogramRegionActiveId = region.id;
             persistIdeogramRegions();
             renderIdeogramRegions();
-            updateWorkflowPreview();
+            if (!options.skipWorkflowPreview) updateWorkflowPreview();
         }
 
         function undoIdeogramRegion() {
@@ -9962,7 +10079,7 @@
             ideogramRegionActiveId = id;
             persistIdeogramRegions();
             renderIdeogramRegions();
-            updateWorkflowPreview();
+            if (!options.skipWorkflowPreview) updateWorkflowPreview();
         }
 
         function updateIdeogramActiveRegionField(field, value) {
@@ -11259,7 +11376,9 @@
 
         function model3DPreflightAccepted() {
             const cache = model3DPreflightCache();
-            return cache.accepted === true || cache.requirementsReady === true;
+            const engine = normalizedModel3DEngine();
+            if (engine === 'trellis2' && (cache.accepted === true || cache.requirementsReady === true)) return true;
+            return cache[`${engine}Accepted`] === true || cache[`${engine}Ready`] === true;
         }
 
         function model3DPreflightSummary(report) {
@@ -11267,9 +11386,10 @@
             const attention = report?.runtime?.recommended?.attention_backend || 'auto';
             const trellis = report?.trellis2?.installed ? 'TRELLIS ready' : 'TRELLIS missing';
             const dino = report?.dinov3?.installed ? 'DINOv3 ready' : 'DINOv3 missing';
+            const tripo = report?.triposplat?.installed ? 'TripoSplat ready' : 'TripoSplat missing';
             const registry = report?.object_registry_checked ? 'nodes checked' : 'quick check';
             const loaded = report?.preloaded?.matches_last_loaded_signature ? 'model already warm' : 'model will load on demand';
-            return `${trellis}; ${dino}; ${gpu}; ${attention}; ${registry}; ${loaded}.`;
+            return `${model3DEngine === 'triposplat' ? tripo : `${trellis}; ${dino}`}; ${gpu}; ${attention}; ${registry}; ${loaded}.`;
         }
 
         async function maybeDownloadTrellis2Model(options = {}) {
@@ -11318,6 +11438,29 @@
             }
         }
 
+        async function maybeDownloadTripoSplatModels(options = {}) {
+            if (activePreset !== 'Model3D' && !options.force) return false;
+            try {
+                const status = await nexusFetch('/model3d/triposplat/status');
+                if (status?.installed) return true;
+                const missing = (status?.missing || []).join(', ') || 'model files';
+                if (nexusBrowserOffline()) {
+                    return warnOfflineDependencyDownload('TripoSplat models', `Missing: ${missing}.`);
+                }
+                const ok = window.confirm(`TripoSplat model files are missing.\n\nMissing: ${missing}\n\nDownload them now into ./models/background_removal, ./models/diffusion_models, ./models/clip_vision and ./models/vae?`);
+                if (!ok) return false;
+                showToast('TripoSplat Download', 'Downloading TripoSplat model files.');
+                const started = await nexusFetch('/model3d/triposplat/download/start', { method: 'POST' });
+                await pollDownloadJob(started.job_id, 'TripoSplat Download');
+                await refreshModelCatalog();
+                showToast('TripoSplat Ready', 'Gaussian splat model files are installed.');
+                return true;
+            } catch (error) {
+                showToast('TripoSplat Check Failed', String(error?.message || error).slice(0, 180));
+                return false;
+            }
+        }
+
         async function installModel3DWorkflowRequirements() {
             if (nexusBrowserOffline()) {
                 return warnOfflineDependencyDownload('Model 3D workflow requirements', 'Custom-node Python dependencies need internet unless installed manually.');
@@ -11325,8 +11468,12 @@
             const ok = window.confirm('Model 3D custom node requirements can be installed now. Continue?');
             if (!ok) return false;
             try {
-                showToast('Model 3D Requirements', 'Installing workflow requirements for TRELLIS.2 nodes.');
-                const analysis = await nexusFetch('/workflows/model3d-trellis2-meshwithvoxel-texturing-multiview/install-dependencies?restart_comfy=true', {
+                const engine = normalizedModel3DEngine();
+                const workflowId = engine === 'triposplat'
+                    ? 'model3d-triposplat-image-to-gaussian-splat'
+                    : 'model3d-trellis2-meshwithvoxel-texturing-multiview';
+                showToast('Model 3D Requirements', `Installing workflow requirements for ${model3DEngineLabel(engine)}.`);
+                const analysis = await nexusFetch(`/workflows/${workflowId}/install-dependencies?restart_comfy=true`, {
                     method: 'POST'
                 });
                 const installed = analysis.dependencies_installed || [];
@@ -11345,6 +11492,7 @@
             if (options.full) params.set('full', 'true');
             if (options.startComfy) params.set('start_comfy', 'true');
             if (options.requestedModel) params.set('requested_model', options.requestedModel);
+            params.set('engine', normalizedModel3DEngine(options.engine || model3DEngine));
             const report = await nexusFetch(`/model3d/preflight${params.toString() ? `?${params}` : ''}`);
             if (report?.blocking?.length) {
                 showToast('Model 3D Check', report.blocking.join(' ').slice(0, 220));
@@ -11357,51 +11505,72 @@
         async function ensureModel3DTemplateRequirements(options = {}) {
             if (!backendOnline) return false;
             if (!options.force && model3DPreflightAccepted()) return true;
-            const ok = window.confirm('Model 3D uses optional TRELLIS.2/DINOv3 requirements. Check and download/install missing requirements now? This full check is saved after you accept it.');
+            const engine = normalizedModel3DEngine(options.engine || model3DEngine);
+            const ok = window.confirm(`Model 3D uses optional ${model3DEngineLabel(engine)} requirements. Check and download/install missing requirements now? This full check is saved after you accept it.`);
             if (!ok) return false;
-            saveModel3DPreflightCache({ accepted: true });
-            let report = await runModel3DPreflight({ full: true, startComfy: true, requestedModel: 'microsoft/TRELLIS.2-4B' });
-            if (!report?.trellis2?.installed) {
-                const downloaded = await maybeDownloadTrellis2Model({ force: true });
-                if (!downloaded) return false;
-            }
-            if (!report?.dinov3?.installed) {
-                const downloaded = await maybeDownloadDinoV3Model({ force: true });
-                if (!downloaded) return false;
+            saveModel3DPreflightCache({ accepted: true, [`${engine}Accepted`]: true });
+            let report = await runModel3DPreflight({ full: true, startComfy: true, requestedModel: engine === 'triposplat' ? 'VAST-AI/TripoSplat' : 'microsoft/TRELLIS.2-4B', engine });
+            if (engine === 'triposplat') {
+                if (!report?.triposplat?.installed) {
+                    const downloaded = await maybeDownloadTripoSplatModels({ force: true });
+                    if (!downloaded) return false;
+                }
+            } else {
+                if (!report?.trellis2?.installed) {
+                    const downloaded = await maybeDownloadTrellis2Model({ force: true });
+                    if (!downloaded) return false;
+                }
+                if (!report?.dinov3?.installed) {
+                    const downloaded = await maybeDownloadDinoV3Model({ force: true });
+                    if (!downloaded) return false;
+                }
             }
             const dependencyErrors = Object.keys(report?.workflow?.analysis?.dependency_errors || {});
             const missingNodes = report?.required_nodes?.missing || report?.workflow?.analysis?.missing_nodes || [];
             if (missingNodes.length || dependencyErrors.length) {
                 await installModel3DWorkflowRequirements();
             }
-            report = await runModel3DPreflight({ full: true, startComfy: true, requestedModel: 'microsoft/TRELLIS.2-4B' });
+            report = await runModel3DPreflight({ full: true, startComfy: true, requestedModel: engine === 'triposplat' ? 'VAST-AI/TripoSplat' : 'microsoft/TRELLIS.2-4B', engine });
             const ready = !report?.blocking?.length && !report?.required_nodes?.missing?.length;
             saveModel3DPreflightCache({
                 accepted: true,
                 requirementsReady: ready,
+                [`${engine}Ready`]: ready,
                 lastSummary: model3DPreflightSummary(report),
                 trellisPath: report?.trellis2?.path || '',
-                dinoPath: report?.dinov3?.path || ''
+                dinoPath: report?.dinov3?.path || '',
+                tripoMissing: report?.triposplat?.missing || []
             });
             return ready;
         }
 
         async function ensureModel3DGenerationPreflight(payload) {
             if (payload?.preset !== 'Model3D') return true;
-            if (!model3DPreflightAccepted()) {
-                const ready = await ensureModel3DTemplateRequirements({ force: true });
-                if (!ready) return false;
-            }
             const report = await runModel3DPreflight({
                 full: false,
                 startComfy: false,
-                requestedModel: payload?.model3d?.model || 'microsoft/TRELLIS.2-4B'
+                requestedModel: payload?.model3d?.model || (payload?.model3d?.engine === 'triposplat' ? 'VAST-AI/TripoSplat' : 'microsoft/TRELLIS.2-4B'),
+                engine: payload?.model3d?.engine || model3DEngine
             });
-            if (report?.trellis2 && !report.trellis2.installed) {
-                if (!await maybeDownloadTrellis2Model({ force: true })) return false;
+            const engine = normalizedModel3DEngine(payload?.model3d?.engine || model3DEngine);
+            const modelFilesReady = engine === 'triposplat'
+                ? report?.triposplat?.installed
+                : (report?.trellis2?.installed && report?.dinov3?.installed);
+            if (!model3DPreflightAccepted() && !modelFilesReady) {
+                const ready = await ensureModel3DTemplateRequirements({ force: true, engine });
+                if (!ready) return false;
             }
-            if (report?.dinov3 && !report.dinov3.installed) {
-                if (!await maybeDownloadDinoV3Model({ force: true })) return false;
+            if (payload?.model3d?.engine === 'triposplat') {
+                if (report?.triposplat && !report.triposplat.installed) {
+                    if (!await maybeDownloadTripoSplatModels({ force: true })) return false;
+                }
+            } else {
+                if (report?.trellis2 && !report.trellis2.installed) {
+                    if (!await maybeDownloadTrellis2Model({ force: true })) return false;
+                }
+                if (report?.dinov3 && !report.dinov3.installed) {
+                    if (!await maybeDownloadDinoV3Model({ force: true })) return false;
+                }
             }
             if (report?.runtime?.torch && !report.runtime.torch.cuda_available) {
                 showToast('GPU Required', 'Model 3D generation requires CUDA GPU. Check your PyTorch/CUDA runtime.');
@@ -11419,26 +11588,38 @@
             return true;
         }
 
-        async function handleModel3DGenerationError(error) {
+        async function handleModel3DGenerationError(error, options = {}) {
             const message = String(error?.message || error || '');
+            const retryGeneration = typeof options.retryGeneration === 'function' ? options.retryGeneration : null;
             if (/required custom nodes|workflow requirements|missing node/i.test(message)) {
                 const ok = await installModel3DWorkflowRequirements();
                 if (ok) {
                     saveModel3DPreflightCache({ accepted: true, requirementsReady: true });
-                    showToast('Model 3D Requirements Ready', 'Try the generation again.');
+                    if (retryGeneration && !generationCancelRequested) {
+                        showToast('Model 3D Requirements Ready', 'Retrying generation.');
+                        try {
+                            await retryGeneration();
+                        } catch (retryError) {
+                            showToast('Generation Failed', String(retryError?.message || retryError).slice(0, 180));
+                        }
+                    } else {
+                        showToast('Model 3D Requirements Ready', 'Try the generation again.');
+                    }
                 }
                 return true;
             }
-            if (/TRELLIS\.?2|DINOv3|checkpoint|model is missing/i.test(message)) {
+            if (/TRELLIS\.?2|DINOv3|TripoSplat|checkpoint|model is missing/i.test(message)) {
                 if (nexusBrowserOffline()) {
-                    warnOfflineDependencyDownload('Model 3D model files', 'Connect to download TRELLIS.2/DINOv3, or install them manually.');
+                    warnOfflineDependencyDownload('Model 3D model files', 'Connect to download TRELLIS.2/DINOv3/TripoSplat, or install them manually.');
                     return true;
                 }
                 const ok = window.confirm(`${message.slice(0, 260)}\n\nTry downloading missing Model 3D model files now?`);
                 if (!ok) return true;
-                const trellis = await maybeDownloadTrellis2Model({ force: true });
-                const dino = await maybeDownloadDinoV3Model({ force: true });
-                saveModel3DPreflightCache({ accepted: true, requirementsReady: trellis && dino });
+                const engine = normalizedModel3DEngine();
+                const ready = engine === 'triposplat'
+                    ? await maybeDownloadTripoSplatModels({ force: true })
+                    : (await maybeDownloadTrellis2Model({ force: true }) && await maybeDownloadDinoV3Model({ force: true }));
+                saveModel3DPreflightCache({ accepted: true, requirementsReady: ready, [`${engine}Ready`]: ready });
                 return true;
             }
             return false;
@@ -11513,7 +11694,7 @@
             const label = document.getElementById('appBootMessage');
             if (label) label.innerText = message;
             if (overlay) {
-                const nonBlocking = ready || backendOnline;
+                const nonBlocking = ready || backendOnline || backendBridgeEverReady;
                 overlay.classList.toggle('hidden', nonBlocking);
                 overlay.style.pointerEvents = nonBlocking ? 'none' : '';
             }
@@ -11526,14 +11707,18 @@
             indicator.classList.toggle('flex', backendOnline && !comfyRuntimeReady);
         }
 
-        async function initializeBackendBridge() {
+        async function initializeBackendBridge(options = {}) {
+            if (backendBridgeInFlight) return;
+            backendBridgeInFlight = true;
+            const background = !!options.background || backendBridgeEverReady || backendOnline;
             try {
-                setBootState('Connecting to Nexus backend...');
+                if (!background) setBootState('Connecting to Nexus backend...');
                 const health = await nexusFetch('/health', { timeoutMs: 12000 });
                 backendOnline = true;
+                backendBridgeEverReady = true;
                 comfyRuntimeReady = !!health.comfy_running;
                 updateComfyFooterLoading();
-                setBootState('Syncing models, workflows and extensions...');
+                if (!background) setBootState('Syncing models, workflows and extensions...');
                 nexusFetch('/model-tree', { method: 'POST', timeoutMs: 7000 }).catch(error => console.warn('Deferred model tree sync failed.', error));
                 const syncEntries = await Promise.allSettled([
                     nexusFetch('/templates', { timeoutMs: 9000 }),
@@ -11557,12 +11742,17 @@
                 else backendCustomNodes = backendCustomNodes || [];
                 if (dependenciesResult.status === 'fulfilled') backendDependencies = dependenciesResult.value;
                 else backendDependencies = backendDependencies || {};
-                if (comfyRuntimeReady) await refreshComfyObjectInfo({ quiet: true });
+                if (comfyRuntimeReady) {
+                    await Promise.race([
+                        refreshComfyObjectInfo({ quiet: true, timeoutMs: 7000 }),
+                        new Promise(resolve => setTimeout(resolve, 7500))
+                    ]);
+                }
                 renderAssetCounts();
                 renderManagerPanel();
                 refreshRuntimeMemory({ quiet: true });
                 if (comfyRuntimeReady && !activeWorkflowId) {
-                    await loadTemplateWorkflow(activePreset, { quiet: true });
+                    await loadTemplateWorkflow(activePreset, { quiet: true, timeoutMs: 7000 });
                 } else if (!comfyRuntimeReady) {
                     pendingTemplateWorkflowPreset = activePreset;
                     scheduleComfyReadySync();
@@ -11573,22 +11763,24 @@
                 });
                 if (backendRetryTimer) clearTimeout(backendRetryTimer);
                 if (syncWarnings.length) {
-                    showToast("Backend Online", `UI opened with partial sync: ${syncWarnings.join(', ')} will refresh later.`);
+                    if (!background) showToast("Backend Online", `UI opened with partial sync: ${syncWarnings.join(', ')} will refresh later.`);
                     if (backendRetryTimer) clearTimeout(backendRetryTimer);
                     backendRetryTimer = setTimeout(() => {
                         backendRetryTimer = null;
-                        initializeBackendBridge();
-                    }, 5000);
+                        initializeBackendBridge({ background: true });
+                    }, background ? 30000 : 10000);
                 } else {
-                    showToast("Backend Online", health.comfy_running ? "Nexus and embedded ComfyUI are synced." : "Nexus backend is ready; ComfyUI will start on demand.");
+                    if (!background) showToast("Backend Online", health.comfy_running ? "Nexus and embedded ComfyUI are synced." : "Nexus backend is ready; ComfyUI will start on demand.");
                 }
             } catch (error) {
-                backendOnline = false;
-                comfyRuntimeReady = false;
+                if (!backendBridgeEverReady) backendOnline = false;
+                if (!backendBridgeEverReady) comfyRuntimeReady = false;
                 updateComfyFooterLoading();
-                setBootState('Waiting for backend... run.bat keeps checking automatically.');
+                if (!backendBridgeEverReady) setBootState('Waiting for backend... run.bat keeps checking automatically.');
                 console.info('Nexus backend not ready yet.', error);
-                backendRetryTimer = setTimeout(initializeBackendBridge, 1500);
+                backendRetryTimer = setTimeout(() => initializeBackendBridge({ background: backendBridgeEverReady }), backendBridgeEverReady ? 5000 : 1500);
+            } finally {
+                backendBridgeInFlight = false;
             }
         }
 
@@ -12037,6 +12229,12 @@
             setElementOptions('textEncoderSelect', profile.encoder);
             setSelectValue('vaeSelect', savedFields.vaeSelect || profile.vae?.[0] || 'Automatic');
             setSelectValue('textEncoderSelect', savedFields.textEncoderSelect || profile.encoder?.[0] || 'Automatic');
+            if (presetName === 'Flux') {
+                const compatibleVae = compatibleSideAssetChoice('Flux', 'vae', document.getElementById('vaeSelect')?.value);
+                const compatibleTextEncoder = compatibleSideAssetChoice('Flux', 'text', document.getElementById('textEncoderSelect')?.value);
+                if (compatibleVae) setSelectValue('vaeSelect', compatibleVae);
+                if (compatibleTextEncoder) setSelectValue('textEncoderSelect', compatibleTextEncoder);
+            }
             setElementOptions('distillSelect', profile.variants);
             setElementOptions('precisionSelect', profile.precision);
             setElementOptions('samplingMethodSelect', uniqueOptions([profile.sampler, ...(profile.samplers || []), ...GLOBAL_SAMPLERS]));
@@ -12117,13 +12315,36 @@
             } else {
                 syncIdeogramRegionUiVisibility();
             }
-            const restoredWorkflowState = restoreWorkflow ? restoreWorkflowStateForPreset(presetName, savedState) : false;
+            const deferWorkflowSync = presetName === 'Model3D' && activeWorkspace !== 'workflow';
+            const restoredWorkflowState = deferWorkflowSync ? false : (restoreWorkflow ? restoreWorkflowStateForPreset(presetName, savedState) : false);
             if (!restoredWorkflowState && (previousPreset !== presetName || !activeWorkflowGraph || activeWorkflowGraph.nexus_preset !== presetName)) {
-                primeWorkflowGraphForPreset(presetName);
+                if (deferWorkflowSync) {
+                    activeWorkflowId = null;
+                    activeWorkflowAnalysis = null;
+                    activeWorkflowGraph = defaultGraphForPreset(presetName);
+                    if (activeWorkflowGraph) activeWorkflowGraph.nexus_preset = presetName;
+                    activeWorkflowLinks = activeWorkflowGraph?.links || [];
+                    selectedWorkflowNodeId = null;
+                    selectedWorkflowNodeIds = new Set();
+                    pendingWorkflowConnection = null;
+                    workflowTabs = [];
+                } else {
+                    primeWorkflowGraphForPreset(presetName);
+                }
             }
-            updateWorkflowPreview();
+            if (!deferWorkflowSync) updateWorkflowPreview();
             if (leaveDirectorView) switchView('viewer');
-            if (syncWorkflow && !restoredWorkflowState) loadTemplateWorkflow(presetName, { quiet: !notify });
+            if (syncWorkflow && !restoredWorkflowState) {
+                if (deferWorkflowSync) {
+                    window.setTimeout(() => {
+                        if (activePreset === presetName && activeWorkspace === 'workflow') {
+                            loadTemplateWorkflow(presetName, { quiet: true });
+                        }
+                    }, 0);
+                } else {
+                    loadTemplateWorkflow(presetName, { quiet: !notify });
+                }
+            }
 
             if (notify) showToast("Preset Loaded", `${presetButtonLabels[presetName]} template applied.`);
             if (currentActivity === 'trainLora') syncTrainLoraPresetViewFromGlobal(presetName);
@@ -12163,12 +12384,18 @@
                     syncReferenceImageSurfaces();
                     syncGraphWidgetsFromSideMenu();
                     updateWorkflowPreview();
-                    if (presetName === 'Model3D') maybeDownloadTrellis2Model();
+                    if (presetName === 'Model3D') {
+                        if (model3DEngine === 'triposplat') maybeDownloadTripoSplatModels();
+                        else maybeDownloadTrellis2Model();
+                    }
                     showToast("Model Selected", `${option.dataset.model || option.textContent.trim()} synced without resetting settings.`);
                     return;
                 }
                 applyModelProfile(presetName);
-                if (presetName === 'Model3D') maybeDownloadTrellis2Model();
+                if (presetName === 'Model3D') {
+                    if (model3DEngine === 'triposplat') maybeDownloadTripoSplatModels();
+                    else maybeDownloadTrellis2Model();
+                }
                 if (presetName === 'LTX') {
                     const minSteps = ltxMinimumSteps(modelProfiles[presetName].checkpoint || option.value);
                     const stepsSlider = document.getElementById('stepsSlider');
@@ -12950,6 +13177,7 @@
             if (galleryTab) galleryTab.innerText = 'Gallery';
             if (assetsTab) assetsTab.innerText = active ? 'Output' : 'Assets';
             if (!active) {
+                document.getElementById('model3DEnginePanel')?.classList.add('hidden');
                 document.getElementById('model3DRightSidebarPanel')?.classList.add('hidden');
                 document.getElementById('model3DOutputPanel')?.classList.add('hidden');
                 if (!qwenMultiViewVisible && activeWorkspace === 'multiview') {
@@ -12958,6 +13186,8 @@
                 }
                 return;
             }
+            document.getElementById('model3DEnginePanel')?.classList.remove('hidden');
+            setModel3DEngine(model3DEngine, { skipDependencyPrompt: true, skipWorkflowPreview: true });
             const sidebar = document.getElementById('rightSidebar');
             if (sidebar) {
                 isGalleryOpen = true;
@@ -12970,7 +13200,7 @@
             syncModel3DWorkspaceSidebars();
             const label = document.getElementById('model3DReferenceLabel');
             const count = [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean).length;
-            if (label) label.innerText = count ? `${count} reference image${count === 1 ? '' : 's'} loaded` : 'single or multiview';
+            if (label) label.innerText = count ? `${count} reference image${count === 1 ? '' : 's'} loaded` : (model3DEngine === 'triposplat' ? 'single image' : 'single or multiview');
             renderModel3DReferenceGrid();
             initModel3DViewer();
         }
@@ -13037,7 +13267,7 @@
             syncInpaintEngineControls();
             document.getElementById('promptPanelTitle').innerText = isImg2Img ? (isMotionTemplateActive() ? 'Prompt / Video Reference' : 'Prompt / Reference') : 'Prompt';
             if (isModel3DTemplateActive()) {
-                document.getElementById('promptPanelTitle').innerText = '3D Prompt / References';
+                document.getElementById('promptPanelTitle').innerText = model3DEngine === 'triposplat' ? '3D Prompt / Splat Reference' : '3D Prompt / References';
             }
 
             syncGenerationActionUi();
@@ -19322,6 +19552,36 @@
             updateInpaintCanvasCursorMode();
         }
 
+        function syncModel3DReferenceUiLight() {
+            const panel = document.getElementById('referenceImagePanel');
+            const thumb = document.getElementById('referenceImageThumb');
+            const loadedLabel = document.getElementById('referenceImageLoadedLabel');
+            const state = document.getElementById('referenceImageState');
+            const clearButton = document.getElementById('clearReferenceImageBtn');
+            const hasImage = !!referenceImageMeta.src;
+            const extraCount = (referenceImageExtraDataUrls || []).filter(item => item?.src).length;
+            panel?.classList.toggle('has-reference', hasImage);
+            if (clearButton) {
+                clearButton.classList.toggle('hidden', !hasImage);
+                clearButton.classList.toggle('flex', hasImage);
+            }
+            if (thumb) {
+                thumb.classList.toggle('hidden', !hasImage);
+                thumb.src = hasImage ? referenceImageMeta.src : '';
+            }
+            if (state && !hasImage) state.innerText = 'drop or click to load';
+            if (loadedLabel) {
+                loadedLabel.classList.toggle('hidden', !hasImage);
+                loadedLabel.innerText = hasImage
+                    ? `${referenceImageMeta.label || referenceSlotLabel(1)}${referenceImageMeta.width && referenceImageMeta.height ? ` - ${referenceImageMeta.width}x${referenceImageMeta.height}` : ''}${extraCount ? ` + ${extraCount} ref` : ''}`
+                    : '';
+            }
+            const label = document.getElementById('model3DReferenceLabel');
+            const count = [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean).length;
+            if (label) label.innerText = count ? `${count} reference image${count === 1 ? '' : 's'} loaded` : (model3DEngine === 'triposplat' ? 'single image' : 'single or multiview');
+            renderModel3DReferenceGrid();
+        }
+
         function syncReferenceImageSurfaces() {
             const panel = document.getElementById('referenceImagePanel');
             const thumb = document.getElementById('referenceImageThumb');
@@ -19709,6 +19969,7 @@
 
         function setReferenceImageSource(src, label = 'reference image', options = {}) {
             if (!src) return;
+            const model3DLightReference = activePreset === 'Model3D' || isModel3DTemplateActive();
             if (!options.keepExtraReferences) referenceImageExtraDataUrls = [];
             if (!options.preserveBaseVideo) {
                 referenceBaseVideoDataUrl = '';
@@ -19717,16 +19978,23 @@
             inpaintExtendCompositeMaskDataUrl = '';
             inpaintExtendSourceImageDataUrl = '';
             inpaintExtendPad = { left: 0, top: 0, right: 0, bottom: 0 };
-            clearLtxMotionPreprocess({ quiet: true });
+            if (!model3DLightReference) clearLtxMotionPreprocess({ quiet: true });
             resizePercentBaseSnapshot = null;
             referenceImageDataUrl = src;
             referenceImageMeta = { src, label, width: 0, height: 0 };
-            syncLtxLinearMotionTransferTimeLock();
-            syncReferenceImageSurfaces();
+            if (model3DLightReference) syncModel3DReferenceUiLight();
+            else {
+                syncLtxLinearMotionTransferTimeLock();
+                syncReferenceImageSurfaces();
+            }
             const image = new Image();
             image.onload = () => {
                 referenceImageMeta.width = image.naturalWidth || image.width || 0;
                 referenceImageMeta.height = image.naturalHeight || image.height || 0;
+                if (model3DLightReference) {
+                    syncModel3DReferenceUiLight();
+                    return;
+                }
                 syncReferenceImageSurfaces();
                 updateResizePercentGuide();
                 if (referenceImageMeta.width && referenceImageMeta.height) {
@@ -19742,6 +20010,7 @@
             };
             image.onerror = () => showToast("Reference Load Failed", "The selected image could not be read.");
             image.src = src;
+            if (model3DLightReference) return;
             updateWorkflowPreview();
             if (activePreset === 'Ideogram4' && currentActivity === 'img2img') {
                 ensureIdeogramLinearGuideOutput({ force: true });
@@ -19761,6 +20030,10 @@
                 const transitionToggle = document.getElementById('ltxTransitionLoraToggle');
                 if (transitionToggle && !document.getElementById('ltxMotionTransferToggle')?.checked) transitionToggle.checked = true;
             }
+            if (activePreset === 'Model3D' || isModel3DTemplateActive()) {
+                syncModel3DReferenceUiLight();
+                return;
+            }
             clearLtxMotionPreprocess({ quiet: true });
             syncReferenceImageSurfaces();
             syncGenerationActionUi();
@@ -19778,6 +20051,10 @@
             if (activePreset === 'LTX' && isStartEndFrameMode()) {
                 const transitionToggle = document.getElementById('ltxTransitionLoraToggle');
                 if (transitionToggle) transitionToggle.checked = true;
+            }
+            if (activePreset === 'Model3D' || isModel3DTemplateActive()) {
+                syncModel3DReferenceUiLight();
+                return;
             }
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
@@ -20868,7 +21145,7 @@
             const input = document.getElementById('referenceImageInput');
             if (!input) return;
             delete input.dataset.qwenRefSlot;
-            input.multiple = isModel3DTemplateActive() ? model3DReferenceMode === 'multi' : referenceExtraSlotsEnabled();
+            input.multiple = isModel3DTemplateActive() ? (model3DEngine !== 'triposplat' && model3DReferenceMode === 'multi') : referenceExtraSlotsEnabled();
             input.value = '';
             input.click();
         }
@@ -22006,6 +22283,7 @@
             gridVisible: true
         };
         let model3DReferenceMode = 'single';
+        let model3DEngine = nexusSafeStorage.get('nexus_model3d_engine') || 'trellis2';
         const model3DTextureViewport = {
             initialized: false,
             loading: false,
@@ -22031,15 +22309,52 @@
             gridVisible: true
         };
 
-        function setModel3DReferenceMode(mode) {
-            const multi = mode === 'multi';
+        function setModel3DReferenceMode(mode, options = {}) {
+            const multi = model3DEngine !== 'triposplat' && mode === 'multi';
             model3DReferenceMode = multi ? 'multi' : 'single';
             document.getElementById('model3DSingleBtn')?.classList.toggle('bg-white', !multi);
             document.getElementById('model3DSingleBtn')?.classList.toggle('text-black', !multi);
             document.getElementById('model3DMultiBtn')?.classList.toggle('bg-white', multi);
             document.getElementById('model3DMultiBtn')?.classList.toggle('text-black', multi);
-            syncReferenceImageSurfaces();
-            updateModel3DTemplateUi();
+            document.getElementById('model3DMultiBtn')?.classList.toggle('opacity-40', model3DEngine === 'triposplat');
+            if (!options.skipSurfaceSync) {
+                if (activePreset === 'Model3D' || isModel3DTemplateActive()) syncModel3DReferenceUiLight();
+                else syncReferenceImageSurfaces();
+            }
+            if (!options.skipUiRefresh) updateModel3DTemplateUi();
+        }
+
+        function normalizedModel3DEngine(value = model3DEngine) {
+            return String(value || '').toLowerCase() === 'triposplat' ? 'triposplat' : 'trellis2';
+        }
+
+        function model3DEngineLabel(value = model3DEngine) {
+            return normalizedModel3DEngine(value) === 'triposplat' ? 'TRIPO SPLAT' : 'TRELLIS.2';
+        }
+
+        function setModel3DEngine(engine, options = {}) {
+            model3DEngine = normalizedModel3DEngine(engine);
+            nexusSafeStorage.set('nexus_model3d_engine', model3DEngine);
+            if (model3DEngine === 'triposplat') model3DReferenceMode = 'single';
+            const tripo = model3DEngine === 'triposplat';
+            document.getElementById('model3DEngineTrellisBtn')?.classList.toggle('bg-white', !tripo);
+            document.getElementById('model3DEngineTrellisBtn')?.classList.toggle('text-black', !tripo);
+            document.getElementById('model3DEngineTripoBtn')?.classList.toggle('bg-white', tripo);
+            document.getElementById('model3DEngineTripoBtn')?.classList.toggle('text-black', tripo);
+            const label = model3DEngineLabel();
+            const badge = document.getElementById('model3DEngineBadge');
+            const viewerLabel = document.getElementById('model3DViewerEngineLabel');
+            if (badge) badge.innerText = label;
+            if (viewerLabel) viewerLabel.innerText = label;
+            document.querySelectorAll('[data-model3d-engine]').forEach(element => {
+                element.classList.toggle('hidden', element.dataset.model3dEngine !== model3DEngine);
+            });
+            setModel3DReferenceMode(model3DReferenceMode, { skipUiRefresh: true, skipSurfaceSync: !!options.skipWorkflowPreview });
+            if (!options.skipDependencyPrompt && activePreset === 'Model3D') {
+                if (model3DEngine === 'triposplat') maybeDownloadTripoSplatModels().catch(() => {});
+                else maybeDownloadTrellis2Model().catch(() => {});
+            }
+            if (!options.skipWorkflowPreview) updateWorkflowPreview();
         }
 
         function syncModel3DNumber(id, value) {
@@ -22075,6 +22390,26 @@
             const THREE = model3DViewer.modules?.THREE;
             if (!THREE) return;
             model.traverse?.(child => {
+                if (child?.isPoints && child.userData?.isSpzPointCloud) {
+                    if (!child.userData.model3DSpzMaterials) {
+                        child.userData.model3DSpzMaterials = {
+                            color: child.material,
+                            solid: new THREE.PointsMaterial({ color: 0xb8b8b8, size: child.material?.size || 0.012, sizeAttenuation: true, transparent: true, opacity: 0.96, depthWrite: false }),
+                            normal: new THREE.PointsMaterial({ color: 0x7fc7ff, size: child.material?.size || 0.012, sizeAttenuation: true, transparent: true, opacity: 0.96, depthWrite: false }),
+                            wireframe: new THREE.PointsMaterial({ color: 0xff3b4f, size: Math.max(0.006, (child.material?.size || 0.012) * 0.65), sizeAttenuation: true, transparent: true, opacity: 0.88, depthWrite: false }),
+                        };
+                    }
+                    const mats = child.userData.model3DSpzMaterials;
+                    child.material = model3DViewer.mode === 'solid'
+                        ? mats.solid
+                        : model3DViewer.mode === 'normal'
+                        ? mats.normal
+                        : model3DViewer.mode === 'wireframe'
+                        ? mats.wireframe
+                        : mats.color;
+                    child.material.needsUpdate = true;
+                    return;
+                }
                 if (!child?.isMesh || !child.material) return;
                 if (!child.userData.model3DBaseMaterial) child.userData.model3DBaseMaterial = child.material.clone();
                 const base = child.userData.model3DBaseMaterial;
@@ -22424,7 +22759,7 @@
                     import('/assets/vendor/three/three.module.js'),
                     import('/assets/vendor/three/examples/jsm/controls/OrbitControls.js')
                 ]);
-                const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+                const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
                 const scene = new THREE.Scene();
                 const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
@@ -23591,9 +23926,69 @@
 
         function resetModel3DCamera() {
             if (!model3DViewer.camera || !model3DViewer.controls) return;
-            model3DViewer.camera.position.set(2.2, 1.5, 2.8);
-            model3DViewer.controls.target.set(0, 0.55, 0);
+            const target = model3DViewer.controls.target.clone();
+            model3DViewer.camera.position.copy(target).add(new model3DViewer.modules.THREE.Vector3(2.2, 1.5, 2.8));
             model3DViewer.controls.update();
+        }
+
+        function setModel3DCameraAngle(angle = 'front') {
+            const THREE = model3DViewer.modules?.THREE;
+            if (!THREE || !model3DViewer.camera || !model3DViewer.controls) return;
+            const target = model3DViewer.controls.target.clone();
+            const distance = Math.max(1.8, model3DViewer.camera.position.distanceTo(target) || 3.2);
+            const offsets = {
+                front: new THREE.Vector3(0, 0.08, distance),
+                back: new THREE.Vector3(0, 0.08, -distance),
+                left: new THREE.Vector3(-distance, 0.08, 0),
+                right: new THREE.Vector3(distance, 0.08, 0),
+                top: new THREE.Vector3(0, distance, 0.001)
+            };
+            model3DViewer.camera.position.copy(target).add(offsets[angle] || offsets.front);
+            model3DViewer.camera.lookAt(target);
+            model3DViewer.controls.update();
+        }
+
+        function formatModel3DCount(value) {
+            const count = Number(value) || 0;
+            return count >= 1000 ? count.toLocaleString('en-US') : String(count);
+        }
+
+        function updateModel3DViewerStats(model = model3DViewer.model) {
+            let topology = 'None';
+            let primaryLabel = 'Faces';
+            let secondaryLabel = 'Vertices';
+            let primary = 0;
+            let secondary = 0;
+            if (model?.userData?.isSpzSplatMesh) {
+                topology = 'Gaussian';
+                primaryLabel = 'Splats';
+                secondaryLabel = 'SH';
+                primary = model.userData.splatCount || model.splats?.numSplats || 0;
+                secondary = model.userData.maxSh ?? model.splats?.maxSh ?? 0;
+            } else if (model?.userData?.isSpzPointCloud || model?.isPoints) {
+                topology = 'Point splat';
+                primaryLabel = 'Splats';
+                secondaryLabel = 'Preview';
+                primary = model.userData?.pointCount || 0;
+                secondary = model.geometry?.attributes?.position?.count || 0;
+            } else if (model) {
+                topology = 'Triangle';
+                model.traverse?.(child => {
+                    if (!child?.isMesh || !child.geometry) return;
+                    const positionCount = child.geometry.attributes?.position?.count || 0;
+                    secondary += positionCount;
+                    primary += child.geometry.index?.count ? Math.floor(child.geometry.index.count / 3) : Math.floor(positionCount / 3);
+                });
+            }
+            const setText = (id, text) => {
+                const element = document.getElementById(id);
+                if (element) element.innerText = text;
+            };
+            setText('model3DStatsTopology', topology);
+            setText('model3DStatsPrimaryLabel', primaryLabel);
+            setText('model3DStatsSecondaryLabel', secondaryLabel);
+            setText('model3DStatsPrimary', formatModel3DCount(primary));
+            setText('model3DStatsSecondary', formatModel3DCount(secondary));
         }
 
         async function initModel3DViewer() {
@@ -23634,6 +24029,7 @@
                 model3DViewer.scene = scene;
                 model3DViewer.camera = camera;
                 model3DViewer.renderer = renderer;
+                model3DViewer.sparkRenderer = null;
                 model3DViewer.controls = controls;
                 model3DViewer.model = null;
                 model3DViewer.grid = grid;
@@ -23649,14 +24045,23 @@
                     const rect = canvas.parentElement?.getBoundingClientRect?.();
                     const width = Math.max(1, Math.floor(rect?.width || 800));
                     const height = Math.max(1, Math.floor(rect?.height || 600));
-                    renderer.setSize(width, height, false);
-                    camera.aspect = width / height;
-                    camera.updateProjectionMatrix();
+                    if (model3DViewer.viewportWidth !== width || model3DViewer.viewportHeight !== height) {
+                        model3DViewer.viewportWidth = width;
+                        model3DViewer.viewportHeight = height;
+                        renderer.setSize(width, height, false);
+                        camera.aspect = width / height;
+                        camera.updateProjectionMatrix();
+                    }
                 };
                 const animate = () => {
                     if (!model3DViewer.initialized) return;
                     resize();
                     controls.update();
+                    const sparkRenderer = model3DViewer.sparkRenderer;
+                    if (sparkRenderer && model3DViewer.model?.userData?.isSpzSplatMesh) {
+                        window.setTimeout(animate, 33);
+                        return;
+                    }
                     renderer.render(scene, camera);
                     requestAnimationFrame(animate);
                 };
@@ -23670,6 +24075,7 @@
         }
 
         function clearModel3DPreviewModel() {
+            stopModel3DSpzRenderLoop();
             const scene = model3DViewer.scene;
             const model = model3DViewer.model;
             if (!scene || !model) return;
@@ -23679,13 +24085,83 @@
                 if (Array.isArray(child.material)) child.material.forEach(material => material?.dispose?.());
                 else child.material?.dispose?.();
             });
+            model.dispose?.();
             model3DViewer.model = null;
+            updateModel3DViewerStats(null);
+        }
+
+        async function renderModel3DSpzFrame() {
+            if (model3DViewer.spzRenderBusy) return;
+            if (!model3DViewer.model?.userData?.isSpzSplatMesh || !model3DViewer.sparkRenderer || !model3DViewer.renderer || !model3DViewer.scene || !model3DViewer.camera) return;
+            model3DViewer.spzRenderBusy = true;
+            try {
+                model3DViewer.controls?.update?.();
+                model3DViewer.scene.updateMatrixWorld(true);
+                model3DViewer.camera.updateMatrixWorld(true);
+                await model3DViewer.sparkRenderer.update({
+                    scene: model3DViewer.scene,
+                    camera: model3DViewer.camera,
+                });
+                model3DViewer.renderer.render(model3DViewer.scene, model3DViewer.camera);
+            } catch (error) {
+                console.warn('Spark SPZ frame render failed.', error);
+            } finally {
+                model3DViewer.spzRenderBusy = false;
+            }
+        }
+
+        function stopModel3DSpzRenderLoop() {
+            if (model3DViewer.spzRenderTimer) {
+                window.clearInterval(model3DViewer.spzRenderTimer);
+                model3DViewer.spzRenderTimer = null;
+            }
+            model3DViewer.spzRenderBusy = false;
+        }
+
+        function startModel3DSpzRenderLoop() {
+            stopModel3DSpzRenderLoop();
+            model3DViewer.spzRenderBusy = false;
+            const tick = async () => {
+                if (!model3DViewer.model?.userData?.isSpzSplatMesh || !model3DViewer.sparkRenderer || !model3DViewer.renderer || !model3DViewer.scene || !model3DViewer.camera) return;
+                model3DViewer.spzRenderBusy = true;
+                try {
+                    model3DViewer.controls?.update?.();
+                    model3DViewer.scene.updateMatrixWorld(true);
+                    model3DViewer.camera.updateMatrixWorld(true);
+                    await model3DViewer.sparkRenderer.update({
+                        scene: model3DViewer.scene,
+                        camera: model3DViewer.camera,
+                    });
+                    model3DViewer.renderer.render(model3DViewer.scene, model3DViewer.camera);
+                } catch (error) {
+                    console.warn('Spark SPZ timed render failed.', error);
+                } finally {
+                    model3DViewer.spzRenderBusy = false;
+                }
+            };
+            tick().finally(() => {
+                if (model3DViewer.model?.userData?.isSpzSplatMesh && !model3DViewer.spzRenderTimer) {
+                    model3DViewer.spzRenderTimer = window.setInterval(tick, 300);
+                }
+            });
+        }
+
+        function getModel3DObjectBox(model, THREE = model3DViewer.modules?.THREE) {
+            if (!THREE || !model) return null;
+            if (model.userData?.isSpzSplatMesh && typeof model.getBoundingBox === 'function') {
+                const box = model.getBoundingBox(new THREE.Box3());
+                if (box && Number.isFinite(box.min.x) && Number.isFinite(box.max.x)) return box;
+            }
+            const box = new THREE.Box3().setFromObject(model);
+            if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) return null;
+            return box;
         }
 
         function fitModel3DPreviewModel(model) {
             const THREE = model3DViewer.modules?.THREE;
             if (!THREE || !model || !model3DViewer.controls || !model3DViewer.camera) return;
-            const box = new THREE.Box3().setFromObject(model);
+            const box = getModel3DObjectBox(model, THREE);
+            if (!box) return;
             const size = new THREE.Vector3();
             const center = new THREE.Vector3();
             box.getSize(size);
@@ -23694,11 +24170,13 @@
             const maxAxis = Math.max(size.x, size.y, size.z) || 1;
             const scale = 1.5 / maxAxis;
             model.scale.multiplyScalar(scale);
-            const nextBox = new THREE.Box3().setFromObject(model);
             const nextCenter = new THREE.Vector3();
-            nextBox.getCenter(nextCenter);
+            if (!model.userData?.isSpzSplatMesh) {
+                const nextBox = getModel3DObjectBox(model, THREE) || new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(), new THREE.Vector3(1, 1, 1));
+                nextBox.getCenter(nextCenter);
+            }
             model3DViewer.controls.target.copy(nextCenter);
-            model3DViewer.camera.position.set(2.2, 1.5, 2.8);
+            model3DViewer.camera.position.copy(nextCenter).add(new THREE.Vector3(2.2, 1.5, 2.8));
             model3DViewer.controls.update();
         }
 
@@ -23747,6 +24225,165 @@
             renderModel3DUvPreview();
         }
 
+        async function inflateSpzArrayBuffer(buffer) {
+            const bytes = new Uint8Array(buffer);
+            if (bytes[0] !== 0x1f || bytes[1] !== 0x8b) return buffer;
+            if (typeof DecompressionStream !== 'function') {
+                throw new Error('Browser gzip decompression is unavailable for SPZ preview.');
+            }
+            const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream('gzip'));
+            return await new Response(stream).arrayBuffer();
+        }
+
+        function readSignedInt24LE(bytes, offset) {
+            let value = bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16);
+            if (value & 0x800000) value |= 0xff000000;
+            return value;
+        }
+
+        function gaussianDcToLinearColor(value) {
+            const dc = ((value / 255) - 0.5) / 0.15;
+            return Math.max(0, Math.min(1, dc * 0.28209479177387814 + 0.5));
+        }
+
+        function makeSpzSpriteTexture(THREE) {
+            if (model3DViewer.spzSpriteTexture) return model3DViewer.spzSpriteTexture;
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 31);
+            gradient.addColorStop(0.0, 'rgba(255,255,255,1)');
+            gradient.addColorStop(0.42, 'rgba(255,255,255,0.92)');
+            gradient.addColorStop(0.78, 'rgba(255,255,255,0.18)');
+            gradient.addColorStop(1.0, 'rgba(255,255,255,0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 64, 64);
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            model3DViewer.spzSpriteTexture = texture;
+            return texture;
+        }
+
+        async function decodeLegacySpz(url, maxPreviewPoints = 180000) {
+            const response = await fetch(url, { cache: 'no-store' });
+            if (!response.ok) throw new Error(`SPZ fetch failed: ${response.status}`);
+            const inflated = await inflateSpzArrayBuffer(await response.arrayBuffer());
+            const bytes = new Uint8Array(inflated);
+            if (bytes.length < 25 || String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== 'NGSP') {
+                throw new Error('Unsupported SPZ file header.');
+            }
+            const view = new DataView(inflated);
+            const version = view.getUint32(4, true);
+            const pointCount = view.getUint32(8, true);
+            const shDegree = bytes[12] || 0;
+            const fractionalBits = bytes[13] || 12;
+            if (version >= 4) throw new Error('SPZ v4 thumbnails require ZSTD streams and are not available in this lightweight viewer.');
+            const shDim = shDegree <= 0 ? 0 : shDegree === 1 ? 3 : shDegree === 2 ? 8 : shDegree === 3 ? 15 : 24;
+            const pointBytesOffset = 16;
+            const positionBytes = pointCount * 9;
+            const alphaOffset = pointBytesOffset + positionBytes;
+            const colorOffset = alphaOffset + pointCount;
+            const scaleOffset = colorOffset + pointCount * 3;
+            const rotationBytes = version >= 3 ? 4 : 3;
+            const expectedSize = scaleOffset + pointCount * 3 + pointCount * rotationBytes + pointCount * shDim * 3;
+            if (!pointCount || bytes.length < colorOffset + pointCount * 3 || bytes.length < expectedSize) {
+                throw new Error('SPZ point data is incomplete.');
+            }
+            const step = Math.max(1, Math.ceil(pointCount / maxPreviewPoints));
+            const previewCount = Math.ceil(pointCount / step);
+            const positions = new Float32Array(previewCount * 3);
+            const colors = new Float32Array(previewCount * 3);
+            const alphas = new Float32Array(previewCount);
+            const scale = 1 / (1 << fractionalBits);
+            let write = 0;
+            for (let i = 0; i < pointCount; i += step) {
+                const src = pointBytesOffset + i * 9;
+                const x = readSignedInt24LE(bytes, src) * scale;
+                const y = -readSignedInt24LE(bytes, src + 3) * scale;
+                const z = readSignedInt24LE(bytes, src + 6) * scale;
+                positions[write * 3] = x;
+                positions[write * 3 + 1] = y;
+                positions[write * 3 + 2] = z;
+                const colorSrc = colorOffset + i * 3;
+                colors[write * 3] = gaussianDcToLinearColor(bytes[colorSrc]);
+                colors[write * 3 + 1] = gaussianDcToLinearColor(bytes[colorSrc + 1]);
+                colors[write * 3 + 2] = gaussianDcToLinearColor(bytes[colorSrc + 2]);
+                alphas[write] = Math.max(0.08, Math.min(1, bytes[alphaOffset + i] / 255));
+                write += 1;
+            }
+            return { positions, colors, alphas, pointCount, previewCount, version, shDegree, fractionalBits };
+        }
+
+        async function loadSpzPointCloud(url, label = 'SPZ splat') {
+            const THREE = model3DViewer.modules?.THREE;
+            const decoded = await decodeLegacySpz(url);
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(decoded.positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(decoded.colors, 3));
+            geometry.setAttribute('spzAlpha', new THREE.BufferAttribute(decoded.alphas, 1));
+            geometry.computeBoundingBox();
+            geometry.computeBoundingSphere();
+            const material = new THREE.PointsMaterial({
+                size: 0.045,
+                sizeAttenuation: true,
+                vertexColors: true,
+                map: makeSpzSpriteTexture(THREE),
+                alphaTest: 0.02,
+                transparent: true,
+                opacity: 0.98,
+                depthTest: true,
+                depthWrite: true,
+                blending: THREE.NormalBlending,
+            });
+            const points = new THREE.Points(geometry, material);
+            points.name = label;
+            points.userData.isSpzPointCloud = true;
+            points.userData.pointCount = decoded.pointCount;
+            points.userData.spzVersion = decoded.version;
+            return points;
+        }
+
+        async function ensureModel3DSparkRenderer() {
+            if (model3DViewer.sparkRenderer) return model3DViewer.sparkRenderer;
+            if (!model3DViewer.renderer || !model3DViewer.scene) {
+                throw new Error('Model3D Spark renderer needs an initialized Three.js viewport.');
+            }
+            const spark = await import('/assets/vendor/spark/spark.module.min.js');
+            const sparkRenderer = new spark.SparkRenderer({
+                renderer: model3DViewer.renderer,
+                autoUpdate: false,
+                preUpdate: false,
+                focalAdjustment: 2.0,
+                sortRadial: false,
+                minAlpha: 0.01,
+                depthTest: true,
+                depthWrite: false,
+                lodSplatScale: 1.0,
+            });
+            model3DViewer.scene.add(sparkRenderer);
+            model3DViewer.sparkRenderer = sparkRenderer;
+            return sparkRenderer;
+        }
+
+        async function loadSpzSplatMesh(url, label = 'SPZ splat') {
+            await ensureModel3DSparkRenderer();
+            const spark = await import('/assets/vendor/spark/spark.module.min.js');
+            const mesh = new spark.SplatMesh({
+                url,
+                lod: false,
+                nonLod: true,
+            });
+            if (mesh.initialized) await mesh.initialized;
+            mesh.name = label;
+            mesh.frustumCulled = false;
+            mesh.userData.isSpzSplatMesh = true;
+            mesh.userData.splatCount = mesh.numSplats || mesh.packedSplats?.numSplats || 0;
+            mesh.userData.maxSh = mesh.packedSplats?.maxShDegree ?? mesh.splats?.maxShDegree ?? 0;
+            mesh.userData.sourceFormat = 'spz';
+            return mesh;
+        }
+
         async function loadModel3DPreviewFromUrl(url, label = '3D model') {
             await initModel3DViewer();
             const THREE = model3DViewer.modules?.THREE;
@@ -23762,6 +24399,16 @@
                 if (cleanUrl.endsWith('.obj')) {
                     const { OBJLoader } = await import('/assets/vendor/three/examples/jsm/loaders/OBJLoader.js');
                     loaded = await new OBJLoader().loadAsync(url);
+                } else if (cleanUrl.endsWith('.spz')) {
+                    const useNativeSparkSpz = window.NEXUS_ENABLE_NATIVE_SPARK_SPZ === true;
+                    if (useNativeSparkSpz) try {
+                        loaded = await loadSpzSplatMesh(url, label);
+                    } catch (sparkError) {
+                        console.warn('Spark SPZ renderer unavailable; falling back to point preview.', sparkError);
+                        loaded = await loadSpzPointCloud(url, label);
+                    } else {
+                        loaded = await loadSpzPointCloud(url, label);
+                    }
                 } else {
                     const { GLTFLoader } = await import('/assets/vendor/three/examples/jsm/loaders/GLTFLoader.js');
                     const gltf = await new GLTFLoader().loadAsync(url);
@@ -23772,9 +24419,21 @@
                 model3DViewer.model = loaded;
                 fitModel3DPreviewModel(loaded);
                 setModel3DViewMode(model3DViewer.mode);
-                syncLoadedModel3DToTextureViewport();
+                if (!loaded?.userData?.isSpzSplatMesh) {
+                    syncLoadedModel3DToTextureViewport();
+                }
+                updateModel3DViewerStats(loaded);
                 document.getElementById('model3DPlaceholder')?.classList.add('hidden');
-                if (status) status.innerText = `${label} loaded`;
+                if (status) {
+                    status.innerText = loaded?.userData?.isSpzSplatMesh
+                        ? `${label} SPZ splat loaded`
+                        : loaded?.userData?.isSpzPointCloud
+                        ? `${label} SPZ point fallback loaded`
+                        : `${label} loaded`;
+                }
+                if (loaded?.userData?.isSpzSplatMesh) {
+                    window.setTimeout(startModel3DSpzRenderLoop, 900);
+                }
             } catch (error) {
                 if (status) status.innerText = 'Could not load the selected 3D model.';
                 showToast('3D Preview Failed', String(error?.message || error).slice(0, 160));
@@ -23831,8 +24490,34 @@
             }
         }
 
+        function activateModel3DPreset(btn = null) {
+            const presetName = 'Model3D';
+            const profile = modelProfiles[presetName];
+            if (!profile) return;
+            activePreset = presetName;
+            currentActivity = 'img2img';
+            activeWorkspace = 'viewer';
+            localStorage.setItem('nexus_active_preset', activePreset);
+            localStorage.setItem('nexus_current_activity', currentActivity);
+            localStorage.setItem('nexus_active_workspace', activeWorkspace);
+            document.body?.classList.add('model3d-template');
+            document.getElementById('model3DEnginePanel')?.classList.remove('hidden');
+            document.getElementById('model3DLeftTemplatePanel')?.classList.remove('hidden');
+            document.getElementById('referenceImagePanel')?.classList.remove('hidden');
+            document.getElementById('model3DRightSidebarPanel')?.classList.remove('hidden');
+            document.querySelectorAll('.preset-btn').forEach(button => {
+                button.classList.toggle('active', button.dataset.preset === presetName);
+                button.classList.toggle('bg-nexus-red', button.dataset.preset === presetName);
+                button.classList.toggle('text-white', button.dataset.preset === presetName);
+            });
+        }
+
         // Preset selector (Top Bar)
         function setPreset(btn, presetName) {
+            if (presetName === 'Model3D') {
+                activateModel3DPreset(btn);
+                return;
+            }
             if (currentActivity === 'pose') {
                 leavePoseWorkspaceForGeneration(presetName);
             }
@@ -23865,7 +24550,13 @@
             syncPromptEnhanceControlsUi();
             syncLtxOutpaintUi();
             maybePrepareTemplateOptionalAssets(presetName);
-            if (presetName === 'Model3D') ensureModel3DTemplateRequirements().catch(error => showToast('Model 3D Check Failed', String(error?.message || error).slice(0, 160)));
+            if (presetName === 'Model3D') {
+                runModel3DPreflight({
+                    full: false,
+                    startComfy: false,
+                    requestedModel: normalizedModel3DEngine() === 'triposplat' ? 'VAST-AI/TripoSplat' : 'microsoft/TRELLIS.2-4B'
+                }).catch(error => showToast('Model 3D Check Failed', String(error?.message || error).slice(0, 160)));
+            }
             if (currentActivity === 'txt2img' || currentActivity === 'img2img') {
                 if (presetName === 'Model3D') {
                     currentActivity = 'img2img';
@@ -24865,6 +25556,17 @@
             }
         }
 
+        function cloneSmallRuntimeState(value, maxChars = 350000) {
+            if (!value) return null;
+            try {
+                const text = JSON.stringify(value);
+                if (text.length > maxChars) return null;
+                return JSON.parse(text);
+            } catch (error) {
+                return null;
+            }
+        }
+
         function syncTrainLoraPresetViewFromGlobal(presetName = activePreset) {
             const select = document.getElementById('trainLoraPresetSelect');
             if (!select || !trainLoraCatalog?.templates?.[presetName]) return;
@@ -24880,16 +25582,19 @@
                 if (!element) return;
                 fields[id] = element.type === 'checkbox' ? element.checked : element.value;
             });
-            persistActiveWorkflowGraphSnapshot();
+            const graphSnapshot = cloneSmallRuntimeState(activeWorkflowGraph);
+            const analysisSnapshot = cloneSmallRuntimeState(activeWorkflowAnalysis);
+            const tabsSnapshot = cloneSmallRuntimeState(workflowTabs);
+            if (graphSnapshot) persistActiveWorkflowGraphSnapshot();
             presetRuntimeStates[presetName] = {
                 version: 2,
                 savedAt: new Date().toISOString(),
                 fields,
                 loras: Array.isArray(activeLoras) ? activeLoras.map(item => ({ ...item })) : [],
-                workflowTabs: Array.isArray(workflowTabs) ? JSON.parse(JSON.stringify(workflowTabs)) : [],
+                workflowTabs: Array.isArray(tabsSnapshot) ? tabsSnapshot : [],
                 activeWorkflowId,
-                activeWorkflowAnalysis: activeWorkflowAnalysis ? JSON.parse(JSON.stringify(activeWorkflowAnalysis)) : null,
-                activeWorkflowGraph: activeWorkflowGraph ? JSON.parse(JSON.stringify(activeWorkflowGraph)) : null,
+                activeWorkflowAnalysis: analysisSnapshot,
+                activeWorkflowGraph: graphSnapshot,
                 posePanelOrder: typeof capturePosePanelOrder === 'function' ? capturePosePanelOrder() : null
             };
             persistPresetRuntimeStates();
@@ -30755,7 +31460,7 @@
             }
             if (activeWorkflowId === workflow.id) return;
             try {
-                const analysis = await nexusFetch(`/workflows/${encodeURIComponent(workflow.id)}/analysis`);
+                const analysis = await nexusFetch(`/workflows/${encodeURIComponent(workflow.id)}/analysis`, { timeoutMs: options.timeoutMs || 15000 });
                 if (serial !== workflowLoadSerial) return;
                 if (preset !== activePreset) return;
                 const inferredPreset = inferPresetFromWorkflow(analysis);
@@ -30993,13 +31698,18 @@
                 const fluxIsKlein9B = fluxIsKlein && /9b/.test(selectedFluxLower);
                 const selectedFluxEncoder = document.getElementById('textEncoderSelect')?.value || '';
                 const selectedFluxVae = document.getElementById('vaeSelect')?.value || '';
+                const selectedFluxEncoderOk = !fluxIsFlux2
+                    || (!fluxIsKlein && /mistral/i.test(selectedFluxEncoder))
+                    || (fluxIsKlein9B && /qwen[_\-. ]?3.*8b|qwen3.*8b|8b/i.test(selectedFluxEncoder))
+                    || (fluxIsKlein && !fluxIsKlein9B && /qwen[_\-. ]?3.*4b|qwen3.*4b|4b/i.test(selectedFluxEncoder));
+                const selectedFluxVaeOk = !fluxIsFlux2 || /flux[-_. ]?2.*vae|flux2.*vae|full_encoder/i.test(selectedFluxVae);
                 const fluxTextEncoder = fluxIsFlux2
-                    ? (selectedFluxEncoder && !/automatic|auto|none/i.test(selectedFluxEncoder)
+                    ? (selectedFluxEncoderOk && selectedFluxEncoder && !/automatic|auto|none/i.test(selectedFluxEncoder)
                         ? selectedFluxEncoder
                         : (fluxIsKlein ? (fluxIsKlein9B ? 'qwen_3_8b_fp8mixed.safetensors' : 'qwen_3_4b.safetensors') : 'mistral_3_small_flux2_bf16.safetensors'))
                     : (selectedFluxEncoder || 't5xxl_fp8_e4m3fn.safetensors');
                 const fluxVae = fluxIsFlux2
-                    ? (selectedFluxVae && !/automatic|auto|none/i.test(selectedFluxVae) ? selectedFluxVae : 'flux2-vae.safetensors')
+                    ? (selectedFluxVaeOk && selectedFluxVae && !/automatic|auto|none/i.test(selectedFluxVae) ? selectedFluxVae : 'flux2-vae.safetensors')
                     : (selectedFluxVae || 'flux_ae.safetensors');
                 const fluxModelSource = hasLora ? 'lora' : 'model';
                 const fluxClipSource = fluxIsFlux2 ? 'clip' : (hasLora ? 'lora' : 'clip');
@@ -32014,36 +32724,46 @@
                     ltx_loop_mid_motion_guide: false
                 },
                 model3d: {
-                    engine: 'trellis2',
-                    model: activePreset === 'Model3D' ? (selectedOption?.dataset?.model || 'microsoft/TRELLIS.2-4B') : '',
+                    engine: normalizedModel3DEngine(),
+                    model: activePreset === 'Model3D'
+                        ? (normalizedModel3DEngine() === 'triposplat' ? 'VAST-AI/TripoSplat' : (selectedOption?.dataset?.model || 'microsoft/TRELLIS.2-4B'))
+                        : '',
                     reference_mode: model3DReferenceMode,
-                    reference_images: (model3DReferenceMode === 'multi'
+                    reference_images: (normalizedModel3DEngine() !== 'triposplat' && model3DReferenceMode === 'multi'
                         ? [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean)
                         : [referenceImageDataUrl].filter(Boolean)),
                     reference_views: ['front', 'left', 'right', 'back'].map((view, index) => ({
                         view,
                         image: index === 0 ? referenceImageDataUrl : (referenceImageExtraDataUrls?.[index - 1]?.src || '')
                     })).filter(item => item.image),
-                    voxel_resolution: parseInt(document.getElementById('model3DVoxelSelect')?.value || '1024', 10),
+                    timeout_seconds: 600,
+                    voxel_resolution: parseInt(document.getElementById('model3DVoxelSelect')?.value || '512', 10),
                     mesh_faces_k: parseInt(document.getElementById('model3DFacesInput')?.value || '250', 10),
                     guidance: parseFloat(document.getElementById('model3DGuidanceInput')?.value || '7.5'),
-                    think_steps: parseInt(document.getElementById('model3DThinkStepsInput')?.value || '14', 10),
+                    think_steps: parseInt(document.getElementById('model3DThinkStepsInput')?.value || '8', 10),
                     texture_sharp: parseFloat(document.getElementById('model3DTextureSharpInput')?.value || '3'),
                     texture_details: parseFloat(document.getElementById('model3DTextureDetailsInput')?.value || '1'),
                     randomize_seed: !!document.getElementById('model3DRandomSeedToggle')?.checked,
                     decimation_target: parseInt(document.getElementById('model3DFacesInput')?.value || '250000', 10),
                     sparse_guidance: parseFloat(document.getElementById('model3DSparseGuidance')?.value || '7.5'),
                     sparse_rescale: parseFloat(document.getElementById('model3DSparseRescale')?.value || '0.7'),
-                    sparse_steps: parseInt(document.getElementById('model3DSparseSteps')?.value || '14', 10),
+                    sparse_steps: parseInt(document.getElementById('model3DSparseSteps')?.value || '8', 10),
                     sparse_rescale_t: parseInt(document.getElementById('model3DSparseRescaleT')?.value || '5', 10),
                     shape_guidance: parseFloat(document.getElementById('model3DShapeGuidance')?.value || '7.5'),
                     shape_rescale: parseFloat(document.getElementById('model3DShapeRescale')?.value || '0.5'),
-                    shape_steps: parseInt(document.getElementById('model3DShapeSteps')?.value || '14', 10),
+                    shape_steps: parseInt(document.getElementById('model3DShapeSteps')?.value || '8', 10),
                     shape_rescale_t: parseInt(document.getElementById('model3DShapeRescaleT')?.value || '3', 10),
                     material_guidance: parseFloat(document.getElementById('model3DMaterialGuidance')?.value || '1'),
                     material_rescale: parseFloat(document.getElementById('model3DMaterialRescale')?.value || '0'),
-                    material_steps: parseInt(document.getElementById('model3DMaterialSteps')?.value || '14', 10),
+                    material_steps: parseInt(document.getElementById('model3DMaterialSteps')?.value || '8', 10),
                     material_rescale_t: parseInt(document.getElementById('model3DMaterialRescaleT')?.value || '3', 10),
+                    tripo_num_gaussians: parseInt(document.getElementById('model3DTripoGaussiansSelect')?.value || '131072', 10),
+                    tripo_steps: parseInt(document.getElementById('model3DTripoStepsInput')?.value || '8', 10),
+                    tripo_cfg: parseFloat(document.getElementById('model3DTripoCfgInput')?.value || '3'),
+                    tripo_render_size: parseInt(document.getElementById('model3DTripoRenderSizeSelect')?.value || '768', 10),
+                    tripo_preview_frames: 24,
+                    tripo_remove_background: !!document.getElementById('model3DTripoRemoveBgToggle')?.checked,
+                    tripo_export_glb: document.getElementById('model3DTripoGlbToggle') ? !!document.getElementById('model3DTripoGlbToggle')?.checked : true,
                     apply_texture: !!document.getElementById('model3DApplyTextureToggle')?.checked,
                     texture_model: document.getElementById('model3DTextureModelSelect')?.value || 'sd15',
                     texture_vae: document.getElementById('model3DTextureVaeSelect')?.value || 'Automatic',
@@ -32136,6 +32856,12 @@
                     }
                 ];
             }
+            if (activePreset === 'Flux') {
+                payload.distilled_loras = payload.distilled_loras.map(item => {
+                    const installedName = installedLoraName(item?.name || '');
+                    return installedName ? { ...item, name: installedName.replaceAll('/', '\\') } : null;
+                }).filter(item => item && fluxLoraCompatibleWithSelectedModel(item.name));
+            }
             if (activePreset === 'Qwen' && currentActivity === 'img2img') {
                 payload.batch_size = 1;
                 payload.img2img.batch_count = 1;
@@ -32153,7 +32879,9 @@
             if (activePreset === 'Model3D') {
                 payload.activity = 'img2img';
                 payload.workspace = activeWorkspace === 'canvas' ? 'texture_paint' : (activeWorkspace === 'workflow' ? 'uv_map' : 'viewer');
-                payload.workflow_id = 'model3d-trellis2-meshwithvoxel-texturing-multiview';
+                payload.workflow_id = payload.model3d.engine === 'triposplat'
+                    ? 'model3d-triposplat-image-to-gaussian-splat'
+                    : 'model3d-trellis2-meshwithvoxel-texturing-multiview';
                 payload.workflow_override = null;
                 if (document.getElementById('model3DRandomSeedToggle')?.checked) payload.seed = -1;
             } else if (generatingDirectorWorkflow) {
@@ -32512,6 +33240,24 @@
             return job;
         }
 
+        async function retryModel3DGenerationAfterRequirements(payload) {
+            const previousJobId = activeGenerationJobId;
+            if (previousJobId) {
+                queuedGenerationJobIds = queuedGenerationJobIds.filter(id => id !== previousJobId);
+            }
+            activeGenerationJobId = null;
+            setGenerationProgress(1, 'Retrying Model 3D generation...', 'Requirements installed.');
+            const retryJob = await startGenerationJob(payload);
+            try {
+                setGenerationProgress(retryJob.progress || 1, retryJob.message || 'Queued generation.', `Job ${retryJob.job_id}`);
+                const response = await pollGenerationJob(retryJob.job_id, payload);
+                showToast("Generation Complete", response.message || "Output generated by Nexus backend.");
+                return response;
+            } finally {
+                queuedGenerationJobIds = queuedGenerationJobIds.filter(id => id !== retryJob.job_id);
+            }
+        }
+
         async function startLtxMotionPreprocessJob(payload) {
             return await nexusFetch('/ltx/motion-preprocess/start', {
                 method: 'POST',
@@ -32602,11 +33348,13 @@
                         .then(response => {
                             showToast("Generation Complete", response.message || "Output generated by Nexus backend.");
                         })
-                        .catch(error => {
+                        .catch(async error => {
                             if (!/cancelled/i.test(error.message || '')) {
-                                handleMissingWorkflowNodesError(error).then(handled => {
-                                    if (!handled) showToast("Generation Failed", error.message.slice(0, 180));
-                                });
+                                if (await handleMissingWorkflowNodesError(error)) return;
+                                if (payload.preset === 'Model3D' && await handleModel3DGenerationError(error, {
+                                    retryGeneration: () => retryModel3DGenerationAfterRequirements(payload)
+                                })) return;
+                                showToast("Generation Failed", error.message.slice(0, 180));
                             }
                         })
                         .finally(() => {
@@ -32617,7 +33365,9 @@
                 }
             } catch (error) {
                 if (await handleMissingWorkflowNodesError(error)) return;
-                if (payload.preset === 'Model3D' && await handleModel3DGenerationError(error)) return;
+                if (payload.preset === 'Model3D' && await handleModel3DGenerationError(error, {
+                    retryGeneration: () => retryModel3DGenerationAfterRequirements(payload)
+                })) return;
                 showToast("Queue Failed", error.message.slice(0, 180));
             }
         }
@@ -32710,7 +33460,9 @@
                 } catch (error) {
                     if (!/cancelled/i.test(error.message || '')) {
                         if (await handleMissingWorkflowNodesError(error)) return;
-                        if (payload.preset === 'Model3D' && await handleModel3DGenerationError(error)) return;
+                        if (payload.preset === 'Model3D' && await handleModel3DGenerationError(error, {
+                            retryGeneration: () => retryModel3DGenerationAfterRequirements(payload)
+                        })) return;
                         showToast("Generation Failed", error.message.slice(0, 180));
                     }
                 } finally {
@@ -33258,6 +34010,12 @@
                 syncSideMenuToWorkflowGraph({ element: event.currentTarget });
             });
             if (element) element.addEventListener('change', () => {
+                if (id === 'modelSelect' && activePreset === 'Flux') {
+                    const compatibleVae = compatibleSideAssetChoice('Flux', 'vae', document.getElementById('vaeSelect')?.value);
+                    const compatibleTextEncoder = compatibleSideAssetChoice('Flux', 'text', document.getElementById('textEncoderSelect')?.value);
+                    if (compatibleVae) setSelectValue('vaeSelect', compatibleVae);
+                    if (compatibleTextEncoder) setSelectValue('textEncoderSelect', compatibleTextEncoder);
+                }
                 updateWorkflowPreview();
                 syncSideMenuToWorkflowGraph({ element, immediate: true });
                 savePresetRuntimeState(activePreset);

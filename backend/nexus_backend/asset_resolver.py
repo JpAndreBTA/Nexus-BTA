@@ -282,7 +282,6 @@ def _resolve_flux2_text_encoder(
             return selected
         if family == "flux2_klein_4b" and any(token in selected_haystack for token in ("qwen_3_4b", "qwen3_4b", "4b")):
             return selected
-        return selected
     if family == "flux2_dev":
         return (
             _first(by_category, ["text_encoders", "clip"], ["mistral", "flux2"])
@@ -307,7 +306,6 @@ def _resolve_flux2_vae(by_category: dict[str, list[ModelFile]], selected: ModelF
         haystack = " ".join([selected.name, selected.folder, selected.relative_path]).lower()
         if "flux2" in haystack or "flux-2" in haystack or "full_encoder" in haystack:
             return selected
-        return selected
     return (
         _first(by_category, ["vae"], ["flux2", "vae"])
         or _first(by_category, ["vae"], ["flux2-vae"])

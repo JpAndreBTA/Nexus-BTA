@@ -1221,6 +1221,8 @@ def _expand_ui_subgraphs(data: dict[str, Any]) -> dict[str, Any]:
     expanded["links"] = links
     expanded["last_link_id"] = len(links)
     expanded["last_node_id"] = max((int(node.get("id")) for node in nodes if isinstance(node, dict) and str(node.get("id")).lstrip("-").isdigit()), default=0)
+    if any(isinstance(node, dict) and str(node.get("type") or node.get("class_type") or "") in subgraphs for node in nodes):
+        return _expand_ui_subgraphs(expanded)
     return expanded
 
 
@@ -1333,6 +1335,25 @@ def _patch_dynamic_ui_widget_values(class_type: str, inputs: dict[str, Any], wid
     if not isinstance(widget_values, list) or not widget_values:
         return
     lower = class_type.lower()
+    if lower == "createcamerainfo":
+        mode_value = str(widget_values[0] if len(widget_values) >= 1 else inputs.get("mode") or "orbit")
+        if mode_value == "orbit":
+            inputs.setdefault("mode", "orbit")
+            inputs.setdefault("yaw", widget_values[1] if len(widget_values) >= 2 else 35)
+            inputs.setdefault("pitch", widget_values[2] if len(widget_values) >= 3 else 30)
+            inputs.setdefault("distance", widget_values[3] if len(widget_values) >= 4 else 4)
+            offset = 4
+        else:
+            inputs.setdefault("mode", "orbit")
+            inputs.setdefault("yaw", 35)
+            inputs.setdefault("pitch", 30)
+            inputs.setdefault("distance", 4)
+            offset = 4
+        names = ["target_x", "target_y", "target_z", "roll", "fov", "zoom", "camera_type"]
+        for index, name in enumerate(names, start=offset):
+            if index < len(widget_values):
+                inputs.setdefault(name, widget_values[index])
+        return
     if lower == "resizeimagemasknode":
         resize_type = str(widget_values[0] or "")
         inputs["resize_type"] = resize_type
@@ -4612,11 +4633,11 @@ def _flux_lora_is_compatible(name: str, flux_family: str) -> bool:
     if is_flux2_model:
         if lora_is_flux1 and not lora_is_flux2:
             return False
-        if "klein" in lower and "klein" not in flux_family:
+        if "klein" in flux_family:
+            return "klein" in lower
+        if "klein" in lower:
             return False
-        if "klein" in flux_family and lora_is_flux2 and "klein" not in lower and "turbo" not in lower:
-            return False
-        return True
+        return lora_is_flux2
     return not lora_is_flux2
 
 
@@ -6138,6 +6159,7 @@ def patch_workflow(
     video_options = request.video or {}
     director_options = request.director or {}
     preset = request.preset.lower()
+    model3d_engine = str((request.model3d or {}).get("engine") or "").lower() if preset == "model3d" else ""
     director_negative_prompt = (
         str(director_options.get("local_negative_prompts") or "").strip()
         if preset == "ltx" and str(request.workspace or "").lower() == "director"
@@ -6474,7 +6496,11 @@ def patch_workflow(
             and "image" in inputs
         ):
             inputs["image"] = assets["outpaint_reference_image"]
-        elif assets.get("reference_image") and "image" in inputs and ("loadimage" in class_lower or "image" in title):
+        elif (
+            assets.get("reference_image")
+            and "image" in inputs
+            and ("loadimage" in class_lower or ("image" in title and model3d_engine != "triposplat"))
+        ):
             inputs["image"] = assets["reference_image"]
         if "batch_size" in inputs:
             batch_size_value = 1 if preset == "qwen" and request.activity == "img2img" else max(1, request.batch_size)
@@ -6531,6 +6557,7 @@ def patch_workflow(
 
     _ensure_external_vae_loader(api, assets)
     _ensure_model3d_trellis_route(api, request, assets)
+    _ensure_model3d_triposplat_route(api, request, assets)
     _ensure_ltx_outpaint_attention_mask(api, request)
     if not (preset == "ltx" and request.workflow_id == "ltx23-video-outpainting"):
         _apply_side_menu_loras(api, request)
@@ -6619,6 +6646,24 @@ def _model3d_keep_models_loaded(options: dict[str, Any], request: GenerateReques
     if policy in {"gpu", "gpuonly", "onlygpu", "cudaonly"} and limit is not None and limit >= 16:
         return True
     return False
+
+
+def _trellis2_model_name(value: Any = None) -> str:
+    allowed = {
+        "microsoft/trellis.2-4b": "microsoft/TRELLIS.2-4B",
+        "visualbruno/trellis.2-4b-fp8": "visualbruno/TRELLIS.2-4B-FP8",
+        "tencentarc/pixal3d-t": "TencentARC/Pixal3D-T",
+    }
+    key = str(value or "").strip().replace("\\", "/").lower()
+    if key in allowed:
+        return allowed[key]
+    if key.endswith("/trellis.2-4b") or key == "trellis.2-4b":
+        return "microsoft/TRELLIS.2-4B"
+    if key.endswith("/trellis.2-4b-fp8") or key == "trellis.2-4b-fp8":
+        return "visualbruno/TRELLIS.2-4B-FP8"
+    if key.endswith("/pixal3d-t") or key == "pixal3d-t":
+        return "TencentARC/Pixal3D-T"
+    return "microsoft/TRELLIS.2-4B"
 
 
 def _model3d_sparse_resolution(options: dict[str, Any]) -> int:
@@ -6826,6 +6871,8 @@ def _ensure_model3d_trellis_route(api: dict[str, Any], request: GenerateRequest,
     if str(request.preset or "").lower() != "model3d":
         return
     options = request.model3d or {}
+    if str(options.get("engine") or "trellis2").lower() == "triposplat":
+        return
     raw_refs = assets.get("reference_images") or []
     if isinstance(raw_refs, str):
         raw_refs = [raw_refs]
@@ -6876,7 +6923,7 @@ def _ensure_model3d_trellis_route(api: dict[str, Any], request: GenerateRequest,
                 elif key != "front_image":
                     inputs.pop(key, None)
         elif class_lower == "trellis2loadmodel":
-            model_name = str(options.get("model") or inputs.get("modelname") or "microsoft/TRELLIS.2-4B")
+            model_name = _trellis2_model_name(options.get("model") or inputs.get("modelname"))
             inputs["modelname"] = model_name
             inputs.pop("model", None)
             inputs["backend"] = _trellis2_attention_backend(options, request)
@@ -7070,6 +7117,181 @@ def _ensure_model3d_trellis_route(api: dict[str, Any], request: GenerateRequest,
             _set_existing_model3d_inputs(inputs, ["albedo", "albedo_mode"], _model3d_bool(options, "texture_albedo_mode", True))
     if skip_shape_cascade:
         _bypass_model3d_shape_cascade(api)
+
+
+def _ensure_model3d_triposplat_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
+    if str(request.preset or "").lower() != "model3d":
+        return
+    options = request.model3d or {}
+    if str(options.get("engine") or "").lower() != "triposplat":
+        return
+    raw_refs = assets.get("reference_images") or []
+    if isinstance(raw_refs, str):
+        raw_refs = [raw_refs]
+    image_name = next((str(item) for item in raw_refs if str(item or "").strip()), "") or str(assets.get("reference_image") or "")
+    if not image_name:
+        return
+
+    num_gaussians = max(32768, min(1048576, _model3d_int(options, "tripo_num_gaussians", 262144)))
+    runtime = getattr(request, "runtime", None)
+    limit = _number_or_none(getattr(runtime, "gpu_memory_gb", None))
+    if limit is not None and limit <= 12:
+        num_gaussians = min(num_gaussians, 262144)
+    steps = max(8, min(40, _model3d_int(options, "tripo_steps", 20)))
+    cfg = max(1.0, min(8.0, _model3d_number(options, "tripo_cfg", 3.0)))
+    render_size = max(512, min(1536, _model3d_int(options, "tripo_render_size", 1024)))
+    if limit is not None and limit <= 12:
+        render_size = min(render_size, 1024)
+    remove_background = _model3d_bool(options, "tripo_remove_background", True)
+    export_glb = _model3d_bool(options, "tripo_export_glb", True)
+    delete_nodes: set[str] = set()
+    load_image_id: str | None = None
+    conditioning_vae_ids: set[str] = set()
+    decoder_vae_ids: set[str] = set()
+    splat_file_ids: set[str] = set()
+    splat_mesh_ids: set[str] = set()
+
+    for scan_node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        scan_node_id_text = str(scan_node_id)
+        class_lower = str(node.get("class_type", "")).lower()
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        if class_lower == "triposplatconditioning":
+            vae_ref = inputs.get("vae")
+            if isinstance(vae_ref, list) and vae_ref:
+                conditioning_vae_ids.add(str(vae_ref[0]))
+        elif class_lower == "vaedecodetriposplat":
+            vae_ref = inputs.get("vae")
+            if isinstance(vae_ref, list) and vae_ref:
+                decoder_vae_ids.add(str(vae_ref[0]))
+        elif class_lower == "splattofile3d":
+            splat_file_ids.add(scan_node_id_text)
+        elif class_lower == "splattomesh":
+            splat_mesh_ids.add(scan_node_id_text)
+
+    for node_id, node in api.items():
+        if not isinstance(node, dict):
+            continue
+        node_id_text = str(node_id)
+        class_lower = str(node.get("class_type", "")).lower()
+        title = str(node.get("_meta", {}).get("title", "")).lower()
+        inputs = node.setdefault("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        if class_lower == "loadimage":
+            inputs["image"] = image_name
+            inputs["upload"] = "image"
+            load_image_id = node_id_text
+        elif class_lower == "ksampler":
+            inputs["seed"] = _trellis2_seed(request.seed)
+            inputs["steps"] = steps
+            inputs["cfg"] = cfg
+            inputs["sampler_name"] = str(options.get("tripo_sampler") or "dpmpp_2m")
+            inputs["scheduler"] = str(options.get("tripo_scheduler") or "simple")
+            inputs["denoise"] = 1
+        elif class_lower == "unetloader":
+            inputs["unet_name"] = str(options.get("tripo_model") or "triposplat_fp16.safetensors")
+            inputs["weight_dtype"] = "default"
+        elif class_lower == "clipvisionloader":
+            inputs["clip_name"] = str(options.get("tripo_clip_vision") or "dino_v3_vit_h.safetensors")
+        elif class_lower == "vaeloader":
+            if node_id_text in conditioning_vae_ids:
+                inputs["vae_name"] = "flux2-vae.safetensors"
+            elif node_id_text in decoder_vae_ids:
+                inputs["vae_name"] = "triposplat_vae_decoder_fp16.safetensors"
+            elif "flux" in title or str(inputs.get("vae_name") or "").lower().startswith("flux"):
+                inputs["vae_name"] = "flux2-vae.safetensors"
+            else:
+                inputs["vae_name"] = "triposplat_vae_decoder_fp16.safetensors"
+        elif class_lower == "loadbackgroundremovalmodel":
+            inputs["bg_removal_name"] = "birefnet.safetensors"
+        elif class_lower == "comfyswitchnode":
+            if "mask source" in title:
+                inputs["switch"] = bool(remove_background)
+            else:
+                inputs["switch"] = False
+        elif class_lower == "triposplatpreprocessimage":
+            _set_existing_model3d_inputs(inputs, ["num_gaussians", "sampling_num_gaussians", "num_gaussians_1"], num_gaussians)
+        elif class_lower == "vaedecodetriposplat":
+            _set_model3d_inputs(inputs, ["num_gaussians", "sampling_num_gaussians", "num_gaussians_1"], num_gaussians)
+        elif class_lower == "rendersplat":
+            _set_model3d_inputs(inputs, ["width"], render_size)
+            _set_model3d_inputs(inputs, ["height"], render_size)
+            _set_existing_model3d_inputs(inputs, ["frames"], _model3d_int(options, "tripo_preview_frames", 24))
+            _set_existing_model3d_inputs(inputs, ["fov"], _model3d_number(options, "tripo_fov", 75))
+            inputs.pop("camera_info", None)
+        elif class_lower == "createcamerainfo":
+            delete_nodes.add(node_id_text)
+            inputs["mode"] = "orbit"
+            inputs["mode.yaw"] = _model3d_number(options, "tripo_camera_yaw", 35)
+            inputs["mode.pitch"] = _model3d_number(options, "tripo_camera_pitch", 30)
+            inputs["mode.distance"] = _model3d_number(options, "tripo_camera_distance", 2.5)
+            inputs["target_x"] = 0
+            inputs["target_y"] = 0
+            inputs["target_z"] = 0
+            inputs["roll"] = 0
+            inputs["fov"] = _model3d_number(options, "tripo_fov", 75)
+            inputs["zoom"] = 1
+            inputs["camera_type"] = "perspective"
+        elif class_lower == "createvideo":
+            delete_nodes.add(node_id_text)
+        elif class_lower == "splattofile3d":
+            inputs["format"] = "spz"
+        elif class_lower == "saveglb":
+            mesh_ref = inputs.get("mesh")
+            if isinstance(mesh_ref, list) and mesh_ref and str(mesh_ref[0]) in splat_file_ids:
+                inputs["filename_prefix"] = "3D/TripoSplat_Splat"
+            elif isinstance(mesh_ref, list) and mesh_ref and str(mesh_ref[0]) in splat_mesh_ids:
+                inputs["filename_prefix"] = "3D/TripoSplat_Mesh"
+            else:
+                inputs["filename_prefix"] = "3D/TripoSplat_Model"
+        elif class_lower == "savevideo":
+            delete_nodes.add(node_id_text)
+        elif class_lower == "previewimage":
+            delete_nodes.add(node_id_text)
+        elif class_lower == "splattomesh":
+            _set_existing_model3d_inputs(inputs, ["resolution"], _model3d_int(options, "tripo_mesh_resolution", 256 if limit is not None and limit <= 12 else 384))
+            _set_existing_model3d_inputs(inputs, ["kernel"], _model3d_int(options, "tripo_mesh_kernel", 5))
+            _set_existing_model3d_inputs(inputs, ["smooth"], _model3d_int(options, "tripo_mesh_smooth", 2))
+            _set_existing_model3d_inputs(inputs, ["level"], _model3d_number(options, "tripo_mesh_level", 0.4))
+            _set_existing_model3d_inputs(inputs, ["min_component"], _model3d_int(options, "tripo_mesh_min_component", 500))
+            _set_existing_model3d_inputs(inputs, ["min_opacity"], _model3d_number(options, "tripo_mesh_min_opacity", 0.02))
+            _set_existing_model3d_inputs(inputs, ["color_sharpen"], _model3d_number(options, "tripo_mesh_color_sharpen", 2.0))
+
+    if not export_glb:
+        for node_id, node in api.items():
+            if not isinstance(node, dict):
+                continue
+            if str(node.get("class_type", "")).lower() == "splattomesh":
+                delete_nodes.add(str(node_id))
+    if delete_nodes:
+        for node_id, node in list(api.items()):
+            if not isinstance(node, dict):
+                continue
+            inputs = node.get("inputs")
+            if not isinstance(inputs, dict):
+                continue
+            class_lower = str(node.get("class_type", "")).lower()
+            if class_lower == "saveglb":
+                mesh_ref = inputs.get("mesh")
+                if isinstance(mesh_ref, list) and mesh_ref and str(mesh_ref[0]) in delete_nodes:
+                    delete_nodes.add(str(node_id))
+                    continue
+            for key, value in list(inputs.items()):
+                if isinstance(value, list) and value and str(value[0]) in delete_nodes:
+                    inputs.pop(key, None)
+    for node_id in delete_nodes:
+        api.pop(node_id, None)
+    if load_image_id:
+        for node in api.values():
+            if not isinstance(node, dict) or str(node.get("class_type", "")).lower() != "invertmask":
+                continue
+            inputs = node.setdefault("inputs", {})
+            if isinstance(inputs, dict) and "mask" not in inputs:
+                inputs["mask"] = [load_image_id, 1]
 
 
 def _ensure_ltx_director_frame_trim(api: dict[str, Any], request: GenerateRequest) -> None:
