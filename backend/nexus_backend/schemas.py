@@ -122,6 +122,7 @@ class RuntimeOptions(BaseModel):
     enable_pytorch_attention: bool = True
     acceleration_profile_version: int = 2
     precision: str = "auto"
+    restart_on_change: bool = False
 
 
 class SettingsUpdate(BaseModel):

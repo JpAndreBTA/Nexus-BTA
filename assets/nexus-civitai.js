@@ -783,6 +783,7 @@
     }
     mediaIndex = Math.max(0, Math.min(mediaItems.length - 1, index));
     ensureMediaModal().classList.remove("hidden");
+    window.nexusPushMobileBackTrap?.("civitaiMediaModal");
     renderMediaModal();
   }
 
@@ -1245,6 +1246,7 @@
   window.NexusCivitai = {
     open() {
       el("civitaiModal")?.classList.remove("hidden");
+      window.nexusPushMobileBackTrap?.("civitaiModal");
       wireControls();
       setInstalledOnly(false);
       resetSearchState({ clearPanel: true });

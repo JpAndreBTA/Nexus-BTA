@@ -96,6 +96,7 @@ train_lora_jobs: dict[str, dict[str, Any]] = {}
 generation_lock = asyncio.Lock()
 comfy_idle_task: asyncio.Task[None] | None = None
 last_generation_model_signature: tuple[str, str] | None = None
+last_deferred_runtime_restart_signature = ""
 _birefnet_cache: dict[str, Any] = {}
 _frame_interpolation_cache: dict[str, Any] = {}
 
@@ -5248,7 +5249,8 @@ def _apply_runtime_options(options: RuntimeOptions | None) -> bool:
     next_enable_flash = bool(getattr(options, "enable_flash_attention", False))
     next_enable_pytorch = bool(getattr(options, "enable_pytorch_attention", True))
     next_profile_version = max(2, int(getattr(options, "acceleration_profile_version", 2) or 2))
-    changed = (
+    next_restart_on_change = bool(getattr(options, "restart_on_change", False))
+    restart_required_changed = (
         _canonical_vram_policy(settings.runtime.vram_policy) != next_vram
         or _canonical_gpu_memory_gb(settings.runtime.gpu_memory_gb) != next_gpu_memory_gb
         or _canonical_attention_backend(settings.runtime.attention_backend) != next_attention
@@ -5259,6 +5261,7 @@ def _apply_runtime_options(options: RuntimeOptions | None) -> bool:
         or bool(getattr(settings.runtime, "enable_pytorch_attention", True)) != next_enable_pytorch
         or int(getattr(settings.runtime, "acceleration_profile_version", 0) or 0) != next_profile_version
     )
+    preference_changed = bool(getattr(settings.runtime, "restart_on_change", False)) != next_restart_on_change
     settings.runtime.vram_policy = next_vram
     settings.runtime.gpu_memory_gb = next_gpu_memory_gb
     settings.runtime.attention_backend = next_attention
@@ -5268,9 +5271,10 @@ def _apply_runtime_options(options: RuntimeOptions | None) -> bool:
     settings.runtime.enable_flash_attention = next_enable_flash or next_attention == "flash"
     settings.runtime.enable_pytorch_attention = next_enable_pytorch or next_attention == "pytorch"
     settings.runtime.acceleration_profile_version = next_profile_version
-    if changed:
+    settings.runtime.restart_on_change = next_restart_on_change
+    if restart_required_changed or preference_changed:
         save_settings(settings)
-    return changed
+    return restart_required_changed
 
 
 def _prepare_runtime_for_generation(request: GenerateRequest) -> None:
@@ -9771,21 +9775,36 @@ async def extras_status(job_id: str) -> dict[str, Any]:
 
 
 async def _run_generation_core(request: GenerateRequest, job_id: str | None = None) -> GenerateResponse:
-    global last_generation_model_signature
+    global last_deferred_runtime_restart_signature, last_generation_model_signature
     if not settings.runtime.auto_start_comfy and not await comfy.is_running():
         raise HTTPException(status_code=503, detail="ComfyUI runtime is not running.")
 
     try:
         _cancel_comfy_idle_release()
+        comfy_running_before_runtime_sync = await comfy.is_running()
+        restart_runtime_on_change = bool(getattr(request.runtime, "restart_on_change", False))
         _prepare_runtime_for_generation(request)
         runtime_changed = _apply_runtime_options(request.runtime)
         _resolve_generation_seed(request)
-        attention_changed = comfy.use_preset_attention_backend(request.preset)
-        if (runtime_changed or attention_changed or comfy.runtime_changed_since_start()) and await comfy.is_running():
-            if job_id:
-                _update_generation_job(job_id, {"status": "starting", "progress": 2, "message": "Restarting ComfyUI runtime"}, force=True)
-            cleanup_embedded_comfy_artifacts()
-            await comfy.restart()
+        attention_changed = comfy.use_preset_attention_backend(
+            request.preset,
+            apply=restart_runtime_on_change or not comfy_running_before_runtime_sync,
+        )
+        runtime_restart_needed = runtime_changed or attention_changed or comfy.runtime_changed_since_start()
+        if runtime_restart_needed and comfy_running_before_runtime_sync:
+            if restart_runtime_on_change:
+                if job_id:
+                    _update_generation_job(job_id, {"status": "starting", "progress": 2, "message": "Restarting ComfyUI runtime"}, force=True)
+                cleanup_embedded_comfy_artifacts()
+                await comfy.restart()
+                last_deferred_runtime_restart_signature = ""
+            else:
+                runtime_signature = comfy.runtime_signature()
+                if runtime_signature != last_deferred_runtime_restart_signature:
+                    if job_id:
+                        _update_generation_job(job_id, {"status": "preparing", "progress": 2, "message": "Runtime synced without restart; clearing VRAM"}, force=True)
+                    await comfy.free_memory(unload_models=True, free_memory=True)
+                    last_deferred_runtime_restart_signature = runtime_signature
         if job_id:
             _update_generation_job(job_id, {"status": "preparing", "progress": 4, "message": "Resolving generation assets"})
         _normalize_ltx_outpaint_workflow_scope(request)

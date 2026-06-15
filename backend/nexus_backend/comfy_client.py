@@ -188,13 +188,15 @@ class ComfyClient:
         await asyncio.sleep(1)
         await self.ensure_running()
 
-    def use_preset_attention_backend(self, preset: str) -> bool:
+    def use_preset_attention_backend(self, preset: str, apply: bool = True) -> bool:
         requested = str(preset or "").strip().lower()
         desired: str | None = None
         if requested == "qwen" and self._default_uses_sage_attention():
             desired = "xformers" if self._xformers_allowed() else "pytorch"
         if desired == self._attention_backend_override:
             return False
+        if not apply:
+            return True
         self._attention_backend_override = desired
         return True
 

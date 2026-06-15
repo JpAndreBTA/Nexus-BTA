@@ -61,6 +61,7 @@ class RuntimeSettings(BaseModel):
     enable_flash_attention: bool = False
     enable_pytorch_attention: bool = True
     acceleration_profile_version: int = 2
+    restart_on_change: bool = False
     idle_unload_seconds: int = 90
     idle_stop_seconds: int = 300
 

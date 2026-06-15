@@ -911,6 +911,16 @@
             z-index: 3;
         }
 
+        body.panel-sort-active,
+        body.panel-sort-active #leftParamsStack {
+            overflow: hidden !important;
+            touch-action: none;
+        }
+
+        body.panel-sort-active .sortable-panel.dragging {
+            touch-action: none;
+        }
+
         .sortable-panel.panel-drop-tail::after {
             content: "";
             position: absolute;
@@ -1614,6 +1624,7 @@
 
         .qwen-multiview-shell {
             --qwen-multiview-split: 50%;
+            --qwen-multiview-mobile-camera: 48%;
             display: grid;
             grid-template-columns: minmax(320px, var(--qwen-multiview-split)) 8px minmax(320px, 1fr);
             width: 100%;
@@ -1638,6 +1649,21 @@
             background: var(--nexus-red);
             opacity: 0.55;
         }
+        .qwen-multiview-shell.camera-hidden {
+            grid-template-columns: 0 0 minmax(320px, 1fr);
+        }
+        .qwen-multiview-shell.camera-hidden #qwenMultiViewCameraPane,
+        .qwen-multiview-shell.camera-hidden #qwenMultiViewDivider {
+            overflow: hidden;
+            opacity: 0;
+            pointer-events: none;
+        }
+        #qwenMultiViewCameraShowBtn {
+            display: none;
+        }
+        #qwenMultiViewCameraHideBtn {
+            display: none;
+        }
         .qwen-camera-stage {
             position: relative;
             width: min(100%, 640px);
@@ -1646,6 +1672,7 @@
             background: #080910;
             overflow: hidden;
             cursor: grab;
+            touch-action: none;
         }
         .qwen-camera-stage.is-dragging {
             cursor: grabbing;
@@ -1681,6 +1708,7 @@
             border: 2px solid rgba(255,255,255,0.8);
             cursor: grab;
             z-index: 5;
+            touch-action: none;
         }
         .qwen-camera-handle { background: #11d7c2; box-shadow: 0 0 24px rgba(17,215,194,0.65); }
         .qwen-camera-vertical-handle { background: #ff2f8d; box-shadow: 0 0 24px rgba(255,47,141,0.65); }
@@ -1816,6 +1844,7 @@
             inset: 0;
             z-index: 16;
             pointer-events: auto;
+            touch-action: none;
         }
 
         .ideogram-region-box {
@@ -1827,6 +1856,8 @@
             box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45);
             cursor: move;
             pointer-events: auto;
+            touch-action: none;
+            user-select: none;
         }
 
         .ideogram-region-box[data-type="text"] {
@@ -1888,6 +1919,7 @@
             border: 2px solid #fff;
             background: #3b82f6;
             cursor: nwse-resize;
+            touch-action: none;
         }
 
         .ideogram-region-box[data-type="text"] .ideogram-region-handle {
@@ -2174,6 +2206,759 @@
             .model3d-shell {
                 grid-template-columns: 1fr;
                 grid-template-rows: auto minmax(420px, 1fr) auto;
+            }
+        }
+
+        #mobilePanelScrim,
+        #mobileActionDock {
+            display: none;
+        }
+
+        .mobile-header-dropdown {
+            display: none;
+        }
+
+        @media (max-width: 767px) {
+            body {
+                height: 100dvh;
+                min-height: 100dvh;
+            }
+
+            body > header {
+                height: 44px !important;
+                min-height: 44px !important;
+                padding-left: 6px;
+                padding-right: 6px;
+                gap: 4px;
+                overflow-x: hidden;
+                overflow-y: visible;
+            }
+
+            body > header > div:first-child span {
+                display: none !important;
+            }
+
+            body > header > div:nth-child(2) {
+                gap: 4px;
+                min-width: 0;
+            }
+
+            #desktopPresetBar {
+                display: none !important;
+            }
+
+            #mobilePresetSelectWrap {
+                display: flex !important;
+                flex: 0 1 clamp(64px, 25vw, 108px);
+                min-width: 64px;
+                max-width: 108px;
+                height: 30px;
+                padding: 0;
+                align-items: center;
+                gap: 4px;
+            }
+
+            #mobilePresetSelect,
+            #modelSelect {
+                display: none !important;
+            }
+
+            .mobile-header-dropdown {
+                position: relative;
+            }
+
+            .mobile-header-dropdown-button {
+                width: 100%;
+                height: 30px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 4px;
+                padding: 0 5px;
+                border: 1px solid var(--nexus-border);
+                background: var(--nexus-panel);
+                color: var(--nexus-text);
+                border-radius: 2px;
+                font-size: 9px;
+                font-weight: 800;
+                text-transform: uppercase;
+            }
+
+            .mobile-header-dropdown-panel {
+                position: fixed;
+                top: 46px;
+                left: 6px;
+                right: 6px;
+                z-index: 150;
+                max-height: min(54dvh, 420px);
+                overflow-y: auto;
+                border: 1px solid var(--nexus-border);
+                background: var(--nexus-modal);
+                padding: 4px;
+                border-radius: 2px;
+            }
+
+            .mobile-header-dropdown-option {
+                min-width: 0;
+                width: 100%;
+                min-height: 34px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                padding: 7px 8px;
+                color: var(--nexus-muted);
+                background: transparent;
+                border: 0;
+                border-radius: 2px;
+                text-align: left;
+                font-size: 10px;
+                font-weight: 800;
+                text-transform: uppercase;
+            }
+
+            .mobile-header-dropdown-option.active,
+            .mobile-header-dropdown-option:hover {
+                background: var(--nexus-red);
+                color: #fff;
+            }
+
+            #mobileCheckpointDropdown {
+                display: flex !important;
+                flex: 1 1 clamp(72px, 30vw, 116px);
+                min-width: 72px;
+                max-width: 116px;
+            }
+
+            #mobilePresetDropdownButton span,
+            #mobileCheckpointDropdown .mobile-header-dropdown-button span {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                min-width: 0;
+            }
+
+            .sortable-panel > :first-child {
+                touch-action: none;
+            }
+
+            .sortable-panel:not(.dragging) {
+                touch-action: pan-y;
+            }
+
+            #globalModelSelectWrap {
+                min-width: 0 !important;
+                max-width: 0 !important;
+                height: 30px;
+                padding: 0 !important;
+                border: 0 !important;
+                overflow: hidden;
+            }
+
+            body > header > div:nth-child(2) > button[onclick="refreshModelCatalog()"],
+            body > header > div:nth-child(2) > button[onclick="openTrainLoraTab()"],
+            #templateToolsDropdown,
+            #languageSelector {
+                display: none !important;
+            }
+
+            #mobileCustomizeHeaderButton,
+            #donateSelector {
+                display: flex !important;
+            }
+
+            body > header > div:last-child {
+                gap: 4px;
+            }
+
+            body > header > div:last-child > button,
+            body > header > div:last-child > .relative > button,
+            #templateToolsButton,
+            #workflowToolsButton {
+                width: 30px;
+                min-width: 30px;
+                height: 30px;
+                padding: 0 !important;
+                justify-content: center;
+            }
+
+            body > header > div:last-child > button > span,
+            body > header > div:last-child > .relative > button > span,
+            #templateToolsButton > span,
+            #workflowToolsButton > span,
+            #templateToolsButton > .fa-chevron-down,
+            #workflowToolsButton > .fa-chevron-down,
+            #languageSelector > button > .fa-chevron-down,
+            #donateSelector > button > .fa-chevron-down {
+                display: none !important;
+            }
+
+            #workflowToolsPanel button span,
+            #templateToolsPanel button span,
+            .mobile-header-dropdown-button span,
+            .mobile-header-dropdown-option span {
+                display: inline !important;
+            }
+
+            @media (max-width: 420px) {
+                body > header {
+                    gap: 3px;
+                    padding-left: 4px;
+                    padding-right: 4px;
+                }
+
+                body > header > div:nth-child(2) {
+                    gap: 3px;
+                }
+
+                #mobilePresetSelectWrap {
+                    flex-basis: clamp(58px, 22vw, 84px);
+                    min-width: 58px;
+                    max-width: 84px;
+                }
+
+                #mobileCheckpointDropdown {
+                    flex-basis: clamp(64px, 27vw, 96px);
+                    min-width: 64px;
+                    max-width: 96px;
+                }
+
+                .mobile-header-dropdown-button {
+                    gap: 3px;
+                    padding: 0 4px;
+                    font-size: 8px;
+                }
+
+                .mobile-header-dropdown-button i {
+                    font-size: 8px !important;
+                }
+            }
+
+            @media (max-width: 360px) {
+                #mobilePresetSelectWrap {
+                    flex-basis: 54px;
+                    min-width: 54px;
+                    max-width: 66px;
+                }
+
+                #mobileCheckpointDropdown {
+                    flex-basis: 58px;
+                    min-width: 58px;
+                    max-width: 80px;
+                }
+            }
+
+            .preset-btn {
+                width: 30px;
+                height: 24px;
+                padding: 0 !important;
+                font-size: 0 !important;
+                letter-spacing: 0 !important;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .preset-btn::after {
+                content: attr(data-preset);
+                font-size: 8px;
+                font-weight: 800;
+                letter-spacing: 0;
+                line-height: 1;
+            }
+
+            .preset-btn[data-preset="SD"]::after { content: "SD"; }
+            .preset-btn[data-preset="XL"]::after { content: "XL"; }
+            .preset-btn[data-preset="Flux"]::after { content: "FX"; }
+            .preset-btn[data-preset="Qwen"]::after { content: "QW"; }
+            .preset-btn[data-preset="ZImageTurbo"]::after { content: "Z"; }
+            .preset-btn[data-preset="Lumina"]::after { content: "LU"; }
+            .preset-btn[data-preset="Wan"]::after { content: "WN"; }
+            .preset-btn[data-preset="LTX"]::after { content: "LX"; }
+            .preset-btn[data-preset="Anima"]::after { content: "AN"; }
+            .preset-btn[data-preset="Ideogram4"]::after { content: "ID"; }
+            .preset-btn[data-preset="Model3D"]::after { content: "3D"; }
+
+            body > .flex-1.flex.overflow-hidden {
+                position: relative;
+            }
+
+            body > .flex-1.flex.overflow-hidden > nav {
+                position: fixed;
+                left: 0;
+                right: 0;
+                bottom: 52px;
+                z-index: 75;
+                width: auto !important;
+                height: 42px;
+                flex-direction: row;
+                padding: 4px 8px;
+                gap: 6px;
+                border-right: 0;
+                border-top: 1px solid var(--nexus-border);
+                background: var(--nexus-bg);
+                overflow-x: auto;
+                overflow-y: hidden;
+            }
+
+            body > .flex-1.flex.overflow-hidden > nav > button {
+                width: 34px;
+                min-width: 34px;
+                height: 34px;
+            }
+
+            body > .flex-1.flex.overflow-hidden > nav > div,
+            body > .flex-1.flex.overflow-hidden > nav > button.mt-auto {
+                margin-top: 0 !important;
+            }
+
+            body > .flex-1.flex.overflow-hidden > nav > div {
+                display: none;
+            }
+
+            main {
+                width: 100%;
+                min-width: 0;
+                padding-bottom: 94px;
+            }
+
+            #leftSidebar,
+            #rightSidebar {
+                position: fixed !important;
+                top: 44px;
+                bottom: 94px;
+                z-index: 90;
+                display: flex !important;
+                width: min(86vw, 370px) !important;
+                max-width: min(86vw, 370px) !important;
+                transition: transform 180ms ease, opacity 180ms ease;
+                opacity: 0.98;
+            }
+
+            #leftSidebar {
+                left: 0;
+                border-right: 1px solid var(--nexus-border);
+                transform: translateX(-105%);
+            }
+
+            #rightSidebar {
+                right: 0;
+                border-left: 1px solid var(--nexus-border);
+                transform: translateX(105%);
+            }
+
+            body[data-mobile-panel="left"] #leftSidebar,
+            body[data-mobile-panel="right"] #rightSidebar {
+                transform: translateX(0);
+            }
+
+            #leftSidebarResizeHandle,
+            #rightSidebarResizeHandle,
+            #leftSidebarRevealBtn {
+                display: none !important;
+            }
+
+            #globalActionPanel {
+                padding: 8px;
+            }
+
+            #leftParamsStack {
+                padding: 8px;
+                gap: 10px;
+            }
+
+            #leftParamsStack textarea.flat-input {
+                min-height: 92px;
+            }
+
+            #workspaceSwitcher {
+                height: 42px;
+                padding: 4px 6px;
+                gap: 6px;
+                justify-content: center;
+            }
+
+            #workspaceSwitcher > div:first-child {
+                display: none;
+            }
+
+            #workspaceSwitcher > div:nth-child(2) {
+                min-width: 0;
+                overflow-x: auto;
+                overflow-y: hidden;
+                gap: 3px;
+            }
+
+            #workspaceSwitcher > div:last-child {
+                width: auto !important;
+                gap: 4px;
+            }
+
+            .workspace-tab {
+                width: 36px;
+                min-width: 36px;
+                height: 30px;
+                padding: 0 !important;
+                justify-content: center;
+                font-size: 0 !important;
+                gap: 0 !important;
+            }
+
+            .workspace-tab i {
+                font-size: 12px !important;
+            }
+
+            #canvasTabLabel {
+                display: none !important;
+            }
+
+            #workspaceSwitcher > div:last-child button {
+                width: 36px !important;
+                min-width: 36px !important;
+                height: 30px;
+                padding: 0 !important;
+                font-size: 0 !important;
+                gap: 0 !important;
+            }
+
+            #workspaceSwitcher > div:last-child button i {
+                font-size: 12px !important;
+            }
+
+            #workflowTabBar {
+                height: 32px;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+
+            #mainImageDisplay,
+            #mainVideoDisplay {
+                max-height: calc(100dvh - 190px) !important;
+            }
+
+            #view-viewer {
+                overscroll-behavior: contain;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            #linearMediaShell {
+                transform-origin: top left !important;
+                touch-action: pan-x pan-y;
+            }
+
+            #linearMediaShell:has(#ideogramRegionLayer:not(.hidden)) {
+                touch-action: none;
+            }
+
+            .ideogram-region-layer,
+            .ideogram-region-box,
+            .ideogram-region-handle {
+                touch-action: none !important;
+            }
+
+            .ideogram-region-toolbar {
+                left: 6px;
+                top: 6px;
+                max-width: none;
+                flex-direction: row;
+                gap: 4px;
+                padding: 4px;
+            }
+
+            .ideogram-region-toolbar .flat-button {
+                width: 28px !important;
+                height: 28px !important;
+            }
+
+            .ideogram-region-panel {
+                left: 8px;
+                right: 8px;
+                bottom: 68px;
+                width: auto;
+                max-height: 34dvh;
+                padding: 8px;
+            }
+
+            #themeCustomizerPanel {
+                position: fixed !important;
+                left: 8px !important;
+                right: 8px !important;
+                top: 50px !important;
+                bottom: 72px !important;
+                width: auto !important;
+                max-width: none !important;
+                max-height: none !important;
+                overflow-y: auto !important;
+                z-index: 140 !important;
+                padding: 10px !important;
+                border-radius: 2px;
+            }
+
+            #themeCustomizerPanel > .flex:first-child {
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            #themeCustomizerPanel > .flex:first-child p {
+                display: none;
+            }
+
+            #themeCustomizerColorGrid,
+            #panelThemeColorGrid {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 6px !important;
+            }
+
+            #themeCustomizerPanel .theme-color-cell {
+                min-width: 0;
+                min-height: 48px;
+                padding: 7px !important;
+            }
+
+            #themeCustomizerPanel .theme-color-cell input[type="color"] {
+                width: 34px !important;
+                height: 30px !important;
+                flex: 0 0 34px;
+            }
+
+            .qwen-multiview-shell {
+                grid-template-columns: 1fr;
+                grid-template-rows: minmax(240px, var(--qwen-multiview-mobile-camera)) 8px minmax(260px, 1fr);
+            }
+
+            .qwen-multiview-shell.camera-hidden {
+                grid-template-columns: 1fr;
+                grid-template-rows: 0 0 minmax(0, 1fr);
+            }
+
+            .qwen-multiview-divider {
+                cursor: row-resize;
+                min-height: 8px;
+            }
+
+            .qwen-multiview-divider::after {
+                inset: 2px 0;
+            }
+
+            .qwen-multiview-pane {
+                border-right: 0 !important;
+            }
+
+            #qwenMultiViewCameraPane > .flex-1 {
+                padding: 8px !important;
+                gap: 8px;
+            }
+
+            #qwenMultiViewCameraPane .grid.grid-cols-3 {
+                grid-template-columns: 1fr;
+            }
+
+            #qwenMultiViewCameraPane label.grid {
+                grid-template-columns: 54px minmax(0, 1fr) 42px !important;
+                gap: 8px;
+            }
+
+            .qwen-camera-stage {
+                width: min(100%, 330px);
+            }
+
+            .qwen-camera-handle,
+            .qwen-camera-vertical-handle,
+            .qwen-camera-zoom-handle {
+                width: 34px;
+                height: 34px;
+            }
+
+            .qwen-multiview-preview-toolbar {
+                opacity: 1;
+                pointer-events: auto;
+                bottom: 8px;
+                gap: 4px;
+                padding: 4px;
+            }
+
+            .qwen-multiview-shell.camera-hidden #qwenMultiViewCameraShowBtn {
+                display: flex;
+            }
+
+            #qwenMultiViewCameraHideBtn {
+                display: flex;
+            }
+
+            #viewerPlaceholder {
+                padding: 16px;
+            }
+
+            #rightSidebar .p-3.border-b {
+                padding: 8px;
+            }
+
+            #rightSidebar .flex.gap-3 {
+                gap: 10px;
+                font-size: 10px;
+            }
+
+            #galleryPanel {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+
+            #templateToolsPanel,
+            #workflowToolsPanel,
+            #languageMenu,
+            #donateMenu {
+                position: fixed !important;
+                left: 6px !important;
+                right: 6px !important;
+                top: 46px !important;
+                width: auto !important;
+                max-width: calc(100vw - 12px);
+                max-height: min(58dvh, 440px);
+                overflow-y: auto;
+                margin-top: 0 !important;
+            }
+
+            #workflowToolsPanel button,
+            #templateToolsPanel button {
+                min-height: 40px;
+            }
+
+            #civitaiModal {
+                align-items: stretch !important;
+                justify-content: stretch !important;
+                padding: 6px;
+            }
+
+            #civitaiModal > div {
+                width: 100% !important;
+                max-width: none !important;
+                height: calc(100dvh - 12px) !important;
+                max-height: none !important;
+            }
+
+            #civitaiModal .shrink-0.p-3 {
+                padding: 8px !important;
+                gap: 6px;
+            }
+
+            #civitaiModal .grid.grid-cols-1 {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) 38px;
+                gap: 6px;
+            }
+
+            #civitaiModal #civitaiUrlInput {
+                height: 34px;
+                font-size: 10px;
+            }
+
+            #civitaiModal #civitaiUrlInput + * {
+                display: none;
+            }
+
+            #civitaiModal .grid.grid-cols-1 > button {
+                width: 38px;
+                height: 34px;
+                padding: 0 !important;
+                font-size: 0;
+            }
+
+            #civitaiModal .grid.grid-cols-1 > button i {
+                margin: 0 !important;
+                font-size: 12px;
+            }
+
+            #civitaiModal .grid.grid-cols-1 > .flex,
+            #civitaiModal #civitaiTargetSelect {
+                grid-column: 1 / -1;
+            }
+
+            #civitaiModal .compat-chip {
+                min-height: 28px;
+                padding: 5px 7px;
+                font-size: 9px;
+            }
+
+            #civitaiModal #civitaiTypeButtons {
+                overflow-x: auto;
+                max-width: 100%;
+            }
+
+            #civitaiModal #civitaiTypeButtons button {
+                min-width: max-content;
+                padding: 6px 8px;
+            }
+
+            #civitaiModal #civitaiBaseModelFilter,
+            #civitaiModal #civitaiSortFilter,
+            #civitaiModal #civitaiTargetSelect {
+                max-width: none !important;
+                min-width: 130px;
+                height: 32px;
+                font-size: 10px;
+            }
+
+            #civitaiExplorerScroll {
+                min-height: 0;
+            }
+
+            #civitaiResultPanel {
+                padding: 8px !important;
+                min-height: 240px !important;
+            }
+
+            #civitaiResultPanel > * {
+                max-width: 100%;
+            }
+
+            #mobilePanelScrim {
+                position: fixed;
+                inset: 44px 0 94px;
+                z-index: 80;
+                background: rgba(0, 0, 0, 0.48);
+            }
+
+            body[data-mobile-panel="left"] #mobilePanelScrim,
+            body[data-mobile-panel="right"] #mobilePanelScrim {
+                display: block;
+            }
+
+            #mobileActionDock {
+                position: fixed;
+                left: 50%;
+                right: auto;
+                bottom: 0;
+                transform: translateX(-50%);
+                z-index: 85;
+                height: 52px;
+                display: grid;
+                grid-template-columns: repeat(5, 46px);
+                gap: 0;
+                width: min(230px, calc(100vw - 24px));
+                justify-content: center;
+                border-top: 0;
+                background: transparent;
+            }
+
+            #mobileActionDock button {
+                min-width: 0;
+                height: 51px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: transparent;
+                color: var(--nexus-muted);
+                border-radius: 0;
+            }
+
+            #mobileActionDock button.active,
+            #mobileActionDock button:hover {
+                color: #fff;
+                background: transparent;
+            }
+
+            #mobileActionDock #mobileGenerateButton {
+                background: var(--nexus-red);
+                color: #fff;
             }
         }
     </style>
@@ -2636,7 +3421,7 @@
         <!-- Central Container: Presets + Checkpoints -->
         <div class="flex flex-1 min-w-0 items-center gap-2 overflow-visible">
             <!-- UI Presets (Flat Chips) -->
-            <div class="flex w-fit max-w-[48vw] min-w-0 shrink items-center gap-1 bg-nexus-panel border border-nexus-border p-1 rounded-sm overflow-x-auto no-scrollbar">
+            <div id="desktopPresetBar" class="flex w-fit max-w-[48vw] min-w-0 shrink items-center gap-1 bg-nexus-panel border border-nexus-border p-1 rounded-sm overflow-x-auto no-scrollbar">
                 <button data-preset="SD" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'SD')">SD 1.5</button>
                 <button data-preset="XL" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'XL')">SDXL</button>
                 <button data-preset="Flux" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Flux')">FLUX</button>
@@ -2649,14 +3434,43 @@
                 <button data-preset="Ideogram4" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Ideogram4')">IDEOGRAM 4</button>
                 <button data-preset="Model3D" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Model3D')">3D MODEL</button>
             </div>
+            <div id="mobilePresetSelectWrap" class="hidden mobile-header-dropdown" title="Template">
+                <button id="mobilePresetDropdownButton" type="button" class="mobile-header-dropdown-button" onclick="toggleMobileHeaderDropdown('mobilePresetDropdownPanel', event)">
+                    <i class="fa-solid fa-layer-group text-[10px] text-nexus-red"></i>
+                    <span id="mobilePresetLabel">ANIMA</span>
+                    <i class="fa-solid fa-chevron-down text-[8px] text-nexus-muted"></i>
+                </button>
+                <select id="mobilePresetSelect" onchange="setPresetFromMobileSelect(this.value)">
+                    <option value="SD">SD</option>
+                    <option value="XL">SDXL</option>
+                    <option value="Flux">FLUX</option>
+                    <option value="Qwen">QWEN</option>
+                    <option value="ZImageTurbo">Z-IMG</option>
+                    <option value="Lumina">LUMINA</option>
+                    <option value="Wan">WAN</option>
+                    <option value="LTX">LTX</option>
+                    <option value="Anima">ANIMA</option>
+                    <option value="Ideogram4">Ideogram-4</option>
+                    <option value="Model3D">3D</option>
+                </select>
+                <div id="mobilePresetDropdownPanel" class="mobile-header-dropdown-panel hidden"></div>
+            </div>
 
             <!-- Global Model / Checkpoint Selector -->
-            <div class="flex items-center gap-1.5 bg-nexus-panel border border-nexus-border rounded-sm px-2 py-1 min-w-[160px] max-w-[220px] shrink">
+            <div id="globalModelSelectWrap" class="flex items-center gap-1.5 bg-nexus-panel border border-nexus-border rounded-sm px-2 py-1 min-w-[160px] max-w-[220px] shrink">
                 <i class="fa-solid fa-cubes text-[10px] text-nexus-red"></i>
                 <select id="modelSelect" onchange="applyModelFromSelect()" class="w-full min-w-0 bg-transparent text-[10px] text-white outline-none cursor-pointer appearance-none truncate">
                     <option>Loading model folder...</option>
                 </select>
                 <i class="fa-solid fa-chevron-down text-[8px] text-nexus-muted"></i>
+            </div>
+            <div id="mobileCheckpointDropdown" class="hidden mobile-header-dropdown" title="Checkpoint">
+                <button id="mobileCheckpointDropdownButton" type="button" class="mobile-header-dropdown-button" onclick="toggleMobileHeaderDropdown('mobileCheckpointDropdownPanel', event)">
+                    <i class="fa-solid fa-cubes text-[10px] text-nexus-red"></i>
+                    <span id="mobileCheckpointLabel">Model</span>
+                    <i class="fa-solid fa-chevron-down text-[8px] text-nexus-muted"></i>
+                </button>
+                <div id="mobileCheckpointDropdownPanel" class="mobile-header-dropdown-panel hidden"></div>
             </div>
             <button onclick="refreshModelCatalog()" class="h-[30px] w-[30px] flex items-center justify-center bg-nexus-panel border border-nexus-border text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm transition-colors shrink-0" title="Refresh models">
                 <i class="fa-solid fa-rotate text-[11px]"></i>
@@ -2699,6 +3513,10 @@
                     <button type="button" onclick="closeWorkflowTools();saveActiveWorkflow()" class="w-full flat-button h-9 px-3 text-[10px] font-bold uppercase flex items-center gap-2 justify-start" title="Save active Nexus workflow"><i class="fa-solid fa-floppy-disk text-nexus-red w-4"></i><span>Save Workflow</span></button>
                 </div>
             </div>
+            <button id="mobileCustomizeHeaderButton" type="button" onclick="openThemeCustomizer()" class="hidden text-nexus-muted hover:text-white transition-colors items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Customize theme and side-menu boxes">
+                <i class="fa-solid fa-palette text-nexus-red"></i>
+                <span class="hidden 2xl:inline text-[10px]">Customize</span>
+            </button>
             <div class="relative" id="languageSelector">
                 <button onclick="toggleLanguageMenu(event)" class="text-nexus-muted hover:text-white transition-colors flex items-center gap-1.5 border border-nexus-border bg-nexus-panel px-2 py-1 rounded-sm" title="Translate page">
                     <i class="fa-solid fa-language text-nexus-red"></i>
@@ -2736,6 +3554,7 @@
         </div>
     </header>
     <div id="google_translate_element" class="hidden"></div>
+    <div id="mobilePanelScrim" onclick="closeMobilePanels()" aria-hidden="true"></div>
 
     <!-- MAIN APP WRAPPER -->
     <div class="flex-1 flex overflow-hidden">
@@ -4134,13 +4953,14 @@
             <!-- View 1b: Qwen MultiView Camera -->
             <div id="view-multiview" class="hidden flex-1 dots-bg relative overflow-hidden">
                 <div id="qwenMultiViewShell" class="qwen-multiview-shell">
-                    <section class="qwen-multiview-pane flex flex-col border-r border-nexus-border min-h-0">
+                    <section id="qwenMultiViewCameraPane" class="qwen-multiview-pane flex flex-col border-r border-nexus-border min-h-0">
                         <div class="h-11 border-b border-nexus-border bg-nexus-panel/90 px-3 flex items-center justify-between gap-3 shrink-0">
                             <div class="min-w-0">
                                 <p class="text-[11px] font-bold uppercase tracking-wider text-white"><i class="fa-solid fa-camera-rotate text-nexus-red mr-2"></i>MultiView Camera</p>
                                 <p id="qwenMultiViewPromptPreview" class="text-[9px] font-mono text-nexus-muted truncate">&lt;sks&gt; front-right quarter view elevated shot medium shot</p>
                             </div>
                             <div class="flex items-center gap-1 shrink-0">
+                                <button id="qwenMultiViewCameraHideBtn" type="button" onclick="toggleQwenMultiViewCameraPanel(true)" class="h-8 w-8 items-center justify-center bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Hide camera controls"><i class="fa-regular fa-eye-slash text-[11px]"></i></button>
                                 <button type="button" onclick="resetQwenMultiViewCamera()" class="h-8 w-8 flex items-center justify-center bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Reset camera"><i class="fa-solid fa-crosshairs text-[11px]"></i></button>
                                 <button type="button" onclick="openReferenceImagePicker()" class="h-8 w-8 flex items-center justify-center bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Load source image"><i class="fa-solid fa-image text-[11px]"></i></button>
                             </div>
@@ -4169,13 +4989,16 @@
                         </div>
                     </section>
                     <div id="qwenMultiViewDivider" class="qwen-multiview-divider" onpointerdown="beginQwenMultiViewDividerDrag(event)" title="Drag to resize MultiView panes"></div>
-                    <section class="qwen-multiview-pane flex flex-col min-h-0">
+                    <section id="qwenMultiViewPreviewPane" class="qwen-multiview-pane flex flex-col min-h-0">
                         <div class="h-11 border-b border-nexus-border bg-nexus-panel/90 px-3 flex items-center justify-between gap-3 shrink-0">
                             <div class="flex items-center gap-2 min-w-0">
                                 <span class="text-[11px] font-bold uppercase tracking-wider text-white"><i class="fa-regular fa-image text-nexus-red mr-2"></i>Live Preview</span>
                                 <span id="qwenMultiViewMeta" class="text-[9px] font-mono text-nexus-muted truncate">Side menu synced</span>
                             </div>
-                            <button type="button" onclick="generateQwenMultiView()" class="h-8 px-3 bg-nexus-red hover:bg-nexus-darkRed text-white text-[10px] font-bold uppercase rounded-sm flex items-center gap-1.5"><i class="fa-solid fa-play"></i><span>Generate MultiView</span></button>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <button id="qwenMultiViewCameraShowBtn" type="button" onclick="toggleQwenMultiViewCameraPanel(false)" class="h-8 w-8 items-center justify-center bg-zinc-950 border border-nexus-border text-nexus-muted hover:text-white rounded-sm" title="Show camera controls"><i class="fa-solid fa-camera-rotate text-[11px]"></i></button>
+                                <button type="button" onclick="generateQwenMultiView()" class="h-8 px-3 bg-nexus-red hover:bg-nexus-darkRed text-white text-[10px] font-bold uppercase rounded-sm flex items-center gap-1.5"><i class="fa-solid fa-play"></i><span>Generate MultiView</span></button>
+                            </div>
                         </div>
                         <div id="qwenMultiViewPreviewDrop" class="flex-1 min-h-0 relative bg-black flex items-center justify-center overflow-hidden">
                             <img id="qwenMultiViewPreviewImage" class="qwen-multiview-preview-media hidden" src="" alt="Qwen MultiView output">
@@ -5871,8 +6694,9 @@
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">FlashAttention<span class="toggle-switch"><input id="flashAttentionToggle" class="attention-toggle" value="FlashAttention" type="checkbox"><span class="toggle-track"></span></span></label>
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">xFormers<span class="toggle-switch"><input id="xformersToggle" class="attention-toggle" value="xFormers" type="checkbox" checked><span class="toggle-track"></span></span></label>
                         <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">PyTorch SDPA<span class="toggle-switch"><input id="pytorchAttentionToggle" class="attention-toggle" value="PyTorch SDPA" type="checkbox" checked><span class="toggle-track"></span></span></label>
+                        <label class="flex items-center justify-between bg-nexus-bg border border-nexus-border p-2 rounded-sm text-xs text-white">Auto restart on runtime change<span class="toggle-switch"><input id="runtimeRestartOnGenerateToggle" type="checkbox"><span class="toggle-track"></span></span></label>
                         <button type="button" onclick="saveRuntimeSettings()" class="flat-button py-2 text-[10px] font-bold uppercase w-full"><i class="fa-solid fa-floppy-disk mr-1 text-nexus-red"></i> Save Runtime</button>
-                        <p id="settingsRuntimeStatus" class="text-[10px] text-nexus-muted leading-4">Choose a compatible set. Priority follows Sage, then Flash, then xFormers, then PyTorch SDPA.</p>
+                        <p id="settingsRuntimeStatus" class="text-[10px] text-nexus-muted leading-4">Choose a compatible set. Generation frees VRAM on template/model changes; restart only happens when auto-restart is enabled.</p>
                     </section>
                     <section class="data-card p-3 space-y-3">
                         <span class="mini-label">Model Paths</span>
@@ -6077,6 +6901,13 @@
                 <i class="fa-solid fa-folder-open text-nexus-muted text-[10px]"></i>
             </div>
         </aside>
+        <nav id="mobileActionDock" aria-label="Mobile actions">
+            <button type="button" onclick="toggleMobilePanel('left')" title="Side menu"><i class="fa-solid fa-sliders"></i></button>
+            <button type="button" onclick="switchView('viewer'); closeMobilePanels()" title="Linear Viewer"><i class="fa-regular fa-image"></i></button>
+            <button id="mobileGenerateButton" type="button" onclick="simulateGeneration()" title="Generate"><i id="mobileGenerateIcon" class="fa-solid fa-play"></i></button>
+            <button type="button" onclick="openNodesPanel()" title="Nodes"><i class="fa-solid fa-diagram-project"></i></button>
+            <button type="button" onclick="openGalleryPanel()" title="Gallery"><i class="fa-solid fa-images"></i></button>
+        </nav>
 
     </div>
 
@@ -6625,6 +7456,8 @@
         let generationUiActive = false;
         let generationCancelRequested = false;
         let generationProgressState = { progress: 0, message: 'Preparing generation...', subtext: 'Backend queue is starting.' };
+        let generationRuntimeReleasePending = false;
+        let lastGenerationRuntimeReleaseSignature = '';
         let referenceImageMeta = { src: '', label: '', width: 0, height: 0 };
         let pendingLtxOutpaintDimensions = null;
         let qwenMultiViewOutputItem = null;
@@ -6639,7 +7472,8 @@
             horizontal: 54,
             vertical: 29,
             zoom: 2.1,
-            cameraView: false
+            cameraView: false,
+            cameraPanelHidden: false
         });
         let activeCanvasTool = 'Move';
         let inpaintMaskDirty = false;
@@ -6707,6 +7541,195 @@
             leftCollapsed: nexusSafeStorage.get('nexus_left_sidebar_collapsed', 'false') === 'true'
         };
         let sidebarResizeDrag = null;
+
+        function isMobileUiLayout() {
+            return window.matchMedia?.('(max-width: 767px)').matches;
+        }
+
+        function setMobilePanel(panel = '') {
+            if (!document.body) return;
+            if (!isMobileUiLayout()) {
+                delete document.body.dataset.mobilePanel;
+                return;
+            }
+            if (panel === 'left' || panel === 'right') document.body.dataset.mobilePanel = panel;
+            else delete document.body.dataset.mobilePanel;
+        }
+
+        function closeMobilePanels() {
+            setMobilePanel('');
+        }
+
+        function toggleMobilePanel(panel) {
+            if (!isMobileUiLayout()) return false;
+            const current = document.body?.dataset?.mobilePanel || '';
+            setMobilePanel(current === panel ? '' : panel);
+            return true;
+        }
+
+        const mobilePresetDropdownItems = [
+            ['SD', 'SD 1.5'],
+            ['XL', 'SDXL'],
+            ['Flux', 'FLUX'],
+            ['Qwen', 'QWEN'],
+            ['ZImageTurbo', 'Z-IMG'],
+            ['Lumina', 'LUMINA'],
+            ['Wan', 'WAN'],
+            ['LTX', 'LTX 2.3'],
+            ['Anima', 'ANIMA'],
+            ['Ideogram4', 'Ideogram-4'],
+            ['Model3D', '3D']
+        ];
+
+        function closeMobileHeaderDropdowns(exceptId = '') {
+            ['mobilePresetDropdownPanel', 'mobileCheckpointDropdownPanel'].forEach(id => {
+                if (id !== exceptId) document.getElementById(id)?.classList.add('hidden');
+            });
+        }
+
+        function toggleMobileHeaderDropdown(panelId, event = null) {
+            event?.preventDefault();
+            event?.stopPropagation();
+            if (!isMobileUiLayout()) return;
+            if (panelId === 'mobilePresetDropdownPanel') renderMobilePresetDropdown();
+            if (panelId === 'mobileCheckpointDropdownPanel') renderMobileCheckpointDropdown();
+            const panel = document.getElementById(panelId);
+            if (!panel) return;
+            const willOpen = panel.classList.contains('hidden');
+            closeMobileHeaderDropdowns(willOpen ? panelId : '');
+            panel.classList.toggle('hidden', !willOpen);
+        }
+
+        function pushMobileBackTrap(kind = 'overlay') {
+            if (!isMobileUiLayout() || !window.history?.pushState) return;
+            history.pushState({ ...(history.state || {}), nexusMobileBackTrap: kind, nexusMobileBackToken: Date.now() }, '', location.href);
+        }
+
+        function elementVisible(id) {
+            const element = document.getElementById(id);
+            return !!element && !element.classList.contains('hidden');
+        }
+
+        function handleMobileBackTrap() {
+            if (!isMobileUiLayout()) return false;
+            if (elementVisible('civitaiMediaModal')) {
+                window.NexusCivitai?.closeMedia?.();
+                pushMobileBackTrap('civitaiModal');
+                return true;
+            }
+            if (elementVisible('civitaiModal')) {
+                if (window.NexusCivitai?.handleEscape?.()) {
+                    pushMobileBackTrap('civitaiModal');
+                    return true;
+                }
+                window.NexusCivitai?.close?.();
+                return true;
+            }
+            if (elementVisible('loraModal')) {
+                closeLoraModal();
+                return true;
+            }
+            if (elementVisible('mobilePresetDropdownPanel') || elementVisible('mobileCheckpointDropdownPanel')) {
+                closeMobileHeaderDropdowns();
+                return true;
+            }
+            if (document.body?.dataset?.mobilePanel) {
+                closeMobilePanels();
+                return true;
+            }
+            return false;
+        }
+
+        window.nexusPushMobileBackTrap = pushMobileBackTrap;
+
+        function mobileDropdownOption(label, active, attrs = '') {
+            return `<button type="button" class="mobile-header-dropdown-option ${active ? 'active' : ''}" ${attrs}><span class="truncate">${escapeHtml(label)}</span>${active ? '<i class="fa-solid fa-check text-[10px]"></i>' : ''}</button>`;
+        }
+
+        function renderMobilePresetDropdown() {
+            const panel = document.getElementById('mobilePresetDropdownPanel');
+            if (!panel) return;
+            panel.innerHTML = mobilePresetDropdownItems
+                .map(([value, label]) => mobileDropdownOption(label, value === activePreset, `data-mobile-preset="${escapeHtml(value)}"`))
+                .join('');
+        }
+
+        function selectedMobileCheckpointLabel() {
+            const option = document.getElementById('modelSelect')?.selectedOptions?.[0];
+            if (!option || option.disabled || !option.value) return 'No models';
+            const label = option?.dataset?.model || option?.textContent?.trim() || 'Model';
+            return label.replace(/\.(safetensors|gguf|ckpt|pt|pth|bin)$/i, '');
+        }
+
+        function renderMobileCheckpointDropdown() {
+            const panel = document.getElementById('mobileCheckpointDropdownPanel');
+            const select = document.getElementById('modelSelect');
+            if (!panel || !select) return;
+            const options = [...select.options].filter(option => !option.disabled && option.value);
+            panel.innerHTML = options.length
+                ? options.map((option, index) => {
+                    const label = option.dataset.model || option.textContent.trim() || option.value;
+                    return mobileDropdownOption(label, option.selected, `data-mobile-model-index="${index}"`);
+                }).join('')
+                : '<div class="p-3 text-[10px] font-mono text-nexus-muted">No models found.</div>';
+        }
+
+        function syncMobilePresetSelect() {
+            const select = document.getElementById('mobilePresetSelect');
+            if (select && select.value !== activePreset) select.value = activePreset;
+            const label = document.getElementById('mobilePresetLabel');
+            const item = mobilePresetDropdownItems.find(([value]) => value === activePreset);
+            if (label) {
+                const fullLabel = item?.[1] || activePreset;
+                const compact = window.innerWidth <= 360
+                    ? { Ideogram4: 'ID4', ZImageTurbo: 'Z', Model3D: '3D', LTX: 'LTX' }[activePreset]
+                    : window.innerWidth <= 420
+                    ? { Ideogram4: 'ID4', ZImageTurbo: 'Z-IMG', Model3D: '3D' }[activePreset]
+                    : '';
+                label.innerText = compact || fullLabel;
+                label.title = fullLabel;
+            }
+            renderMobilePresetDropdown();
+        }
+
+        function setPresetFromMobileSelect(presetName) {
+            const button = document.querySelector(`.preset-btn[data-preset="${CSS.escape(String(presetName || ''))}"]`);
+            setPreset(button, presetName);
+        }
+
+        function selectMobilePresetDropdown(presetName) {
+            closeMobileHeaderDropdowns();
+            setPresetFromMobileSelect(presetName);
+        }
+
+        function syncMobileCheckpointDropdown() {
+            const label = document.getElementById('mobileCheckpointLabel');
+            if (label) {
+                const fullLabel = selectedMobileCheckpointLabel();
+                const maxChars = window.innerWidth <= 360 ? 7 : (window.innerWidth <= 420 ? 10 : 14);
+                label.innerText = fullLabel.length > maxChars ? `${fullLabel.slice(0, Math.max(2, maxChars - 3))}...` : fullLabel;
+                label.title = fullLabel;
+            }
+            renderMobileCheckpointDropdown();
+        }
+
+        function selectMobileCheckpointDropdown(index) {
+            const select = document.getElementById('modelSelect');
+            const options = [...(select?.options || [])].filter(option => !option.disabled && option.value);
+            const option = options[index];
+            if (!select || !option) return;
+            select.value = option.value;
+            closeMobileHeaderDropdowns();
+            applyModelFromSelect();
+            syncMobileCheckpointDropdown();
+        }
+
+        window.addEventListener('resize', () => {
+            if (!isMobileUiLayout()) return;
+            syncMobilePresetSelect();
+            syncMobileCheckpointDropdown();
+            applyLinearViewerZoom();
+        });
 
         let galleryItems = [];
         const MODEL3D_PREFLIGHT_CACHE_KEY = 'nexus_model3d_preflight_cache_v1';
@@ -7334,7 +8357,7 @@
                     body: JSON.stringify({ runtime: captureRuntimeSettings() })
                 });
                 renderRuntimeSettings(platformSettings);
-                if (status) status.innerText = 'Runtime saved. Restart happens automatically when generation needs it.';
+                if (status) status.innerText = 'Runtime saved. Generation will not restart Comfy unless auto-restart is enabled.';
                 showToast('Runtime Saved', 'Attention preferences are synced with the backend.');
             } catch (error) {
                 if (status) {
@@ -9960,6 +10983,7 @@
             ideogramRegionDrag = {
                 id: region.id,
                 mode: 'draw',
+                pointerId: event.pointerId,
                 startX: event.clientX,
                 startY: event.clientY,
                 rect,
@@ -9967,8 +10991,10 @@
                 anchorY: y,
                 region: { ...region }
             };
+            event.currentTarget?.setPointerCapture?.(event.pointerId);
             window.addEventListener('pointermove', moveIdeogramRegionDrag);
             window.addEventListener('pointerup', endIdeogramRegionDrag, { once: true });
+            window.addEventListener('pointercancel', endIdeogramRegionDrag, { once: true });
         }
 
         function removeIdeogramRegion(id) {
@@ -10122,18 +11148,23 @@
             ideogramRegionDrag = {
                 id,
                 mode: resizeMode,
+                pointerId: event.pointerId,
                 openEditorOnEnd,
                 startX: event.clientX,
                 startY: event.clientY,
                 rect,
                 region: { ...region }
             };
+            event.currentTarget?.setPointerCapture?.(event.pointerId);
             window.addEventListener('pointermove', moveIdeogramRegionDrag);
             window.addEventListener('pointerup', endIdeogramRegionDrag, { once: true });
+            window.addEventListener('pointercancel', endIdeogramRegionDrag, { once: true });
         }
 
         function moveIdeogramRegionDrag(event) {
             if (!ideogramRegionDrag) return;
+            event.preventDefault();
+            event.stopPropagation();
             const { id, mode, startX, startY, rect, region } = ideogramRegionDrag;
             const dx = ((event.clientX - startX) / rect.width) * 100;
             const dy = ((event.clientY - startY) / rect.height) * 100;
@@ -10177,6 +11208,7 @@
             const mode = ideogramRegionDrag?.mode || '';
             const openEditorOnEnd = !!ideogramRegionDrag?.openEditorOnEnd;
             window.removeEventListener('pointermove', moveIdeogramRegionDrag);
+            window.removeEventListener('pointercancel', endIdeogramRegionDrag);
             ideogramRegionDrag = null;
             persistIdeogramRegions();
             if (mode === 'draw') ideogramRegionEditorOpen = true;
@@ -11847,12 +12879,15 @@
                 const profile = modelProfiles[selectedPreset];
                 if (selectedPreset === 'Model3D') {
                     select.innerHTML = `<option value="microsoft/TRELLIS.2-4B" data-preset="Model3D" data-model="microsoft/TRELLIS.2-4B">microsoft/TRELLIS.2-4B</option>`;
+                    syncMobileCheckpointDropdown();
                     return;
                 }
                 select.innerHTML = `<option value="" disabled selected>No models found in ${escapeHtml(profile.folder)}</option>`;
+                syncMobileCheckpointDropdown();
                 return;
             }
             select.innerHTML = groups.join('');
+            syncMobileCheckpointDropdown();
         }
 
         function setSelectValue(id, value) {
@@ -11879,6 +12914,7 @@
                 if (id === 'modelSelect') {
                     const first = [...select.options].find(option => !option.disabled);
                     select.value = first?.value || '';
+                    syncMobileCheckpointDropdown();
                     return;
                 }
                 if (strictLtxLoraSelects.has(id)) {
@@ -11896,6 +12932,7 @@
                 select.insertAdjacentHTML('afterbegin', `<option>${value}</option>`);
             }
             select.value = value;
+            if (id === 'modelSelect') syncMobileCheckpointDropdown();
         }
 
         function samplerLabel(value) {
@@ -12202,6 +13239,7 @@
             const hadExtraReferences = referenceExtraSlotsEnabled();
             const leaveDirectorView = activeWorkspace === 'director' && !(presetName === 'LTX' && profile.template === 'LTX_DIRECTOR_SUITE');
             activePreset = presetName;
+            if (previousPreset !== presetName) generationRuntimeReleasePending = true;
             if (previousPreset !== presetName && poseStudioViewport?.initialized) {
                 releasePoseStudio3D();
                 if (currentActivity === 'pose') requestAnimationFrame(() => ensurePoseStudio3D().then(() => renderPoseStudioCanvas()));
@@ -12365,6 +13403,7 @@
             if (presetName && modelProfiles[presetName]) {
                 modelProfiles[presetName].checkpoint = option.dataset.model || option.textContent.trim();
                 modelProfiles[presetName].selectedModelPath = option.value;
+                generationRuntimeReleasePending = true;
                 if (presetName === activePreset) {
                     const previousWorkflowPreset = activeWorkflowGraph?.nexus_preset;
                     if (!activeWorkflowGraph || previousWorkflowPreset !== presetName) {
@@ -12743,7 +13782,12 @@
 
         function renderQwenMultiView() {
             const shell = document.getElementById('qwenMultiViewShell');
-            if (shell) shell.style.setProperty('--qwen-multiview-split', `${Math.max(32, Math.min(68, Number(qwenMultiViewState.split || 50)))}%`);
+            const split = Math.max(32, Math.min(68, Number(qwenMultiViewState.split || 50)));
+            if (shell) {
+                shell.style.setProperty('--qwen-multiview-split', `${split}%`);
+                shell.style.setProperty('--qwen-multiview-mobile-camera', `${split}%`);
+                shell.classList.toggle('camera-hidden', isMobileUiLayout() && !!qwenMultiViewState.cameraPanelHidden);
+            }
             const source = document.getElementById('qwenCameraSourceImage');
             const empty = document.getElementById('qwenCameraSourceEmpty');
             if (source) {
@@ -12798,6 +13842,12 @@
 
         function resetQwenMultiViewCamera() {
             qwenMultiViewState = { ...qwenMultiViewState, horizontal: 54, vertical: 29, zoom: 2.1 };
+            saveQwenMultiViewState();
+            renderQwenMultiView();
+        }
+
+        function toggleQwenMultiViewCameraPanel(force = null) {
+            qwenMultiViewState.cameraPanelHidden = force === null ? !qwenMultiViewState.cameraPanelHidden : !!force;
             saveQwenMultiViewState();
             renderQwenMultiView();
         }
@@ -12862,6 +13912,7 @@
             const shell = document.getElementById('qwenMultiViewShell');
             if (!shell) return;
             event.preventDefault();
+            qwenMultiViewState.cameraPanelHidden = false;
             qwenMultiViewDrag = { type: 'divider', pointerId: event.pointerId, shell };
             event.currentTarget.setPointerCapture?.(event.pointerId);
         }
@@ -12903,9 +13954,12 @@
 
         function moveQwenMultiViewDrag(event) {
             if (!qwenMultiViewDrag) return;
+            event.preventDefault();
             if (qwenMultiViewDrag.type === 'divider') {
                 const rect = qwenMultiViewDrag.shell.getBoundingClientRect();
-                const percent = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 100;
+                const percent = isMobileUiLayout()
+                    ? ((event.clientY - rect.top) / Math.max(1, rect.height)) * 100
+                    : ((event.clientX - rect.left) / Math.max(1, rect.width)) * 100;
                 qwenMultiViewState.split = Math.max(32, Math.min(68, percent));
                 saveQwenMultiViewState();
                 renderQwenMultiView();
@@ -13068,6 +14122,8 @@
             const overlayCancelText = document.getElementById('overlayCancelGenerationText');
             const generateIcon = document.getElementById('generateBtnIcon');
             const generateText = document.getElementById('generateBtnText');
+            const mobileGenerateButton = document.getElementById('mobileGenerateButton');
+            const mobileGenerateIcon = document.getElementById('mobileGenerateIcon');
             const directorRenderButton = document.getElementById('ltxDirectorRenderButton');
             const directorRenderIcon = document.getElementById('ltxDirectorRenderIcon');
             const directorRenderText = document.getElementById('ltxDirectorRenderText');
@@ -13083,6 +14139,15 @@
                 generateButton.classList.toggle('opacity-70', active);
                 generateButton.classList.toggle('cursor-not-allowed', active);
                 generateButton.title = active ? 'Generation is running' : idleGenerateLabel();
+            }
+            if (mobileGenerateButton) {
+                mobileGenerateButton.disabled = active;
+                mobileGenerateButton.classList.toggle('opacity-70', active);
+                mobileGenerateButton.classList.toggle('cursor-not-allowed', active);
+                mobileGenerateButton.title = active ? 'Generation is running' : idleGenerateLabel();
+            }
+            if (mobileGenerateIcon) {
+                mobileGenerateIcon.className = active ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-play';
             }
             if (queueButton) {
                 queueButton.disabled = generationCancelRequested;
@@ -13673,8 +14738,15 @@
             const shell = document.getElementById('linearMediaShell');
             const label = document.getElementById('linearZoomLabel');
             const transform = `scale(${viewerZoom})`;
-            if (shell) shell.style.transform = transform;
+            if (shell) {
+                shell.style.transform = transform;
+                const mobileZoom = isMobileUiLayout();
+                shell.style.transformOrigin = mobileZoom ? 'top left' : 'center';
+                shell.style.marginRight = mobileZoom && viewerZoom > 1 ? `${Math.round((viewerZoom - 1) * 100)}%` : '';
+                shell.style.marginBottom = mobileZoom && viewerZoom > 1 ? `${Math.round((viewerZoom - 1) * 75)}vh` : '';
+            }
             if (label) label.innerText = `${Math.round(viewerZoom * 100)}%`;
+            requestAnimationFrame(renderIdeogramRegions);
         }
 
         function zoomLinearViewer(delta) {
@@ -18142,6 +19214,10 @@
         function openNodesPanel() {
             const rightSidebar = document.getElementById('rightSidebar');
             const handle = document.getElementById('rightSidebarResizeHandle');
+            if (isMobileUiLayout() && document.body?.dataset?.mobilePanel === 'right' && activeRightSidebarTab === 'nodes') {
+                closeMobilePanels();
+                return;
+            }
             if (rightSidebar) {
                 rightSidebar.classList.remove('hidden');
                 rightSidebar.classList.add('lg:flex');
@@ -18149,6 +19225,7 @@
             handle?.classList.remove('hidden');
             switchSidebarTab('nodes');
             renderPinnedNodes();
+            if (isMobileUiLayout()) setMobilePanel('right');
         }
 
         function renderPinnedNodes() {
@@ -24496,12 +25573,43 @@
             const presetName = 'Model3D';
             const profile = modelProfiles[presetName];
             if (!profile) return;
+            if (activePreset !== presetName) generationRuntimeReleasePending = true;
             activePreset = presetName;
             currentActivity = 'img2img';
             activeWorkspace = 'viewer';
             localStorage.setItem('nexus_active_preset', activePreset);
             localStorage.setItem('nexus_current_activity', currentActivity);
             localStorage.setItem('nexus_active_workspace', activeWorkspace);
+            activatePresetButton(presetName);
+            populateModelSelect(presetName);
+            setSelectValue('modelSelect', profile.selectedModelPath || profile.backendModels?.[0]?.value || 'microsoft/TRELLIS.2-4B');
+            setElementOptions('vaeSelect', profile.vae);
+            setElementOptions('textEncoderSelect', profile.encoder);
+            setElementOptions('distillSelect', profile.variants);
+            setElementOptions('precisionSelect', profile.precision);
+            setElementOptions('samplingMethodSelect', uniqueOptions([profile.sampler, ...(profile.samplers || []), ...GLOBAL_SAMPLERS]));
+            setElementOptions('schedulerSelect', uniqueOptions([profile.scheduler, ...(profile.schedulers || []), ...GLOBAL_SCHEDULERS]));
+            setSelectValue('vaeSelect', profile.vae?.[0] || 'Automatic');
+            setSelectValue('textEncoderSelect', profile.encoder?.[0] || 'Automatic');
+            setSelectValue('samplingMethodSelect', profile.sampler || profile.samplers?.[0] || 'Trellis2 image-to-3D');
+            setSelectValue('schedulerSelect', profile.scheduler || profile.schedulers?.[0] || 'O-Voxel');
+            setDimensions(profile.width, profile.height);
+            document.getElementById('templateName').innerText = profile.template;
+            document.getElementById('compatSummary').innerText = profile.summary;
+            document.getElementById('videoRouteText').innerText = profile.video || '3D template: image references generate GLB/PBR output.';
+            document.getElementById('compatChips').innerHTML = profile.chips.map(chip => `<span class="compat-chip"><i class="fa-solid fa-check text-nexus-red"></i> ${chip}</span>`).join('');
+            activeWorkflowId = null;
+            activeWorkflowAnalysis = null;
+            activeWorkflowGraph = defaultGraphForPreset(presetName);
+            if (activeWorkflowGraph) activeWorkflowGraph.nexus_preset = presetName;
+            activeWorkflowLinks = activeWorkflowGraph?.links || [];
+            selectedWorkflowNodeId = null;
+            selectedWorkflowNodeIds = new Set();
+            pendingWorkflowConnection = null;
+            workflowTabs = [];
+            updateWorkflowPreview();
+            updateModelTypeUi();
+            updateModel3DTemplateUi();
             document.body?.classList.add('model3d-template');
             document.getElementById('model3DEnginePanel')?.classList.remove('hidden');
             document.getElementById('model3DLeftTemplatePanel')?.classList.remove('hidden');
@@ -24512,12 +25620,15 @@
                 button.classList.toggle('bg-nexus-red', button.dataset.preset === presetName);
                 button.classList.toggle('text-white', button.dataset.preset === presetName);
             });
+            syncMobilePresetSelect();
+            syncMobileCheckpointDropdown();
         }
 
         // Preset selector (Top Bar)
         function setPreset(btn, presetName) {
             if (presetName === 'Model3D') {
                 activateModel3DPreset(btn);
+                syncMobilePresetSelect();
                 return;
             }
             if (currentActivity === 'pose') {
@@ -24538,6 +25649,7 @@
                     switchView('viewer');
                 }
                 syncPromptEnhanceControlsUi();
+                syncMobilePresetSelect();
                 return;
             }
             savePresetRuntimeState(activePreset);
@@ -24567,6 +25679,7 @@
                 setActiveActivityButton(getActivityButton(currentActivity));
                 switchView('viewer');
             }
+            syncMobilePresetSelect();
         }
 
         function hideAllMainViews() {
@@ -24889,6 +26002,20 @@
         let isGalleryOpen = true;
         function toggleAdjusts() {
             const sidebar = document.getElementById('rightSidebar');
+            if (isMobileUiLayout()) {
+                if (document.body?.dataset?.mobilePanel === 'right') {
+                    closeMobilePanels();
+                    return;
+                }
+                if (sidebar) {
+                    sidebar.classList.remove('hidden');
+                    sidebar.classList.add('lg:flex');
+                }
+                isGalleryOpen = true;
+                switchSidebarTab(activeRightSidebarTab || 'nodes');
+                setMobilePanel('right');
+                return;
+            }
             isGalleryOpen = !isGalleryOpen;
             if (isGalleryOpen) {
                 sidebar.classList.remove('hidden');
@@ -25021,6 +26148,22 @@
         }
 
         document.addEventListener('click', event => {
+            const mobilePresetOption = event.target.closest?.('[data-mobile-preset]');
+            if (mobilePresetOption) {
+                event.preventDefault();
+                event.stopPropagation();
+                selectMobilePresetDropdown(mobilePresetOption.dataset.mobilePreset);
+                return;
+            }
+            const mobileModelOption = event.target.closest?.('[data-mobile-model-index]');
+            if (mobileModelOption) {
+                event.preventDefault();
+                event.stopPropagation();
+                selectMobileCheckpointDropdown(Number(mobileModelOption.dataset.mobileModelIndex));
+                return;
+            }
+            const mobileHeaderDropdown = event.target.closest?.('.mobile-header-dropdown');
+            if (!mobileHeaderDropdown) closeMobileHeaderDropdowns();
             const selector = document.getElementById('languageSelector');
             if (selector && !selector.contains(event.target)) document.getElementById('languageMenu')?.classList.add('hidden');
             const donateSelector = document.getElementById('donateSelector');
@@ -25030,6 +26173,17 @@
             const workflowSelector = document.getElementById('workflowToolsDropdown');
             if (workflowSelector && !workflowSelector.contains(event.target)) closeWorkflowTools();
         });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && isMobileUiLayout()) closeMobilePanels();
+        });
+        window.addEventListener('resize', () => {
+            if (!isMobileUiLayout()) closeMobilePanels();
+            syncSortablePanelDragMode();
+            if (document.getElementById('qwenMultiViewShell')) renderQwenMultiView();
+        });
+        window.addEventListener('popstate', () => {
+            handleMobileBackTrap();
+        });
         document.getElementById('templateToolsButton')?.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
@@ -25037,6 +26191,7 @@
             toggleTemplateTools();
         });
         renderLanguageMenu();
+        syncMobilePresetSelect();
         if (nexusLanguage !== 'en') loadGoogleTranslateScript();
 
         function applySidebarLayout() {
@@ -25063,6 +26218,11 @@
         }
 
         function toggleLeftSidebar(force = null) {
+            if (isMobileUiLayout()) {
+                if (force === true) closeMobilePanels();
+                else toggleMobilePanel('left');
+                return;
+            }
             sidebarLayout.leftCollapsed = force === null ? !sidebarLayout.leftCollapsed : !!force;
             localStorage.setItem('nexus_left_sidebar_collapsed', String(sidebarLayout.leftCollapsed));
             applySidebarLayout();
@@ -25114,6 +26274,20 @@
             const sidebar = document.getElementById('rightSidebar');
             if (!sidebar) return;
             const isOpenOnGallery = isGalleryOpen && !sidebar.classList.contains('hidden') && activeRightSidebarTab === 'gallery';
+            if (isMobileUiLayout()) {
+                if (document.body?.dataset?.mobilePanel === 'right' && activeRightSidebarTab === 'gallery') {
+                    closeMobilePanels();
+                    return;
+                }
+                isGalleryOpen = true;
+                sidebar.classList.remove('hidden');
+                sidebar.classList.add('lg:flex');
+                switchSidebarTab('gallery');
+                setMobilePanel('right');
+                renderGallerySidebar();
+                syncGalleryFromBackend({ quiet: true, force: true, focusNewest: false, updateLinearOutput: false });
+                return;
+            }
             if (isOpenOnGallery) {
                 sidebar.classList.add('hidden');
                 sidebar.classList.remove('lg:flex');
@@ -25216,6 +26390,28 @@
             return panel?.firstElementChild || null;
         }
 
+        function setPanelSortScrollLock(container, locked) {
+            document.body?.classList.toggle('panel-sort-active', !!locked);
+            if (!container) return;
+            if (locked) {
+                container.dataset.panelSortPreviousOverflow = container.style.overflowY || '';
+                container.style.overflowY = 'hidden';
+                return;
+            }
+            if ('panelSortPreviousOverflow' in container.dataset) {
+                container.style.overflowY = container.dataset.panelSortPreviousOverflow;
+                delete container.dataset.panelSortPreviousOverflow;
+            } else {
+                container.style.overflowY = '';
+            }
+        }
+
+        function syncSortablePanelDragMode() {
+            document.querySelectorAll('[data-panel-key][draggable]').forEach(panel => {
+                panel.draggable = !isMobileUiLayout();
+            });
+        }
+
         function setPanelCollapsed(panel, collapsed) {
             if (!panel?.dataset?.panelKey) return;
             panelCollapsedState[panel.dataset.panelKey] = !!collapsed;
@@ -25284,6 +26480,7 @@
                 if (event.button !== 0 || event.target.closest('input, textarea, select, button, a')) return;
                 const container = panel.parentElement;
                 if (!container || !sortableContainers().includes(container)) return;
+                if (isMobileUiLayout()) event.preventDefault();
                 const startX = event.clientX;
                 const startY = event.clientY;
                 let dragging = false;
@@ -25295,9 +26492,10 @@
                         sortableDrag = { type: 'panel', element: panel };
                         panel.classList.add('dragging');
                         panel.dataset.dragJustEnded = '1';
+                        setPanelSortScrollLock(container, true);
                     }
                     moveEvent.preventDefault();
-                    const afterElement = getDragAfterElement(container, moveEvent.clientY, '[data-panel-key][draggable="true"]');
+                    const afterElement = getDragAfterElement(container, moveEvent.clientY, '[data-panel-key]');
                     showPanelDropIndicator(container, afterElement);
                     if (afterElement) container.insertBefore(panel, afterElement);
                     else container.appendChild(panel);
@@ -25312,6 +26510,7 @@
                         savePanelOrder();
                         setTimeout(() => { delete panel.dataset.dragJustEnded; }, 180);
                     }
+                    setPanelSortScrollLock(container, false);
                 };
                 document.addEventListener('pointermove', onMove);
                 document.addEventListener('pointerup', onUp, { once: true });
@@ -25341,7 +26540,7 @@
                 afterElement.classList.add('panel-drop-target');
                 return;
             }
-            const last = [...container.querySelectorAll('[data-panel-key][draggable="true"]')]
+            const last = [...container.querySelectorAll('[data-panel-key]')]
                 .filter(element => element !== sortableDrag?.element && element.parentElement === container)
                 .at(-1);
             last?.classList.add('panel-drop-tail');
@@ -25352,6 +26551,10 @@
             document.querySelectorAll('[data-panel-key][draggable="true"]').forEach(panel => {
                 ensurePanelTitleControls(panel);
                 panel.ondragstart = event => {
+                    if (isMobileUiLayout()) {
+                        event.preventDefault();
+                        return;
+                    }
                     const title = panelTitleRegion(panel);
                     const titleDrag = title?.contains(event.target);
                     const handleDrag = event.target.closest('.panel-drag-handle');
@@ -25373,11 +26576,12 @@
                     savePanelOrder();
                 };
             });
+            syncSortablePanelDragMode();
             sortableContainers().forEach(container => {
                 container.ondragover = event => {
                     if (sortableDrag?.type !== 'panel' || sortableDrag.element.parentElement !== container) return;
                     event.preventDefault();
-                    const afterElement = getDragAfterElement(container, event.clientY, '[data-panel-key][draggable="true"]');
+                    const afterElement = getDragAfterElement(container, event.clientY, '[data-panel-key]');
                     showPanelDropIndicator(container, afterElement);
                     if (afterElement) container.insertBefore(sortableDrag.element, afterElement);
                     else container.appendChild(sortableDrag.element);
@@ -25938,6 +27142,9 @@
 
         function openThemeCustomizer() {
             closeTemplateTools();
+            closeWorkflowTools?.();
+            closeMobileHeaderDropdowns?.();
+            if (isMobileUiLayout()) closeMobilePanels();
             switchActivity('txt2img', getActivityButton('txt2img'));
             switchView('viewer');
             document.getElementById('themeCustomizerPanel')?.classList.remove('hidden');
@@ -30725,7 +31932,8 @@
                 enable_flash_attention: !!document.getElementById('flashAttentionToggle')?.checked,
                 enable_pytorch_attention: !!document.getElementById('pytorchAttentionToggle')?.checked,
                 acceleration_profile_version: 2,
-                precision: document.getElementById('precisionSelect')?.value || 'Auto'
+                precision: document.getElementById('precisionSelect')?.value || 'Auto',
+                restart_on_change: !!document.getElementById('runtimeRestartOnGenerateToggle')?.checked
             };
             if (
                 shouldPreferXformersForPreset(activePreset)
@@ -30756,6 +31964,8 @@
                 setSelectValue('vramPolicySelect', label);
             }
             if (runtime.gpu_memory_gb) syncGpuMemoryLimit(runtime.gpu_memory_gb);
+            const restartToggle = document.getElementById('runtimeRestartOnGenerateToggle');
+            if (restartToggle) restartToggle.checked = !!runtime.restart_on_change;
             syncRuntimeBadges();
         }
 
@@ -33271,7 +34481,41 @@
             return job;
         }
 
+        function generationRuntimeSignature(payload) {
+            return [
+                payload?.preset || '',
+                payload?.model_path || '',
+                payload?.model_name || '',
+                payload?.template || ''
+            ].map(value => String(value || '').trim()).join('|');
+        }
+
+        async function releaseRuntimeMemoryForChangedGeneration(payload, options = {}) {
+            const signature = generationRuntimeSignature(payload);
+            const changedAfterGeneration = !!lastGenerationRuntimeReleaseSignature && signature && signature !== lastGenerationRuntimeReleaseSignature;
+            if (!backendOnline || (!generationRuntimeReleasePending && !changedAfterGeneration)) {
+                lastGenerationRuntimeReleaseSignature = signature || lastGenerationRuntimeReleaseSignature;
+                return false;
+            }
+            try {
+                if (!options.quiet) {
+                    setGenerationProgress(1, 'Clearing previous template/model from VRAM...', 'No backend restart.');
+                }
+                const result = await nexusFetch('/comfy/free', { method: 'POST' });
+                renderRuntimeMemorySnapshot(result.memory || {});
+                generationRuntimeReleasePending = false;
+                lastGenerationRuntimeReleaseSignature = signature;
+                return true;
+            } catch (error) {
+                console.warn('Runtime memory release before generation failed.', error);
+                generationRuntimeReleasePending = false;
+                lastGenerationRuntimeReleaseSignature = signature;
+                return false;
+            }
+        }
+
         async function startGenerationJob(payload) {
+            await releaseRuntimeMemoryForChangedGeneration(payload);
             const job = await nexusFetch('/generate/start', {
                 method: 'POST',
                 body: JSON.stringify(payload)
@@ -33521,6 +34765,7 @@
 
         // Lora Modal functions
         function openLoraModal() {
+            if (isMobileUiLayout()) closeMobilePanels();
             pendingLoraSelections = {};
             workflowConceptLorasForPreset(activePreset).forEach(lora => {
                 const name = lora.relative_name || lora.name;
@@ -33535,6 +34780,7 @@
             renderLoraLibrary();
             renderPendingLoraSliders();
             document.getElementById('loraModal').classList.remove('hidden');
+            pushMobileBackTrap('loraModal');
         }
 
         function applyPendingLoraSelection(options = {}) {
