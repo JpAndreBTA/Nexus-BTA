@@ -2502,6 +2502,7 @@ def build_basic_qwen_image_workflow(
     refs = [name for name in (reference_image_names or ([reference_image_name] if reference_image_name else [])) if name][:3]
     reference_image_name = refs[0] if refs else None
     is_qwen_inpaint = bool(reference_image_name and mask_image_name and _uses_inpaint_mask_mode(request))
+    qwen_batch_size = 1 if reference_image_name else max(1, request.batch_size)
     qwen_denoise = 1.0 if _uses_outpaint_extend_mode(request) else request.img2img.denoise
     qwen_multiview = _qwen_multiview_options(request)
     qwen_pose_studio = _qwen_pose_studio_handoff(request)
@@ -2516,6 +2517,14 @@ def build_basic_qwen_image_workflow(
         qwen_denoise = 1.0
     if qwen_pose_studio:
         qwen_denoise = 1.0
+    qwen_linear_view = (
+        bool(refs)
+        and _truthy_option((request.video or {}).get("qwen_linear_view"))
+        and not qwen_multiview["enabled"]
+        and not qwen_pose_studio
+        and not is_qwen_inpaint
+    )
+    qwen_reference_method_available = "FluxKontextMultiReferenceLatentMethod" in available_nodes
     loader_class = "UnetLoaderGGUF" if checkpoint_name.lower().endswith(".gguf") else "UNETLoader"
     loader_inputs = (
         {"unet_name": checkpoint_name}
@@ -2660,8 +2669,15 @@ def build_basic_qwen_image_workflow(
             elif qwen_pose_studio:
                 workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
                 workflow[scale_id]["_meta"]["title"] = f"Resize QWEN POSE Reference {index} To Output Frame"
+            elif qwen_linear_view:
+                workflow[scale_id] = _qwen_flux_image_scale_node([load_id, 0], f"QWEN Linear Reference {index} FluxKontext Scale")
             elif not is_qwen_inpaint:
-                workflow[scale_id] = _qwen_flux_image_scale_node([load_id, 0], f"QWEN Reference {index} FluxKontext Scale")
+                workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
+                workflow[scale_id]["_meta"]["title"] = (
+                    "Resize QWEN Linear Reference To Side Menu"
+                    if qwen_linear_view and index == 1
+                    else f"Resize QWEN Reference {index} To Side Menu"
+                )
             else:
                 workflow[scale_id] = _image_scale_node([load_id, 0], width, height)
                 workflow[scale_id]["_meta"]["title"] = f"Resize QWEN Reference {index} To Side Menu"
@@ -2685,8 +2701,14 @@ def build_basic_qwen_image_workflow(
             if qwen_pose_studio:
                 workflow["7"] = {
                     "class_type": "EmptySD3LatentImage",
-                    "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
+                    "inputs": {"width": width, "height": height, "batch_size": qwen_batch_size},
                     "_meta": {"title": "QWEN POSE Studio Empty Latent"},
+                }
+            elif qwen_linear_view:
+                workflow["7"] = {
+                    "class_type": "VAEEncode",
+                    "inputs": {"pixels": qwen_base_image_ref, "vae": ["3", 0]},
+                    "_meta": {"title": "QWEN Linear Encode Base Reference"},
                 }
             else:
                 workflow["7"] = {
@@ -2695,17 +2717,17 @@ def build_basic_qwen_image_workflow(
                     "_meta": {"title": "Encode QWEN Base Reference"},
                 }
             workflow["10"]["inputs"]["latent_image"] = ["7", 0]
-            qwen_text_encoder_class = "TextEncodeQwenImageEdit" if qwen_pose_studio else "TextEncodeQwenImageEditPlus"
-            qwen_positive_inputs = (
-                {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0], "image": qwen_text_image_ref}
-                if qwen_pose_studio
-                else {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0], "image1": qwen_text_image_ref}
-            )
-            qwen_negative_inputs = (
-                {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0], "image": qwen_text_image_ref}
-                if qwen_pose_studio
-                else {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0], "image1": qwen_text_image_ref}
-            )
+            qwen_text_encoder_class = "TextEncodeQwenImageEditPlus" if qwen_linear_view else ("TextEncodeQwenImageEdit" if (qwen_pose_studio or len(refs) == 1) else "TextEncodeQwenImageEditPlus")
+            if qwen_linear_view:
+                qwen_positive_inputs = {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0], "image1": qwen_text_image_ref}
+                qwen_negative_inputs = {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0], "image1": qwen_text_image_ref}
+            else:
+                qwen_positive_inputs = (
+                    {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0], "image": qwen_text_image_ref}
+                    if (qwen_pose_studio or len(refs) == 1)
+                    else {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0], "image1": qwen_text_image_ref}
+                )
+                qwen_negative_inputs = {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0]}
             workflow["5"] = {
                 "class_type": qwen_text_encoder_class,
                 "inputs": qwen_positive_inputs,
@@ -2716,10 +2738,9 @@ def build_basic_qwen_image_workflow(
                 "inputs": qwen_negative_inputs,
                 "_meta": {"title": "QWEN Negative Prompt"},
             }
-            if is_qwen_inpaint or qwen_multiview["enabled"] or qwen_pose_studio:
-                workflow["10"]["inputs"]["positive"] = ["5", 0]
-                workflow["10"]["inputs"]["negative"] = ["6", 0]
-            else:
+            workflow["10"]["inputs"]["positive"] = ["5", 0]
+            workflow["10"]["inputs"]["negative"] = ["6", 0]
+            if qwen_reference_method_available and qwen_linear_view:
                 workflow["15"] = {
                     "class_type": "FluxKontextMultiReferenceLatentMethod",
                     "inputs": {"conditioning": ["5", 0], "reference_latents_method": "index_timestep_zero"},
@@ -2737,8 +2758,14 @@ def build_basic_qwen_image_workflow(
             if qwen_pose_studio:
                 workflow["7"] = {
                     "class_type": "EmptySD3LatentImage",
-                    "inputs": {"width": width, "height": height, "batch_size": max(1, request.batch_size)},
+                    "inputs": {"width": width, "height": height, "batch_size": qwen_batch_size},
                     "_meta": {"title": "QWEN POSE Studio Empty Latent"},
+                }
+            elif qwen_linear_view:
+                workflow["7"] = {
+                    "class_type": "VAEEncode",
+                    "inputs": {"pixels": qwen_base_image_ref, "vae": ["3", 0]},
+                    "_meta": {"title": "QWEN Linear Encode Base Reference"},
                 }
             else:
                 workflow["7"] = {
@@ -2749,34 +2776,11 @@ def build_basic_qwen_image_workflow(
             workflow["10"]["inputs"]["latent_image"] = ["7", 0]
             positive_inputs = {"clip": ["2", 0], "prompt": qwen_prompt_input, "vae": ["3", 0]}
             negative_inputs = {"clip": ["2", 0], "prompt": negative_prompt_text, "vae": ["3", 0]}
-            previous_conditioning: list[Any] = ["5", 0]
-            previous_negative_conditioning: list[Any] = ["6", 0]
             for index, _name in enumerate(refs, start=1):
                 image_ref = qwen_conditioning_image_refs.get(index, [str(59 + index), 0])
                 positive_inputs[f"image{index}"] = image_ref
-                negative_inputs[f"image{index}"] = image_ref
-                if is_qwen_inpaint or qwen_pose_studio:
-                    continue
-                encode_id = str(69 + index)
-                ref_id = str(79 + index)
-                negative_ref_id = str(89 + index)
-                workflow[encode_id] = {
-                    "class_type": "VAEEncode",
-                    "inputs": {"pixels": image_ref, "vae": ["3", 0]},
-                    "_meta": {"title": f"Encode Reference {index} Latent"},
-                }
-                workflow[ref_id] = {
-                    "class_type": "ReferenceLatent",
-                    "inputs": {"conditioning": previous_conditioning, "latent": [encode_id, 0]},
-                    "_meta": {"title": f"Reference Latent {index}"},
-                }
-                workflow[negative_ref_id] = {
-                    "class_type": "ReferenceLatent",
-                    "inputs": {"conditioning": previous_negative_conditioning, "latent": [encode_id, 0]},
-                    "_meta": {"title": f"Negative Reference Latent {index}"},
-                }
-                previous_conditioning = [ref_id, 0]
-                previous_negative_conditioning = [negative_ref_id, 0]
+                if qwen_linear_view:
+                    negative_inputs[f"image{index}"] = image_ref
             workflow["5"] = {
                 "class_type": "TextEncodeQwenImageEditPlus",
                 "inputs": positive_inputs,
@@ -2787,18 +2791,17 @@ def build_basic_qwen_image_workflow(
                 "inputs": negative_inputs,
                 "_meta": {"title": "QWEN Negative Prompt"},
             }
-            if is_qwen_inpaint or qwen_multiview["enabled"] or qwen_pose_studio:
-                workflow["10"]["inputs"]["positive"] = ["5", 0]
-                workflow["10"]["inputs"]["negative"] = ["6", 0]
-            else:
+            workflow["10"]["inputs"]["positive"] = ["5", 0]
+            workflow["10"]["inputs"]["negative"] = ["6", 0]
+            if qwen_reference_method_available and qwen_linear_view:
                 workflow["15"] = {
                     "class_type": "FluxKontextMultiReferenceLatentMethod",
-                    "inputs": {"conditioning": previous_conditioning, "reference_latents_method": "index_timestep_zero"},
+                    "inputs": {"conditioning": ["5", 0], "reference_latents_method": "index_timestep_zero"},
                     "_meta": {"title": "QWEN Reference Method"},
                 }
                 workflow["16"] = {
                     "class_type": "FluxKontextMultiReferenceLatentMethod",
-                    "inputs": {"conditioning": previous_negative_conditioning, "reference_latents_method": "index_timestep_zero"},
+                    "inputs": {"conditioning": ["6", 0], "reference_latents_method": "index_timestep_zero"},
                     "_meta": {"title": "QWEN Negative Reference Method"},
                 }
                 workflow["10"]["inputs"]["positive"] = ["15", 0]
@@ -4998,7 +5001,8 @@ def build_basic_ltx_img2video_workflow(
     reference_image_ref: list[Any] = ["3", 0]
     if not text_to_video:
         start_frame_image_ref: list[Any] = ["3", 0]
-        if use_first_last_guides:
+        resize_start_reference = not motion_transfer_route
+        if resize_start_reference:
             preprocess_nodes["171"] = {
                 "class_type": "ImageResizeKJv2",
                 "inputs": {
@@ -5006,13 +5010,13 @@ def build_basic_ltx_img2video_workflow(
                     "width": width,
                     "height": height,
                     "upscale_method": "lanczos",
-                    "keep_proportion": "pad",
+                    "keep_proportion": "resize",
                     "pad_color": "0, 0, 0",
                     "crop_position": "center",
                     "divisible_by": 32,
                     "device": "cpu",
                 },
-                "_meta": {"title": "Resize LTX Start Frame Like Official Workflow"},
+                "_meta": {"title": "Resize LTX Start Frame To Requested Size"},
             }
             start_frame_image_ref = ["171", 0]
         preprocess_nodes["22"] = {
@@ -5075,7 +5079,7 @@ def build_basic_ltx_img2video_workflow(
                         "width": width,
                         "height": height,
                         "upscale_method": "lanczos",
-                        "keep_proportion": "pad",
+                        "keep_proportion": "resize",
                         "pad_color": "0, 0, 0",
                         "crop_position": "center",
                         "divisible_by": 32,
@@ -5638,7 +5642,7 @@ def build_basic_ltx_img2video_workflow(
                                 "width": final_width,
                                 "height": final_height,
                                 "upscale_method": "lanczos",
-                                "keep_proportion": "pad",
+                                "keep_proportion": "resize",
                                 "pad_color": "0, 0, 0",
                                 "crop_position": "center",
                                 "divisible_by": 32,
@@ -7419,8 +7423,10 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
     raw_refs = assets.get("reference_images") or []
     if isinstance(raw_refs, str):
         raw_refs = [raw_refs]
-    multi_reference = len([str(name) for name in raw_refs if str(name or "").strip()][:3]) > 1
-    use_qwen_plus_route = True
+    refs = [str(name) for name in raw_refs if str(name or "").strip()][:3]
+    multi_reference = len(refs) > 1
+    use_qwen_plus_route = multi_reference
+    qwen_linear_view = _truthy_option((request.video or {}).get("qwen_linear_view"))
 
     loader_id = _find_qwen_reference_loader_id(api, 1, reference_image) or _add_load_image_node(api, reference_image, "Reference Image 1")
     if not loader_id:
@@ -7459,7 +7465,10 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
             inputs["prompt"] = request.negative_prompt if "negative" in title else request.prompt
         if vae_ref and "vae" not in inputs:
             inputs["vae"] = vae_ref
-        if use_qwen_plus_route:
+        if "negative" in title:
+            for key in ("image", "image1", "image2", "image3"):
+                inputs.pop(key, None)
+        elif use_qwen_plus_route:
             inputs.pop("image", None)
             inputs["image1"] = qwen_base_ref
         else:
@@ -7482,7 +7491,9 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
             continue
         class_lower = str(node.get("class_type", "")).lower()
         title = str(node.get("_meta", {}).get("title", "")).lower()
-        if class_lower == "vaeencode" and ("qwen" in title or "reference" in title or "base" in title):
+        if class_lower in {"vaeencode", "emptyqwenimagelayeredlatentimage"} and (
+            "qwen" in title or "reference" in title or "base" in title or "latent" in title
+        ):
             latent_id = str(node_id)
             break
     if not latent_id:
@@ -7490,39 +7501,34 @@ def _ensure_qwen_image_edit_route(api: dict[str, Any], request: GenerateRequest,
         api[latent_id] = {
             "class_type": "VAEEncode",
             "inputs": {},
-            "_meta": {"title": "Encode QWEN Base Reference"},
+            "_meta": {"title": "QWEN Linear Encode Base Reference" if qwen_linear_view else "Encode QWEN Base Reference"},
         }
     else:
         api[latent_id]["class_type"] = "VAEEncode"
+        api[latent_id].setdefault("_meta", {})["title"] = (
+            "QWEN Linear Encode Base Reference" if qwen_linear_view else "Encode QWEN Base Reference"
+        )
     latent_inputs = api[latent_id].setdefault("inputs", {})
+    latent_inputs.clear()
     latent_inputs["pixels"] = qwen_base_ref
     if vae_ref:
         latent_inputs["vae"] = vae_ref
     sampler_inputs = api[sampler_id].setdefault("inputs", {})
-    if use_qwen_plus_route:
-        sampler_inputs["latent_image"] = [latent_id, 0]
-    else:
-        api[latent_id]["class_type"] = "VAEEncode"
-        latent_inputs.clear()
-        latent_inputs["pixels"] = qwen_base_ref
-        if vae_ref:
-            latent_inputs["vae"] = vae_ref
-        sampler_inputs["latent_image"] = [latent_id, 0]
+    sampler_inputs["latent_image"] = [latent_id, 0]
+    if not use_qwen_plus_route:
         model_loader_ref = _find_qwen_model_loader_ref(api)
         if model_loader_ref:
             sampler_inputs["model"] = model_loader_ref
     if positive_node_id:
-        if use_qwen_plus_route:
-            method_id = _ensure_conditioning_method_node(api, "QWEN Reference Method", [positive_node_id, 0])
-            sampler_inputs["positive"] = [method_id, 0]
-        else:
-            sampler_inputs["positive"] = [positive_node_id, 0]
+        sampler_inputs["positive"] = [positive_node_id, 0]
     if negative_node_id:
-        if use_qwen_plus_route:
-            method_id = _ensure_conditioning_method_node(api, "QWEN Negative Reference Method", [negative_node_id, 0])
-            sampler_inputs["negative"] = [method_id, 0]
-        else:
-            sampler_inputs["negative"] = [negative_node_id, 0]
+        sampler_inputs["negative"] = [negative_node_id, 0]
+    if qwen_linear_view and positive_node_id:
+        method_id = _ensure_conditioning_method_node(api, "QWEN Reference Method", [positive_node_id, 0])
+        sampler_inputs["positive"] = [method_id, 0]
+    if qwen_linear_view and negative_node_id:
+        method_id = _ensure_conditioning_method_node(api, "QWEN Negative Reference Method", [negative_node_id, 0])
+        sampler_inputs["negative"] = [method_id, 0]
 
 
 def _ensure_qwen_multi_reference_route(api: dict[str, Any], request: GenerateRequest, assets: dict[str, Any]) -> None:
@@ -7591,6 +7597,10 @@ def _ensure_qwen_multi_reference_route(api: dict[str, Any], request: GenerateReq
         inputs.pop("image", None)
         if vae_ref and "vae" not in inputs:
             inputs["vae"] = vae_ref
+        if "negative" in title:
+            for index in range(1, 6):
+                inputs.pop(f"image{index}", None)
+            continue
         for index, ref in enumerate(loader_refs, start=1):
             inputs[f"image{index}"] = ref
 

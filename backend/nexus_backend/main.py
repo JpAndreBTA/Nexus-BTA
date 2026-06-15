@@ -1205,6 +1205,15 @@ def _ensure_ltx_default_distilled_loras(request: GenerateRequest, assets: dict[s
             additions.append(DistilledLoraSelection(name=omni_name, strength=LTX_OMNICINE_DEFAULT_STRENGTH))
     if additions:
         request.distilled_loras.extend(additions)
+    cleaned: dict[str, DistilledLoraSelection] = {}
+    for item in request.distilled_loras:
+        normalized = _normalize_lora_key(getattr(item, "name", ""))
+        if not normalized or normalized in {"none", "automatic", "auto"}:
+            continue
+        previous = cleaned.get(normalized)
+        if previous is None or float(getattr(item, "strength", 0) or 0) > float(getattr(previous, "strength", 0) or 0):
+            cleaned[normalized] = item
+    request.distilled_loras = list(cleaned.values())
 
 
 def _is_omnicine_lora_name(value: object) -> bool:
@@ -2557,6 +2566,12 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
 def _generation_activity_label(request: GenerateRequest) -> str:
     if request.activity != "img2img":
         return request.activity
+    if (
+        request.preset.lower() == "qwen"
+        and str(request.workspace or "").lower() == "viewer"
+        and _truthy((request.video or {}).get("qwen_linear_view"))
+    ):
+        return "img2img"
     base_video = bool((request.img2img.base_video or "").strip())
     refs = [value for value in _reference_image_values(request) if str(value or "").strip()]
     if base_video:
@@ -10354,6 +10369,31 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if not outputs:
             await asyncio.sleep(1.0)
             outputs = _cleanup_video_sidecar_images(_recent_output_files(generation_started_at - 300, limit=20), generation_started_at)
+        if (
+            request.preset.lower() == "qwen"
+            and request.activity == "img2img"
+            and str(request.workspace or "").lower() == "viewer"
+            and _truthy((request.video or {}).get("qwen_linear_view"))
+        ):
+            qwen_outputs = [item for item in outputs if str(item.get("kind") or item.get("type") or "").lower() != "video"]
+            fresh_outputs: list[dict[str, Any]] = []
+            for item in qwen_outputs:
+                relative = str(item.get("path") or "")
+                if not relative:
+                    continue
+                try:
+                    path = (settings.output_dir / relative).resolve()
+                    if path.exists() and path.is_relative_to(settings.output_dir.resolve()) and path.stat().st_mtime + 5 >= generation_started_at:
+                        fresh_outputs.append(item)
+                except Exception:
+                    continue
+            if fresh_outputs:
+                qwen_outputs = sorted(
+                    fresh_outputs,
+                    key=lambda item: ((settings.output_dir / str(item.get("path") or "")).stat().st_mtime if item.get("path") else 0),
+                    reverse=True,
+                )
+            outputs = qwen_outputs[:1]
         _apply_ltx_loop_cycle_seam(outputs, request)
         _normalize_ltx_start_end_motion(outputs, request, reference_image_names)
         _apply_ltx_reference_frame_lock(outputs, request, reference_image_names)

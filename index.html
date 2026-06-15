@@ -2195,7 +2195,7 @@
             <div class="mt-4 h-1.5 bg-nexus-bg border border-nexus-border overflow-hidden">
                 <div class="h-full w-1/2 bg-nexus-red animate-[pulse_1s_infinite]"></div>
             </div>
-            <p class="text-[10px] text-nexus-muted font-mono mt-3">Waiting for http://127.0.0.1:7861/api</p>
+            <p class="text-[10px] text-nexus-muted font-mono mt-3">Waiting for Nexus backend on this host...</p>
             <button type="button" onclick="window.nexusResetLocalState?.()" class="mt-3 text-[10px] font-mono text-nexus-muted hover:text-white underline underline-offset-4">Reset local UI state</button>
         </div>
     </div>
@@ -6246,11 +6246,7 @@
         let workflowLoadSerial = 0;
         let ltxMotionPreprocessReady = null;
         const NEXUS_BACKEND_ORIGIN = 'http://127.0.0.1:7861';
-        const NEXUS_API = (
-            window.location.protocol.startsWith('http')
-            && /^(127\.0\.0\.1|localhost)$/i.test(window.location.hostname)
-            && window.location.port === '7861'
-        )
+        const NEXUS_API = window.location.protocol.startsWith('http')
             ? `${window.location.origin}/api`
             : `${NEXUS_BACKEND_ORIGIN}/api`;
         let backendOnline = false;
@@ -6859,7 +6855,7 @@
                 samplers: ['Euler', 'FlowMatch Euler', 'UniPC'],
                 scheduler: 'Simple',
                 schedulers: ['Simple', 'Normal', 'SGM Uniform'],
-                vae: ['Automatic', 'None'],
+                vae: ['Qwen_Image-VAE.safetensors', 'Qwen2D_VAE.safetensors', 'Automatic', 'None'],
                 encoder: ['Qwen-VL Encoder', 'Automatic'],
                 variants: ['Base', 'GGUF Quantized', 'Lightning'],
                 precision: ['Auto', 'bf16', 'fp16', 'fp8'],
@@ -11891,6 +11887,12 @@
                     select.value = fallback?.value || '';
                     return;
                 }
+                if (id === 'videoVaeSelect' || id === 'audioVaeSelect') {
+                    const fallback = [...select.options].find(option => !option.disabled && !/^(automatic|auto)$/i.test(option.value))
+                        || [...select.options].find(option => !option.disabled);
+                    select.value = fallback?.value || '';
+                    return;
+                }
                 select.insertAdjacentHTML('afterbegin', `<option>${value}</option>`);
             }
             select.value = value;
@@ -12229,9 +12231,9 @@
             setElementOptions('textEncoderSelect', profile.encoder);
             setSelectValue('vaeSelect', savedFields.vaeSelect || profile.vae?.[0] || 'Automatic');
             setSelectValue('textEncoderSelect', savedFields.textEncoderSelect || profile.encoder?.[0] || 'Automatic');
-            if (presetName === 'Flux') {
-                const compatibleVae = compatibleSideAssetChoice('Flux', 'vae', document.getElementById('vaeSelect')?.value);
-                const compatibleTextEncoder = compatibleSideAssetChoice('Flux', 'text', document.getElementById('textEncoderSelect')?.value);
+            if (presetName === 'Flux' || presetName === 'Qwen') {
+                const compatibleVae = compatibleSideAssetChoice(presetName, 'vae', document.getElementById('vaeSelect')?.value);
+                const compatibleTextEncoder = compatibleSideAssetChoice(presetName, 'text', document.getElementById('textEncoderSelect')?.value);
                 if (compatibleVae) setSelectValue('vaeSelect', compatibleVae);
                 if (compatibleTextEncoder) setSelectValue('textEncoderSelect', compatibleTextEncoder);
             }
@@ -31857,7 +31859,9 @@
                     return name && !/^(none|automatic|auto)$/i.test(name);
                 });
                 const promptValue = document.getElementById('posPrompt')?.value || 'Change only the requested detail while preserving the reference image.';
-                const qwenUseMultiRefs = true;
+                const qwenPreviewRefs = [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean);
+                const qwenLinearViewPreview = activeWorkspace === 'viewer';
+                const qwenUseMultiRefs = qwenPreviewRefs.length > 1;
                 const qwenNodes = [
                     { id: 'model', class_type: qwenModelIsGguf ? 'UnetLoaderGGUF' : 'UNETLoader', title: 'Load QWEN Edit Model', x: 70, y: 110, width: 260, height: 118, inputs: [], outputs: ['MODEL'], widgets: qwenModelIsGguf ? [{ name: 'unet_name', value: selectedModelName }] : [{ name: 'unet_name', value: selectedModelName }, { name: 'weight_dtype', value: 'default' }], color: '#1f3b63' },
                     { id: 'edit_lora', class_type: 'LoraLoaderModelOnly', title: 'QWEN Edit Lightning LoRA', x: 370, y: 110, width: 260, height: 118, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: qwenEditLoraName }, { name: 'strength_model', value: qwenEditLoraStrength }], color: '#4c1d95' },
@@ -31866,17 +31870,14 @@
                     clipLoaderPreviewNode({ title: 'QWEN 2.5 VL Text Encoder', x: 70, y: 275, clipName: document.getElementById('textEncoderSelect')?.value || compatibleSideAssetChoice(preset, 'text', '') || 'Automatic', type: 'qwen_image' }),
                     { id: 'vae', class_type: 'VAELoader', title: 'QWEN Image VAE', x: 370, y: 275, width: 230, height: 105, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || compatibleSideAssetChoice(preset, 'vae', '') || 'Automatic' }], color: '#62305a' },
                     { id: 'positive', class_type: 'TextEncodeQwenImageEditPlus', title: 'Positive Prompt + Image References', x: 660, y: 275, width: 330, height: 150, inputs: ['clip', 'vae', 'image1', 'image2', 'image3', 'prompt'], outputs: ['CONDITIONING'], widgets: [{ name: 'prompt', value: promptValue }], color: '#1f5f3a' },
-                    { id: 'negative', class_type: 'TextEncodeQwenImageEditPlus', title: 'QWEN Negative Prompt + References', x: 1030, y: 295, width: 280, height: 130, inputs: ['clip', 'vae', 'image1', 'image2', 'image3', 'prompt'], outputs: ['CONDITIONING'], widgets: [{ name: 'prompt', value: document.getElementById('negPrompt')?.value || '' }], color: '#5a2c2c' },
+                    { id: 'negative', class_type: 'TextEncodeQwenImageEditPlus', title: 'QWEN Negative Prompt', x: 1030, y: 295, width: 280, height: 130, inputs: ['clip', 'vae', 'prompt'], outputs: ['CONDITIONING'], widgets: [{ name: 'prompt', value: document.getElementById('negPrompt')?.value || '' }], color: '#5a2c2c' },
                     { id: 'reference', class_type: 'LoadImage', title: 'Image 1 Base Reference', x: 70, y: 520, width: 230, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'reference image' }], color: '#164e63' },
                     { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize Image 1 To Side Menu', x: 330, y: 520, width: 250, height: 116, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
-                    { id: 'reference_flux_scale', class_type: 'FluxKontextImageScale', title: 'QWEN Base FluxKontext Scale', x: 620, y: 520, width: 250, height: 96, inputs: ['image'], outputs: ['IMAGE'], widgets: [], color: '#0f766e' },
                     { id: 'reference2', class_type: 'LoadImage', title: 'Image 2 Reference', x: 70, y: 675, width: 230, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'image 2 reference' }], color: '#164e63' },
                     { id: 'resize_reference2', class_type: 'ImageScale', title: 'Resize Image 2 To Side Menu', x: 330, y: 675, width: 250, height: 116, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
                     { id: 'reference3', class_type: 'LoadImage', title: 'Image 3 Reference', x: 70, y: 830, width: 230, height: 105, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: 'image 3 reference' }], color: '#164e63' },
                     { id: 'resize_reference3', class_type: 'ImageScale', title: 'Resize Image 3 To Side Menu', x: 330, y: 830, width: 250, height: 116, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
                     { id: 'encode_ref1', class_type: 'VAEEncode', title: 'Encode Image 1 Base Latent', x: 910, y: 520, width: 220, height: 100, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' },
-                    { id: 'reference_method', class_type: 'FluxKontextMultiReferenceLatentMethod', title: 'QWEN Reference Method', x: 1190, y: 595, width: 270, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [{ name: 'reference_latents_method', value: 'index_timestep_zero' }], color: '#0f766e' },
-                    { id: 'negative_method', class_type: 'FluxKontextMultiReferenceLatentMethod', title: 'QWEN Negative Reference Method', x: 1190, y: 735, width: 270, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [{ name: 'reference_latents_method', value: 'index_timestep_zero' }], color: '#5a2c2c' },
                     { id: 'sampler', class_type: 'KSampler', title: 'QWEN Edit Sampler', x: 1490, y: 570, width: 285, height: 185, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'seed', value: document.getElementById('seedInput')?.value || '-1' }, { name: 'steps', value: sideSteps }, { name: 'cfg', value: sideCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }, { name: 'denoise', value: document.getElementById('denoiseSlider')?.value || '0.75' }], color: '#2f3c4f' },
                     { id: 'decode', class_type: 'VAEDecode', title: 'VAE Decode', x: 1810, y: 575, width: 220, height: 112, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [], color: '#62305a' },
                     { id: 'preview', class_type: 'PreviewImage', title: 'Preview Output', x: 2070, y: 510, width: 220, height: 110, inputs: ['images'], outputs: [], widgets: [], color: '#164e63' },
@@ -31892,48 +31893,56 @@
                     { from_node: 'clip', from_slot: 0, to_node: 'negative', to_slot: 0, type: 'CLIP' },
                     { from_node: 'vae', from_slot: 0, to_node: 'negative', to_slot: 1, type: 'VAE' },
                     { from_node: 'reference', from_slot: 0, to_node: 'resize_reference', to_slot: 0, type: 'IMAGE' },
-                    { from_node: 'resize_reference', from_slot: 0, to_node: 'reference_flux_scale', to_slot: 0, type: 'IMAGE' },
-                    { from_node: 'reference_flux_scale', from_slot: 0, to_node: 'positive', to_slot: 2, type: 'IMAGE' },
-                    { from_node: 'reference_flux_scale', from_slot: 0, to_node: 'negative', to_slot: 2, type: 'IMAGE' },
-                    { from_node: 'reference_flux_scale', from_slot: 0, to_node: 'encode_ref1', to_slot: 0, type: 'IMAGE' },
+                    { from_node: 'resize_reference', from_slot: 0, to_node: 'positive', to_slot: 2, type: 'IMAGE' },
+                    { from_node: 'resize_reference', from_slot: 0, to_node: 'encode_ref1', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'vae', from_slot: 0, to_node: 'encode_ref1', to_slot: 1, type: 'VAE' },
                     { from_node: 'reference2', from_slot: 0, to_node: 'resize_reference2', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'resize_reference2', from_slot: 0, to_node: 'positive', to_slot: 3, type: 'IMAGE' },
-                    { from_node: 'resize_reference2', from_slot: 0, to_node: 'negative', to_slot: 3, type: 'IMAGE' },
                     { from_node: 'reference3', from_slot: 0, to_node: 'resize_reference3', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'resize_reference3', from_slot: 0, to_node: 'positive', to_slot: 4, type: 'IMAGE' },
-                    { from_node: 'resize_reference3', from_slot: 0, to_node: 'negative', to_slot: 4, type: 'IMAGE' },
-                    { from_node: 'positive', from_slot: 0, to_node: 'reference_method', to_slot: 0, type: 'CONDITIONING' },
-                    { from_node: 'negative', from_slot: 0, to_node: 'negative_method', to_slot: 0, type: 'CONDITIONING' },
-                    { from_node: 'reference_method', from_slot: 0, to_node: 'sampler', to_slot: 1, type: 'CONDITIONING' },
-                    { from_node: 'negative_method', from_slot: 0, to_node: 'sampler', to_slot: 2, type: 'CONDITIONING' },
+                    { from_node: 'positive', from_slot: 0, to_node: 'sampler', to_slot: 1, type: 'CONDITIONING' },
+                    { from_node: 'negative', from_slot: 0, to_node: 'sampler', to_slot: 2, type: 'CONDITIONING' },
                     { from_node: 'encode_ref1', from_slot: 0, to_node: 'sampler', to_slot: 3, type: 'LATENT' },
                     { from_node: 'sampler', from_slot: 0, to_node: 'decode', to_slot: 0, type: 'LATENT' },
                     { from_node: 'vae', from_slot: 0, to_node: 'decode', to_slot: 1, type: 'VAE' },
                     { from_node: 'decode', from_slot: 0, to_node: 'preview', to_slot: 0, type: 'IMAGE' },
                     { from_node: 'decode', from_slot: 0, to_node: 'save', to_slot: 0, type: 'IMAGE' }
                 ];
+                if (qwenLinearViewPreview) {
+                    const latentNode = qwenNodes.find(node => node.id === 'encode_ref1');
+                    if (latentNode) {
+                        latentNode.title = 'QWEN Linear Encode Base Reference';
+                    }
+                }
                 if (!qwenUseMultiRefs) {
                     const positiveNode = qwenNodes.find(node => node.id === 'positive');
                     const negativeNode = qwenNodes.find(node => node.id === 'negative');
-                    if (positiveNode) {
+                    if (positiveNode && qwenLinearViewPreview) {
+                        positiveNode.class_type = 'TextEncodeQwenImageEditPlus';
+                        positiveNode.title = 'Positive Prompt + Reference Image';
+                        positiveNode.inputs = ['clip', 'vae', 'image1', 'prompt'];
+                    } else if (positiveNode) {
                         positiveNode.class_type = 'TextEncodeQwenImageEdit';
-                        positiveNode.title = 'Positive Prompt + Image 1';
+                        positiveNode.title = 'Positive Prompt + Reference Image';
                         positiveNode.inputs = ['clip', 'vae', 'image', 'prompt'];
                     }
-                    if (negativeNode) {
+                    if (negativeNode && qwenLinearViewPreview) {
+                        negativeNode.class_type = 'TextEncodeQwenImageEditPlus';
+                        negativeNode.title = 'QWEN Negative Prompt + Reference Image';
+                        negativeNode.inputs = ['clip', 'vae', 'image1', 'prompt'];
+                        if (!qwenLinks.some(link => link.from_node === 'resize_reference' && link.to_node === 'negative')) {
+                            qwenLinks.push({ from_node: 'resize_reference', from_slot: 0, to_node: 'negative', to_slot: 2, type: 'IMAGE' });
+                        }
+                    } else if (negativeNode) {
                         negativeNode.class_type = 'TextEncodeQwenImageEdit';
                         negativeNode.title = 'QWEN Negative Prompt';
                         negativeNode.inputs = ['clip', 'vae', 'prompt'];
                     }
-                    const latentNode = qwenNodes.find(node => node.id === 'encode_ref1');
-                    if (latentNode) {
-                        latentNode.class_type = 'VAEEncode';
-                        latentNode.title = 'Encode Image 1 Base Latent';
-                        latentNode.inputs = ['pixels', 'vae'];
-                        latentNode.widgets = [];
-                    }
-                    ['reference_flux_scale', 'reference_method', 'negative_method'].forEach(nodeId => {
+                    const referenceNode = qwenNodes.find(node => node.id === 'reference');
+                    if (referenceNode) referenceNode.title = 'Reference Image';
+                    const resizeReferenceNode = qwenNodes.find(node => node.id === 'resize_reference');
+                    if (resizeReferenceNode) resizeReferenceNode.title = 'Resize QWEN Reference To Side Menu';
+                    ['reference_flux_scale', 'reference_method', 'negative_method', 'reference2', 'resize_reference2', 'reference3', 'resize_reference3'].forEach(nodeId => {
                         const index = qwenNodes.findIndex(node => node.id === nodeId);
                         if (index >= 0) qwenNodes.splice(index, 1);
                     });
@@ -31946,17 +31955,46 @@
                             || link.to_node === 'reference_method'
                             || link.from_node === 'negative_method'
                             || link.to_node === 'negative_method'
+                            || link.from_node === 'reference2'
+                            || link.to_node === 'reference2'
+                            || link.from_node === 'resize_reference2'
+                            || link.to_node === 'resize_reference2'
+                            || link.from_node === 'reference3'
+                            || link.to_node === 'reference3'
+                            || link.from_node === 'resize_reference3'
+                            || link.to_node === 'resize_reference3'
                             || link.to_node === 'positive' && Number(link.to_slot || 0) > 2
-                            || link.to_node === 'negative' && Number(link.to_slot || 0) > 2
+                            || (!qwenLinearViewPreview && link.to_node === 'negative' && Number(link.to_slot || 0) > 2)
+                        ) {
+                            qwenLinks.splice(index, 1);
+                        }
+                    }
+                }
+                if (qwenLinearViewPreview) {
+                    if (!qwenNodes.some(node => node.id === 'reference_method')) {
+                        qwenNodes.push(
+                            { id: 'reference_method', class_type: 'FluxKontextMultiReferenceLatentMethod', title: 'QWEN Reference Method', x: 1190, y: 595, width: 270, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [{ name: 'reference_latents_method', value: 'index_timestep_zero' }], color: '#0f766e' },
+                            { id: 'negative_method', class_type: 'FluxKontextMultiReferenceLatentMethod', title: 'QWEN Negative Reference Method', x: 1190, y: 735, width: 270, height: 100, inputs: ['conditioning'], outputs: ['CONDITIONING'], widgets: [{ name: 'reference_latents_method', value: 'index_timestep_zero' }], color: '#5a2c2c' }
+                        );
+                    }
+                    for (let index = qwenLinks.length - 1; index >= 0; index -= 1) {
+                        const link = qwenLinks[index];
+                        if (
+                            (link.from_node === 'positive' && link.to_node === 'sampler')
+                            || (link.from_node === 'negative' && link.to_node === 'sampler')
+                            || link.from_node === 'reference_method'
+                            || link.to_node === 'reference_method'
+                            || link.from_node === 'negative_method'
+                            || link.to_node === 'negative_method'
                         ) {
                             qwenLinks.splice(index, 1);
                         }
                     }
                     qwenLinks.push(
-                        { from_node: 'resize_reference', from_slot: 0, to_node: 'positive', to_slot: 2, type: 'IMAGE' },
-                        { from_node: 'resize_reference', from_slot: 0, to_node: 'encode_ref1', to_slot: 0, type: 'IMAGE' },
-                        { from_node: 'positive', from_slot: 0, to_node: 'sampler', to_slot: 1, type: 'CONDITIONING' },
-                        { from_node: 'negative', from_slot: 0, to_node: 'sampler', to_slot: 2, type: 'CONDITIONING' }
+                        { from_node: 'positive', from_slot: 0, to_node: 'reference_method', to_slot: 0, type: 'CONDITIONING' },
+                        { from_node: 'reference_method', from_slot: 0, to_node: 'sampler', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'negative', from_slot: 0, to_node: 'negative_method', to_slot: 0, type: 'CONDITIONING' },
+                        { from_node: 'negative_method', from_slot: 0, to_node: 'sampler', to_slot: 2, type: 'CONDITIONING' }
                     );
                 }
                 if (!qwenHasEditLightning) {
@@ -31995,19 +32033,7 @@
                     qwenLinks.push({ from_node: modelTail, from_slot: 0, to_node: nodeId, to_slot: 0, type: 'MODEL' });
                     modelTail = nodeId;
                 });
-                qwenLinks.push({ from_node: modelTail, from_slot: 0, to_node: qwenUseMultiRefs ? 'aura' : 'sampler', to_slot: 0, type: 'MODEL' });
-                if (!qwenUseMultiRefs) {
-                    ['aura', 'cfgnorm'].forEach(nodeId => {
-                        const index = qwenNodes.findIndex(node => node.id === nodeId);
-                        if (index >= 0) qwenNodes.splice(index, 1);
-                    });
-                    for (let index = qwenLinks.length - 1; index >= 0; index -= 1) {
-                        const link = qwenLinks[index];
-                        if (link.from_node === 'aura' || link.to_node === 'aura' || link.from_node === 'cfgnorm' || link.to_node === 'cfgnorm') {
-                            qwenLinks.splice(index, 1);
-                        }
-                    }
-                }
+                qwenLinks.push({ from_node: modelTail, from_slot: 0, to_node: 'aura', to_slot: 0, type: 'MODEL' });
                 return {
                     nodes: qwenNodes,
                     links: qwenLinks,
@@ -32117,7 +32143,7 @@
                 if (externalQwenRoute && !isCanvasInpaint) {
                     nodes.push(
                         { id: 'resize_reference', class_type: 'ImageScale', title: 'Resize QWEN Reference To Side Menu', x: 390, y: 650, width: 260, height: 120, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'upscale_method', value: 'lanczos' }, { name: 'crop', value: 'disabled' }], color: '#164e63' },
-                        { id: 'latent', class_type: 'EmptyQwenImageLayeredLatentImage', title: 'QWEN Target Latent', x: 700, y: 650, width: 260, height: 135, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'layers', value: '1' }, { name: 'batch_size', value: '1' }], color: '#4338ca' }
+                        { id: 'latent', class_type: 'VAEEncode', title: 'QWEN Encode Reference', x: 700, y: 650, width: 230, height: 105, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#164e63' }
                     );
                 } else if (isCanvasInpaint) {
                     nodes.push(
@@ -32454,6 +32480,7 @@
             const poseStudioRoute = !!(poseGenerationHandoffActive && controlNetImageMeta?.label === 'Nexus POSE guide');
             const poseStudioControlNetRoute = !!(poseStudioRoute && document.getElementById('controlNetEnabledToggle')?.checked);
             const qwenMultiViewRoute = activePreset === 'Qwen' && currentActivity === 'img2img' && activeWorkspace === 'multiview';
+            const qwenLinearViewRoute = activePreset === 'Qwen' && currentActivity === 'img2img' && activeWorkspace === 'viewer';
             const fluxMultiViewRoute = activePreset === 'Flux' && currentActivity === 'img2img' && activeWorkspace === 'multiview' && isFluxMultiViewTemplateActive();
             const multiViewRoute = qwenMultiViewRoute || fluxMultiViewRoute;
             const basePrompt = document.getElementById('posPrompt')?.value || '';
@@ -32531,6 +32558,19 @@
             const workflowReferenceImageDataUrl = genericOutpaintRoute
                 ? (inpaintExtendSourceImageDataUrl || referenceImageDataUrl)
                 : canvasReferenceImageDataUrl;
+            const workflowReferenceImages = ltxLoopCycleRoute
+                ? [workflowReferenceImageDataUrl, workflowReferenceImageDataUrl].filter(Boolean)
+                : (ltxMotionTransferRoute
+                    ? [
+                        ltxMotionTargetImageSrc,
+                        ...(ltxMotionCameraTransition ? [ltxMotionOptionalEndFrameSrc] : [])
+                    ].filter(Boolean)
+                    : (referenceExtraSlotsEnabled()
+                        ? [workflowReferenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean)
+                        : (workflowReferenceImageDataUrl ? [workflowReferenceImageDataUrl] : [])));
+            const qwenLinearView = qwenLinearViewRoute
+                && !canvasInpaintActive
+                && workflowReferenceImages.length > 0;
             const inpaintMaskCanvasForPayload = canvasInpaintActive
                 ? document.getElementById('inpaintMaskCanvas')
                 : null;
@@ -32604,16 +32644,7 @@
                     remove_mask_present: !!inpaintIntent.remove,
                     fill_mask_present: !!inpaintIntent.fill,
                     reference_image: workflowReferenceImageDataUrl || null,
-                    reference_images: ltxLoopCycleRoute
-                        ? [workflowReferenceImageDataUrl, workflowReferenceImageDataUrl].filter(Boolean)
-                        : (ltxMotionTransferRoute
-                        ? [
-                            ltxMotionTargetImageSrc,
-                            ...(ltxMotionCameraTransition ? [ltxMotionOptionalEndFrameSrc] : [])
-                        ].filter(Boolean)
-                        : (referenceExtraSlotsEnabled()
-                            ? [workflowReferenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean)
-                            : (workflowReferenceImageDataUrl ? [workflowReferenceImageDataUrl] : []))),
+                    reference_images: workflowReferenceImages,
                     base_video: referenceBaseVideoDataUrl || null,
                     mask_image: inpaintMaskDataUrlForPayload,
                     composite_mask_image: genericOutpaintRoute ? (inpaintExtendCompositeMaskDataUrl || null) : null,
@@ -32653,6 +32684,7 @@
                     audio_vae: document.getElementById('audioVaeSelect')?.value || 'Automatic',
                     active_audio: !!document.getElementById('activeAudioToggle')?.checked,
                     qwen_multiview: qwenMultiViewRoute,
+                    qwen_linear_view: qwenLinearView,
                     flux_multiview: fluxMultiViewRoute,
                     pose_studio: poseStudioRoute,
                     pose_studio_mode: poseStudioRoute
@@ -32723,11 +32755,9 @@
                     ltx_loop_post_seam_blend: ltxLoopCycleRoute ? false : undefined,
                     ltx_loop_mid_motion_guide: false
                 },
-                model3d: {
+                model3d: activePreset === 'Model3D' ? {
                     engine: normalizedModel3DEngine(),
-                    model: activePreset === 'Model3D'
-                        ? (normalizedModel3DEngine() === 'triposplat' ? 'VAST-AI/TripoSplat' : (selectedOption?.dataset?.model || 'microsoft/TRELLIS.2-4B'))
-                        : '',
+                    model: normalizedModel3DEngine() === 'triposplat' ? 'VAST-AI/TripoSplat' : (selectedOption?.dataset?.model || 'microsoft/TRELLIS.2-4B'),
                     reference_mode: model3DReferenceMode,
                     reference_images: (normalizedModel3DEngine() !== 'triposplat' && model3DReferenceMode === 'multi'
                         ? [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean)
@@ -32799,7 +32829,7 @@
                     texture_control_type: document.getElementById('model3DTextureControlTypeSelect')?.value || 'None',
                     texture_size: parseInt(document.getElementById('model3DTextureSizeSelect')?.value || '1024', 10),
                     output_dir: 'output/3D/DATE_HOUR_MINUTE'
-                },
+                } : {},
                 runtime: captureRuntimeSettings()
             };
             if (ltxLoopCycleRoute && !ltxTransitionRoute) {
@@ -32867,6 +32897,16 @@
                 payload.img2img.batch_count = 1;
                 payload.distilled_loras = payload.distilled_loras.filter(item => /qwen.*lightning/i.test(String(item.name || '')));
                 payload.video.qwen_auto_edit_lora = qwenMultiViewRoute || genericOutpaintRoute || payload.distilled_loras.length > 0;
+                if (qwenLinearViewRoute) {
+                    payload.activity = 'img2img';
+                    payload.workspace = 'viewer';
+                    payload.img2img.base_video = null;
+                    payload.video = {
+                        qwen_linear_view: true,
+                        qwen_multiview: false,
+                        qwen_auto_edit_lora: payload.video.qwen_auto_edit_lora
+                    };
+                }
             }
             if (activePreset === 'LTX' && payload.video.omnicine_enabled && isOmnicineLoraName(payload.video.omnicine_lora)) {
                 const existingOmni = payload.distilled_loras.some(item => ltxDirectorNormalizeLoraName(item.name).toLowerCase() === ltxDirectorNormalizeLoraName(payload.video.omnicine_lora).toLowerCase());

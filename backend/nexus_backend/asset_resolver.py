@@ -345,10 +345,13 @@ def _resolve_ltx(by_category: dict[str, list[ModelFile]], selected_name: str, re
     latent_upscale_disabled = raw_latent_upscale in {"none", "off", "disabled", "false", "0", "no"}
     selected_upscale = _selected_asset(video_options.get("latent_upscale"))
     video_vae = _find_name(by_category, selected_video_vae)
-    if video_vae and _is_ltx_preview_vae(video_vae):
+    if video_vae and (video_vae.category != "vae" or _is_ltx_preview_vae(video_vae) or _is_ltx_audio_vae(video_vae)):
         video_vae = None
     video_vae = video_vae or _first(by_category, ["vae"], ["video", "ltx"])
-    audio_vae = _find_name(by_category, selected_audio_vae) or _first(by_category, ["vae"], ["audio", "ltx"])
+    audio_vae = _find_name(by_category, selected_audio_vae)
+    if audio_vae and (audio_vae.category != "vae" or not _is_ltx_audio_vae(audio_vae)):
+        audio_vae = None
+    audio_vae = audio_vae or _first(by_category, ["vae"], ["audio", "ltx"])
     preview_vae = _first(by_category, ["vae"], ["taeltx"])
     if video_vae:
         assets["video_vae"] = _comfy_name(video_vae)
@@ -592,6 +595,8 @@ def _resolve_qwen(by_category: dict[str, list[ModelFile]], selected_name: str, r
     if primary:
         assets["primary_model"] = _comfy_name(primary)
     selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    if selected_text_encoder and "qwen" not in _model_haystack(selected_text_encoder).lower():
+        selected_text_encoder = None
     text_encoder = (
         selected_text_encoder
         or _first(by_category, ["text_encoders", "clip"], ["qwen_2.5"])
@@ -601,6 +606,8 @@ def _resolve_qwen(by_category: dict[str, list[ModelFile]], selected_name: str, r
     if text_encoder:
         assets["text_encoder"] = _comfy_name(text_encoder)
     selected_vae = _selected_model_choice(by_category, request.vae)
+    if selected_vae and "qwen" not in _model_haystack(selected_vae).lower():
+        selected_vae = None
     vae = (
         selected_vae
         or _first(by_category, ["vae"], ["qwen", "image"])
@@ -668,6 +675,10 @@ def _is_ideogram4_model(item: ModelFile) -> bool:
 def _is_ideogram4_qwen3vl_encoder(item: ModelFile) -> bool:
     haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
     return "qwen3vl" in haystack or ("qwen3" in haystack and "vl" in haystack)
+
+
+def _model_haystack(item: ModelFile) -> str:
+    return " ".join([item.name, item.folder, item.relative_path])
 
 
 def _first_exact(by_category: dict[str, list[ModelFile]], categories: list[str], name: str) -> ModelFile | None:
@@ -784,6 +795,11 @@ def _truthy(value: object) -> bool:
 def _is_ltx_preview_vae(item: ModelFile) -> bool:
     haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
     return "taeltx" in haystack or "preview" in haystack
+
+
+def _is_ltx_audio_vae(item: ModelFile) -> bool:
+    haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+    return "audio" in haystack and "vae" in haystack
 
 
 def _is_text_projection(item: ModelFile) -> bool:

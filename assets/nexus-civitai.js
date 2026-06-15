@@ -1,5 +1,7 @@
 (function () {
-  const api = "http://127.0.0.1:7861/api";
+  const api = window.location.protocol.startsWith("http")
+    ? `${window.location.origin}/api`
+    : "http://127.0.0.1:7861/api";
   let resolved = null;
   let searchCursor = null;
   let currentItems = [];
