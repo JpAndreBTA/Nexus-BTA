@@ -486,6 +486,8 @@ def _heuristic_custom_node_name(class_type: str) -> str | None:
         return "comfyui-videohelpersuite"
     if "lanpaint" in value:
         return "LanPaint"
+    if "qwen35anima" in value or ("qwen35" in value and "anima" in value):
+        return "comfyui-qwen35-anima"
     if "qwenmultiangle" in value:
         return "ComfyUI-qwenmultiangle"
     return None
@@ -529,6 +531,8 @@ def _canonical_repo_for_missing_node(class_type: str) -> str | None:
         return "https://github.com/Merserk/ComfyUI-PiD"
     if "lanpaint" in value:
         return "https://github.com/scraed/LanPaint"
+    if "qwen35anima" in value or ("qwen35" in value and "anima" in value):
+        return "https://github.com/GumGum10/comfyui-qwen35-anima"
     if "qwenmultiangle" in value:
         return "https://github.com/jtydhr88/ComfyUI-qwenmultiangle"
     return None

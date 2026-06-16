@@ -84,6 +84,7 @@ from .workflows import (
     convert_ui_to_api,
     detect_workflow_format,
     ensure_inpaint_engine_route,
+    is_anima_qwen35_text_encoder,
     patch_workflow,
 )
 
@@ -1699,6 +1700,27 @@ def _clone_generate_request(request: GenerateRequest) -> GenerateRequest:
     return request.copy(deep=True)  # type: ignore[no-any-return]
 
 
+def _anima_workflow_has_qwen_contamination(api: dict[str, Any]) -> bool:
+    qwen_edit_nodes = {
+        "textencodeqwenimageedit",
+        "textencodeqwenimageeditplus",
+        "emptyqwenimagelayeredlatentimage",
+    }
+    for node in api.values():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type") or "").lower()
+        inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+        title = str((node.get("_meta") or {}).get("title") or "").lower()
+        if class_type in qwen_edit_nodes:
+            return True
+        if "qwen image edit" in title or "image edit" in class_type:
+            return True
+        if str(inputs.get("type") or "").lower() == "qwen_image":
+            return True
+    return False
+
+
 def _director_segment_seconds(segment: dict[str, Any], fps: float, fallback: float = 2.0) -> float:
     raw = _number_or_none(segment.get("length") or segment.get("duration"))
     if raw is None:
@@ -2312,6 +2334,37 @@ def _ensure_lanpaint_custom_node(request: GenerateRequest) -> bool:
     if "LanPaint" not in installed and not (settings.custom_nodes_dir / "LanPaint").exists():
         raise ValueError("LanPaint custom node is required for LanPaint inpaint and could not be installed.")
     return True
+
+
+def _ensure_anima_qwen35_custom_node(assets: dict[str, str]) -> bool:
+    if not is_anima_qwen35_text_encoder(str(assets.get("text_encoder") or "")):
+        return False
+    if (settings.custom_nodes_dir / "comfyui-qwen35-anima").exists():
+        return False
+    installed, errors = install_custom_node_dependencies(
+        settings,
+        node_names=["https://github.com/GumGum10/comfyui-qwen35-anima"],
+        all_enabled=False,
+    )
+    if errors:
+        detail = "; ".join(f"{name}: {error}" for name, error in errors.items())
+        raise ValueError(f"Anima Qwen3.5 custom node is required and could not be installed: {detail}")
+    if "comfyui-qwen35-anima" not in installed and not (settings.custom_nodes_dir / "comfyui-qwen35-anima").exists():
+        raise ValueError("Anima Qwen3.5 custom node is required and could not be installed.")
+    return True
+
+
+def _validate_anima_qwen35_runtime(assets: dict[str, str], object_info: dict[str, Any]) -> None:
+    text_encoder = str(assets.get("text_encoder") or "")
+    if not is_anima_qwen35_text_encoder(text_encoder):
+        return
+    if _available_comfy_node(object_info, "LoadQwen35AnimaCLIP"):
+        return
+    raise ValueError(
+        "Anima Qwen3.5 text encoder requires the custom node "
+        "GumGum10/comfyui-qwen35-anima loaded in the configured custom_nodes folder. "
+        "Install it through the active Nexus custom_nodes path and restart ComfyUI before using anima2BQwen354BText_base.safetensors."
+    )
 
 
 def _apply_inpaint_intent_prompt(request: GenerateRequest) -> None:
@@ -9977,7 +10030,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if job_id:
             _update_generation_job(job_id, {"status": "starting", "progress": 6, "message": "Starting embedded ComfyUI"}, force=True)
         lanpaint_installed = _ensure_lanpaint_custom_node(request)
-        if lanpaint_installed and await comfy.is_running():
+        anima_qwen35_installed = _ensure_anima_qwen35_custom_node(assets)
+        if (lanpaint_installed or anima_qwen35_installed) and await comfy.is_running():
             await comfy.restart()
         await comfy.ensure_running()
         if job_id:
@@ -9985,6 +10039,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         _raise_if_generation_cancelled(job_id)
         object_info = await comfy.object_info()
         _raise_if_generation_cancelled(job_id)
+        if request.preset.lower() == "anima":
+            _validate_anima_qwen35_runtime(assets, object_info)
         if request.preset.lower() == "model3d":
             engine = "triposplat" if str((request.model3d or {}).get("engine") or "").lower() == "triposplat" else "trellis2"
             node_status = _model3d_node_status(object_info, engine=engine)
@@ -10018,11 +10074,48 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 prompt = override
             else:
                 raise ValueError("Active workflow tab is not a valid ComfyUI workflow.")
-            prompt = patch_workflow(prompt, request, assets=assets)
+            if request.preset.lower() == "anima" and _anima_workflow_has_qwen_contamination(prompt):
+                checkpoint_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
+                if not checkpoint_name:
+                    raise ValueError("No Anima checkpoint selected.")
+                text_encoder_name = assets.get("text_encoder")
+                if not text_encoder_name:
+                    raise ValueError("Anima requires a Qwen-compatible text encoder in models/text_encoders.")
+                vae_name = assets.get("vae")
+                if not vae_name:
+                    raise ValueError("Anima requires qwen_image_vae.safetensors or a selected VAE in models/vae.")
+                prompt = build_basic_anima_workflow(
+                    request,
+                    checkpoint_name,
+                    text_encoder_name,
+                    vae_name,
+                    reference_image_name=reference_image_name,
+                    mask_image_name=mask_image_name,
+                )
+            else:
+                prompt = patch_workflow(prompt, request, assets=assets)
         elif workflow_path:
             if job_id:
                 _update_generation_job(job_id, {"status": "building", "progress": 9, "message": "Patching workflow"})
             prompt = workflow_registry.load_api_workflow(workflow_path, request, object_info, assets=assets)
+            if request.preset.lower() == "anima" and _anima_workflow_has_qwen_contamination(prompt):
+                checkpoint_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
+                if not checkpoint_name:
+                    raise ValueError("No Anima checkpoint selected.")
+                text_encoder_name = assets.get("text_encoder")
+                if not text_encoder_name:
+                    raise ValueError("Anima requires a Qwen-compatible text encoder in models/text_encoders.")
+                vae_name = assets.get("vae")
+                if not vae_name:
+                    raise ValueError("Anima requires qwen_image_vae.safetensors or a selected VAE in models/vae.")
+                prompt = build_basic_anima_workflow(
+                    request,
+                    checkpoint_name,
+                    text_encoder_name,
+                    vae_name,
+                    reference_image_name=reference_image_name,
+                    mask_image_name=mask_image_name,
+                )
         else:
             checkpoint_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
             if not checkpoint_name:
@@ -10031,17 +10124,18 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 _update_generation_job(job_id, {"status": "building", "progress": 9, "message": "Building default workflow"})
             if request.preset.lower() == "anima":
                 text_encoder_name = assets.get("text_encoder")
-                vae_name = assets.get("vae")
                 if not text_encoder_name:
-                    raise ValueError("Anima requires a Qwen3-compatible text encoder in models/text_encoders.")
+                    raise ValueError("Anima requires a Qwen-compatible text encoder in models/text_encoders.")
+                vae_name = assets.get("vae")
                 if not vae_name:
-                    raise ValueError("Anima requires a Qwen image VAE in models/vae.")
+                    raise ValueError("Anima requires qwen_image_vae.safetensors or a selected VAE in models/vae.")
                 prompt = build_basic_anima_workflow(
                     request,
                     checkpoint_name,
                     text_encoder_name,
                     vae_name,
                     reference_image_name=reference_image_name,
+                    mask_image_name=mask_image_name,
                 )
             elif request.preset.lower() == "ltx":
                 text_encoder_name = assets.get("text_encoder")

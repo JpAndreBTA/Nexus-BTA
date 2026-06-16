@@ -2,81 +2,75 @@
   "nexus_bta_base": {
     "preset": "Anima",
     "activity": "txt2img",
-    "description": "Nexus-owned Anima base workflow with Qwen-image style text encoder/VAE support. Runtime builders inject compatible Anima checkpoint, text encoder, VAE and optional LoRAs."
+    "description": "Nexus-owned Anima base workflow using the split diffusion model route: Anima diffusion model, Qwen text encoder, Qwen image VAE, CLIPTextEncode prompts and optional Concept LoRA."
   },
   "1": {
-    "class_type": "UnetLoaderGGUF",
+    "class_type": "UNETLoader",
     "inputs": {
-      "unet_name": "models/checkpoints/anima/select_model.gguf"
+      "unet_name": "anima-base-v1.0.safetensors",
+      "weight_dtype": "default"
     },
     "_meta": {
-      "title": "Load Anima Model"
+      "title": "Load Anima Diffusion Model"
     }
   },
   "2": {
-    "class_type": "CLIPLoader",
+    "class_type": "LoadQwen35AnimaCLIP",
     "inputs": {
-      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
-      "type": "qwen_image",
-      "device": "default"
+      "clip_name": "anima2BQwen354BText_base.safetensors",
+      "use_calibration": false,
+      "use_alignment": false,
+      "alignment_strength": 0.0,
+      "output_scale": 1.0
     },
     "_meta": {
-      "title": "Qwen Text Encoder"
+      "title": "Anima Qwen3.5 Text Encoder"
     }
   },
   "3": {
     "class_type": "VAELoader",
     "inputs": {
-      "vae_name": "Qwen_Image-VAE.safetensors"
+      "vae_name": "qwen_image_vae.safetensors"
     },
     "_meta": {
-      "title": "Qwen / Anima VAE"
+      "title": "Anima Qwen Image VAE"
     }
   },
   "4": {
-    "class_type": "TextEncodeQwenImageEdit",
+    "class_type": "CLIPTextEncode",
     "inputs": {
       "clip": [
         "2",
         0
       ],
-      "prompt": "a woman",
-      "vae": [
-        "3",
-        0
-      ]
+      "text": "anime character model sheet, full body, clean line art"
     },
     "_meta": {
-      "title": "Positive Prompt"
+      "title": "Anima Positive Prompt"
     }
   },
   "5": {
-    "class_type": "TextEncodeQwenImageEdit",
+    "class_type": "CLIPTextEncode",
     "inputs": {
       "clip": [
         "2",
         0
       ],
-      "prompt": "low quality, blurry, malformed",
-      "vae": [
-        "3",
-        0
-      ]
+      "text": "worst quality, blurry, deformed"
     },
     "_meta": {
-      "title": "Negative Prompt"
+      "title": "Anima Negative Prompt"
     }
   },
   "6": {
-    "class_type": "EmptyQwenImageLayeredLatentImage",
+    "class_type": "EmptyLatentImage",
     "inputs": {
       "width": 512,
       "height": 512,
-      "layers": 1,
       "batch_size": 1
     },
     "_meta": {
-      "title": "Layered Latent"
+      "title": "Anima Latent"
     }
   },
   "7": {
@@ -122,7 +116,7 @@
       ]
     },
     "_meta": {
-      "title": "VAE Decode"
+      "title": "Anima VAE Decode"
     }
   },
   "9": {
@@ -135,7 +129,7 @@
       "filename_prefix": "NEXUS_BTA_ANIMA"
     },
     "_meta": {
-      "title": "Save Image"
+      "title": "Save Anima Image"
     }
   }
 }

@@ -119,6 +119,27 @@ def _clip_loader_node(clip_name: str, clip_type: str, title: str) -> dict[str, A
     }
 
 
+def is_anima_qwen35_text_encoder(text_encoder_name: str | None) -> bool:
+    name = Path(str(text_encoder_name or "")).name.lower()
+    return "anima2bqwen" in name or "qwen35" in name or "qwen3.5" in name
+
+
+def _anima_clip_loader_node(text_encoder_name: str, title: str) -> dict[str, Any]:
+    if is_anima_qwen35_text_encoder(text_encoder_name):
+        return {
+            "class_type": "LoadQwen35AnimaCLIP",
+            "inputs": {
+                "clip_name": text_encoder_name,
+                "use_calibration": False,
+                "use_alignment": False,
+                "alignment_strength": 0.0,
+                "output_scale": 1.0,
+            },
+            "_meta": {"title": "Anima Qwen3.5 Text Encoder"},
+        }
+    return _clip_loader_node(text_encoder_name, "stable_diffusion", title)
+
+
 def workflow_id_from_path(path: Path) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", path.stem).strip("-").lower()
     return slug or path.stem.lower()
@@ -2373,58 +2394,61 @@ def build_basic_sd_workflow(
             decoded_image_ref=["6", 0],
             save_node_id="7",
         )
+        ensure_inpaint_engine_route(workflow, request)
     return workflow
 
 
 def build_basic_anima_workflow(
     request: GenerateRequest,
     model_name: str,
-    text_encoder_name: str,
-    vae_name: str,
+    text_encoder_name: str | None = None,
+    vae_name: str | None = None,
     reference_image_name: str | None = None,
     mask_image_name: str | None = None,
 ) -> dict[str, Any]:
+    if not text_encoder_name:
+        raise ValueError("Anima requires anima2BQwen354BText_base.safetensors or another Qwen-compatible text encoder in models/text_encoders.")
+    if not vae_name:
+        raise ValueError("Anima requires qwen_image_vae.safetensors in models/vae.")
+
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
-    width = max(16, int(request.width))
-    height = max(16, int(request.height))
-    width -= width % 16
-    height -= height % 16
-    positive_inputs: dict[str, Any] = {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0]}
-    if reference_image_name:
-        positive_inputs["image"] = ["10", 0]
-    loader_class = "UnetLoaderGGUF" if model_name.lower().endswith(".gguf") else "UNETLoader"
-    loader_inputs = (
-        {"unet_name": model_name}
-        if loader_class == "UnetLoaderGGUF"
-        else {"unet_name": model_name, "weight_dtype": "default"}
-    )
-    workflow = {
+    model_loader_class = "UnetLoaderGGUF" if str(model_name or "").lower().endswith(".gguf") else "UNETLoader"
+    model_loader_inputs: dict[str, Any] = {"unet_name": model_name}
+    if model_loader_class == "UNETLoader":
+        model_loader_inputs["weight_dtype"] = "default"
+
+    model_ref: list[Any] = ["1", 0]
+    clip_ref: list[Any] = ["2", 0]
+    vae_ref: list[Any] = ["3", 0]
+    latent_ref: list[Any] = ["6", 0]
+    denoise = request.denoise
+    workflow: dict[str, Any] = {
         "1": {
-            "class_type": loader_class,
-            "inputs": loader_inputs,
-            "_meta": {"title": "Load Anima Model"},
+            "class_type": model_loader_class,
+            "inputs": model_loader_inputs,
+            "_meta": {"title": "Load Anima Diffusion Model"},
         },
-        "2": _clip_loader_node(text_encoder_name, "qwen_image", "Anima / Qwen Text Encoder"),
+        "2": _anima_clip_loader_node(text_encoder_name, "Anima Qwen3 Text Encoder"),
         "3": {
             "class_type": "VAELoader",
             "inputs": {"vae_name": vae_name},
-            "_meta": {"title": "Anima VAE"},
+            "_meta": {"title": "Anima Qwen Image VAE"},
         },
         "4": {
-            "class_type": "TextEncodeQwenImageEdit",
-            "inputs": positive_inputs,
-            "_meta": {"title": "Positive Prompt"},
-        },
-        "6": {
-            "class_type": "TextEncodeQwenImageEdit",
-            "inputs": {"clip": ["2", 0], "prompt": request.negative_prompt, "vae": ["3", 0]},
-            "_meta": {"title": "Negative Prompt"},
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": request.prompt, "clip": clip_ref},
+            "_meta": {"title": "Anima Positive Prompt"},
         },
         "5": {
-            "class_type": "EmptySD3LatentImage",
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": request.negative_prompt, "clip": clip_ref},
+            "_meta": {"title": "Anima Negative Prompt"},
+        },
+        "6": {
+            "class_type": "EmptyLatentImage",
             "inputs": {
-                "width": width,
-                "height": height,
+                "width": request.width,
+                "height": request.height,
                 "batch_size": max(1, request.batch_size),
             },
             "_meta": {"title": "Anima Latent"},
@@ -2437,47 +2461,57 @@ def build_basic_anima_workflow(
                 "cfg": request.cfg,
                 "sampler_name": normalize_sampler(request.sampler),
                 "scheduler": normalize_scheduler(request.scheduler),
-                "denoise": request.img2img.denoise if reference_image_name else request.denoise,
-                "model": ["1", 0],
+                "denoise": denoise,
+                "model": model_ref,
                 "positive": ["4", 0],
-                "negative": ["6", 0],
-                "latent_image": ["5", 0],
+                "negative": ["5", 0],
+                "latent_image": latent_ref,
             },
             "_meta": {"title": "Anima Sampler"},
         },
         "8": {
             "class_type": "VAEDecode",
-            "inputs": {"samples": ["7", 0], "vae": ["3", 0]},
-            "_meta": {"title": "VAE Decode"},
+            "inputs": {"samples": ["7", 0], "vae": vae_ref},
+            "_meta": {"title": "Anima VAE Decode"},
         },
         "9": {
             "class_type": "SaveImage",
             "inputs": {"filename_prefix": "NEXUS_BTA_ANIMA", "images": ["8", 0]},
-            "_meta": {"title": "Save Image"},
+            "_meta": {"title": "Save Anima Image"},
         },
     }
-    model_ref, clip_ref, _ = _append_lora_chain(workflow, request, ["1", 0], ["2", 0], start_id=20)
+
+    model_ref, clip_ref, _ = _append_lora_chain(workflow, request, model_ref, clip_ref, start_id=20)
     workflow["4"]["inputs"]["clip"] = clip_ref
-    workflow["6"]["inputs"]["clip"] = clip_ref
+    workflow["5"]["inputs"]["clip"] = clip_ref
     workflow["7"]["inputs"]["model"] = model_ref
+
     if reference_image_name:
         workflow["10"] = {
             "class_type": "LoadImage",
             "inputs": {"image": reference_image_name},
-            "_meta": {"title": "Reference Image"},
+            "_meta": {"title": "Anima Reference Image"},
         }
-        workflow["13"] = _image_scale_node(["10", 0], width, height)
-        workflow["4"]["inputs"]["image"] = ["13", 0]
+        workflow["11"] = _image_scale_node(["10", 0], request.width, request.height)
+        workflow["12"] = {
+            "class_type": "VAEEncode",
+            "inputs": {"pixels": ["11", 0], "vae": vae_ref},
+            "_meta": {"title": "Encode Anima Reference"},
+        }
+        workflow["7"]["inputs"]["latent_image"] = ["12", 0]
+        workflow["7"]["inputs"]["denoise"] = request.img2img.denoise
         _append_inpaint_mask(
             workflow,
             request,
             reference_node_id="10",
-            vae_ref=["3", 0],
+            vae_ref=vae_ref,
             sampler_node_id="7",
             mask_image_name=mask_image_name,
             decoded_image_ref=["8", 0],
             save_node_id="9",
         )
+        ensure_inpaint_engine_route(workflow, request)
+
     return workflow
 
 
@@ -4554,7 +4588,7 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
                 continue
             strength_model = _number_or_none(item.get("strength_model", item.get("strength", 1.0))) or 1.0
             strength_clip_value = _number_or_none(item.get("strength_clip", item.get("clip_strength")))
-            if request.preset.lower() in {"anima", "flux", "ltx", "qwen", "wan", "zimageturbo", "zimage"}:
+            if request.preset.lower() in {"flux", "ltx", "qwen", "wan", "zimageturbo", "zimage"}:
                 strength_clip = strength_clip_value if strength_clip_value is not None else 0.0
             else:
                 strength_clip = strength_model if strength_clip_value in {None, 0.0} else strength_clip_value
@@ -6307,7 +6341,23 @@ def patch_workflow(
                 inputs["clip_name"] = assets["text_encoder"]
             if assets.get("text_encoder"):
                 text_encoder_name = str(assets["text_encoder"])
-                if text_encoder_name.lower().endswith(".gguf"):
+                if preset == "anima" and is_anima_qwen35_text_encoder(text_encoder_name):
+                    node["class_type"] = "LoadQwen35AnimaCLIP"
+                    inputs.pop("type", None)
+                    inputs.pop("device", None)
+                    inputs.setdefault("use_calibration", False)
+                    inputs.setdefault("use_alignment", False)
+                    inputs.setdefault("alignment_strength", 0.0)
+                    inputs.setdefault("output_scale", 1.0)
+                elif preset == "anima" and class_lower == "loadqwen35animaclip":
+                    node["class_type"] = "CLIPLoader"
+                    inputs["type"] = "stable_diffusion"
+                    inputs["device"] = str(video_options.get("text_encoder_device") or "default")
+                    inputs.pop("use_calibration", None)
+                    inputs.pop("use_alignment", None)
+                    inputs.pop("alignment_strength", None)
+                    inputs.pop("output_scale", None)
+                elif text_encoder_name.lower().endswith(".gguf"):
                     node["class_type"] = "CLIPLoaderGGUF"
                     inputs.pop("device", None)
                 elif class_lower == "cliploadergguf":
@@ -7882,7 +7932,7 @@ def _apply_side_menu_loras(api: dict[str, Any], request: GenerateRequest) -> Non
     is_ltx = request.preset.lower() == "ltx"
     checkpoint_name = request.model_name or Path(request.model_path or "").name
     flux_model_only_lora = request.preset.lower() == "flux" and _flux_family_from_name(checkpoint_name).startswith("flux2")
-    model_only_lora = request.preset.lower() in {"anima", "ltx", "qwen", "wan", "zimageturbo", "zimage"} or flux_model_only_lora
+    model_only_lora = request.preset.lower() in {"ltx", "qwen", "wan", "zimageturbo", "zimage"} or flux_model_only_lora
     audio_value = (request.director or {}).get("use_custom_audio")
     if audio_value is None:
         audio_value = (request.video or {}).get("active_audio")

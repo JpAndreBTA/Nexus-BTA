@@ -492,23 +492,34 @@ def _resolve_anima(by_category: dict[str, list[ModelFile]], selected_name: str, 
     assets: dict[str, str] = {}
     primary = _find_name(by_category, selected_name)
     if not primary:
-        primary = _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["anima", "anime", "pencil"])
+        primary = _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["anima", "base"])
         if not primary:
-            primary = _first(by_category, ["checkpoints", "unet", "diffusion_models"], ["anima"])
+            primary = _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["anima", "anime", "pencil"])
+        if not primary:
+            primary = _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["anima"])
     if primary:
         assets["primary_model"] = _comfy_name(primary)
+
     selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
-    selected_vae = _selected_model_choice(by_category, request.vae)
-    text_encoder = selected_text_encoder or _first(by_category, ["text_encoders", "clip"], ["qwen_3"]) or _first(
-        by_category, ["text_encoders", "clip"], ["qwen"]
+    text_encoder = (
+        selected_text_encoder
+        or _first(by_category, ["text_encoders", "clip"], ["anima2bqwen"])
+        or _first(by_category, ["text_encoders", "clip"], ["qwen35"])
+        or _first(by_category, ["text_encoders", "clip"], ["qwen", "3.5"])
+        or _first(by_category, ["text_encoders", "clip"], ["qwen_3"])
+        or _first(by_category, ["text_encoders", "clip"], ["qwen", "3", "06b"])
+        or _first(by_category, ["text_encoders", "clip"], ["qwen3"])
+        or _first(by_category, ["text_encoders", "clip"], ["anima", "qwen", "text"])
+        or _first(by_category, ["text_encoders", "clip"], ["qwen"])
     )
     if text_encoder:
         assets["text_encoder"] = _comfy_name(text_encoder)
+
+    selected_vae = _selected_model_choice(by_category, request.vae)
     vae = (
         selected_vae
         or _first(by_category, ["vae"], ["qwen", "image"])
         or _first(by_category, ["vae"], ["qwen"])
-        or _first(by_category, ["vae"], ["anime", "kl-f8", "vae"])
     )
     if vae:
         assets["vae"] = _comfy_name(vae)

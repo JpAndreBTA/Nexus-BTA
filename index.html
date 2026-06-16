@@ -2835,66 +2835,168 @@
                 max-height: none !important;
             }
 
-            #civitaiModal .shrink-0.p-3 {
+            #civitaiModal > div > .h-12 {
+                height: 42px !important;
+                padding: 0 8px !important;
+            }
+
+            #civitaiModal > div > .h-12 .h-8 {
+                width: 28px !important;
+                height: 28px !important;
+            }
+
+            #civitaiModal > div > .h-12 p {
+                display: none !important;
+            }
+
+            #civitaiFilterPanel {
                 padding: 8px !important;
                 gap: 6px;
             }
 
-            #civitaiModal .grid.grid-cols-1 {
-                display: grid;
-                grid-template-columns: minmax(0, 1fr) 38px;
-                gap: 6px;
+            #civitaiSearchControls {
+                display: grid !important;
+                grid-template-columns: minmax(0, 1fr) 64px 64px 64px !important;
+                gap: 6px !important;
+                align-items: center;
+            }
+
+            #civitaiSearchControls > .civitai-token-row,
+            #civitaiTargetSelect {
+                grid-column: 1 / -1;
+            }
+
+            #civitaiSearchControls > .relative {
+                grid-column: 1 / 4;
+                grid-row: 1;
             }
 
             #civitaiModal #civitaiUrlInput {
-                height: 34px;
+                height: 32px;
                 font-size: 10px;
             }
 
-            #civitaiModal #civitaiUrlInput + * {
-                display: none;
+            #civitaiSearchControls > .relative i {
+                top: 11px;
             }
 
-            #civitaiModal .grid.grid-cols-1 > button {
-                width: 38px;
-                height: 34px;
+            #civitaiSearchButton {
+                grid-column: 4;
+                grid-row: 1;
+                width: 100%;
+                height: 32px;
                 padding: 0 !important;
-                font-size: 0;
+                font-size: 10px !important;
             }
 
-            #civitaiModal .grid.grid-cols-1 > button i {
+            #civitaiSearchButton i {
                 margin: 0 !important;
                 font-size: 12px;
             }
 
-            #civitaiModal .grid.grid-cols-1 > .flex,
-            #civitaiModal #civitaiTargetSelect {
-                grid-column: 1 / -1;
+            #civitaiSearchButton .civitai-search-label {
+                display: none;
             }
 
-            #civitaiModal .compat-chip {
-                min-height: 28px;
-                padding: 5px 7px;
+            #civitaiSearchControls > .civitai-token-row {
+                grid-row: 3;
+                display: grid !important;
+                grid-template-columns: minmax(0, 1fr) 32px;
+            }
+
+            #civitaiSearchControls > .civitai-token-row .flat-input,
+            #civitaiSearchControls > .civitai-token-row .flat-button {
+                height: 30px;
+                min-height: 30px;
+                font-size: 10px;
+            }
+
+            #civitaiModal .civitai-toggle-chip {
+                min-height: 30px;
+                height: 30px;
+                justify-content: center;
+                padding: 5px 4px;
                 font-size: 9px;
+                gap: 2px;
+            }
+
+            #civitaiAdultChip {
+                grid-column: 2;
+                grid-row: 2;
+            }
+
+            #civitaiBlurChip {
+                grid-column: 3;
+                grid-row: 2;
+            }
+
+            #civitaiInstalledChip {
+                grid-column: 4;
+                grid-row: 2;
+            }
+
+            #civitaiModal .civitai-toggle-chip input {
+                margin-right: 3px !important;
+                width: 11px;
+                height: 11px;
+            }
+
+            #civitaiBrowseFilters {
+                display: grid !important;
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                gap: 6px !important;
+                overflow: visible !important;
+                white-space: normal !important;
+                padding-bottom: 0 !important;
             }
 
             #civitaiModal #civitaiTypeButtons {
-                overflow-x: auto;
+                grid-column: 1 / -1;
+                display: grid !important;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                overflow: hidden;
                 max-width: 100%;
             }
 
             #civitaiModal #civitaiTypeButtons button {
-                min-width: max-content;
-                padding: 6px 8px;
+                min-width: 0;
+                padding: 6px 4px;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
 
             #civitaiModal #civitaiBaseModelFilter,
             #civitaiModal #civitaiSortFilter,
             #civitaiModal #civitaiTargetSelect {
                 max-width: none !important;
-                min-width: 130px;
-                height: 32px;
+                min-width: 0 !important;
+                width: 100% !important;
+                height: 30px;
                 font-size: 10px;
+            }
+
+            #civitaiBrowseFilters > .mini-label {
+                display: none !important;
+            }
+
+            #civitaiTagRow {
+                gap: 6px !important;
+                padding-bottom: 0 !important;
+            }
+
+            #civitaiTagRow .mini-label {
+                display: none !important;
+            }
+
+            #civitaiTagChips {
+                overflow-x: auto;
+                max-width: 100%;
+                padding-bottom: 2px;
+            }
+
+            #civitaiDownloadPanel {
+                padding: 7px !important;
+                font-size: 9px !important;
             }
 
             #civitaiExplorerScroll {
@@ -3283,21 +3385,21 @@
                 </button>
             </div>
             <div class="flex-1 flex flex-col min-h-0">
-                <div class="shrink-0 p-3 border-b border-nexus-border bg-zinc-900 space-y-2">
+                <div id="civitaiFilterPanel" class="shrink-0 p-3 border-b border-nexus-border bg-zinc-900 space-y-2">
                     <input id="civitaiPreviewToggle" type="checkbox" checked class="hidden">
-                    <div class="grid grid-cols-1 xl:grid-cols-[minmax(260px,1fr)_110px_minmax(220px,280px)_auto_auto_auto_150px] gap-2 items-center">
+                    <div id="civitaiSearchControls" class="grid grid-cols-1 xl:grid-cols-[minmax(260px,1fr)_110px_minmax(220px,280px)_auto_auto_auto_150px] gap-2 items-center">
                         <div class="relative">
                             <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-nexus-muted text-[10px]"></i>
                             <input id="civitaiUrlInput" class="flat-input pl-8" placeholder="Paste URL / Search Civitai models, LoRAs, checkpoints...">
                         </div>
-                        <button onclick="window.NexusCivitai?.submit()" class="bg-nexus-red hover:bg-nexus-darkRed text-white px-3 py-2 rounded-sm text-xs font-bold"><i class="fa-solid fa-magnifying-glass mr-1"></i>Search</button>
-                        <div class="flex gap-1">
+                        <button id="civitaiSearchButton" onclick="window.NexusCivitai?.submit()" class="bg-nexus-red hover:bg-nexus-darkRed text-white px-3 py-2 rounded-sm text-xs font-bold"><i class="fa-solid fa-magnifying-glass mr-1"></i><span class="civitai-search-label">Search</span></button>
+                        <div class="civitai-token-row flex gap-1">
                             <input id="civitaiTokenInput" type="password" class="flat-input" placeholder="API key / token">
                             <button type="button" onclick="window.NexusCivitai?.clearToken()" class="flat-button px-2 text-xs" title="Clear saved Civitai API key"><i class="fa-solid fa-trash"></i></button>
                         </div>
-                        <label class="compat-chip cursor-pointer whitespace-nowrap"><input id="civitaiNsfwToggle" type="checkbox" checked class="mr-1 accent-nexus-red">Show mature</label>
-                        <label class="compat-chip cursor-pointer whitespace-nowrap"><input id="civitaiBlurMatureToggle" type="checkbox" checked class="mr-1 accent-nexus-red">Blur mature</label>
-                        <label class="compat-chip cursor-pointer whitespace-nowrap"><input id="civitaiInstalledToggle" type="checkbox" class="mr-1 accent-nexus-red">Installed</label>
+                        <label id="civitaiAdultChip" class="compat-chip civitai-toggle-chip cursor-pointer whitespace-nowrap" title="Show adult/mature results"><input id="civitaiNsfwToggle" type="checkbox" checked class="mr-1 accent-nexus-red">Adult</label>
+                        <label id="civitaiBlurChip" class="compat-chip civitai-toggle-chip cursor-pointer whitespace-nowrap" title="Blur adult/mature previews"><input id="civitaiBlurMatureToggle" type="checkbox" checked class="mr-1 accent-nexus-red">Blur</label>
+                        <label id="civitaiInstalledChip" class="compat-chip civitai-toggle-chip cursor-pointer whitespace-nowrap" title="Only show installed/local models"><input id="civitaiInstalledToggle" type="checkbox" class="mr-1 accent-nexus-red">Installed</label>
                         <select id="civitaiTargetSelect" class="flat-input appearance-none cursor-pointer font-bold">
                             <option value="auto">Auto folder</option>
                             <option value="checkpoints">Checkpoints / template</option>
@@ -3311,7 +3413,7 @@
                             <option value="workflows">Workflows</option>
                         </select>
                     </div>
-                    <div class="flex items-center gap-2 text-[10px] overflow-x-auto overflow-y-hidden whitespace-nowrap pb-1">
+                    <div id="civitaiBrowseFilters" class="flex items-center gap-2 text-[10px] overflow-x-auto overflow-y-hidden whitespace-nowrap pb-1">
                         <span class="mini-label">Model type:</span>
                         <select id="civitaiTypeFilter" class="hidden">
                             <option value="">All types</option>
@@ -3361,7 +3463,7 @@
                             <option value="Most Liked">Most Liked</option>
                         </select>
                     </div>
-                    <div class="flex items-center gap-2 text-[10px] overflow-x-auto overflow-y-hidden whitespace-nowrap pb-1">
+                    <div id="civitaiTagRow" class="flex items-center gap-2 text-[10px] overflow-x-auto overflow-y-hidden whitespace-nowrap pb-1">
                         <span class="mini-label">Civitai tags:</span>
                         <div id="civitaiTagChips" class="flex items-center gap-1"></div>
                     </div>
@@ -3955,7 +4057,7 @@
                                 <span class="mini-label">Active Template</span>
                                 <span id="templateName" class="text-[10px] font-mono text-nexus-red">ANIMA_PORTRAIT</span>
                             </div>
-                            <p id="compatSummary" class="text-[10px] text-nexus-muted mt-1 leading-4">Anima template with anime LoRA bias, 512x512 output and Qwen-compatible prompt controls.</p>
+                            <p id="compatSummary" class="text-[10px] text-nexus-muted mt-1 leading-4">Anima split diffusion route with Qwen text encoder, Qwen image VAE and Concept LoRA support.</p>
                             <div id="compatChips" class="flex flex-wrap gap-1 mt-2">
                                 <span class="compat-chip"><i class="fa-solid fa-check text-nexus-red"></i> VAE Auto</span>
                                 <span class="compat-chip"><i class="fa-solid fa-check text-nexus-red"></i> LoRA</span>
@@ -6911,7 +7013,7 @@
 
     </div>
 
-    <script src="/assets/nexus-civitai.js?v=20260602-civitai-card-error-fix"></script>
+    <script src="/assets/nexus-civitai.js?v=20260616-civitai-lazy-cursor-fix"></script>
 
     <!-- Interface Logic -->
     <script>
@@ -7080,6 +7182,7 @@
         const NEXUS_API = window.location.protocol.startsWith('http')
             ? `${window.location.origin}/api`
             : `${NEXUS_BACKEND_ORIGIN}/api`;
+        window.NEXUS_API = NEXUS_API;
         let backendOnline = false;
         let comfyRuntimeReady = false;
         let comfyReadyTimer = null;
@@ -7546,6 +7649,12 @@
             return window.matchMedia?.('(max-width: 767px)').matches;
         }
 
+        function isMobileBackTrapLayout() {
+            const coarsePointer = window.matchMedia?.('(hover: none) and (pointer: coarse)').matches;
+            const mobileAgent = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent || '');
+            return isMobileUiLayout() || coarsePointer || mobileAgent;
+        }
+
         function setMobilePanel(panel = '') {
             if (!document.body) return;
             if (!isMobileUiLayout()) {
@@ -7601,7 +7710,7 @@
         }
 
         function pushMobileBackTrap(kind = 'overlay') {
-            if (!isMobileUiLayout() || !window.history?.pushState) return;
+            if (!isMobileBackTrapLayout() || !window.history?.pushState) return;
             history.pushState({ ...(history.state || {}), nexusMobileBackTrap: kind, nexusMobileBackToken: Date.now() }, '', location.href);
         }
 
@@ -7611,19 +7720,13 @@
         }
 
         function handleMobileBackTrap() {
-            if (!isMobileUiLayout()) return false;
+            if (!isMobileBackTrapLayout()) return false;
             if (elementVisible('civitaiMediaModal')) {
                 window.NexusCivitai?.closeMedia?.();
-                pushMobileBackTrap('civitaiModal');
                 return true;
             }
             if (elementVisible('civitaiModal')) {
-                if (window.NexusCivitai?.handleEscape?.()) {
-                    pushMobileBackTrap('civitaiModal');
-                    return true;
-                }
-                window.NexusCivitai?.close?.();
-                return true;
+                return !!window.NexusCivitai?.handleMobileBack?.();
             }
             if (elementVisible('loraModal')) {
                 closeLoraModal();
@@ -8016,9 +8119,9 @@
             Anima: {
                 template: 'ANIMA_PORTRAIT',
                 type: 'image',
-                folder: './models/checkpoints/anima',
-                checkpoint: 'AnimaPencil_v1.safetensors',
-                models: ['AnimaPencil_v1.safetensors', 'AnimaInk_v2.safetensors', 'AnimaCelMix_v1.safetensors'],
+                folder: './models/diffusion_models',
+                checkpoint: 'anima-base-v1.0.safetensors',
+                models: ['anima-base-v1.0.safetensors', 'anima_baseV10.safetensors', 'AnimaPencil_v1.safetensors', 'AnimaInk_v2.safetensors', 'AnimaCelMix_v1.safetensors'],
                 width: 512,
                 height: 512,
                 steps: 16,
@@ -8027,8 +8130,8 @@
                 samplers: ['Euler', 'Euler Ancestral', 'DPM++ 2M SDE', 'DDIM', 'LCM'],
                 scheduler: 'Simple',
                 schedulers: ['Simple', 'Karras', 'Normal', 'Exponential', 'SGM Uniform'],
-                vae: ['Automatic', 'kl-f8-anime2.ckpt', 'vae-ft-mse-840000-ema-pruned.safetensors', 'None'],
-                encoder: ['Automatic', 'Qwen-VL Encoder'],
+                vae: ['qwen_image_vae.safetensors', 'Automatic', 'None'],
+                encoder: ['anima2BQwen354BText_base.safetensors', 'qwen_3_06b_base.safetensors', 'Automatic'],
                 variants: ['Base', 'Lightning'],
                 precision: ['Auto', 'fp16', 'fp32'],
                 refiners: ['Off', 'Anime detail pass', 'Line cleanup pass'],
@@ -8036,8 +8139,8 @@
                 supportsControlNet: false,
                 distilledLoras: ['None', 'anima_lightning_lora.safetensors'],
                 distilledRoute: 'Anima can optionally use a Lightning LoRA for preview speed.',
-                summary: 'Anima template tuned for anime concepts, Qwen-style encoder routing, LoRA stacks and 512px smoke checks.',
-                chips: ['ANIMA', 'LoRA', 'VAE Auto', 'Preview'],
+                summary: 'Anima split diffusion route with Qwen text encoder, Qwen image VAE, CLIPTextEncode and Concept LoRA support.',
+                chips: ['ANIMA', 'Qwen Text', 'Qwen VAE', 'LoRA'],
                 video: ''
             },
             Ideogram4: {
@@ -8540,7 +8643,7 @@
                 Qwen: [/qwen/i],
                 ZImageTurbo: [/^ae\.safetensors$/i, /z.?image/i, /ae/i],
                 Ideogram4: [/flux2-vae/i, /flux.*2.*vae/i],
-                Anima: [/qwen_3/i, /qwen3/i, /qwen/i],
+                Anima: [/qwen.*image/i, /qwen/i],
                 Wan: [/wan_2\.1|wan2_1|wan2\.1/i, /wan/i],
                 XL: [/sdxl|xl/i],
                 SD: [/vae-ft-mse|sd15|sd1|kl-f8/i]
@@ -8556,7 +8659,7 @@
                 Qwen: [/qwen_2\.5/i, /qwen.*vl/i, /qwen/i],
                 ZImageTurbo: [/qwen_3_4b/i, /qwen.*3.*4b/i, /qwen3/i],
                 Ideogram4: [/qwen3vl/i, /qwen.*3.*vl/i, /qwen/i],
-                Anima: [/qwen/i],
+                Anima: [/anima2bqwen/i, /qwen35/i, /qwen.*3\.5/i, /qwen_3_06b/i, /qwen.*3.*06b/i, /qwen3/i, /anima.*qwen.*text/i, /qwen/i],
                 Wan: [/umt5/i, /t5/i],
                 XL: [/clip/i],
                 SD: [/clip/i]
@@ -8738,7 +8841,7 @@
             if (status) {
                 if (!compatible) {
                     status.innerText = activePreset === 'Anima'
-                        ? 'Anima uses the Qwen/UNET route. Qwen ControlNet patch models are not installed, so ControlNet stays disabled for this template.'
+                        ? 'Anima uses the split diffusion route with Qwen text encoder and Qwen image VAE. ControlNet stays disabled for this template.'
                         : 'ControlNet is enabled only for templates with a compatible node route.';
                 } else if (!models.length) {
                     status.innerText = activePreset === 'LTX'
@@ -32761,17 +32864,42 @@
             const sideCfg = document.getElementById('cfgSlider')?.value || profile.cfg || 7;
             const sideSampler = document.getElementById('samplingMethodSelect')?.value || profile.sampler || 'Euler';
             const sideScheduler = document.getElementById('schedulerSelect')?.value || profile.scheduler || 'Simple';
-            const externalQwenRoute = ['Qwen', 'Anima'].includes(preset);
+            const externalQwenRoute = preset === 'Qwen';
+            const externalSplitRoute = preset === 'Anima';
             const modelOnlyLora = externalQwenRoute || isVideo;
             const qwenModelOnlyLora = externalQwenRoute;
             const qwenModelIsGguf = /\.gguf$/i.test(String(selectedModelName));
             const modelSource = hasLora ? 'lora' : 'model';
-            const clipSource = externalQwenRoute ? 'clip' : 'model';
-            const vaeSource = externalQwenRoute ? 'vae' : 'model';
-            const clipOutputSlot = externalQwenRoute ? 0 : 1;
-            const vaeOutputSlot = externalQwenRoute ? 0 : 2;
+            const hasClipLora = hasLora && !modelOnlyLora;
+            const baseClipSource = (externalQwenRoute || externalSplitRoute) ? 'clip' : 'model';
+            const clipSource = hasClipLora ? 'lora' : baseClipSource;
+            const vaeSource = (externalQwenRoute || externalSplitRoute) ? 'vae' : 'model';
+            const clipOutputSlot = hasClipLora ? 1 : ((externalQwenRoute || externalSplitRoute) ? 0 : 1);
+            const vaeOutputSlot = (externalQwenRoute || externalSplitRoute) ? 0 : 2;
             const isLtxPreset = preset === 'LTX';
+            const isAnimaQwen35TextEncoder = value => /anima2bqwen|qwen35|qwen3\.5/i.test(String(value || ''));
             const clipLoaderPreviewNode = ({ id = 'clip', title, x, y, width = 260, height = 118, clipName, type, color = '#1f5f3a' }) => {
+                if (preset === 'Anima' && isAnimaQwen35TextEncoder(clipName)) {
+                    return {
+                        id,
+                        class_type: 'LoadQwen35AnimaCLIP',
+                        title: 'Anima Qwen3.5 Text Encoder',
+                        x,
+                        y,
+                        width,
+                        height,
+                        inputs: [],
+                        outputs: ['CLIP'],
+                        widgets: [
+                            { name: 'clip_name', value: clipName },
+                            { name: 'use_calibration', value: false },
+                            { name: 'use_alignment', value: false },
+                            { name: 'alignment_strength', value: 0 },
+                            { name: 'output_scale', value: 1 }
+                        ],
+                        color
+                    };
+                }
                 const isGgufClip = /\.gguf$/i.test(String(clipName || ''));
                 return {
                     id,
@@ -33257,7 +33385,7 @@
             if (hasLora) {
                 links.push({ from_node: 'model', from_slot: 0, to_node: 'lora', to_slot: 0, type: 'MODEL' });
                 if (!modelOnlyLora) {
-                    links.push({ from_node: 'model', from_slot: 1, to_node: 'lora', to_slot: 1, type: 'CLIP' });
+                    links.push({ from_node: externalSplitRoute ? 'clip' : 'model', from_slot: externalSplitRoute ? 0 : 1, to_node: 'lora', to_slot: 1, type: 'CLIP' });
                 }
             }
             links.push(
@@ -33314,11 +33442,11 @@
                 ? (isImg2Img && !isCanvasInpaint ? ['clip', 'image', 'vae', 'prompt'] : ['clip', 'vae', 'prompt'])
                 : ['clip', 'text'];
             const promptWidgetName = externalQwenRoute ? 'prompt' : 'text';
-            const modelNode = externalQwenRoute
+            const modelNode = (externalQwenRoute || externalSplitRoute)
                 ? {
                     id: 'model',
                     class_type: qwenModelIsGguf ? 'UnetLoaderGGUF' : 'UNETLoader',
-                    title: `Load ${presetButtonLabels[preset] || preset} Diffusion Model`,
+                    title: externalSplitRoute ? 'Load Anima Diffusion Model' : `Load ${presetButtonLabels[preset] || preset} Diffusion Model`,
                     x: 80,
                     y: 130,
                     width: 250,
@@ -33342,10 +33470,12 @@
                 { id: 'controlnet', class_type: 'ControlNetLoader', title: 'ControlNet (Off)', x: 460, y: 520, width: 240, height: 110, inputs: [], outputs: ['CONTROL_NET'], widgets: [{ name: 'enabled', value: 'false' }, { name: 'control_net_name', value: 'Automatic' }], bypassed: true, color: '#2f3c4f' },
                 { id: 'note', class_type: 'Note', title: `${presetButtonLabels[preset] || preset} Default`, x: 870, y: 500, width: 300, height: 140, inputs: [], outputs: [], widgets: [{ name: 'text', value: 'Default Nexus workflow. Side menu controls patch this graph for generation. ControlNet starts bypassed.' }], note: 'Default Nexus workflow. Side menu controls patch this graph for generation. ControlNet starts bypassed.', color: '#5a4320' }
             ];
-            if (externalQwenRoute) {
+            if (externalQwenRoute || externalSplitRoute) {
+                const splitEncoderName = document.getElementById('textEncoderSelect')?.value || compatibleSideAssetChoice(preset, 'text', '') || (externalSplitRoute ? 'anima2BQwen354BText_base.safetensors' : 'Automatic');
+                const splitVaeName = document.getElementById('vaeSelect')?.value || compatibleSideAssetChoice(preset, 'vae', '') || (externalSplitRoute ? 'qwen_image_vae.safetensors' : 'Automatic');
                 nodes.push(
-                    clipLoaderPreviewNode({ title: `${presetButtonLabels[preset] || preset} Text Encoder`, x: 360, y: 95, clipName: document.getElementById('textEncoderSelect')?.value || compatibleSideAssetChoice(preset, 'text', '') || 'Automatic', type: 'qwen_image' }),
-                    { id: 'vae', class_type: 'VAELoader', title: `${presetButtonLabels[preset] || preset} VAE`, x: 650, y: 95, width: 230, height: 105, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || compatibleSideAssetChoice(preset, 'vae', '') || 'Automatic' }], color: '#62305a' }
+                    clipLoaderPreviewNode({ title: externalSplitRoute ? 'Anima Qwen Text Encoder' : `${presetButtonLabels[preset] || preset} Text Encoder`, x: 360, y: 95, clipName: splitEncoderName, type: externalSplitRoute ? 'stable_diffusion' : 'qwen_image' }),
+                    { id: 'vae', class_type: 'VAELoader', title: externalSplitRoute ? 'Anima Qwen Image VAE' : `${presetButtonLabels[preset] || preset} VAE`, x: 650, y: 95, width: 230, height: 105, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: splitVaeName }], color: '#62305a' }
                 );
             }
             if (isImg2Img) {
