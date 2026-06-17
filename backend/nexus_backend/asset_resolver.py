@@ -73,7 +73,7 @@ def _resolve_controlnet(by_category: dict[str, list[ModelFile]], request: Genera
         if not model:
             return {}
         return {"controlnet_model": _comfy_name(model), "ic_lora": _comfy_name(model)}
-    if preset not in {"sd", "sd15", "xl", "sdxl", "flux", "qwen", "zimageturbo", "zimage"}:
+    if preset not in {"sd", "sd15", "xl", "sdxl", "flux", "qwen", "anima", "zimageturbo", "zimage"}:
         return {}
     selected_name = Path(request.model_path or request.model_name or "").name
     selected = _selected_model_choice(by_category, control.model)
@@ -139,6 +139,8 @@ def _controlnet_matches_preset_type(item: ModelFile, preset: str, control_type: 
         preset_tokens = ["sdxl", "xl"]
     elif preset == "qwen":
         preset_tokens = ["qwen", "qwen-image"]
+    elif preset == "anima":
+        preset_tokens = ["anima", "lllite"]
     elif preset in {"zimageturbo", "zimage"}:
         preset_tokens = ["z-image", "zimage", "z_image"]
     elif preset == "flux":
@@ -150,7 +152,7 @@ def _controlnet_matches_preset_type(item: ModelFile, preset: str, control_type: 
         "openpose": ["openpose", "pose"],
         "pose": ["openpose", "pose"],
         "depth": ["depth"],
-        "canny": ["canny"],
+        "canny": ["canny", "scribble"],
         "lineart": ["lineart", "line"],
         "tile": ["tile"],
         "softedge": ["softedge", "soft", "hed"],
@@ -158,6 +160,8 @@ def _controlnet_matches_preset_type(item: ModelFile, preset: str, control_type: 
     }.get(control_type, [control_type] if control_type else [])
     haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
     if preset == "qwen" and ("qwen" not in haystack and "instantx" not in haystack and "diffsynth" not in haystack):
+        return False
+    if preset == "anima" and "anima-lllite" not in haystack:
         return False
     if preset in {"zimageturbo", "zimage"} and not any(token in haystack for token in preset_tokens + ["fun", "controlnet-union"]):
         return False

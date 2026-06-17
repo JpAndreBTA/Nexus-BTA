@@ -18,8 +18,8 @@
     "class_type": "LoadQwen35AnimaCLIP",
     "inputs": {
       "clip_name": "anima2BQwen354BText_base.safetensors",
-      "use_calibration": false,
-      "use_alignment": false,
+      "use_calibration": true,
+      "use_alignment": true,
       "alignment_strength": 0.0,
       "output_scale": 1.0
     },
@@ -56,7 +56,7 @@
         "2",
         0
       ],
-      "text": "worst quality, blurry, deformed"
+      "text": "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia, text, words, letters, captions, UI, interface, panels, boxes, document, chart, infographic, plain background, solid color background, flat background, black background, empty background, blank background, silhouette background, poster background, no scenery, isolated character"
     },
     "_meta": {
       "title": "Anima Negative Prompt"
@@ -93,9 +93,9 @@
         0
       ],
       "seed": -1,
-      "steps": 16,
+      "steps": 20,
       "cfg": 4.0,
-      "sampler_name": "euler",
+      "sampler_name": "er_sde",
       "scheduler": "simple",
       "denoise": 1.0
     },

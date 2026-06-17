@@ -488,6 +488,8 @@ def _heuristic_custom_node_name(class_type: str) -> str | None:
         return "LanPaint"
     if "qwen35anima" in value or ("qwen35" in value and "anima" in value):
         return "comfyui-qwen35-anima"
+    if "animalllite" in value or ("anima" in value and "lllite" in value):
+        return "ComfyUI-Anima-LLLite"
     if "qwenmultiangle" in value:
         return "ComfyUI-qwenmultiangle"
     return None
@@ -519,7 +521,14 @@ def _canonical_repo_for_missing_node(class_type: str) -> str | None:
         return "https://github.com/Lightricks/ComfyUI-LTXVideo"
     if "vhs_" in value or "loadvideo" in value or "getvideocomponents" in value or "createvideo" in value or "savevideo" in value or "videocombine" in value:
         return "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite"
-    if "dwpreprocessor" in value or "openposepreprocessor" in value or "cannyedgepreprocessor" in value:
+    if (
+        "dwpreprocessor" in value
+        or "openposepreprocessor" in value
+        or "cannyedgepreprocessor" in value
+        or "lineartpreprocessor" in value
+        or "depthanything" in value
+        or "depthmappreprocessor" in value
+    ):
         return "https://github.com/Fannovel16/comfyui_controlnet_aux"
     if "seedvr2" in value:
         return "https://github.com/numz/seedvr2_videoupscaler"
@@ -533,6 +542,8 @@ def _canonical_repo_for_missing_node(class_type: str) -> str | None:
         return "https://github.com/scraed/LanPaint"
     if "qwen35anima" in value or ("qwen35" in value and "anima" in value):
         return "https://github.com/GumGum10/comfyui-qwen35-anima"
+    if "animalllite" in value or ("anima" in value and "lllite" in value):
+        return "https://github.com/kohya-ss/ComfyUI-Anima-LLLite"
     if "qwenmultiangle" in value:
         return "https://github.com/jtydhr88/ComfyUI-qwenmultiangle"
     return None

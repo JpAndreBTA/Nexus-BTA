@@ -130,8 +130,8 @@ def _anima_clip_loader_node(text_encoder_name: str, title: str) -> dict[str, Any
             "class_type": "LoadQwen35AnimaCLIP",
             "inputs": {
                 "clip_name": text_encoder_name,
-                "use_calibration": False,
-                "use_alignment": False,
+                "use_calibration": True,
+                "use_alignment": True,
                 "alignment_strength": 0.0,
                 "output_scale": 1.0,
             },
@@ -2041,7 +2041,7 @@ def _controlnet_can_apply(request: GenerateRequest, controlnet_name: str | None,
         request.controlnet.enabled
         and controlnet_name
         and controlnet_image_name
-        and preset in {"sd", "sd15", "xl", "sdxl", "flux", "qwen", "zimageturbo", "zimage"}
+        and preset in {"sd", "sd15", "xl", "sdxl", "flux", "qwen", "anima", "zimageturbo", "zimage"}
     )
 
 
@@ -2071,24 +2071,100 @@ def _append_controlnet_preprocessor(
             "_meta": {"title": f"{title_prefix} Canny Preprocessor"},
         }
         return [canny_id, 0], start_id + 1
-    if control_type == "dwpose":
-        dwpose_id = str(start_id)
-        workflow[dwpose_id] = {
-            "class_type": "DWPreprocessor",
+    if control_type in {"dwpose", "openpose", "pose"}:
+        pose_id = str(start_id)
+        if control_type == "dwpose":
+            workflow[pose_id] = {
+                "class_type": "DWPreprocessor",
+                "inputs": {
+                    "image": image_ref,
+                    "detect_hand": "enable",
+                    "detect_body": "enable",
+                    "detect_face": "enable",
+                    "resolution": 512,
+                    "bbox_detector": "yolox_l.onnx",
+                    "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
+                    "scale_stick_for_xinsr_cn": "disable",
+                },
+                "_meta": {"title": f"{title_prefix} DWPose Preprocessor"},
+            }
+        else:
+            workflow[pose_id] = {
+                "class_type": "OpenposePreprocessor",
+                "inputs": {
+                    "image": image_ref,
+                    "detect_hand": "enable",
+                    "detect_body": "enable",
+                    "detect_face": "enable",
+                    "resolution": 512,
+                },
+                "_meta": {"title": f"{title_prefix} OpenPose Preprocessor"},
+            }
+        return [pose_id, 0], start_id + 1
+    if control_type == "depth":
+        depth_id = str(start_id)
+        workflow[depth_id] = {
+            "class_type": "DepthAnythingV2Preprocessor",
             "inputs": {
                 "image": image_ref,
-                "detect_hand": "enable",
-                "detect_body": "enable",
-                "detect_face": "enable",
+                "ckpt_name": "depth_anything_v2_vitl.pth",
                 "resolution": 512,
-                "bbox_detector": "yolox_l.onnx",
-                "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
-                "scale_stick_for_xinsr_cn": "disable",
             },
-            "_meta": {"title": f"{title_prefix} DWPose Preprocessor"},
+            "_meta": {"title": f"{title_prefix} Depth Preprocessor"},
         }
-        return [dwpose_id, 0], start_id + 1
+        return [depth_id, 0], start_id + 1
+    if control_type == "lineart":
+        lineart_id = str(start_id)
+        workflow[lineart_id] = {
+            "class_type": "LineArtPreprocessor",
+            "inputs": {
+                "image": image_ref,
+                "coarse": "disable",
+                "resolution": 512,
+            },
+            "_meta": {"title": f"{title_prefix} LineArt Preprocessor"},
+        }
+        return [lineart_id, 0], start_id + 1
     return image_ref, start_id
+
+
+def _append_anima_lllite_controlnet_route(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    *,
+    model_ref: list[Any],
+    controlnet_name: str | None,
+    controlnet_image_name: str | None,
+    start_id: int = 120,
+) -> tuple[list[Any], int]:
+    if not _controlnet_can_apply(request, controlnet_name, controlnet_image_name):
+        return model_ref, start_id
+    load_image_id = str(start_id)
+    image_ref: list[Any] = [load_image_id, 0]
+    next_id = start_id + 1
+    workflow[load_image_id] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": controlnet_image_name},
+        "_meta": {"title": "Anima Control Image"},
+    }
+    control_type = str(request.controlnet.type or "").lower()
+    image_ref, next_id = _append_controlnet_preprocessor(workflow, request, image_ref, start_id=next_id, title_prefix="Anima")
+
+    apply_id = str(next_id)
+    workflow[apply_id] = {
+        "class_type": "AnimaLLLiteApply",
+        "inputs": {
+            "model": model_ref,
+            "lllite_name": controlnet_name,
+            "image": image_ref,
+            "strength": max(0.0, min(10.0, float(request.controlnet.strength or 1.0))),
+            "start_percent": max(0.0, min(1.0, float(request.controlnet.start_percent or 0.0))),
+            "end_percent": max(0.0, min(1.0, float(request.controlnet.end_percent or 1.0))),
+            "preserve_wrapper": True,
+        },
+        "_meta": {"title": f"Apply Anima LLLite {control_type or 'image'}"},
+    }
+    return [apply_id, 0], next_id + 1
 
 
 def _append_controlnet_route(
@@ -2405,6 +2481,8 @@ def build_basic_anima_workflow(
     vae_name: str | None = None,
     reference_image_name: str | None = None,
     mask_image_name: str | None = None,
+    controlnet_name: str | None = None,
+    controlnet_image_name: str | None = None,
 ) -> dict[str, Any]:
     if not text_encoder_name:
         raise ValueError("Anima requires anima2BQwen354BText_base.safetensors or another Qwen-compatible text encoder in models/text_encoders.")
@@ -2482,6 +2560,13 @@ def build_basic_anima_workflow(
     }
 
     model_ref, clip_ref, _ = _append_lora_chain(workflow, request, model_ref, clip_ref, start_id=20)
+    model_ref, _ = _append_anima_lllite_controlnet_route(
+        workflow,
+        request,
+        model_ref=model_ref,
+        controlnet_name=controlnet_name,
+        controlnet_image_name=controlnet_image_name,
+    )
     workflow["4"]["inputs"]["clip"] = clip_ref
     workflow["5"]["inputs"]["clip"] = clip_ref
     workflow["7"]["inputs"]["model"] = model_ref

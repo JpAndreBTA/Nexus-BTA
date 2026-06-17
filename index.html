@@ -8120,23 +8120,24 @@
                 template: 'ANIMA_PORTRAIT',
                 type: 'image',
                 folder: './models/diffusion_models',
-                checkpoint: 'anima-base-v1.0.safetensors',
-                models: ['anima-base-v1.0.safetensors', 'anima_baseV10.safetensors', 'AnimaPencil_v1.safetensors', 'AnimaInk_v2.safetensors', 'AnimaCelMix_v1.safetensors'],
+                checkpoint: 'anima_baseV10.safetensors',
+                models: ['anima_baseV10.safetensors', 'anima-base-v1.0.safetensors', 'AnimaPencil_v1.safetensors', 'AnimaInk_v2.safetensors', 'AnimaCelMix_v1.safetensors'],
                 width: 512,
                 height: 512,
-                steps: 16,
+                steps: 20,
                 cfg: 4,
-                sampler: 'Euler',
-                samplers: ['Euler', 'Euler Ancestral', 'DPM++ 2M SDE', 'DDIM', 'LCM'],
+                sampler: 'ER SDE',
+                samplers: ['ER SDE', 'Euler', 'Euler Ancestral', 'DPM++ 2M SDE', 'DDIM', 'LCM'],
                 scheduler: 'Simple',
                 schedulers: ['Simple', 'Karras', 'Normal', 'Exponential', 'SGM Uniform'],
                 vae: ['qwen_image_vae.safetensors', 'Automatic', 'None'],
                 encoder: ['anima2BQwen354BText_base.safetensors', 'qwen_3_06b_base.safetensors', 'Automatic'],
+                negative: 'worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia, text, words, letters, captions, UI, interface, panels, boxes, document, chart, infographic, plain background, solid color background, flat background, black background, empty background, blank background, silhouette background, poster background, no scenery, isolated character',
                 variants: ['Base', 'Lightning'],
                 precision: ['Auto', 'fp16', 'fp32'],
                 refiners: ['Off', 'Anime detail pass', 'Line cleanup pass'],
                 supportsExtend: true,
-                supportsControlNet: false,
+                supportsControlNet: true,
                 distilledLoras: ['None', 'anima_lightning_lora.safetensors'],
                 distilledRoute: 'Anima can optionally use a Lightning LoRA for preview speed.',
                 summary: 'Anima split diffusion route with Qwen text encoder, Qwen image VAE, CLIPTextEncode and Concept LoRA support.',
@@ -8779,11 +8780,13 @@
                         ? ['flux', 'flux.1', 'flux1', 'shakker']
                         : presetName === 'Qwen'
                     ? ['qwen', 'qwen-image', 'instantx', 'diffsynth']
+                    : presetName === 'Anima'
+                        ? ['anima', 'lllite']
                     : presetName === 'ZImageTurbo'
                         ? ['z-image', 'zimage', 'z_image', 'fun', 'controlnet-union']
                         : ['sd15', 'sd1', 'v11', '1.5'];
             const typeTokens = {
-                canny: ['canny'],
+                canny: ['canny', 'scribble'],
                 depth: ['depth'],
                 dwpose: ['dwpose', 'dw pose', 'openpose', 'pose'],
                 openpose: ['openpose', 'pose'],
@@ -8797,16 +8800,18 @@
                     const haystack = [model.name, model.folder, model.relative_path, ...(model.tags || [])].join(' ').toLowerCase();
                     const customSource = String(model.source || '').toLowerCase() === 'reference';
                     const presetOk = customSource || presetTokens.some(token => haystack.includes(token));
-                    const qwenPoseType = presetName === 'Qwen' && /dwpose|openpose|pose/.test(selectedType);
+                    const animaControl = presetName === 'Anima' && /anima-lllite/.test(haystack);
                     const typeOk = presetName === 'Flux' && /union|shakker|controlnet/i.test(haystack)
                         ? true
                         : presetName === 'Qwen' && /union|instantx/.test(haystack)
                             ? true
                             : presetName === 'Qwen' && /diffsynth/.test(haystack)
-                                ? (!qwenPoseType || typeTokens.some(token => haystack.includes(token)))
-                                : presetName === 'ZImageTurbo' && /union|fun/.test(haystack)
-                                    ? true
-                                    : typeTokens.some(token => haystack.includes(token));
+                                ? typeTokens.some(token => haystack.includes(token))
+                                : animaControl
+                                    ? typeTokens.some(token => haystack.includes(token))
+                                    : presetName === 'ZImageTurbo' && /union|fun/.test(haystack)
+                                        ? true
+                                        : typeTokens.some(token => haystack.includes(token));
                     return presetOk && typeOk;
                 })
                 .sort((a, b) => a.name.localeCompare(b.name))
@@ -8840,13 +8845,13 @@
             const models = controlNetModelsForPreset();
             if (status) {
                 if (!compatible) {
-                    status.innerText = activePreset === 'Anima'
-                        ? 'Anima uses the split diffusion route with Qwen text encoder and Qwen image VAE. ControlNet stays disabled for this template.'
-                        : 'ControlNet is enabled only for templates with a compatible node route.';
+                    status.innerText = 'ControlNet is enabled only for templates with a compatible node route.';
                 } else if (!models.length) {
                     status.innerText = activePreset === 'LTX'
                         ? 'No LTX IC-LoRA control model detected. Add one under ./models/loras/ltx before enabling LTX control guides.'
-                        : activePreset === 'Qwen'
+                        : activePreset === 'Anima'
+                            ? 'No Anima LLLite control model detected. Add pose/depth/lineart/scribble Anima LLLite weights under ./models/controlnet.'
+                            : activePreset === 'Qwen'
                             ? 'No Qwen ControlNet detected. Add Qwen-Image-InstantX-ControlNet-Union.safetensors under ./models/controlnet, or Qwen DiffSynth patches under model_patches for external workflows.'
                             : activePreset === 'ZImageTurbo'
                                 ? 'No Z-Image Turbo ControlNet detected. Add Z-Image-Turbo-Fun-Controlnet-Union.safetensors under ./models/controlnet or model_patches.'
@@ -13381,7 +13386,9 @@
             setElementOptions('distillSelect', profile.variants);
             setElementOptions('precisionSelect', profile.precision);
             setElementOptions('samplingMethodSelect', uniqueOptions([profile.sampler, ...(profile.samplers || []), ...GLOBAL_SAMPLERS]));
-            setSelectValue('samplingMethodSelect', savedFields.samplingMethodSelect || profile.sampler || profile.samplers?.[0] || 'Euler Ancestral');
+            let savedSamplerValue = savedFields.samplingMethodSelect || '';
+            if (presetName === 'Anima' && savedSamplerValue === 'Euler') savedSamplerValue = '';
+            setSelectValue('samplingMethodSelect', savedSamplerValue || profile.sampler || profile.samplers?.[0] || 'Euler Ancestral');
             setElementOptions('schedulerSelect', uniqueOptions([profile.scheduler, ...(profile.schedulers || []), ...GLOBAL_SCHEDULERS]));
             setSelectValue('schedulerSelect', savedFields.schedulerSelect || profile.scheduler);
             setElementOptions('refinerSelect', profile.refiners || ['Off']);
@@ -13437,11 +13444,18 @@
             setSelectValue('ideogramMethod2NoiseSamplerSelect', savedFields.ideogramMethod2NoiseSamplerSelect || profile.ideogramMethod2NoiseSampler || 'pyramid');
 
             let profileStepsValue = savedFields.stepsSlider || profile.steps;
+            if (presetName === 'Anima' && String(profileStepsValue) === '16') profileStepsValue = profile.steps;
             if (presetName === 'Ideogram4' && (parseInt(savedFields.stepsSlider || '0', 10) || 0) < 12) {
                 profileStepsValue = profile.steps;
             }
             document.getElementById('stepsSlider').value = profileStepsValue;
             document.getElementById('cfgSlider').value = savedFields.cfgSlider || (presetName === 'LTX' ? 1 : profile.cfg);
+            if (presetName === 'Anima') {
+                const negPrompt = document.getElementById('negPrompt');
+                const oldAnimaNegative = 'worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia, text, words, letters, captions, UI, interface, panels, boxes, document, chart, infographic';
+                const currentNegative = negPrompt?.value.trim() || '';
+                if (negPrompt && (!currentNegative || currentNegative === oldAnimaNegative) && profile.negative) negPrompt.value = profile.negative;
+            }
             updateRangeLabel('steps');
             updateRangeLabel('cfg');
 
@@ -14497,7 +14511,9 @@
         function syncGraphWidgetsFromSideMenu() {
             if (!activeWorkflowGraph?.nodes) return;
             const selectedModelName = document.getElementById('modelSelect')?.selectedOptions?.[0]?.dataset?.model || '';
-            const controlNetEnabled = controlNetCompatiblePreset() && !!document.getElementById('controlNetEnabledToggle')?.checked;
+            const controlNetEnabled = controlNetCompatiblePreset()
+                && !!document.getElementById('controlNetEnabledToggle')?.checked
+                && !!controlNetImageDataUrl;
             const controlNetModelName = document.getElementById('controlNetModelSelect')?.value
                 || document.getElementById('controlNetModelSelect')?.selectedOptions?.[0]?.dataset?.model
                 || 'Automatic';
@@ -32892,8 +32908,8 @@
                         outputs: ['CLIP'],
                         widgets: [
                             { name: 'clip_name', value: clipName },
-                            { name: 'use_calibration', value: false },
-                            { name: 'use_alignment', value: false },
+                            { name: 'use_calibration', value: true },
+                            { name: 'use_alignment', value: true },
                             { name: 'alignment_strength', value: 0 },
                             { name: 'output_scale', value: 1 }
                         ],
@@ -33997,7 +34013,7 @@
                     model: document.getElementById('controlNetModelSelect')?.value
                         || document.getElementById('controlNetModelSelect')?.selectedOptions?.[0]?.dataset?.model
                         || 'Automatic',
-                    image: controlNetImageDataUrl || canvasReferenceImageDataUrl || null,
+                    image: controlNetImageDataUrl || null,
                     strength: parseFloat(document.getElementById('controlNetStrengthSlider')?.value || '0.75'),
                     start_percent: parseFloat(document.getElementById('controlNetStartInput')?.value || '0'),
                     end_percent: parseFloat(document.getElementById('controlNetEndInput')?.value || '1'),

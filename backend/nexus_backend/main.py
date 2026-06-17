@@ -380,10 +380,54 @@ POSE_MEDIAPIPE_LANDMARKER_ARTIFACT: dict[str, Any] = {
 }
 
 CONTROLNET_OPTIONAL_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "anima_lllite_pose": {
+        "label": "Anima LLLite Pose Control",
+        "preset": "Anima",
+        "types": ["openpose", "dwpose", "pose"],
+        "filename": "anima-lllite-pose-1.safetensors",
+        "url": "https://huggingface.co/kohya-ss/Anima-LLLite/resolve/main/anima-lllite-pose-1.safetensors?download=true",
+        "target": ("controlnet", "anima-lllite-pose-1.safetensors"),
+        "size_bytes": 23_310_040,
+        "min_bytes": 1_000_000,
+        "scope": "dependency",
+    },
+    "anima_lllite_depth": {
+        "label": "Anima LLLite Depth Control",
+        "preset": "Anima",
+        "types": ["depth"],
+        "filename": "anima-lllite-depth-1.safetensors",
+        "url": "https://huggingface.co/kohya-ss/Anima-LLLite/resolve/main/anima-lllite-depth-1.safetensors?download=true",
+        "target": ("controlnet", "anima-lllite-depth-1.safetensors"),
+        "size_bytes": 7_787_888,
+        "min_bytes": 1_000_000,
+        "scope": "dependency",
+    },
+    "anima_lllite_canny": {
+        "label": "Anima LLLite Canny/Scribble Control",
+        "preset": "Anima",
+        "types": ["canny"],
+        "filename": "anima-lllite-scribble-1.safetensors",
+        "url": "https://huggingface.co/kohya-ss/Anima-LLLite/resolve/main/anima-lllite-scribble-1.safetensors?download=true",
+        "target": ("controlnet", "anima-lllite-scribble-1.safetensors"),
+        "size_bytes": 7_787_888,
+        "min_bytes": 1_000_000,
+        "scope": "dependency",
+    },
+    "anima_lllite_lineart": {
+        "label": "Anima LLLite Lineart Control",
+        "preset": "Anima",
+        "types": ["lineart"],
+        "filename": "anima-lllite-lineart-1.safetensors",
+        "url": "https://huggingface.co/kohya-ss/Anima-LLLite/resolve/main/anima-lllite-lineart-1.safetensors?download=true",
+        "target": ("controlnet", "anima-lllite-lineart-1.safetensors"),
+        "size_bytes": 7_787_888,
+        "min_bytes": 1_000_000,
+        "scope": "dependency",
+    },
     "qwen_union": {
         "label": "Qwen Image InstantX ControlNet Union",
         "preset": "Qwen",
-        "types": ["canny", "depth", "openpose", "dwpose", "pose", "softedge"],
+        "types": ["canny", "depth", "openpose", "dwpose", "pose", "lineart", "softedge"],
         "filename": POSE_QWEN_CONTROLNET_ARTIFACT["filename"],
         "url": POSE_QWEN_CONTROLNET_ARTIFACT["url"],
         "target": ("controlnet", "qwen", POSE_QWEN_CONTROLNET_ARTIFACT["filename"]),
@@ -394,7 +438,7 @@ CONTROLNET_OPTIONAL_ARTIFACTS: dict[str, dict[str, Any]] = {
     "flux_union": {
         "label": "FLUX.1 ControlNet Union Pro 2.0",
         "preset": "Flux",
-        "types": ["canny", "depth", "openpose", "dwpose", "pose", "softedge", "tile"],
+        "types": ["canny", "depth", "openpose", "dwpose", "pose", "lineart", "softedge", "tile"],
         "filename": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
         "url": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0/resolve/main/diffusion_pytorch_model.safetensors?download=true",
         "target": ("controlnet", "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors"),
@@ -435,6 +479,17 @@ CONTROLNET_OPTIONAL_ARTIFACTS: dict[str, dict[str, Any]] = {
         "min_bytes": 100_000_000,
         "scope": "dependency",
     },
+    "sd15_lineart": {
+        "label": "SD 1.5 ControlNet Lineart",
+        "preset": "SD",
+        "types": ["lineart"],
+        "filename": "sd15_control_v11p_lineart_fp16.safetensors",
+        "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/main/control_v11p_sd15_lineart_fp16.safetensors?download=true",
+        "target": ("controlnet", "sd15_control_v11p_lineart_fp16.safetensors"),
+        "size_bytes": 722_601_100,
+        "min_bytes": 100_000_000,
+        "scope": "dependency",
+    },
     "sdxl_canny": {
         "label": "SDXL ControlNet Canny Small",
         "preset": "XL",
@@ -443,6 +498,17 @@ CONTROLNET_OPTIONAL_ARTIFACTS: dict[str, dict[str, Any]] = {
         "url": "https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0-small/resolve/main/diffusion_pytorch_model.safetensors?download=true",
         "target": ("controlnet", "sdxl_diffusers_canny_small.safetensors"),
         "size_bytes": 320_237_152,
+        "min_bytes": 100_000_000,
+        "scope": "dependency",
+    },
+    "sdxl_openpose": {
+        "label": "SDXL ControlNet OpenPose",
+        "preset": "XL",
+        "types": ["openpose", "dwpose", "pose"],
+        "filename": "OpenPoseXL2.safetensors",
+        "url": "https://huggingface.co/thibaud/controlnet-openpose-sdxl-1.0/resolve/main/OpenPoseXL2.safetensors?download=true",
+        "target": ("controlnet", "sdxl", "OpenPoseXL2.safetensors"),
+        "size_bytes": 5_004_167_829,
         "min_bytes": 100_000_000,
         "scope": "dependency",
     },
@@ -456,6 +522,19 @@ CONTROLNET_OPTIONAL_ARTIFACTS: dict[str, dict[str, Any]] = {
         "size_bytes": 1_200_000_000,
         "min_bytes": 100_000_000,
         "scope": "dependency",
+    },
+}
+
+ANIMA_QWEN35_SUPPORT_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "calibration_params.safetensors": {
+        "label": "Anima Qwen3.5 calibration params",
+        "url": "https://huggingface.co/lylogummy/anima2b-qwen-3.5-4b/resolve/main/calibration/calibration_params.safetensors",
+        "min_bytes": 20 * 1024,
+    },
+    "rotation_matrix.safetensors": {
+        "label": "Anima Qwen3.5 alignment matrix",
+        "url": "https://huggingface.co/lylogummy/anima2b-qwen-3.5-4b/resolve/main/calibration/rotation_matrix.safetensors",
+        "min_bytes": 4 * 1024 * 1024,
     },
 }
 
@@ -782,7 +861,7 @@ def _handle_cancelled_generation_progress(job_id: str | None, update: dict[str, 
 
 
 def _public_generation_job(job: dict[str, Any]) -> dict[str, Any]:
-    if str(job.get("status") or "").lower() == "completed" and not job.get("outputs"):
+    if str(job.get("status") or "").lower() == "completed" and job.get("completed_at") and not job.get("outputs"):
         try:
             created = datetime.fromisoformat(str(job.get("created_at") or ""))
             start_timestamp = created.timestamp()
@@ -2339,18 +2418,67 @@ def _ensure_lanpaint_custom_node(request: GenerateRequest) -> bool:
 def _ensure_anima_qwen35_custom_node(assets: dict[str, str]) -> bool:
     if not is_anima_qwen35_text_encoder(str(assets.get("text_encoder") or "")):
         return False
-    if (settings.custom_nodes_dir / "comfyui-qwen35-anima").exists():
+    node_changed = False
+    if not (settings.custom_nodes_dir / "comfyui-qwen35-anima").exists():
+        installed, errors = install_custom_node_dependencies(
+            settings,
+            node_names=["https://github.com/GumGum10/comfyui-qwen35-anima"],
+            all_enabled=False,
+        )
+        if errors:
+            detail = "; ".join(f"{name}: {error}" for name, error in errors.items())
+            raise ValueError(f"Anima Qwen3.5 custom node is required and could not be installed: {detail}")
+        if "comfyui-qwen35-anima" not in installed and not (settings.custom_nodes_dir / "comfyui-qwen35-anima").exists():
+            raise ValueError("Anima Qwen3.5 custom node is required and could not be installed.")
+        node_changed = True
+    support_changed = _ensure_anima_qwen35_support_files()
+    return node_changed or support_changed
+
+
+def _ensure_anima_qwen35_support_files() -> bool:
+    node_dir = (settings.custom_nodes_dir / "comfyui-qwen35-anima").resolve()
+    custom_root = settings.custom_nodes_dir.resolve()
+    if not node_dir.exists() or not node_dir.is_relative_to(custom_root):
+        return False
+    changed = False
+    for filename, artifact in ANIMA_QWEN35_SUPPORT_ARTIFACTS.items():
+        target = (node_dir / filename).resolve()
+        if not target.is_relative_to(node_dir):
+            raise ValueError(f"Invalid Anima Qwen3.5 support target: {filename}")
+        min_bytes = int(artifact.get("min_bytes") or 1024)
+        if target.exists() and target.stat().st_size >= min_bytes:
+            continue
+        result = _download_url_to_file(str(artifact["url"]), target, f"anima_qwen35_{uuid.uuid4().hex[:8]}")
+        if not target.exists() or target.stat().st_size < min_bytes:
+            raise ValueError(f"{artifact['label']} download did not produce a valid file: {result}")
+        changed = True
+    return changed
+
+
+def _anima_controlnet_requested(request: GenerateRequest, assets: dict[str, str]) -> bool:
+    if request.preset.lower() != "anima":
+        return False
+    if not getattr(request.controlnet, "enabled", False):
+        return False
+    controlnet_name = str(assets.get("controlnet_model") or request.controlnet.model or "")
+    return "anima-lllite" in controlnet_name.lower()
+
+
+def _ensure_anima_lllite_custom_node(request: GenerateRequest, assets: dict[str, str]) -> bool:
+    if not _anima_controlnet_requested(request, assets):
+        return False
+    if (settings.custom_nodes_dir / "ComfyUI-Anima-LLLite").exists():
         return False
     installed, errors = install_custom_node_dependencies(
         settings,
-        node_names=["https://github.com/GumGum10/comfyui-qwen35-anima"],
+        node_names=["https://github.com/kohya-ss/ComfyUI-Anima-LLLite"],
         all_enabled=False,
     )
     if errors:
         detail = "; ".join(f"{name}: {error}" for name, error in errors.items())
-        raise ValueError(f"Anima Qwen3.5 custom node is required and could not be installed: {detail}")
-    if "comfyui-qwen35-anima" not in installed and not (settings.custom_nodes_dir / "comfyui-qwen35-anima").exists():
-        raise ValueError("Anima Qwen3.5 custom node is required and could not be installed.")
+        raise ValueError(f"Anima LLLite ControlNet custom node is required and could not be installed: {detail}")
+    if "ComfyUI-Anima-LLLite" not in installed and not (settings.custom_nodes_dir / "ComfyUI-Anima-LLLite").exists():
+        raise ValueError("Anima LLLite ControlNet custom node is required and could not be installed.")
     return True
 
 
@@ -2364,6 +2492,17 @@ def _validate_anima_qwen35_runtime(assets: dict[str, str], object_info: dict[str
         "Anima Qwen3.5 text encoder requires the custom node "
         "GumGum10/comfyui-qwen35-anima loaded in the configured custom_nodes folder. "
         "Install it through the active Nexus custom_nodes path and restart ComfyUI before using anima2BQwen354BText_base.safetensors."
+    )
+
+
+def _validate_anima_controlnet_runtime(request: GenerateRequest, assets: dict[str, str], object_info: dict[str, Any]) -> None:
+    if not _anima_controlnet_requested(request, assets):
+        return
+    if _available_comfy_node(object_info, "AnimaLLLiteApply"):
+        return
+    raise ValueError(
+        "Anima ControlNet requires the custom node kohya-ss/ComfyUI-Anima-LLLite loaded in the configured custom_nodes folder. "
+        "Install it through Nexus and restart ComfyUI before using Anima LLLite pose/lineart weights."
     )
 
 
@@ -2630,7 +2769,7 @@ def _generation_activity_label(request: GenerateRequest) -> str:
     refs = [value for value in _reference_image_values(request) if str(value or "").strip()]
     if base_video:
         return "v2v"
-    if refs and (request.preset.lower() in {"wan", "ltx"} or (request.video or {})):
+    if refs and request.preset.lower() in {"wan", "ltx"}:
         return "i2v"
     return request.activity
 
@@ -10031,7 +10170,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             _update_generation_job(job_id, {"status": "starting", "progress": 6, "message": "Starting embedded ComfyUI"}, force=True)
         lanpaint_installed = _ensure_lanpaint_custom_node(request)
         anima_qwen35_installed = _ensure_anima_qwen35_custom_node(assets)
-        if (lanpaint_installed or anima_qwen35_installed) and await comfy.is_running():
+        anima_lllite_installed = _ensure_anima_lllite_custom_node(request, assets)
+        if (lanpaint_installed or anima_qwen35_installed or anima_lllite_installed) and await comfy.is_running():
             await comfy.restart()
         await comfy.ensure_running()
         if job_id:
@@ -10041,6 +10181,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         _raise_if_generation_cancelled(job_id)
         if request.preset.lower() == "anima":
             _validate_anima_qwen35_runtime(assets, object_info)
+            _validate_anima_controlnet_runtime(request, assets, object_info)
         if request.preset.lower() == "model3d":
             engine = "triposplat" if str((request.model3d or {}).get("engine") or "").lower() == "triposplat" else "trellis2"
             node_status = _model3d_node_status(object_info, engine=engine)
@@ -10091,6 +10232,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     vae_name,
                     reference_image_name=reference_image_name,
                     mask_image_name=mask_image_name,
+                    controlnet_name=assets.get("controlnet_model"),
+                    controlnet_image_name=assets.get("controlnet_image"),
                 )
             else:
                 prompt = patch_workflow(prompt, request, assets=assets)
@@ -10115,6 +10258,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     vae_name,
                     reference_image_name=reference_image_name,
                     mask_image_name=mask_image_name,
+                    controlnet_name=assets.get("controlnet_model"),
+                    controlnet_image_name=assets.get("controlnet_image"),
                 )
         else:
             checkpoint_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
@@ -10136,6 +10281,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     vae_name,
                     reference_image_name=reference_image_name,
                     mask_image_name=mask_image_name,
+                    controlnet_name=assets.get("controlnet_model"),
+                    controlnet_image_name=assets.get("controlnet_image"),
                 )
             elif request.preset.lower() == "ltx":
                 text_encoder_name = assets.get("text_encoder")

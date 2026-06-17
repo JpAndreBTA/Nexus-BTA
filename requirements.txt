@@ -99,6 +99,7 @@ matplotlib>=3.8
 # - https://github.com/ClownsharkBatwing/RES4LYF.git
 # - https://github.com/scraed/LanPaint.git
 # - https://github.com/GumGum10/comfyui-qwen35-anima.git
+# - https://github.com/kohya-ss/ComfyUI-Anima-LLLite.git
 
 # TRELLIS.2 / 3D MODEL template support.
 # Core custom node repo: https://github.com/visualbruno/ComfyUI-Trellis2
