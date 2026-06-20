@@ -889,6 +889,36 @@
             cursor: grabbing;
         }
 
+        #galleryModalStage:fullscreen #galleryModalImage,
+        #galleryModalStage:fullscreen #galleryModalVideo,
+        #galleryModalStage[data-fullscreen="true"] #galleryModalImage,
+        #galleryModalStage[data-fullscreen="true"] #galleryModalVideo {
+            width: 100vw;
+            height: 100vh;
+            max-width: 100vw;
+            max-height: 100vh;
+            border: 0;
+            object-fit: contain;
+        }
+
+        @media (max-width: 767px) {
+            .sortable-panel > :first-child {
+                cursor: default !important;
+            }
+
+            .sortable-panel .panel-drag-handle {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 22px;
+                min-width: 22px;
+                height: 22px;
+                margin-right: 4px;
+                touch-action: none;
+                cursor: grab !important;
+            }
+        }
+
         .sortable-panel :is(label, div, p, span):has(.panel-drag-handle) {
             background: rgba(255, 255, 255, 0.035);
             border-radius: 2px;
@@ -3219,22 +3249,30 @@
 
     <!-- Gallery Preview Modal -->
     <div id="galleryModal" class="fixed inset-0 z-[110] hidden flex items-center justify-center bg-black/85 backdrop-blur-sm">
-        <div class="bg-nexus-panel border border-nexus-border w-[80vw] max-w-[1500px] h-[80vh] max-h-[92vh] flex flex-col rounded-sm overflow-hidden">
+        <div id="galleryModalDialog" class="bg-nexus-panel border border-nexus-border w-[80vw] max-w-[1500px] h-[80vh] max-h-[92vh] flex flex-col rounded-sm overflow-hidden">
             <div class="h-11 px-4 border-b border-nexus-border flex justify-between items-center bg-nexus-bg shrink-0">
                 <span class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                     <i class="fa-solid fa-images text-nexus-red"></i> Gallery Preview
                 </span>
-                <button onclick="closeGalleryModal()" class="text-nexus-muted hover:text-nexus-red transition-colors text-sm">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+                <div class="flex items-center gap-1">
+                    <button id="galleryFullscreenBtn" onclick="toggleGalleryFullscreen()" class="w-8 h-8 text-nexus-muted hover:text-white transition-colors text-sm" title="Fullscreen">
+                        <i class="fa-solid fa-expand"></i>
+                    </button>
+                    <button onclick="closeGalleryModal()" class="w-8 h-8 text-nexus-muted hover:text-nexus-red transition-colors text-sm" title="Close">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
             </div>
             <div class="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_390px] min-h-0">
-                <div class="relative bg-nexus-bg flex items-center justify-center overflow-hidden p-6">
+                <div id="galleryModalStage" class="relative bg-nexus-bg flex items-center justify-center overflow-hidden p-3 sm:p-6 touch-pan-y select-none">
+                    <button id="galleryStageFullscreenExit" onclick="exitGalleryFullscreen()" class="hidden absolute right-3 top-3 z-20 w-10 h-10 bg-nexus-panel/90 border border-nexus-border rounded-sm text-white hover:border-nexus-red" title="Exit fullscreen">
+                        <i class="fa-solid fa-compress"></i>
+                    </button>
                     <button onclick="navigateGalleryModal(-1)" class="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-9 h-9 bg-nexus-panel border border-nexus-border rounded-sm text-nexus-muted hover:text-white hover:border-nexus-red" title="Previous">
                         <i class="fa-solid fa-chevron-left"></i>
                     </button>
-                    <img id="galleryModalImage" src="" alt="Gallery selected output" class="max-w-full max-h-full object-contain border border-nexus-border">
-                    <video id="galleryModalVideo" src="" controls loop playsinline class="hidden max-w-full max-h-full object-contain border border-nexus-border"></video>
+                    <img id="galleryModalImage" src="" alt="Gallery selected output" draggable="false" class="max-w-full max-h-full object-contain border border-nexus-border">
+                    <video id="galleryModalVideo" src="" controls loop playsinline disablepictureinpicture class="hidden max-w-full max-h-full object-contain border border-nexus-border"></video>
                     <button onclick="navigateGalleryModal(1)" class="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-9 h-9 bg-nexus-panel border border-nexus-border rounded-sm text-nexus-muted hover:text-white hover:border-nexus-red" title="Next">
                         <i class="fa-solid fa-chevron-right"></i>
                     </button>
@@ -7013,7 +7051,7 @@
 
     </div>
 
-    <script src="/assets/nexus-civitai.js?v=20260616-civitai-lazy-cursor-fix"></script>
+    <script src="/assets/nexus-civitai.js?v=20260620-mobile-lan-gallery-release"></script>
 
     <!-- Interface Logic -->
     <script>
@@ -7721,6 +7759,16 @@
 
         function handleMobileBackTrap() {
             if (!isMobileBackTrapLayout()) return false;
+            const galleryModal = document.getElementById('galleryModal');
+            if (galleryModal?.dataset.fullscreenBackArmed === 'true') {
+                galleryModal.dataset.fullscreenBackArmed = 'false';
+                exitGalleryFullscreen({ syncHistory: false });
+                return true;
+            }
+            if (elementVisible('galleryModal')) {
+                closeGalleryModal({ syncHistory: false });
+                return true;
+            }
             if (elementVisible('civitaiMediaModal')) {
                 window.NexusCivitai?.closeMedia?.();
                 return true;
@@ -8731,6 +8779,44 @@
             return /qwen[_\-. ]?3.*4b|qwen3.*4b|qwen.*4b/i.test(raw);
         }
 
+        function isKnownIncompatibleSideAsset(presetName, kind, value) {
+            const raw = String(value || '').trim().toLowerCase();
+            if (!raw || /^(automatic|auto|none)$/.test(raw)) return false;
+            if (kind === 'text') {
+                if (/projection|text_projection|\bproj\b/.test(raw)) return true;
+                if (presetName === 'LTX') {
+                    if (/gemma/.test(raw)) return /gemma[-_. ]?4/.test(raw);
+                    return /qwen|umt5|t5xxl|clip[_\-. ]?l|anima/.test(raw);
+                }
+                if (presetName === 'Wan') {
+                    if (/umt5|t5/.test(raw)) return false;
+                    return /qwen|gemma|clip[_\-. ]?l|anima/.test(raw);
+                }
+                if (presetName === 'Qwen') {
+                    if (/qwen.*2[._-]?5.*vl|qwen.*image/.test(raw)) return false;
+                    return /gemma|umt5|t5xxl|clip[_\-. ]?l|anima|qwen.*3/.test(raw);
+                }
+                if (presetName === 'Anima') {
+                    if (/anima2bqwen|qwen35|qwen.*3[._-]?5|qwen_3_06b|qwen.*3.*06b/.test(raw)) return false;
+                    return /gemma|umt5|t5xxl|clip[_\-. ]?l|qwen.*2[._-]?5.*vl|qwen3vl/.test(raw);
+                }
+                if (presetName === 'ZImageTurbo') {
+                    if (/qwen[_\-. ]?3.*4b|qwen3.*4b/.test(raw)) return false;
+                    return /gemma|umt5|t5xxl|clip[_\-. ]?l|anima|qwen.*vl/.test(raw);
+                }
+                if (presetName === 'Ideogram4') {
+                    if (/qwen3vl.*8b|qwen.*3.*vl.*8b/.test(raw)) return false;
+                    return /gemma|umt5|t5xxl|clip[_\-. ]?l|anima|qwen.*2[._-]?5/.test(raw);
+                }
+            }
+            if (kind === 'vae') {
+                if (presetName === 'LTX') return /qwen|wan|flux|sdxl|illustrious|vae-ft/.test(raw) && !/ltx/.test(raw);
+                if (presetName === 'Wan') return /qwen|ltx|flux|sdxl|illustrious|vae-ft/.test(raw) && !/wan/.test(raw);
+                if (presetName === 'Qwen' || presetName === 'Anima') return /wan|ltx|flux|sdxl|illustrious|vae-ft/.test(raw) && !/qwen/.test(raw);
+            }
+            return false;
+        }
+
         function compatibleSideAssetChoice(presetName, kind, value) {
             const profile = modelProfiles[presetName] || {};
             const selectId = kind === 'vae' ? 'vaeSelect' : 'textEncoderSelect';
@@ -8743,12 +8829,30 @@
                 ? (presetName === 'Flux' ? (preferredFlux2SideAsset('vae', cleanAvailable) || preferredVaeForPreset(presetName, cleanAvailable)) : preferredVaeForPreset(presetName, cleanAvailable))
                 : (presetName === 'Flux' ? (preferredFlux2SideAsset('text', cleanAvailable) || preferredEncoderForPreset(presetName, cleanAvailable)) : preferredEncoderForPreset(presetName, cleanAvailable));
             if (!raw || /^(automatic|auto|none)$/i.test(raw)) return preferred || raw;
-            if (presetName === 'Flux' && !isFlux2CompatibleSideAsset(kind === 'vae' ? 'vae' : 'text', raw)) return preferred || raw;
-            if (kind === 'text') {
-                if (presetName === 'LTX' && /projection|proj/i.test(raw)) return preferred || raw;
-            }
             const exact = options.find(option => option === raw) || cleanAvailable.find(option => option === raw);
             return exact || preferred || raw;
+        }
+
+        function updateSideAssetCompatibilityStatus(presetName = activePreset) {
+            const vaeSelect = document.getElementById('vaeSelect');
+            const textSelect = document.getElementById('textEncoderSelect');
+            const warnings = [];
+            if (isKnownIncompatibleSideAsset(presetName, 'vae', vaeSelect?.value)) warnings.push('VAE may not match this template');
+            if (presetName === 'Flux' && !isFlux2CompatibleSideAsset('vae', vaeSelect?.value)) warnings.push('VAE may not match the selected Flux model');
+            if (isKnownIncompatibleSideAsset(presetName, 'text', textSelect?.value)) warnings.push('Text encoder/tokenizer may not match this template');
+            if (presetName === 'Flux' && !isFlux2CompatibleSideAsset('text', textSelect?.value)) warnings.push('Text encoder may not match the selected Flux model');
+            vaeSelect?.toggleAttribute('aria-invalid', warnings.some(message => message.startsWith('VAE')));
+            textSelect?.toggleAttribute('aria-invalid', warnings.some(message => message.startsWith('Text')));
+            document.getElementById('sideAssetCompatibilityChip')?.remove();
+            if (!warnings.length) return;
+            const chips = document.getElementById('compatChips');
+            if (!chips) return;
+            const chip = document.createElement('span');
+            chip.id = 'sideAssetCompatibilityChip';
+            chip.className = 'compat-chip border-yellow-500 text-yellow-300';
+            chip.title = warnings.join('. ');
+            chip.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Asset warning';
+            chips.appendChild(chip);
         }
 
         function controlNetCompatiblePreset(presetName = activePreset) {
@@ -13375,14 +13479,15 @@
             setSelectValue('modelSelect', selectedModelPath);
             setElementOptions('vaeSelect', profile.vae);
             setElementOptions('textEncoderSelect', profile.encoder);
-            setSelectValue('vaeSelect', savedFields.vaeSelect || profile.vae?.[0] || 'Automatic');
-            setSelectValue('textEncoderSelect', savedFields.textEncoderSelect || profile.encoder?.[0] || 'Automatic');
-            if (presetName === 'Flux' || presetName === 'Qwen') {
-                const compatibleVae = compatibleSideAssetChoice(presetName, 'vae', document.getElementById('vaeSelect')?.value);
-                const compatibleTextEncoder = compatibleSideAssetChoice(presetName, 'text', document.getElementById('textEncoderSelect')?.value);
-                if (compatibleVae) setSelectValue('vaeSelect', compatibleVae);
-                if (compatibleTextEncoder) setSelectValue('textEncoderSelect', compatibleTextEncoder);
-            }
+            const legacyAssetState = savedState && Number(savedState.version || 0) < 3;
+            const restoredVae = legacyAssetState && isKnownIncompatibleSideAsset(presetName, 'vae', savedFields.vaeSelect)
+                ? null
+                : savedFields.vaeSelect;
+            const restoredTextEncoder = legacyAssetState && isKnownIncompatibleSideAsset(presetName, 'text', savedFields.textEncoderSelect)
+                ? null
+                : savedFields.textEncoderSelect;
+            setSelectValue('vaeSelect', restoredVae || profile.vae?.[0] || 'Automatic');
+            setSelectValue('textEncoderSelect', restoredTextEncoder || profile.encoder?.[0] || 'Automatic');
             setElementOptions('distillSelect', profile.variants);
             setElementOptions('precisionSelect', profile.precision);
             setElementOptions('samplingMethodSelect', uniqueOptions([profile.sampler, ...(profile.samplers || []), ...GLOBAL_SAMPLERS]));
@@ -13463,6 +13568,7 @@
             document.getElementById('compatSummary').innerText = profile.summary;
             document.getElementById('videoRouteText').innerText = profile.video || 'Image template: motion settings are hidden for this model.';
             document.getElementById('compatChips').innerHTML = profile.chips.map(chip => `<span class="compat-chip"><i class="fa-solid fa-check text-nexus-red"></i> ${chip}</span>`).join('');
+            updateSideAssetCompatibilityStatus(presetName);
             updateModelTypeUi();
             updateModel3DTemplateUi();
             updateOmnicineStatus();
@@ -22447,14 +22553,21 @@
             activeGalleryIndex = Math.max(0, Math.min(galleryItems.length - 1, index));
             renderGalleryModal();
             document.getElementById('galleryModal').classList.remove('hidden');
+            initializeGallerySwipeNavigation();
+            syncGalleryFullscreenUi();
+            pushMobileBackTrap('gallery');
         }
 
-        function closeGalleryModal() {
+        function closeGalleryModal(options = {}) {
+            exitGalleryFullscreen({ syncHistory: false });
             document.getElementById('galleryModal').classList.add('hidden');
             const video = document.getElementById('galleryModalVideo');
             if (video) {
                 video.pause();
                 video.src = '';
+            }
+            if (options.syncHistory !== false && isMobileBackTrapLayout() && history.state?.nexusMobileBackTrap === 'gallery') {
+                history.back();
             }
         }
 
@@ -22478,8 +22591,94 @@
 
         function navigateGalleryModal(direction) {
             if (!galleryItems.length) return;
+            const video = document.getElementById('galleryModalVideo');
+            video?.pause?.();
             activeGalleryIndex = (activeGalleryIndex + direction + galleryItems.length) % galleryItems.length;
             renderGalleryModal();
+        }
+
+        function galleryFullscreenActive() {
+            const stage = document.getElementById('galleryModalStage');
+            return document.fullscreenElement === stage || stage?.dataset.fullscreen === 'true';
+        }
+
+        function syncGalleryFullscreenUi() {
+            const stage = document.getElementById('galleryModalStage');
+            const button = document.getElementById('galleryFullscreenBtn');
+            const exitButton = document.getElementById('galleryStageFullscreenExit');
+            const active = galleryFullscreenActive();
+            stage?.classList.toggle('p-0', active);
+            stage?.classList.toggle('sm:p-0', active);
+            stage?.classList.toggle('w-screen', active);
+            stage?.classList.toggle('h-screen', active);
+            stage?.classList.toggle('bg-black', active);
+            exitButton?.classList.toggle('hidden', !active);
+            if (button) {
+                button.title = active ? 'Exit fullscreen' : 'Fullscreen';
+                button.innerHTML = `<i class="fa-solid fa-${active ? 'compress' : 'expand'}"></i>`;
+            }
+        }
+
+        async function toggleGalleryFullscreen() {
+            const modal = document.getElementById('galleryModal');
+            const stage = document.getElementById('galleryModalStage');
+            if (!modal || !stage) return;
+            if (galleryFullscreenActive()) {
+                exitGalleryFullscreen();
+                return;
+            }
+            stage.dataset.fullscreen = 'true';
+            if (isMobileBackTrapLayout()) {
+                modal.dataset.fullscreenBackArmed = 'true';
+                pushMobileBackTrap('gallery-fullscreen');
+            }
+            if (stage.requestFullscreen) {
+                try {
+                    await stage.requestFullscreen({ navigationUI: 'hide' });
+                } catch {
+                }
+            }
+            syncGalleryFullscreenUi();
+        }
+
+        function exitGalleryFullscreen(options = {}) {
+            const modal = document.getElementById('galleryModal');
+            const stage = document.getElementById('galleryModalStage');
+            if (stage) stage.dataset.fullscreen = 'false';
+            if (document.fullscreenElement === stage && document.exitFullscreen) {
+                document.exitFullscreen().catch?.(() => {});
+            }
+            syncGalleryFullscreenUi();
+            if (options.syncHistory !== false && modal?.dataset.fullscreenBackArmed === 'true' && isMobileBackTrapLayout()) {
+                modal.dataset.fullscreenBackArmed = 'false';
+                if (history.state?.nexusMobileBackTrap === 'gallery-fullscreen') history.back();
+            }
+        }
+
+        function initializeGallerySwipeNavigation() {
+            const stage = document.getElementById('galleryModalStage');
+            if (!stage || stage.dataset.swipeReady === 'true') return;
+            stage.dataset.swipeReady = 'true';
+            let startX = 0;
+            let startY = 0;
+            let tracking = false;
+            stage.addEventListener('pointerdown', event => {
+                if (event.pointerType === 'mouse' || event.target.closest('button')) return;
+                startX = event.clientX;
+                startY = event.clientY;
+                tracking = true;
+            });
+            stage.addEventListener('pointerup', event => {
+                if (!tracking) return;
+                tracking = false;
+                const deltaX = event.clientX - startX;
+                const deltaY = event.clientY - startY;
+                if (Math.abs(deltaX) < 55 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.2) return;
+                navigateGalleryModal(deltaX < 0 ? 1 : -1);
+            });
+            stage.addEventListener('pointercancel', () => {
+                tracking = false;
+            });
         }
 
         function sendGalleryItemTo(target) {
@@ -23382,6 +23581,12 @@
                 event.preventDefault();
                 navigateGalleryModal(1);
             }
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+            const stage = document.getElementById('galleryModalStage');
+            if (stage && document.fullscreenElement !== stage) stage.dataset.fullscreen = 'false';
+            syncGalleryFullscreenUi();
         });
 
         window.addEventListener('beforeunload', () => {
@@ -26562,6 +26767,13 @@
             title.dataset.panelTitleReady = '1';
             title.classList.add('cursor-grab', 'select-none');
             title.title = title.title || 'Drag to reorder. Click to expand or hide.';
+            if (!title.querySelector('.panel-drag-handle')) {
+                const dragHandle = document.createElement('span');
+                dragHandle.className = 'panel-drag-handle';
+                dragHandle.title = 'Drag to reorder';
+                dragHandle.innerHTML = '<i class="fa-solid fa-grip-vertical text-[10px] text-nexus-muted pointer-events-none"></i>';
+                title.prepend(dragHandle);
+            }
             const hasNativeAccordion = !!title.querySelector('[id$="AccordionIcon"]');
             if (hasNativeAccordion) {
                 title.querySelectorAll('[data-panel-collapse-icon]').forEach(icon => {
@@ -26597,6 +26809,7 @@
             }
             title.addEventListener('pointerdown', event => {
                 if (event.button !== 0 || event.target.closest('input, textarea, select, button, a')) return;
+                if (isMobileUiLayout() && !event.target.closest('.panel-drag-handle')) return;
                 const container = panel.parentElement;
                 if (!container || !sortableContainers().includes(container)) return;
                 if (isMobileUiLayout()) event.preventDefault();
@@ -26912,7 +27125,7 @@
             const tabsSnapshot = cloneSmallRuntimeState(workflowTabs);
             if (graphSnapshot) persistActiveWorkflowGraphSnapshot();
             presetRuntimeStates[presetName] = {
-                version: 2,
+                version: 3,
                 savedAt: new Date().toISOString(),
                 fields,
                 loras: Array.isArray(activeLoras) ? activeLoras.map(item => ({ ...item })) : [],
@@ -35443,11 +35656,9 @@
             });
             if (element) element.addEventListener('change', () => {
                 if (id === 'modelSelect' && activePreset === 'Flux') {
-                    const compatibleVae = compatibleSideAssetChoice('Flux', 'vae', document.getElementById('vaeSelect')?.value);
-                    const compatibleTextEncoder = compatibleSideAssetChoice('Flux', 'text', document.getElementById('textEncoderSelect')?.value);
-                    if (compatibleVae) setSelectValue('vaeSelect', compatibleVae);
-                    if (compatibleTextEncoder) setSelectValue('textEncoderSelect', compatibleTextEncoder);
+                    updateSideAssetCompatibilityStatus('Flux');
                 }
+                if (id === 'vaeSelect' || id === 'textEncoderSelect') updateSideAssetCompatibilityStatus(activePreset);
                 updateWorkflowPreview();
                 syncSideMenuToWorkflowGraph({ element, immediate: true });
                 savePresetRuntimeState(activePreset);

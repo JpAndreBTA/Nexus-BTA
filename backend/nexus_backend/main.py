@@ -9980,13 +9980,18 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         _resolve_generation_seed(request)
         attention_changed = comfy.use_preset_attention_backend(
             request.preset,
-            apply=restart_runtime_on_change or not comfy_running_before_runtime_sync,
+            apply=True,
         )
         runtime_restart_needed = runtime_changed or attention_changed or comfy.runtime_changed_since_start()
         if runtime_restart_needed and comfy_running_before_runtime_sync:
-            if restart_runtime_on_change:
+            if restart_runtime_on_change or attention_changed:
                 if job_id:
-                    _update_generation_job(job_id, {"status": "starting", "progress": 2, "message": "Restarting ComfyUI runtime"}, force=True)
+                    message = (
+                        "Restarting ComfyUI with Qwen-safe attention"
+                        if request.preset.lower() == "qwen" and attention_changed
+                        else "Restarting ComfyUI with the configured attention backend"
+                    )
+                    _update_generation_job(job_id, {"status": "starting", "progress": 2, "message": message}, force=True)
                 cleanup_embedded_comfy_artifacts()
                 await comfy.restart()
                 last_deferred_runtime_restart_signature = ""
@@ -10612,6 +10617,13 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             if job_id:
                 if _handle_cancelled_generation_progress(job_id, update):
                     return
+                if str(update.get("status") or "").lower() == "completed":
+                    update = {
+                        **update,
+                        "status": "finalizing",
+                        "progress": min(99, int(float(update.get("progress") or 99))),
+                        "message": "Finalizing outputs",
+                    }
                 _update_generation_job(job_id, update)
 
         generation_started_at = datetime.now().timestamp()

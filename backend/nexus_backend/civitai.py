@@ -55,7 +55,12 @@ def search_civitai_models(
         params["baseModels"] = base_model
     if cursor:
         params["cursor"] = cursor
-    data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(params)}", token)
+    try:
+        data = _get_json_any_host(f"/api/v1/models?{urllib.parse.urlencode(params)}", token)
+    except ValueError as exc:
+        if cursor and _is_invalid_cursor_error(exc):
+            return {"items": [], "metadata": {"cursorRejected": True}}
+        raise
     items = data.get("items") or []
     if query and not items:
         for fallback_params in _fallback_search_params(query, params):
@@ -72,9 +77,10 @@ def search_civitai_models(
     visible_items = [item for item in items if isinstance(item, dict)]
     if not nsfw:
         visible_items = [item for item in visible_items if _item_visible_when_mature_hidden(item)]
+    metadata = _sanitize_search_metadata(data.get("metadata") or {}, params, len(visible_items))
     return {
         "items": [_normalize_model_item(item, settings=settings, token=token) for item in visible_items],
-        "metadata": data.get("metadata") or {},
+        "metadata": metadata,
     }
 
 
@@ -114,6 +120,25 @@ def _tag_fallback_search_params(tag: str, params: dict[str, Any]) -> list[dict[s
     fallback = {key: value for key, value in params.items() if key != "tag"}
     fallback["query"] = query
     return [fallback]
+
+
+def _is_invalid_cursor_error(error: Exception) -> bool:
+    text = str(error).lower()
+    return "invalid cursor" in text or "expected 2 value" in text
+
+
+def _cursor_is_numeric_offset(cursor: Any) -> bool:
+    return bool(re.fullmatch(r"\d+", str(cursor or "").strip()))
+
+
+def _sanitize_search_metadata(metadata: dict[str, Any], params: dict[str, Any], visible_count: int) -> dict[str, Any]:
+    cleaned = dict(metadata or {})
+    limit = max(1, min(int(params.get("limit") or 24), 200))
+    next_cursor = cleaned.get("nextCursor")
+    if visible_count < limit or _cursor_is_numeric_offset(next_cursor):
+        cleaned.pop("nextCursor", None)
+        cleaned.pop("nextPage", None)
+    return cleaned
 
 
 MATURE_TAGS = {

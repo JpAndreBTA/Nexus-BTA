@@ -1,7 +1,4 @@
 (function () {
-  const api = window.location.protocol.startsWith("http")
-    ? `${window.location.origin}/api`
-    : "http://127.0.0.1:7861/api";
   let resolved = null;
   let searchCursor = null;
   let currentItems = [];
@@ -38,6 +35,45 @@
 
   function el(id) {
     return document.getElementById(id);
+  }
+
+  function normalizeApiBase(value) {
+    return String(value || "").replace(/\/+$/, "");
+  }
+
+  function apiCandidates() {
+    const candidates = [];
+    const push = (value) => {
+      const normalized = normalizeApiBase(value);
+      if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
+    };
+    push(window.NEXUS_API);
+    if (window.location.protocol.startsWith("http")) {
+      push(`${window.location.origin}/api`);
+      const host = window.location.hostname;
+      if (host && window.location.port !== "7861") {
+        push(`${window.location.protocol}//${host}:7861/api`);
+      }
+    } else {
+      push("http://127.0.0.1:7861/api");
+    }
+    return candidates;
+  }
+
+  async function fetchBackend(path, options = {}) {
+    let lastError = null;
+    for (const base of apiCandidates()) {
+      try {
+        return await fetch(base + path, options);
+      } catch (error) {
+        if (error?.name === "AbortError") throw error;
+        lastError = error;
+      }
+    }
+    const hint = window.location.hostname
+      ? `Try opening http://${window.location.hostname}:7861/ui on this device, or allow port 7861 in the firewall.`
+      : "Open Nexus through StartLAN or allow the backend in the firewall.";
+    throw new Error(`Nexus backend unavailable for Civitai. ${hint} ${lastError?.message || "Failed to fetch"}`);
   }
 
   function html(value) {
@@ -327,7 +363,7 @@
       else signal.addEventListener("abort", abortFromCaller, { once: true });
     }
     try {
-      const response = await fetch(api + path, {
+      const response = await fetchBackend(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -358,7 +394,7 @@
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(api + path, { signal: controller.signal });
+      const response = await fetchBackend(path, { signal: controller.signal });
       if (!response.ok) throw new Error(await response.text());
       return response.json();
     } finally {
@@ -538,7 +574,7 @@
       const poster = posterUrl(preview);
       const src = videoUrl(preview) || url;
       const playable = !!options.playVideo && !!src;
-      return `<div class="${className} relative bg-black">${fallback}${playable ? `<video data-src="${html(src)}" muted loop playsinline preload="none" ${poster ? `poster="${html(poster)}"` : ""} aria-label="${html(alt)}" onerror="this.remove()" class="nexus-civitai-tile-video relative z-10 w-full h-full object-cover"></video>` : poster ? `<img src="${html(poster)}" loading="lazy" decoding="async" alt="${html(alt)}" onerror="this.remove()" class="relative z-10 w-full h-full object-cover">` : `<div class="relative z-10 w-full h-full flex items-center justify-center text-nexus-muted"><i class="fa-solid fa-play text-2xl"></i></div>`}<span class="absolute bottom-2 left-2 z-20 bg-black/80 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-play mr-1"></i>Video</span></div>`;
+      return `<div class="${className} relative bg-black">${fallback}${playable ? `<video data-src="${html(src)}" muted loop playsinline preload="none" ${poster ? `poster="${html(poster)}"` : ""} aria-label="${html(alt)}" onerror="this.removeAttribute('src'); this.load()" class="nexus-civitai-tile-video relative z-10 w-full h-full object-cover"></video>` : poster ? `<img src="${html(poster)}" loading="lazy" decoding="async" alt="${html(alt)}" onerror="this.remove()" class="relative z-10 w-full h-full object-cover">` : `<div class="relative z-10 w-full h-full flex items-center justify-center text-nexus-muted"><i class="fa-solid fa-play text-2xl"></i></div>`}<span class="absolute bottom-2 left-2 z-20 bg-black/80 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase"><i class="fa-solid fa-play mr-1"></i>Video</span></div>`;
     }
     return `<div class="${className} relative bg-nexus-bg overflow-hidden">${fallback}<img src="${html(url)}" loading="lazy" decoding="async" alt="${html(alt)}" onerror="this.remove()" class="relative z-10 w-full h-full object-cover"></div>`;
   }
@@ -654,6 +690,7 @@
 
   function itemVisibleWithCurrentFilters(item) {
     if (installedOnlyEnabled() && !itemInstalled(item)) return false;
+    if (!itemMatchesSearchQuery(item)) return false;
     return itemVisibleWithCurrentMatureFilter(item);
   }
 
@@ -920,8 +957,12 @@
     const panel = el("civitaiResultPanel");
     if (!panel) return;
     if (viewMode === "explorer") rememberExplorerScroll();
+    const previousMode = viewMode;
     viewMode = "detail";
     currentDetail = { data, downloaded };
+    if (previousMode !== "detail" && !el("civitaiModal")?.classList.contains("hidden")) {
+      window.nexusPushMobileBackTrap?.("civitaiDetail");
+    }
     const previews = visiblePreviews(data);
     const installed = isInstalled(data, downloaded);
     const localPath = installedPath(data);
@@ -1230,6 +1271,13 @@
         return;
       }
       if (runId === searchRunId) {
+        if (append && currentItems.length) {
+          searchCursor = null;
+          const lazyStatus = el("civitaiLazyStatus");
+          if (lazyStatus) lazyStatus.outerHTML = lazyStatusHtml();
+          status("No more Civitai results for this search.");
+          return;
+        }
         const panel = el("civitaiResultPanel");
         const message = String(error?.message || "Civitai search failed. Try again or adjust filters.").slice(0, 180);
         if (panel) panel.innerHTML = searchErrorHtml(message);
@@ -1341,6 +1389,7 @@
       }, false);
     },
     backToSearch() {
+      closeMediaModal();
       renderSearch(currentItems, false);
       restoreExplorerScroll();
       status(`${currentItems.length} model(s) loaded.`);
@@ -1348,6 +1397,18 @@
     handleEscape() {
       if (viewMode !== "detail") return false;
       this.backToSearch();
+      return true;
+    },
+    handleMobileBack() {
+      if (el("civitaiMediaModal") && !el("civitaiMediaModal").classList.contains("hidden")) {
+        closeMediaModal();
+        return true;
+      }
+      if (viewMode === "detail") {
+        this.backToSearch();
+        return true;
+      }
+      this.close();
       return true;
     },
     resolveSearchResult(index = selectedIndex) {

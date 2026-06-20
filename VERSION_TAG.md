@@ -1,14 +1,15 @@
-# NexusBTA v0.2.30
+# NexusBTA v0.2.39
 
-`NexusBTA v0.2.30 - Runtime Attention Settings Hotfix`
+`NexusBTA v0.2.39 - Mobile UI, LTX proportion and tokenizer runtime fixes`
 
 Short release summary:
 
-- Runtime settings: SageAttention, xFormers and PyTorch SDPA toggles now save as independent preferences.
-- Compatibility sets: users can keep Sage + xFormers, Sage + SDPA, xFormers + SDPA or SDPA-only from the Settings UI.
-- Backend runtime: SDPA preference is persisted with `enable_pytorch_attention` and included in runtime restart signatures.
-- Hotfix scope: keeps the Blackwell xFormers operator probe from `v0.2.29`.
+- Mobile UI: media-only gallery fullscreen, swipe navigation, device Back handling and grip-only side-panel reordering.
+- Mobile Civitai: LAN API fallback, ordered Back navigation and resilient lazy search pagination.
+- LTX 2.3: proportional edge padding prevents stretched input frames without cropping or black bands.
+- Runtime tokenizer/attention: Qwen and LTX switches restart only ComfyUI when xFormers/SageAttention must change.
+- Side assets: VAE and text encoder choices remain user-controlled, with compatibility warnings instead of forced replacement.
 
 Complete version:
 
-[docs/releases/v0.2.30.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.30/docs/releases/v0.2.30.md)
+[docs/releases/v0.2.39.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.39/docs/releases/v0.2.39.md)
