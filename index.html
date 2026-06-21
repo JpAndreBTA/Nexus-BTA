@@ -22684,7 +22684,6 @@
         function sendGalleryItemTo(target) {
             const item = galleryItems[activeGalleryIndex];
             if (!item) return;
-            restoreGalleryGenerationSettings(item);
 
             if (target === 'txt2img') {
                 if (isQwenImageEditTemplateActive()) {
@@ -22693,7 +22692,7 @@
                 document.getElementById('posPrompt').value = item.prompt;
                 document.getElementById('negPrompt').value = item.negative;
                 switchActivity('txt2img', getActivityButton('txt2img'));
-                showToast("Sent to txt2img", "Prompt and metadata loaded from gallery item.");
+                showToast("Sent to txt2img", "Positive and negative prompts loaded from gallery item.");
                 }
             }
 
@@ -22729,35 +22728,6 @@
 
             updateWorkflowPreview();
             closeGalleryModal();
-        }
-
-        function restoreGalleryGenerationSettings(item) {
-            if (!item) return;
-            if (item.vae) setSelectValue('vaeSelect', item.vae);
-            if (item.textEncoder) setSelectValue('textEncoderSelect', item.textEncoder);
-            if (item.videoVae) setSelectValue('videoVaeSelect', item.videoVae);
-            if (item.audioVae) setSelectValue('audioVaeSelect', item.audioVae);
-            if (item.latentUpscale) setSelectValue('latentUpscaleSelect', item.latentUpscale);
-            if (item.video?.omnicine_lora) {
-                setSelectValue('omnicineSelect', item.video.omnicine_lora);
-                updateOmnicineStatus();
-            } else if (item.video?.omnicine_enabled !== undefined && !item.video.omnicine_enabled) {
-                setSelectValue('omnicineSelect', 'Off');
-                updateOmnicineStatus();
-            }
-            if (Array.isArray(item.loras) && item.loras.length) {
-                activeLoras = item.loras.map(lora => ({
-                    name: lora.name || lora.relative_name || lora.lora_name || 'LoRA',
-                    relative_name: lora.relative_name || lora.name || lora.lora_name || '',
-                    strength: Number(lora.strength ?? lora.strength_model ?? 1),
-                    strength_clip: Number(lora.strength_clip ?? 0)
-                }));
-                renderActiveLoras();
-            }
-            if (Array.isArray(item.distilledLoras)) {
-                if (item.distilledLoras[0]?.name) setSelectValue('distilledLoraOneSelect', item.distilledLoras[0].name);
-                if (item.distilledLoras[1]?.name) setSelectValue('distilledLoraTwoSelect', item.distilledLoras[1].name);
-            }
         }
 
         function syncSketchColor(value) {

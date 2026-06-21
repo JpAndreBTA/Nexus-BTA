@@ -1,15 +1,14 @@
-# NexusBTA v0.2.39
+# NexusBTA v0.2.40
 
-`NexusBTA v0.2.39 - Mobile UI, LTX proportion and tokenizer runtime fixes`
+`NexusBTA v0.2.40 - Gallery workflow isolation hotfix`
 
 Short release summary:
 
-- Mobile UI: media-only gallery fullscreen, swipe navigation, device Back handling and grip-only side-panel reordering.
-- Mobile Civitai: LAN API fallback, ordered Back navigation and resilient lazy search pagination.
-- LTX 2.3: proportional edge padding prevents stretched input frames without cropping or black bands.
-- Runtime tokenizer/attention: Qwen and LTX switches restart only ComfyUI when xFormers/SageAttention must change.
-- Side assets: VAE and text encoder choices remain user-controlled, with compatibility warnings instead of forced replacement.
+- Gallery handoff: txt2img receives only the positive and negative prompts.
+- Reference handoff: img2img, inpaint and img2video receive only prompts and the selected image or video.
+- Workflow isolation: VAE, text encoder, video/audio VAE, Concept LoRAs, Lightning LoRAs and distilled LoRAs remain owned by the active template.
+- Template safety: sending an older gallery output no longer contaminates another model workflow.
 
 Complete version:
 
-[docs/releases/v0.2.39.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.39/docs/releases/v0.2.39.md)
+[docs/releases/v0.2.40.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.40/docs/releases/v0.2.40.md)
