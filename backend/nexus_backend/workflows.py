@@ -4136,6 +4136,8 @@ def build_basic_minimax_h3_workflow(
     height = _minimax_h3_dimension(request.height)
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
     active_audio = str(video_options.get("active_audio", True)).strip().lower() not in {"false", "0", "off", "none", "no"}
+    booster_enabled = str(video_options.get("minimax_h3_booster_enabled", True)).strip().lower() not in {"false", "0", "off", "none", "no"}
+    booster = str(video_options.get("minimax_h3_booster") or "first_block_cache").strip().lower()
     sampler = normalize_sampler(request.sampler or "res_multistep")
     scheduler = normalize_scheduler(request.scheduler or "simple")
 
@@ -4171,6 +4173,52 @@ def build_basic_minimax_h3_workflow(
             "_meta": {"title": "MiniMax H3 Scheduler"},
         },
     }
+
+    model_output = ["1", 0]
+    if booster_enabled:
+        if booster == "first_block_cache":
+            workflow["15"] = {
+                "class_type": "ApplyMiniMaxH3FirstBlockCache",
+                "inputs": {
+                    "model": ["1", 0],
+                    "mode": "H3 Fast — 0.10 / max 2",
+                    "threshold": 0.10,
+                    "start_percent": 0.10,
+                    "end_percent": 0.95,
+                    "max_consecutive_hits": 2,
+                    "temporal_guard": False,
+                },
+                "_meta": {"title": "MiniMax H3 Booster — FirstBlockCache (H3 Fast)"},
+            }
+            model_output = ["15", 0]
+        elif booster == "spectrum":
+            workflow["15"] = {
+                "class_type": "SpectrumApplyMiniMaxH3",
+                "inputs": {
+                    "model": ["1", 0],
+                    "enabled": True,
+                    "blend_weight": 0.50,
+                    "degree": 1,
+                    "ridge_lambda": 0.10,
+                    "window_size": 2.0,
+                    "flex_window": 0.75,
+                    "warmup_steps": 1,
+                    "tail_actual_steps": 1,
+                    "max_history": 8,
+                    "debug": False,
+                    "history_storage": "system_ram",
+                    "bootstrap_first_forecast": True,
+                    "anchor_residual_feedback": False,
+                    "selective_rollback_correction": False,
+                    "offline_smoothing_replay": True,
+                    "audio_blend_weight": 0.0,
+                },
+                "_meta": {"title": "MiniMax H3 Booster — Spectrum"},
+            }
+            model_output = ["15", 0]
+        else:
+            raise ValueError(f"Unsupported MiniMax H3 booster: {booster}")
+        workflow["6"]["inputs"]["model"] = model_output
 
     if reference_mode or active_audio:
         workflow["11"] = {
@@ -4265,7 +4313,7 @@ def build_basic_minimax_h3_workflow(
 
     workflow["8"] = {
         "class_type": "BasicGuider",
-        "inputs": {"model": ["1", 0], "conditioning": ["7", 0]},
+        "inputs": {"model": model_output, "conditioning": ["7", 0]},
         "_meta": {"title": "MiniMax H3 Guider"},
     }
     workflow["9"] = {

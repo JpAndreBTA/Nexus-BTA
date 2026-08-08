@@ -592,6 +592,25 @@ MINIMAX_H3_REQUIRED_COMFY_NODES = (
     "LoadAudio",
 )
 
+MINIMAX_H3_BOOSTERS: dict[str, dict[str, Any]] = {
+    "first_block_cache": {
+        "label": "MiniMax H3 FirstBlockCache (H3 Fast)",
+        "repo": "https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache.git",
+        "folder": "ComfyUI-MiniMaxH3-FirstBlockCache",
+        "class_type": "ApplyMiniMaxH3FirstBlockCache",
+        "license": "MIT",
+        "note": "Dependency-free model patch; calibrated H3 Fast threshold 0.10.",
+    },
+    "spectrum": {
+        "label": "Spectrum MiniMax H3",
+        "repo": "https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3.git",
+        "folder": "ComfyUI-Spectrum-MiniMax-H3",
+        "class_type": "SpectrumApplyMiniMaxH3",
+        "license": "GPL-3.0",
+        "note": "Spectral forecasting accelerator; faster but approximate and more sensitive to quality/audio drift.",
+    },
+}
+
 ANIMA_QWEN35_SUPPORT_ARTIFACTS: dict[str, dict[str, Any]] = {
     "calibration_params.safetensors": {
         "label": "Anima Qwen3.5 calibration params",
@@ -7043,6 +7062,25 @@ def _minimax_h3_static_missing_core_support() -> list[str]:
     return missing
 
 
+def _minimax_h3_booster_status(key: str, object_info: dict[str, Any] | None, runtime_checked: bool) -> dict[str, Any]:
+    booster = MINIMAX_H3_BOOSTERS[key]
+    target = settings.custom_nodes_dir / str(booster["folder"])
+    installed = target.is_dir() and (target / ".git").exists()
+    loaded = bool(runtime_checked and object_info and booster["class_type"] in object_info)
+    return {
+        "key": key,
+        "label": booster["label"],
+        "repo": booster["repo"],
+        "folder": booster["folder"],
+        "class_type": booster["class_type"],
+        "license": booster["license"],
+        "note": booster["note"],
+        "installed": installed,
+        "loaded": loaded,
+        "path": str(target) if installed else "",
+    }
+
+
 async def _minimax_h3_status_snapshot() -> dict[str, Any]:
     assets = [_minimax_h3_artifact_status(key) for key in MINIMAX_H3_HF_ARTIFACTS]
     required_keys = {"fl2va_pruned_int8", "qwen3vl_32b_nvfp4", "video_vae", "audio_vae"}
@@ -7059,6 +7097,9 @@ async def _minimax_h3_status_snapshot() -> dict[str, Any]:
             missing_core_nodes = [f"Comfy object_info unavailable: {exc}"]
     else:
         missing_core_nodes = _minimax_h3_static_missing_core_support()
+    boosters = [_minimax_h3_booster_status(key, object_info, runtime_checked) for key in MINIMAX_H3_BOOSTERS]
+    missing_boosters = [item for item in boosters if not item["installed"]]
+    unloaded_boosters = [item for item in boosters if item["installed"] and runtime_checked and not item["loaded"]]
     gpu = _nvidia_smi_memory_snapshot()
     gpu_vram_gb = float(gpu.get("total_mb") or 0) / 1024 if gpu.get("available") else 0.0
     disk = shutil.disk_usage(settings.models_dir)
@@ -7076,6 +7117,14 @@ async def _minimax_h3_status_snapshot() -> dict[str, Any]:
         "missing_optional_assets": missing_optional,
         "runtime_checked": runtime_checked,
         "missing_core_nodes": missing_core_nodes,
+        "boosters": boosters,
+        "missing_boosters": missing_boosters,
+        "unloaded_boosters": unloaded_boosters,
+        "booster_installation": {
+            "path": str(settings.custom_nodes_dir),
+            "python_dependencies": False,
+            "exclusive_runtime": True,
+        },
         "models_dir": str(settings.models_dir),
         "storage_layout": {
             "root": str(settings.models_dir),
@@ -7153,6 +7202,33 @@ async def _run_minimax_h3_assets_download_job(job_id: str, keys: list[str] | Non
 @app.get("/api/minimax-h3/assets/status")
 async def minimax_h3_assets_status() -> dict[str, Any]:
     return await _minimax_h3_status_snapshot()
+
+
+@app.post("/api/minimax-h3/boosters/install")
+async def minimax_h3_boosters_install(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw_keys = (payload or {}).get("boosters") or (payload or {}).get("keys") or list(MINIMAX_H3_BOOSTERS)
+    keys = list(dict.fromkeys(str(item) for item in raw_keys if str(item) in MINIMAX_H3_BOOSTERS)) if isinstance(raw_keys, list) else []
+    if not keys:
+        raise HTTPException(status_code=400, detail="No supported MiniMax H3 booster was selected.")
+    repos = [MINIMAX_H3_BOOSTERS[key]["repo"] for key in keys]
+    installed, errors = await asyncio.to_thread(
+        install_custom_node_dependencies,
+        settings,
+        repos,
+        False,
+    )
+    restarted = False
+    if installed and await comfy.is_running():
+        cleanup_embedded_comfy_artifacts()
+        await comfy.restart()
+        restarted = True
+    return {
+        "installed": installed,
+        "errors": errors,
+        "requested": keys,
+        "restarted_comfy": restarted,
+        "status": await _minimax_h3_status_snapshot(),
+    }
 
 
 @app.post("/api/minimax-h3/assets/download/start")
@@ -10558,6 +10634,17 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     "MiniMax H3 requires a newer ComfyUI core with the official H3 nodes. "
                     f"Missing runtime support: {missing}. Update the embedded ComfyUI runtime, then restart Nexus."
                 )
+            h3_booster_enabled = _truthy((request.video or {}).get("minimax_h3_booster_enabled", True))
+            h3_booster_key = str((request.video or {}).get("minimax_h3_booster") or "first_block_cache").strip().lower()
+            if h3_booster_enabled:
+                h3_booster = MINIMAX_H3_BOOSTERS.get(h3_booster_key)
+                if not h3_booster:
+                    raise ValueError(f"Unsupported MiniMax H3 booster: {h3_booster_key}.")
+                if h3_booster["class_type"] not in object_info:
+                    raise ValueError(
+                        f"MiniMax H3 booster '{h3_booster['label']}' is not loaded. "
+                        f"Install {h3_booster['repo']} in {settings.custom_nodes_dir} and restart ComfyUI."
+                    )
         director_segment_response = await _run_ltx_director_segment_render(request, assets, object_info, job_id=job_id)
         if director_segment_response:
             _cleanup_generation_temp()

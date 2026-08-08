@@ -3857,6 +3857,16 @@
                             <i class="fa-solid fa-fingerprint text-nexus-red mr-1"></i> Emb
                         </button>
                     </div>
+                    <div id="minimaxH3PromptBoosterPanel" class="hidden border border-nexus-border bg-nexus-panel px-2 py-2 rounded-sm space-y-2">
+                        <label class="flex items-center justify-between gap-3 text-[10px] font-mono text-white">
+                            <span><i class="fa-solid fa-gauge-high text-nexus-red mr-1"></i>MiniMax H3 Booster</span>
+                            <span class="toggle-switch"><input id="minimaxH3PromptBoosterEnabled" type="checkbox" checked><span class="toggle-track"></span></span>
+                        </label>
+                        <select id="minimaxH3PromptBoosterSelect" class="flat-input appearance-none cursor-pointer text-[10px]">
+                            <option value="first_block_cache" selected>FirstBlockCache — H3 Fast</option>
+                            <option value="spectrum">Spectrum — spectral forecast</option>
+                        </select>
+                    </div>
 
                     <div id="ideogramMethod2Panel" class="hidden grid grid-cols-[1fr_auto] gap-2 items-end">
                         <label class="space-y-1">
@@ -4366,6 +4376,20 @@
                                     </select>
                                     <span class="text-[9px] text-nexus-muted">R2V/V2V use REF2VA and download it only after confirmation.</span>
                                 </label>
+                                <div id="minimaxH3BoosterPanel" class="hidden space-y-2 bg-nexus-panel border border-nexus-border px-2 py-2 rounded-sm">
+                                    <label class="flex items-center justify-between gap-3 text-xs text-white">
+                                        <span class="font-bold">H3 Booster</span>
+                                        <span class="toggle-switch"><input id="minimaxH3BoosterEnabled" type="checkbox" checked><span class="toggle-track"></span></span>
+                                    </label>
+                                    <label class="space-y-1 block">
+                                        <span class="mini-label">Booster engine</span>
+                                        <select id="minimaxH3BoosterSelect" class="flat-input appearance-none cursor-pointer">
+                                            <option value="first_block_cache" selected>FirstBlockCache — H3 Fast</option>
+                                            <option value="spectrum">Spectrum — spectral forecast</option>
+                                        </select>
+                                    </label>
+                                    <span id="minimaxH3BoosterStatus" class="text-[9px] font-mono text-nexus-muted">Enabled by default. FirstBlockCache is the recommended RTX 3060 profile.</span>
+                                </div>
                                 <div id="ltxVaePanel" class="hidden grid grid-cols-2 gap-2">
                                     <label class="space-y-1">
                                         <span class="mini-label">Video VAE</span>
@@ -7233,6 +7257,9 @@
         let workflowLoadSerial = 0;
         let minimaxH3ModeTransitionSerial = 0;
         let minimaxH3FirstLastEnabled = false;
+        let minimaxH3BoosterEnabled = true;
+        let minimaxH3Booster = 'first_block_cache';
+        let minimaxH3BoosterStatus = null;
         let ltxMotionPreprocessReady = null;
         const NEXUS_BACKEND_ORIGIN = 'http://127.0.0.1:7861';
         const NEXUS_API = window.location.protocol.startsWith('http')
@@ -8332,7 +8359,7 @@
             const method = String(options?.method || 'GET').toUpperCase();
             const target = String(path || '');
             if (method === 'GET') return false;
-            return /\/download(?:\/start)?(?:\/|$)|\/install-dependencies(?:\?|$)|\/install-missing(?:\?|$)|\/dependencies\/download(?:\?|$)|\/qwen-lora\/download(?:\?|$)|\/ollama\/(?:install|pull)\/start(?:\?|$)|\/civitai\/(?:resolve|search|download)(?:\/start)?(?:\?|$)/i.test(target);
+            return /\/download(?:\/start)?(?:\/|$)|\/install-dependencies(?:\?|$)|\/install-missing(?:\?|$)|\/dependencies\/download(?:\?|$)|\/qwen-lora\/download(?:\?|$)|\/ollama\/(?:install|pull)\/start(?:\?|$)|\/civitai\/(?:resolve|search|download)(?:\/start)?(?:\?|$)|\/train-lora\/dependency\/install(?:\?|$)/i.test(target);
         }
 
         function warnOfflineDependencyDownload(label = 'Required dependency', detail = '') {
@@ -12493,6 +12520,41 @@
             return true;
         }
 
+        async function maybePrepareMiniMaxH3Boosters(status, options = {}) {
+            if (!backendOnline) return false;
+            const missing = (status?.missing_boosters || []).filter(item => item?.key);
+            if (!missing.length) {
+                minimaxH3BoosterStatus = status;
+                return false;
+            }
+            const missingList = missing.map(item => `- ${item.label}\n  ${item.repo}\n  -> ${item.path || './custom_nodes/' + item.folder}`).join('\n');
+            if (nexusBrowserOffline()) {
+                syncMiniMaxH3BoosterUi(false);
+                return warnOfflineDependencyDownload('MiniMax H3 booster custom nodes', `${missing.length} node(s) missing.`);
+            }
+            const accepted = options.confirmed === true || window.confirm(`MiniMax H3 acceleration is enabled by default.\n\nInstall the optional booster custom nodes now? You can choose FirstBlockCache or Spectrum afterward. No extra model or Python dependency is required.\n\n${missingList}`);
+            if (!accepted) {
+                syncMiniMaxH3BoosterUi(false);
+                showToast('MiniMax H3 Booster Disabled', 'Native H3 sampling remains available without the optional booster nodes.');
+                return false;
+            }
+            const started = await nexusFetch('/minimax-h3/boosters/install', {
+                method: 'POST',
+                body: JSON.stringify({ boosters: missing.map(item => item.key) })
+            });
+            if (started?.errors && Object.keys(started.errors).length) {
+                syncMiniMaxH3BoosterUi(false);
+                showToast('MiniMax H3 Booster Install Failed', Object.values(started.errors).join(' ').slice(0, 180));
+                return false;
+            }
+            minimaxH3BoosterStatus = started?.status || status;
+            await maybeRestartBackendAfterDependencyInstall('MiniMax H3 booster installation');
+            await refreshManagerPanel().catch(() => {});
+            syncMiniMaxH3BoosterUi(true, minimaxH3Booster);
+            showToast('MiniMax H3 Booster Ready', 'FirstBlockCache and Spectrum are installed. Choose the engine in the H3 panel.');
+            return true;
+        }
+
         async function maybePrepareMiniMaxH3TemplateAssets() {
             if (!backendOnline) return false;
             if (sessionStorage.getItem('nexus_minimax_h3_template_assets_prompted') === '1') return false;
@@ -12515,28 +12577,35 @@
                 updateWorkflowPreview();
             }
             const required = Array.isArray(status?.missing_required_assets) ? status.missing_required_assets : [];
-            if (!required.length) return false;
+            minimaxH3BoosterStatus = status;
+            const missingBoosters = Array.isArray(status?.missing_boosters) ? status.missing_boosters : [];
+            if (!required.length && !missingBoosters.length) return false;
             const requiredBytes = Number(status?.estimated_missing_required_bytes || required.reduce((sum, item) => sum + Number(item?.size_bytes_min || 0), 0));
             const requiredList = required.map(item => `- ${item.label || item.filename}\n  -> ${item.destination || item.filename}\n  ${formatModelAssetBytes(item.size_bytes_min)}`).join('\n');
             const coreMissing = (status?.missing_core_nodes || []).map(name => `- ${name}`).join('\n');
+            const boosterList = missingBoosters.map(item => `- ${item.label}\n  ${item.repo}`).join('\n');
             const gpuName = status?.gpu?.name || 'current GPU';
             const gpuVram = status?.gpu?.total_mb ? `${Math.round(Number(status.gpu.total_mb) / 1024)} GB VRAM` : 'VRAM not detected';
             if (nexusBrowserOffline()) {
                 sessionStorage.setItem('nexus_minimax_h3_template_assets_prompted', '1');
                 return warnOfflineDependencyDownload('MiniMax H3 local assets', `Required local assets: ${formatModelAssetBytes(requiredBytes)}.`);
             }
-            const ok = window.confirm(`MiniMax H3 local setup\n\nDetected: ${gpuName} / ${gpuVram}\nSelected device profile: ${h3Profile.label} (${h3Profile.width}x${h3Profile.height}, ${h3Profile.frames} frames / ${h3Profile.fps} FPS)\n\nRTX 3060 uses Dynamic VRAM + CPU/NVMe offload, SageAttention, disabled pinned memory and short renders. It needs at least 32 GB system RAM, a fast SSD and can take several minutes per render. RTX 5090 uses the higher-resolution profile automatically.\n\nDownload the required T2V/I2V + native audio files now?\n${formatModelAssetBytes(requiredBytes)}\n${requiredList || '- already ready'}\n\nH3 I2V supports first/last frames. Its optional REF2VA route supports up to 9 images, 3 reference videos with soundtracks and 3 standalone audios. Native pose/depth ControlNet and a mid-frame control remain on LTX/WAN.\n\nComfy core update/restart still required for H3 nodes:\n${coreMissing || '- ready'}`);
+            const ok = window.confirm(`MiniMax H3 local setup\n\nDetected: ${gpuName} / ${gpuVram}\nSelected device profile: ${h3Profile.label} (${h3Profile.width}x${h3Profile.height}, ${h3Profile.frames} frames / ${h3Profile.fps} FPS)\n\nRTX 3060 uses Dynamic VRAM + CPU/NVMe offload, SageAttention, disabled pinned memory and short renders. It needs at least 32 GB system RAM, a fast SSD and can take several minutes per render. RTX 5090 uses the higher-resolution profile automatically.\n\nDownload the required T2V/I2V + native audio files now?\n${formatModelAssetBytes(requiredBytes)}\n${requiredList || '- already ready'}\n\nInstall optional H3 booster custom nodes now?\n${boosterList || '- already ready'}\n\nH3 I2V supports first/last frames. Its optional REF2VA route supports up to 9 images, 3 reference videos with soundtracks and 3 standalone audios. Native pose/depth ControlNet and a mid-frame control remain on LTX/WAN.\n\nComfy core update/restart still required for H3 nodes:\n${coreMissing || '- ready'}`);
             sessionStorage.setItem('nexus_minimax_h3_template_assets_prompted', '1');
             if (!ok) {
+                syncMiniMaxH3BoosterUi(false);
                 showToast('MiniMax H3 Download Skipped', 'Template loaded without downloading local assets.');
                 return false;
             }
             const selected = required.map(item => item.key).filter(Boolean);
-            showToast('MiniMax H3 Download', `Starting confirmed local download (${formatModelAssetBytes(requiredBytes)}).`);
-            const started = await nexusFetch('/minimax-h3/assets/download/start', { method: 'POST', body: JSON.stringify({ assets: selected }) });
-            await pollDownloadJob(started.job_id, 'MiniMax H3 local assets');
-            await refreshModelCatalog();
-            showToast('MiniMax H3 Assets Ready', 'Local H3 files downloaded. Restart/update ComfyUI if the H3 nodes are still reported as missing.');
+            if (selected.length) {
+                showToast('MiniMax H3 Download', `Starting confirmed local download (${formatModelAssetBytes(requiredBytes)}).`);
+                const started = await nexusFetch('/minimax-h3/assets/download/start', { method: 'POST', body: JSON.stringify({ assets: selected }) });
+                await pollDownloadJob(started.job_id, 'MiniMax H3 local assets');
+                await refreshModelCatalog();
+            }
+            if (missingBoosters.length) await maybePrepareMiniMaxH3Boosters(status, { confirmed: true });
+            showToast('MiniMax H3 Assets Ready', 'Local H3 files and selected optional acceleration nodes are ready.');
             return true;
         }
 
@@ -13674,6 +13743,14 @@
             setSelectValue('minimaxH3ModeSelect', savedFields.minimaxH3ModeSelect || profile.minimaxH3Mode || 'r2v');
             if (presetName === 'MiniMaxH3') {
                 minimaxH3FirstLastEnabled = document.getElementById('minimaxH3ModeSelect')?.value === 'i2v';
+                minimaxH3BoosterEnabled = savedFields.minimaxH3BoosterEnabled !== undefined ? !!savedFields.minimaxH3BoosterEnabled : true;
+                minimaxH3Booster = savedFields.minimaxH3BoosterSelect || 'first_block_cache';
+                const boosterToggle = document.getElementById('minimaxH3BoosterEnabled');
+                if (boosterToggle) boosterToggle.checked = minimaxH3BoosterEnabled;
+                setSelectValue('minimaxH3BoosterSelect', minimaxH3Booster);
+                const promptBoosterToggle = document.getElementById('minimaxH3PromptBoosterEnabled');
+                if (promptBoosterToggle) promptBoosterToggle.checked = minimaxH3BoosterEnabled;
+                setSelectValue('minimaxH3PromptBoosterSelect', minimaxH3Booster);
             }
             if (presetName === 'MiniMaxH3' && ['txt2img', 'img2img'].includes(currentActivity)) {
                 const restoredH3Mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
@@ -13907,6 +13984,57 @@
             updateWorkflowPreview();
         }
 
+        function minimaxH3BoosterReady(status = minimaxH3BoosterStatus, booster = minimaxH3Booster) {
+            const item = (status?.boosters || []).find(entry => entry?.key === booster);
+            return !!item?.installed && (!status?.runtime_checked || !!item?.loaded);
+        }
+
+        function syncMiniMaxH3BoosterUi(enabled = minimaxH3BoosterEnabled, booster = minimaxH3Booster) {
+            minimaxH3BoosterEnabled = !!enabled;
+            minimaxH3Booster = booster === 'spectrum' ? 'spectrum' : 'first_block_cache';
+            const sideToggle = document.getElementById('minimaxH3BoosterEnabled');
+            const sideSelect = document.getElementById('minimaxH3BoosterSelect');
+            const promptToggle = document.getElementById('minimaxH3PromptBoosterEnabled');
+            const promptSelect = document.getElementById('minimaxH3PromptBoosterSelect');
+            const inlineToggle = document.getElementById('minimaxH3BoosterInlineToggle');
+            const inlineSelect = document.getElementById('minimaxH3BoosterInlineSelect');
+            if (sideToggle) sideToggle.checked = minimaxH3BoosterEnabled;
+            if (sideSelect) sideSelect.value = minimaxH3Booster;
+            if (promptToggle) promptToggle.checked = minimaxH3BoosterEnabled;
+            if (promptSelect) promptSelect.value = minimaxH3Booster;
+            if (inlineToggle) inlineToggle.checked = minimaxH3BoosterEnabled;
+            if (inlineSelect) inlineSelect.value = minimaxH3Booster;
+            const statusText = document.getElementById('minimaxH3BoosterStatus');
+            if (statusText) {
+                const selected = (minimaxH3BoosterStatus?.boosters || []).find(item => item?.key === minimaxH3Booster);
+                statusText.innerText = !minimaxH3BoosterEnabled
+                    ? 'Disabled. Native H3 sampling is used.'
+                    : selected?.loaded
+                        ? (minimaxH3Booster === 'spectrum' ? 'Spectrum active. Approximate acceleration; compare audio and motion quality.' : 'FirstBlockCache H3 Fast active. Recommended default for RTX 3060.')
+                        : selected?.installed
+                            ? 'Installed, but ComfyUI needs a restart to load this booster.'
+                            : 'Booster files are missing. Confirm the download when prompted.';
+            }
+            updateWorkflowPreview();
+            syncSideMenuToWorkflowGraph({ immediate: true });
+        }
+
+        function minimaxH3BoosterInlineMarkup() {
+            return `
+                <label class="col-span-2 flex items-center justify-between gap-3 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted" onclick="event.preventDefault();event.stopPropagation();handleMiniMaxH3BoosterChange(!document.getElementById('minimaxH3BoosterInlineToggle')?.checked, document.getElementById('minimaxH3BoosterInlineSelect')?.value || minimaxH3Booster)">
+                    <span><i class="fa-solid fa-gauge-high text-nexus-red mr-1"></i>H3 Booster</span>
+                    <span class="toggle-switch"><input id="minimaxH3BoosterInlineToggle" type="checkbox" ${minimaxH3BoosterEnabled ? 'checked' : ''} onclick="event.stopPropagation();" onchange="event.stopPropagation();handleMiniMaxH3BoosterChange(this.checked, document.getElementById('minimaxH3BoosterInlineSelect')?.value || minimaxH3Booster)"><span class="toggle-track"></span></span>
+                </label>
+                <label class="col-span-2 flex items-center justify-between gap-3 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted">
+                    <span>Engine</span>
+                    <select id="minimaxH3BoosterInlineSelect" class="flat-input w-44" onchange="handleMiniMaxH3BoosterChange(document.getElementById('minimaxH3BoosterInlineToggle')?.checked !== false, this.value)">
+                        <option value="first_block_cache" ${minimaxH3Booster === 'first_block_cache' ? 'selected' : ''}>FirstBlockCache — H3 Fast</option>
+                        <option value="spectrum" ${minimaxH3Booster === 'spectrum' ? 'selected' : ''}>Spectrum</option>
+                    </select>
+                </label>
+            `;
+        }
+
         function updateModelTypeUi() {
             const profile = modelProfiles[activePreset];
             const isVideo = profile?.type === 'video';
@@ -13921,6 +14049,8 @@
             const ltxLatentUpscaleRefineWrapper = document.getElementById('ltxLatentUpscaleRefineWrapper');
             const activeAudioWrapper = document.getElementById('activeAudioWrapper');
             const minimaxH3ModeWrapper = document.getElementById('minimaxH3ModeWrapper');
+            const minimaxH3BoosterPanel = document.getElementById('minimaxH3BoosterPanel');
+            const minimaxH3PromptBoosterPanel = document.getElementById('minimaxH3PromptBoosterPanel');
             const omnicineWrapper = document.getElementById('omnicineWrapper');
             const ltxUpscaleControls = document.getElementById('ltxUpscaleControls');
             const ltxDetailerControls = document.getElementById('ltxDetailerControls');
@@ -13934,6 +14064,8 @@
             if (ltxLatentUpscaleRefineWrapper) ltxLatentUpscaleRefineWrapper.classList.toggle('hidden', !ltxOnly);
             if (activeAudioWrapper) activeAudioWrapper.classList.toggle('hidden', !(ltxOnly || h3NativeAudio));
             if (minimaxH3ModeWrapper) minimaxH3ModeWrapper.classList.toggle('hidden', activePreset !== 'MiniMaxH3');
+            if (minimaxH3BoosterPanel) minimaxH3BoosterPanel.classList.toggle('hidden', activePreset !== 'MiniMaxH3');
+            if (minimaxH3PromptBoosterPanel) minimaxH3PromptBoosterPanel.classList.toggle('hidden', activePreset !== 'MiniMaxH3' || currentActivity !== 'txt2img');
             if (omnicineWrapper) omnicineWrapper.classList.toggle('hidden', !ltxOnly);
             if (ltxUpscaleControls) ltxUpscaleControls.classList.toggle('hidden', !ltxOnly);
             if (ltxDetailerControls) ltxDetailerControls.classList.toggle('hidden', !ltxOnly);
@@ -21298,6 +21430,7 @@
                             <span class="toggle-switch"><input id="minimaxH3FirstLastInlineToggle" type="checkbox" ${minimaxH3FirstLastEnabled ? 'checked' : ''} onclick="event.stopPropagation();" onchange="event.stopPropagation();syncMiniMaxH3FirstLastToggle(this.checked)"><span class="toggle-track"></span></span>
                         </label>
                     `;
+                    multiList.innerHTML += minimaxH3BoosterInlineMarkup();
                 }
                 if (activePreset === 'MiniMaxH3' && currentActivity === 'img2img' && h3Mode !== 't2v' && !startEndFrame) {
                     multiList.innerHTML += `
@@ -21306,6 +21439,7 @@
                             <span class="toggle-switch"><input id="minimaxH3FirstLastInlineToggle" type="checkbox" ${minimaxH3FirstLastEnabled ? 'checked' : ''} onclick="event.stopPropagation();" onchange="event.stopPropagation();syncMiniMaxH3FirstLastToggle(this.checked)"><span class="toggle-track"></span></span>
                         </label>
                     `;
+                    multiList.innerHTML += minimaxH3BoosterInlineMarkup();
                 }
                 if (activePreset === 'MiniMaxH3' && h3ReferenceMode) {
                     const h3MediaCards = [
@@ -26527,6 +26661,7 @@
                 }
                 syncReferenceImageSurfaces();
                 syncMiniMaxH3CheckpointForMode();
+                updateModelTypeUi();
             }
 
             if (activity === 'txt2img' || activity === 'img2img') {
@@ -27447,6 +27582,7 @@
             'widthInput', 'heightInput', 'resizePercentSlider', 'resizePercentInput', 'samplingMethodSelect', 'schedulerSelect', 'stepsSlider', 'cfgSlider', 'seedInput',
             'resizeModeSelect', 'denoiseSlider', 'batchCountInput', 'framesInput', 'fpsInput', 'secondsInput', 'motionSelect',
             'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'extrasPostEnableToggle', 'extrasPostOutputMode', 'extrasPostUpscaleEngine', 'extrasPostUpscaleModel', 'extrasPostScale', 'extrasPostRestoreAlignToggle', 'extrasPostInterpolateToggle', 'extrasPostTargetFps', 'sideFaceRestoreToggle', 'sideFaceRestoreModel', 'sideDenoiseToggle', 'sideDenoiseModel', 'sideDenoiseStrengthSlider', 'sideDetailToggle', 'sideDetailStrengthSlider', 'refinerSelect',
+            'minimaxH3BoosterEnabled', 'minimaxH3BoosterSelect', 'minimaxH3PromptBoosterEnabled', 'minimaxH3PromptBoosterSelect',
             'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
             'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'ltxMotionTransferToggle', 'ltxMotionTransferModeSelect',
             'controlNetEnabledToggle', 'controlNetTypeSelect', 'controlNetModelSelect', 'controlNetBalanceSelect',
@@ -32448,10 +32584,52 @@
             };
         }
 
+        async function ensureTrainLoraDependency() {
+            const preset = trainLoraSelectedPreset();
+            const trainer = String(preset?.trainer || '').trim();
+            if (!trainer) return null;
+            const script = String(preset?.script || '').trim();
+            let status;
+            try {
+                status = await nexusFetch(`/train-lora/dependency?trainer=${encodeURIComponent(trainer)}&script=${encodeURIComponent(script)}`, { timeoutMs: 30000 });
+            } catch (error) {
+                showToast('Train LoRA', `Nao foi possivel verificar o trainer: ${error.message}`.slice(0, 220));
+                return null;
+            }
+            if (status?.available || !status?.repo_url) return status;
+            const label = preset?.trainer_label || trainer;
+            if (nexusBrowserOffline()) {
+                warnOfflineDependencyDownload(label, `Destino: ${status.install_dir}`);
+                return status;
+            }
+            const accepted = window.confirm(
+                `${label} nao esta instalado.\n\nBaixar e instalar agora?\n\nRepositorio: ${status.repo_url}\nDestino: ${status.install_dir}\nPython: ${status.python}\n\nA instalacao usa o runtime configurado do Nexus e pode levar alguns minutos.`
+            );
+            if (!accepted) {
+                showToast('Train LoRA', 'Download recusado. O job sera preparado, mas nao podera iniciar sem o trainer.');
+                return status;
+            }
+            syncTrainLoraJobUi({ status: 'installing', progress: 8, message: `Installing ${label}...` });
+            try {
+                const installed = await nexusFetch('/train-lora/dependency/install', {
+                    method: 'POST',
+                    body: JSON.stringify({ trainer, script }),
+                    timeoutMs: 1800000
+                });
+                showToast('Train LoRA', installed?.message || `${label} instalado.`);
+                return installed;
+            } catch (error) {
+                showToast('Train LoRA dependency failed', error.message.slice(0, 220));
+                return status;
+            }
+        }
+
         async function startTrainLoraJob() {
             await ensureTrainLoraCatalog();
+            const plan = collectTrainLoraPlan();
+            await ensureTrainLoraDependency();
             const form = new FormData();
-            form.append('plan', JSON.stringify(collectTrainLoraPlan()));
+            form.append('plan', JSON.stringify(plan));
             [...(document.getElementById('trainLoraDatasetFiles')?.files || [])].forEach(file => form.append('files', file));
             [...(document.getElementById('trainLoraFolderInput')?.files || [])].forEach(file => form.append('files', file));
             syncTrainLoraJobUi({ status: 'preparing', progress: 5, message: 'Preparing Train LoRA job...' });
@@ -33472,6 +33650,10 @@
                 const h3ReferenceMode = ['r2v', 'v2v'].includes(h3Mode);
                 const h3VideoReferenceMode = h3Mode === 'v2v';
                 const h3AudioEnabled = !!document.getElementById('activeAudioToggle')?.checked;
+                const h3BoosterEnabled = !!document.getElementById('minimaxH3BoosterEnabled')?.checked;
+                const h3Booster = document.getElementById('minimaxH3BoosterSelect')?.value || 'first_block_cache';
+                const h3BoosterClass = h3Booster === 'spectrum' ? 'SpectrumApplyMiniMaxH3' : 'ApplyMiniMaxH3FirstBlockCache';
+                const h3ModelSource = h3BoosterEnabled ? 'booster' : 'model';
                 const h3VideoVae = document.getElementById('videoVaeSelect')?.value || document.getElementById('vaeSelect')?.value || 'minimax_h3_video_vae_fp16.safetensors';
                 const h3AudioVae = document.getElementById('audioVaeSelect')?.value || 'minimax_h3_audio_vae_fp32.safetensors';
                 const h3Prompt = document.getElementById('posPrompt')?.value || 'Cinematic video with synchronized native audio.';
@@ -33483,6 +33665,7 @@
                     { id: 'clip', class_type: 'CLIPLoader', title: 'MiniMax H3 Qwen3-VL Text Encoder', x: 60, y: 245, width: 300, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors' }, { name: 'type', value: 'minimax' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
                     { id: 'video_vae', class_type: 'VAELoader', title: 'MiniMax H3 Video VAE', x: 60, y: 415, width: 270, height: 102, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: h3VideoVae }], color: '#62305a' },
                     { id: 'noise', class_type: 'RandomNoise', title: 'MiniMax H3 Seed', x: 410, y: 80, width: 230, height: 88, inputs: [], outputs: ['NOISE'], widgets: [{ name: 'noise_seed', value: document.getElementById('seedInput')?.value || '-1' }], color: '#2f3c4f' },
+                    ...(h3BoosterEnabled ? [{ id: 'booster', class_type: h3BoosterClass, title: h3Booster === 'spectrum' ? 'MiniMax H3 Booster — Spectrum' : 'MiniMax H3 Booster — FirstBlockCache (H3 Fast)', x: 410, y: 80, width: 300, height: 150, inputs: ['model'], outputs: ['MODEL'], widgets: h3Booster === 'spectrum' ? [{ name: 'enabled', value: true }, { name: 'blend_weight', value: 0.5 }, { name: 'offline_smoothing_replay', value: true }] : [{ name: 'mode', value: 'H3 Fast — 0.10 / max 2' }, { name: 'threshold', value: 0.1 }], color: '#9a3412' }] : []),
                     { id: 'generator', class_type: h3Generator, title: h3GeneratorTitle, x: 410, y: 245, width: 335, height: 230, inputs: h3ReferenceMode ? ['clip', 'vae', 'audio_vae', 'ref_images', 'ref_videos', 'ref_video_audios', 'ref_audios'] : ['clip', 'vae', 'first_frame', 'last_frame'], outputs: ['CONDITIONING', 'LATENT'], widgets: [{ name: 'prompt', value: h3Prompt }, { name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'length', value: document.getElementById('framesInput')?.value || profile.videoSettings?.frames || 56 }, ...(h3ReferenceMode ? [{ name: 'ref_image_size', value: 'match' }] : [])], color: '#0f766e' },
                     { id: 'sampler_select', class_type: 'KSamplerSelect', title: 'MiniMax H3 Sampler', x: 790, y: 70, width: 235, height: 84, inputs: [], outputs: ['SAMPLER'], widgets: [{ name: 'sampler_name', value: sideSampler }], color: '#2f3c4f' },
                     { id: 'scheduler', class_type: 'BasicScheduler', title: 'MiniMax H3 Scheduler', x: 790, y: 180, width: 245, height: 118, inputs: ['model'], outputs: ['SIGMAS'], widgets: [{ name: 'scheduler', value: sideScheduler }, { name: 'steps', value: sideSteps }, { name: 'denoise', value: '1.0' }], color: '#2f3c4f' },
@@ -33495,8 +33678,9 @@
                 const h3Links = [
                     { from_node: 'clip', from_slot: 0, to_node: 'generator', to_slot: 0, type: 'CLIP' },
                     { from_node: 'video_vae', from_slot: 0, to_node: 'generator', to_slot: 1, type: 'VAE' },
-                    { from_node: 'model', from_slot: 0, to_node: 'scheduler', to_slot: 0, type: 'MODEL' },
-                    { from_node: 'model', from_slot: 0, to_node: 'guider', to_slot: 0, type: 'MODEL' },
+                    ...(h3BoosterEnabled ? [{ from_node: 'model', from_slot: 0, to_node: 'booster', to_slot: 0, type: 'MODEL' }] : []),
+                    { from_node: h3ModelSource, from_slot: 0, to_node: 'scheduler', to_slot: 0, type: 'MODEL' },
+                    { from_node: h3ModelSource, from_slot: 0, to_node: 'guider', to_slot: 0, type: 'MODEL' },
                     { from_node: 'generator', from_slot: 0, to_node: 'guider', to_slot: 1, type: 'CONDITIONING' },
                     { from_node: 'noise', from_slot: 0, to_node: 'sample', to_slot: 0, type: 'NOISE' },
                     { from_node: 'guider', from_slot: 0, to_node: 'sample', to_slot: 1, type: 'GUIDER' },
@@ -34725,6 +34909,8 @@
                     minimax_h3_mode: activePreset === 'MiniMaxH3'
                         ? (document.getElementById('minimaxH3ModeSelect')?.value || ((activeWorkflowId || '').toLowerCase().includes('r2v') || (workflowReferenceImages || []).length > 1 ? 'r2v' : 'i2v'))
                         : undefined,
+                    minimax_h3_booster_enabled: activePreset === 'MiniMaxH3' ? !!document.getElementById('minimaxH3BoosterEnabled')?.checked : undefined,
+                    minimax_h3_booster: activePreset === 'MiniMaxH3' ? (document.getElementById('minimaxH3BoosterSelect')?.value || 'first_block_cache') : undefined,
                     minimax_h3_reference_videos: activePreset === 'MiniMaxH3'
                         ? (minimaxH3ReferenceVideos || []).filter(item => item?.src).slice(1, 3).map(item => item.src)
                         : undefined,
@@ -36204,6 +36390,42 @@
             syncMiniMaxH3CheckpointForMode();
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
+        });
+        async function handleMiniMaxH3BoosterChange(enabled, booster) {
+            if (activePreset !== 'MiniMaxH3') return;
+            syncMiniMaxH3BoosterUi(enabled, booster);
+            if (minimaxH3BoosterEnabled && !minimaxH3BoosterReady()) {
+                try {
+                    const status = await nexusFetch('/minimax-h3/assets/status');
+                    minimaxH3BoosterStatus = status;
+                    if (!minimaxH3BoosterReady(status)) {
+                        await maybePrepareMiniMaxH3Boosters(status);
+                    }
+                } catch (error) {
+                    syncMiniMaxH3BoosterUi(false);
+                    showToast('MiniMax H3 Booster Check Failed', String(error?.message || error).slice(0, 180));
+                }
+            }
+            // Rebuild the native H3 graph so the selected accelerator is the
+            // actual model source for scheduler/guider, while preserving any
+            // user-opened custom workflow tab.
+            if (activePreset === 'MiniMaxH3' && !activeWorkflowId) {
+                resetWorkflowToDefault('MiniMaxH3', { quiet: true, keepTabs: true });
+            }
+            savePresetRuntimeState(activePreset);
+            updateWorkflowPreview();
+        }
+        document.getElementById('minimaxH3BoosterEnabled')?.addEventListener('change', event => {
+            handleMiniMaxH3BoosterChange(event.target.checked, document.getElementById('minimaxH3BoosterSelect')?.value || minimaxH3Booster);
+        });
+        document.getElementById('minimaxH3BoosterSelect')?.addEventListener('change', event => {
+            handleMiniMaxH3BoosterChange(document.getElementById('minimaxH3BoosterEnabled')?.checked !== false, event.target.value);
+        });
+        document.getElementById('minimaxH3PromptBoosterEnabled')?.addEventListener('change', event => {
+            handleMiniMaxH3BoosterChange(event.target.checked, document.getElementById('minimaxH3PromptBoosterSelect')?.value || minimaxH3Booster);
+        });
+        document.getElementById('minimaxH3PromptBoosterSelect')?.addEventListener('change', event => {
+            handleMiniMaxH3BoosterChange(document.getElementById('minimaxH3PromptBoosterEnabled')?.checked !== false, event.target.value);
         });
         document.getElementById('omnicineSelect')?.addEventListener('change', updateOmnicineStatus);
         document.getElementById('embeddingGrid')?.addEventListener('click', handleEmbeddingGridClick, true);
