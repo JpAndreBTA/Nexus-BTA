@@ -4103,7 +4103,11 @@ def _minimax_h3_length(value: Any, fps: float, seconds: float) -> int:
     raw = _number_or_none(value)
     frames = int(round(raw)) if raw is not None and raw > 0 else int(round(max(0.25, seconds) * max(1.0, fps)))
     frames = max(5, frames)
-    return frames if (frames - 5) % 17 == 0 else ((frames - 5) // 17 + 1) * 17 + 5
+    if (frames - 5) % 17 == 0:
+        return frames
+    lower = max(5, ((frames - 5) // 17) * 17 + 5)
+    upper = lower + 17
+    return lower if (frames - lower) <= (upper - frames) else upper
 
 
 def build_basic_minimax_h3_workflow(

@@ -13620,7 +13620,10 @@
             }
             if (presetName === 'MiniMaxH3') {
                 length = Math.max(22, Math.round(length));
-                return (length - 5) % 17 === 0 ? length : (Math.floor((length - 5) / 17) + 1) * 17 + 5;
+                if ((length - 5) % 17 === 0) return length;
+                const lower = Math.max(5, Math.floor((length - 5) / 17) * 17 + 5);
+                const upper = lower + 17;
+                return (length - lower) <= (upper - length) ? lower : upper;
             }
             return Math.max(1, Math.round(length));
         }
@@ -13669,6 +13672,19 @@
                     return;
                 }
                 framesInput.value = alignedVideoFrames('Wan', seconds, fps);
+            }
+            if (activePreset === 'MiniMaxH3' && framesInput) {
+                const frames = alignedVideoFrames(
+                    'MiniMaxH3',
+                    seconds,
+                    fps,
+                    source === 'framesInput' ? framesInput.value : null
+                );
+                framesInput.value = String(frames);
+                // H3's official 17k+5 frame constraint can make the exact
+                // duration differ slightly from the requested seconds.
+                // Reflect the aligned duration in the side menu and payload.
+                secondsInput.value = (frames / fps).toFixed(2).replace(/\.00$/, '');
             }
         }
 
