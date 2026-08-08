@@ -19,6 +19,7 @@ config/nexus_settings.json
 config/nexus_startup.json
 config/nexus_startup_env.cmd
 config/nexus_dependency_state.json
+config/nexus_runtime_refresh_state.json
 config/huggingface_token.txt
 frontend/results/
 .serena/

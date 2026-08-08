@@ -3,7 +3,8 @@ param(
     [switch]$StartComfy,
     [switch]$RequireComfy,
     [int]$ComfyWarmupSeconds = 0,
-    [switch]$NoOpen
+    [switch]$NoOpen,
+    [switch]$DependencyStatusOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,6 +21,7 @@ $runtimeHotfixes = Join-Path $root "scripts\apply_runtime_hotfixes.ps1"
 $customNodeDeps = Join-Path $root "scripts\install_comfy_custom_node_deps.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
 $wan22Deps = Join-Path $root "scripts\install_wan22_deps.ps1"
+$minimaxH3Deps = Join-Path $root "scripts\install_minimax_h3_deps.ps1"
 $terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
 $settingsPath = Join-Path $root "config\nexus_settings.json"
 $dependencyStatePath = Join-Path $root "config\nexus_dependency_state.json"
@@ -260,7 +262,7 @@ function Get-NexusDependencySignature {
     $parts.Add("python=$comfyPython")
     $parts.Add("models=$modelsDir")
     $parts.Add("custom_nodes=$customNodesDir")
-    foreach ($pathValue in @($customNodeDeps, $ltxDirectorDeps, $wan22Deps)) {
+    foreach ($pathValue in @($customNodeDeps, $ltxDirectorDeps, $wan22Deps, $minimaxH3Deps)) {
         $parts.Add((Get-NexusFileFingerprint $pathValue))
     }
     if (Test-Path -LiteralPath $customNodesDir) {
@@ -438,6 +440,22 @@ function Save-NexusDependencyState([string]$Signature) {
     [System.IO.File]::WriteAllText($dependencyStatePath, $json, $utf8NoBom)
 }
 
+if ($DependencyStatusOnly) {
+    $signature = Get-NexusDependencySignature
+    $required = Test-NexusDependencyCheckRequired $signature
+    $cachedSignature = ""
+    if (Test-Path -LiteralPath $dependencyStatePath) {
+        try { $cachedSignature = [string](Get-Content -LiteralPath $dependencyStatePath -Raw -Encoding UTF8 | ConvertFrom-Json).signature } catch {}
+    }
+    [pscustomobject]@{
+        dependency_scan_required = $required
+        current_signature = $signature
+        cached_signature = $cachedSignature
+        signature_matches = $signature -eq $cachedSignature
+    }
+    return
+}
+
 function Stop-NexusRuntimeProcesses {
     $patterns = @(
         "backend\\run_backend\.py",
@@ -487,7 +505,9 @@ if (!$NoOpen) {
 
 Write-NexusLogo
 Write-NexusSection "Updates"
-Invoke-NexusRepositoryUpdate -ProjectRoot $root -PromptBeforePull
+$rootRequirementsPath = Join-Path $root "requirements.txt"
+$rootRequirementsBefore = Get-NexusFileFingerprint $rootRequirementsPath
+$nexusUpdated = Invoke-NexusRepositoryUpdate -ProjectRoot $root -PromptBeforePull
 
 if (!(Test-Path -LiteralPath $comfyMain) -or !(Test-Path -LiteralPath $python)) {
     if (!(Test-Path -LiteralPath $bootstrap)) {
@@ -512,6 +532,11 @@ if (!(Test-Path -LiteralPath $python)) {
     throw "Runtime Python was not created at $python."
 }
 
+if ($nexusUpdated -and $rootRequirementsBefore -ne (Get-NexusFileFingerprint $rootRequirementsPath)) {
+    Write-NexusSection "Updated Nexus dependencies"
+    [void](Repair-NexusBackendRequirements)
+}
+
 $dependencySignature = Get-NexusDependencySignature
 $dependencyCheckRequired = Test-NexusDependencyCheckRequired $dependencySignature
 
@@ -528,15 +553,25 @@ if ($dependencyCheckRequired -and (Test-Path -LiteralPath $wan22Deps)) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
 }
 
-if ($dependencyCheckRequired) {
-    Save-NexusDependencyState $dependencySignature
-} else {
-    Write-NexusLine "Dependency checks are cached; skipping install scans for fast startup." "Ok"
+if ($dependencyCheckRequired -and (Test-Path -LiteralPath $minimaxH3Deps)) {
+    Write-NexusSection "MiniMax H3"
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $minimaxH3Deps -ProjectRoot $root -RuntimePython $comfyPython -ComfyRoot $comfyRoot
+    if ($LASTEXITCODE -eq 2) {
+        Write-NexusLine "MiniMax H3 remains gated until the configured ComfyUI core includes its official nodes." "Warn"
+    } elseif ($LASTEXITCODE -ne 0) {
+        throw "MiniMax H3 dependency check failed."
+    }
 }
 
 if (Test-Path -LiteralPath $runtimeHotfixes) {
     Write-NexusLine "Applying local runtime patches..." "Info"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $runtimeHotfixes -ProjectRoot $root
+}
+
+if ($dependencyCheckRequired) {
+    Save-NexusDependencyState (Get-NexusDependencySignature)
+} else {
+    Write-NexusLine "Dependency checks are cached; skipping install scans for fast startup." "Ok"
 }
 
 Write-NexusSection "Runtime"

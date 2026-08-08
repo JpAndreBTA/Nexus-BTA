@@ -133,6 +133,7 @@ class ComfyClient:
         self._start_lock = asyncio.Lock()
         self._owned_external_pid: int | None = None
         self._attention_backend_override: str | None = None
+        self._minimax_h3_low_vram = False
 
     @property
     def base_url(self) -> str:
@@ -191,14 +192,28 @@ class ComfyClient:
     def use_preset_attention_backend(self, preset: str, apply: bool = True) -> bool:
         requested = str(preset or "").strip().lower()
         desired: str | None = None
+        minimax_h3 = requested in {"minimaxh3", "minimax_h3", "minimax-h3"}
+        minimax_h3_low_vram = minimax_h3 and self._minimax_h3_requires_offload()
         if requested == "qwen" and self._default_uses_sage_attention():
             desired = "xformers" if self._xformers_allowed() else "pytorch"
-        if desired == self._attention_backend_override:
+        changed = desired != self._attention_backend_override or minimax_h3_low_vram != self._minimax_h3_low_vram
+        if not changed:
             return False
         if not apply:
             return True
         self._attention_backend_override = desired
+        # The official H3 INT8 route works on 12 GB cards through ComfyUI's
+        # dynamic VRAM offload. Keep SageAttention selected from the normal
+        # runtime preference and additionally avoid pinned-memory lockups.
+        self._minimax_h3_low_vram = minimax_h3_low_vram
         return True
+
+    def _minimax_h3_requires_offload(self) -> bool:
+        """Use the 3060-safe profile until the configured runtime has high VRAM."""
+        try:
+            return float(self.settings.runtime.gpu_memory_gb or 0) < 24.0
+        except (TypeError, ValueError):
+            return True
 
     def stop(self) -> None:
         if not self.process or self.process.poll() is not None:
@@ -480,6 +495,8 @@ class ComfyClient:
             flags.append("--use-pytorch-cross-attention")
         elif not bool(getattr(runtime, "enable_pytorch_attention", True)) and (runtime.disable_xformers or not _module_available("xformers")):
             flags.append("--use-split-cross-attention")
+        if self._minimax_h3_low_vram:
+            flags.extend(["--disable-smart-memory", "--disable-pinned-memory", "--cache-none", "--fast-disk"])
         return flags
 
     def _xformers_allowed(self) -> bool:

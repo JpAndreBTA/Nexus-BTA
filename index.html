@@ -3570,6 +3570,7 @@
                 <button data-preset="Lumina" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Lumina')">LUMINA</button>
                 <button data-preset="Wan" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Wan')">WAN</button>
                 <button data-preset="LTX" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'LTX')">LTX 2.3</button>
+                <button data-preset="MiniMaxH3" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'MiniMaxH3')">MINIMAX H3</button>
                 <button data-preset="Anima" class="preset-btn active px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white bg-nexus-red rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Anima')">ANIMA</button>
                 <button data-preset="Ideogram4" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Ideogram4')">IDEOGRAM 4</button>
                 <button data-preset="Model3D" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Model3D')">3D MODEL</button>
@@ -3879,15 +3880,20 @@
                         <img id="referenceImageThumb" src="" alt="Reference image" class="hidden mx-auto max-h-28 max-w-full object-contain rounded-sm border border-nexus-border mb-2">
                         <div class="reference-placeholder h-16 flex flex-col items-center justify-center gap-1 text-nexus-muted">
                             <i class="fa-solid fa-image text-[12px]"></i>
-                            <span class="text-[10px] font-bold uppercase tracking-wider">Reference Image</span>
+                            <span id="referenceImagePlaceholderLabel" class="text-[10px] font-bold uppercase tracking-wider">Reference Image</span>
                             <span id="referenceImageState" class="text-[9px] font-mono">drop or click to load</span>
                         </div>
                         <span id="referenceImageLoadedLabel" class="hidden text-[9px] font-mono text-nexus-muted truncate"></span>
                         <div id="referenceImageMultiList" class="hidden mt-2 grid grid-cols-2 gap-2"></div>
-                        <input id="referenceImageInput" type="file" accept="image/*,video/*" multiple class="hidden">
+                        <input id="referenceImageInput" type="file" accept="image/*,video/*,audio/*" multiple class="hidden">
                         <input id="referenceImage2Input" type="file" accept="image/*" class="hidden">
                         <input id="referenceImage3Input" type="file" accept="image/*" class="hidden">
                         <input id="referenceImage4Input" type="file" accept="image/*" class="hidden">
+                        <input id="referenceImage5Input" type="file" accept="image/*" class="hidden">
+                        <input id="referenceImage6Input" type="file" accept="image/*" class="hidden">
+                        <input id="referenceImage7Input" type="file" accept="image/*" class="hidden">
+                        <input id="referenceImage8Input" type="file" accept="image/*" class="hidden">
+                        <input id="referenceImage9Input" type="file" accept="image/*" class="hidden">
                     </div>
                 </div>
 
@@ -4349,6 +4355,16 @@
                                         <option>AnimateDiff SD 1.5</option>
                                         <option>None</option>
                                     </select>
+                                </label>
+                                <label id="minimaxH3ModeWrapper" class="hidden space-y-1 block bg-nexus-panel border border-nexus-border px-2 py-2 rounded-sm">
+                                    <span class="mini-label">MiniMax H3 mode</span>
+                                    <select id="minimaxH3ModeSelect" class="flat-input appearance-none cursor-pointer">
+                                        <option value="t2v">T2V — text to video</option>
+                                        <option value="i2v" selected>I2V — image / first-last frame</option>
+                                        <option value="r2v">R2V — up to nine image references</option>
+                                        <option value="v2v">V2V — up to three videos + image/audio refs</option>
+                                    </select>
+                                    <span class="text-[9px] text-nexus-muted">R2V/V2V use REF2VA and download it only after confirmation.</span>
                                 </label>
                                 <div id="ltxVaePanel" class="hidden grid grid-cols-2 gap-2">
                                     <label class="space-y-1">
@@ -7215,6 +7231,7 @@
         let workflowContextPoint = { x: 80, y: 80 };
         let workflowGraphRendering = false;
         let workflowLoadSerial = 0;
+        let minimaxH3ModeTransitionSerial = 0;
         let ltxMotionPreprocessReady = null;
         const NEXUS_BACKEND_ORIGIN = 'http://127.0.0.1:7861';
         const NEXUS_API = window.location.protocol.startsWith('http')
@@ -7422,6 +7439,8 @@
         let referenceBaseVideoDataUrl = '';
         let referenceBaseVideoMeta = { src: '', label: '', width: 0, height: 0, duration: 0 };
         let referenceImageExtraDataUrls = [];
+        let minimaxH3ReferenceVideos = [];
+        let minimaxH3ReferenceAudios = [];
         let ideogramRegions = nexusSafeStorage.json('nexus_ideogram_regions_v1', []);
         let ideogramRegionActiveId = nexusSafeStorage.get('nexus_ideogram_region_active_v1', '');
         let ideogramRegionTool = nexusSafeStorage.get('nexus_ideogram_region_tool_v1', 'select');
@@ -7723,6 +7742,7 @@
             ['Lumina', 'LUMINA'],
             ['Wan', 'WAN'],
             ['LTX', 'LTX 2.3'],
+            ['MiniMaxH3', 'MINIMAX H3'],
             ['Anima', 'ANIMA'],
             ['Ideogram4', 'Ideogram-4'],
             ['Model3D', '3D']
@@ -8164,6 +8184,40 @@
                 video: 'LTX 2.3 Director route enabled: 24 FPS aligned video timing.',
                 videoSettings: { frames: 121, fps: 24, seconds: 5 }
             },
+            MiniMaxH3: {
+                template: 'MINIMAX_H3_T2V_I2V',
+                type: 'video',
+                folder: './models/diffusion_models/minimax_h3',
+                checkpoint: 'minimax_h3_fl2va_pruned_int8_convrot.safetensors',
+                models: ['minimax_h3_fl2va_pruned_int8_convrot.safetensors', 'minimax_h3_ref2va_pruned_int8_convrot.safetensors'],
+                width: 832,
+                height: 480,
+                steps: 20,
+                cfg: 1,
+                sampler: 'RES Multistep',
+                samplers: ['RES Multistep'],
+                scheduler: 'Simple',
+                schedulers: ['Simple'],
+                vae: ['minimax_h3_video_vae_fp16.safetensors', 'Automatic'],
+                encoder: ['qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors', 'Automatic'],
+                variants: ['T2V', 'I2V first/last frame', 'R2V (nine pictures)', 'V2V (three videos + pictures/audio)'],
+                precision: ['INT8 ConvRot', 'Auto'],
+                refiners: ['Off'],
+                motionAdapters: ['First/last frame', 'Reference-to-video', 'None'],
+                videoVae: ['minimax_h3_video_vae_fp16.safetensors', 'Automatic'],
+                audioVae: ['minimax_h3_audio_vae_fp32.safetensors', 'Automatic', 'None'],
+                minimaxH3Mode: 'i2v',
+                latentUpscaleModels: ['None'],
+                denoise: 1,
+                supportsExtend: false,
+                supportsControlNet: false,
+                distilledLoras: ['None'],
+                distilledRoute: 'MiniMax H3 uses the official pruned INT8 ConvRot model with Qwen3-VL NVFP4 and native stereo audio. RTX 3060 uses dynamic CPU/disk offload plus SageAttention.',
+                summary: 'Local H3: T2V, I2V with optional first/last frame, and full REF2VA with up to nine pictures, three videos with paired soundtracks, and three standalone audio references. Mid-frame and ControlNet pose/depth remain routed to LTX/WAN.',
+                chips: ['MINIMAX H3', 'Local RTX 3060', 'SageAttention', 'Native Audio'],
+                video: 'RTX 3060 profile: 832x480, 56 frames / 24 FPS (~2.3s), 20 RES Multistep steps with dynamic offload. RTX 5090 profile can raise this to 1344x768 / 5s.',
+                videoSettings: { frames: 56, fps: 24, seconds: 2 }
+            },
             Anima: {
                 template: 'ANIMA_PORTRAIT',
                 type: 'image',
@@ -8561,6 +8615,7 @@
                 lumina: ['lumina'],
                 wan: ['wan'],
                 ltx: ['ltx', 'eros', 'sulphur'],
+                minimaxh3: ['minimax_h3', 'minimax-h3', 'minimax h3', 'minimaxh3'],
                 anima: ['anima', 'anime', 'pencil', 'cel'],
                 ideogram4: ['ideogram4', 'ideogram-4', 'ideogram 4', 'ideogram'],
                 model3d: ['trellis', '3d', 'glb', 'mesh']
@@ -8603,7 +8658,7 @@
                 .filter(model => presetName !== 'LTX' || !/projection|text_projection|proj/i.test([model.name, model.relative_path].join(' ')))
                 .filter(model => presetName !== 'Ideogram4' || !/unconditional/i.test([model.name, model.relative_path].join(' ')))
                 .filter(model => presetName !== 'Flux' || !/pid_|res2k|sr4x|upscale|super.?resolution|model_ema/i.test([model.name, model.folder, model.relative_path].join(' ')));
-            const strictModelPresets = new Set(['SD', 'XL', 'Flux', 'Qwen', 'ZImageTurbo', 'Lumina', 'Wan', 'LTX', 'Anima', 'Ideogram4', 'Model3D']);
+            const strictModelPresets = new Set(['SD', 'XL', 'Flux', 'Qwen', 'ZImageTurbo', 'Lumina', 'Wan', 'LTX', 'MiniMaxH3', 'Anima', 'Ideogram4', 'Model3D']);
             const compatible = filtered.filter(model => modelMatchesPreset(model, presetName) && isPrimaryModelForPreset(model, presetName));
             const source = strictModelPresets.has(presetName) && compatible.length ? compatible : filtered;
             const matched = source
@@ -8694,6 +8749,7 @@
                 Ideogram4: [/flux2-vae/i, /flux.*2.*vae/i],
                 Anima: [/qwen.*image/i, /qwen/i],
                 Wan: [/wan_2\.1|wan2_1|wan2\.1/i, /wan/i],
+                MiniMaxH3: [/minimax.*h3.*video/i, /minimax.*h3/i],
                 XL: [/sdxl|xl/i],
                 SD: [/vae-ft-mse|sd15|sd1|kl-f8/i]
             }[presetName] || [];
@@ -8710,6 +8766,7 @@
                 Ideogram4: [/qwen3vl/i, /qwen.*3.*vl/i, /qwen/i],
                 Anima: [/anima2bqwen/i, /qwen35/i, /qwen.*3\.5/i, /qwen_3_06b/i, /qwen.*3.*06b/i, /qwen3/i, /anima.*qwen.*text/i, /qwen/i],
                 Wan: [/umt5/i, /t5/i],
+                MiniMaxH3: [/qwen3vl.*minimax.*h3/i, /minimax.*h3.*qwen/i],
                 XL: [/clip/i],
                 SD: [/clip/i]
             }[presetName] || [];
@@ -8808,11 +8865,13 @@
                     if (/qwen3vl.*8b|qwen.*3.*vl.*8b/.test(raw)) return false;
                     return /gemma|umt5|t5xxl|clip[_\-. ]?l|anima|qwen.*2[._-]?5/.test(raw);
                 }
+                if (presetName === 'MiniMaxH3') return !/qwen3vl.*minimax.*h3|minimax.*h3.*qwen/.test(raw);
             }
             if (kind === 'vae') {
                 if (presetName === 'LTX') return /qwen|wan|flux|sdxl|illustrious|vae-ft/.test(raw) && !/ltx/.test(raw);
                 if (presetName === 'Wan') return /qwen|ltx|flux|sdxl|illustrious|vae-ft/.test(raw) && !/wan/.test(raw);
                 if (presetName === 'Qwen' || presetName === 'Anima') return /wan|ltx|flux|sdxl|illustrious|vae-ft/.test(raw) && !/qwen/.test(raw);
+                if (presetName === 'MiniMaxH3') return !/minimax.*h3.*video/.test(raw);
             }
             return false;
         }
@@ -9021,6 +9080,15 @@
                 if (audioVaes.length) profile.audioVae = presetName === 'LTX'
                     ? uniqueOptions([audioVaes.find(name => /ltx23.*audio|audio.*ltx23|audio_vae/i.test(name)) || audioVaes[0], ...audioVaes, 'Automatic', 'None'])
                     : uniqueOptions(['Automatic', ...audioVaes, 'None']);
+                if (presetName === 'MiniMaxH3') {
+                    const h3VideoVae = videoVaes.find(name => /minimax.*h3.*video/i.test(name)) || videoVaes[0];
+                    const h3AudioVae = audioVaes.find(name => /minimax.*h3.*audio/i.test(name)) || audioVaes[0];
+                    // The H3 split workflow requires these paired assets. Keep
+                    // them as the defaults in the existing sidebar controls.
+                    profile.vae = uniqueOptions([h3VideoVae, 'Automatic', ...vaes, 'None']);
+                    profile.videoVae = uniqueOptions([h3VideoVae, 'Automatic', ...videoVaes, 'None']);
+                    profile.audioVae = uniqueOptions([h3AudioVae, 'Automatic', ...audioVaes, 'None']);
+                }
                 if (latentUpscale.length) {
                     if (presetName === 'LTX') {
                         const ltxSpatialX2 = latentUpscale.find(name => /ltx-?2\.3.*spatial.*x\s*2|spatial.*x\s*2|x2-?1\.1|x2/i.test(name)) || latentUpscale[0];
@@ -12424,11 +12492,110 @@
             return true;
         }
 
+        async function maybePrepareMiniMaxH3TemplateAssets() {
+            if (!backendOnline) return false;
+            if (sessionStorage.getItem('nexus_minimax_h3_template_assets_prompted') === '1') return false;
+            let status = null;
+            try {
+                status = await nexusFetch('/minimax-h3/assets/status');
+            } catch (error) {
+                showToast('MiniMax H3 Asset Check Failed', String(error?.message || error).slice(0, 160));
+                return false;
+            }
+            const h3HighVram = !!status?.profiles?.rtx_5090?.supported;
+            const h3Profile = h3HighVram
+                ? { width: 1344, height: 768, frames: 124, fps: 24, seconds: 5.2, label: 'RTX 5090' }
+                : { width: 832, height: 480, frames: 56, fps: 24, seconds: 2.3, label: 'RTX 3060 local offload' };
+            if (activePreset === 'MiniMaxH3') {
+                setDimensions(h3Profile.width, h3Profile.height);
+                if (document.getElementById('framesInput')) document.getElementById('framesInput').value = String(h3Profile.frames);
+                if (document.getElementById('fpsInput')) document.getElementById('fpsInput').value = String(h3Profile.fps);
+                if (document.getElementById('secondsInput')) document.getElementById('secondsInput').value = String(h3Profile.seconds);
+                updateWorkflowPreview();
+            }
+            const required = Array.isArray(status?.missing_required_assets) ? status.missing_required_assets : [];
+            if (!required.length) return false;
+            const requiredBytes = Number(status?.estimated_missing_required_bytes || required.reduce((sum, item) => sum + Number(item?.size_bytes_min || 0), 0));
+            const requiredList = required.map(item => `- ${item.label || item.filename}\n  -> ${item.destination || item.filename}\n  ${formatModelAssetBytes(item.size_bytes_min)}`).join('\n');
+            const coreMissing = (status?.missing_core_nodes || []).map(name => `- ${name}`).join('\n');
+            const gpuName = status?.gpu?.name || 'current GPU';
+            const gpuVram = status?.gpu?.total_mb ? `${Math.round(Number(status.gpu.total_mb) / 1024)} GB VRAM` : 'VRAM not detected';
+            if (nexusBrowserOffline()) {
+                sessionStorage.setItem('nexus_minimax_h3_template_assets_prompted', '1');
+                return warnOfflineDependencyDownload('MiniMax H3 local assets', `Required local assets: ${formatModelAssetBytes(requiredBytes)}.`);
+            }
+            const ok = window.confirm(`MiniMax H3 local setup\n\nDetected: ${gpuName} / ${gpuVram}\nSelected device profile: ${h3Profile.label} (${h3Profile.width}x${h3Profile.height}, ${h3Profile.frames} frames / ${h3Profile.fps} FPS)\n\nRTX 3060 uses Dynamic VRAM + CPU/NVMe offload, SageAttention, disabled pinned memory and short renders. It needs at least 32 GB system RAM, a fast SSD and can take several minutes per render. RTX 5090 uses the higher-resolution profile automatically.\n\nDownload the required T2V/I2V + native audio files now?\n${formatModelAssetBytes(requiredBytes)}\n${requiredList || '- already ready'}\n\nH3 I2V supports first/last frames. Its optional REF2VA route supports up to 9 images, 3 reference videos with soundtracks and 3 standalone audios. Native pose/depth ControlNet and a mid-frame control remain on LTX/WAN.\n\nComfy core update/restart still required for H3 nodes:\n${coreMissing || '- ready'}`);
+            sessionStorage.setItem('nexus_minimax_h3_template_assets_prompted', '1');
+            if (!ok) {
+                showToast('MiniMax H3 Download Skipped', 'Template loaded without downloading local assets.');
+                return false;
+            }
+            const selected = required.map(item => item.key).filter(Boolean);
+            showToast('MiniMax H3 Download', `Starting confirmed local download (${formatModelAssetBytes(requiredBytes)}).`);
+            const started = await nexusFetch('/minimax-h3/assets/download/start', { method: 'POST', body: JSON.stringify({ assets: selected }) });
+            await pollDownloadJob(started.job_id, 'MiniMax H3 local assets');
+            await refreshModelCatalog();
+            showToast('MiniMax H3 Assets Ready', 'Local H3 files downloaded. Restart/update ComfyUI if the H3 nodes are still reported as missing.');
+            return true;
+        }
+
+        async function maybePrepareMiniMaxH3ReferenceAssets() {
+            if (activePreset !== 'MiniMaxH3') return true;
+            const modeSelect = document.getElementById('minimaxH3ModeSelect');
+            const requestedMode = modeSelect?.value || 'r2v';
+            const fallBackToI2V = () => {
+                if (requestedMode === 'v2v') clearReferenceBaseVideo({ quiet: true });
+                minimaxH3ReferenceAudios = [];
+                referenceImageExtraDataUrls = (referenceImageExtraDataUrls || []).slice(0, 1);
+                if (modeSelect) modeSelect.value = 'i2v';
+                syncReferenceImageSurfaces();
+                updateWorkflowPreview();
+            };
+            if (!backendOnline) {
+                showToast('MiniMax H3 R2V', 'Connect the local backend before downloading the REF2VA model.');
+                fallBackToI2V();
+                savePresetRuntimeState(activePreset);
+                updateWorkflowPreview();
+                return false;
+            }
+            let status;
+            try {
+                status = await nexusFetch('/minimax-h3/assets/status');
+            } catch (error) {
+                showToast('MiniMax H3 R2V Check Failed', String(error?.message || error).slice(0, 160));
+                fallBackToI2V();
+                savePresetRuntimeState(activePreset);
+                updateWorkflowPreview();
+                return false;
+            }
+            const referenceModel = (status?.assets || []).find(item => item?.key === 'ref2va_pruned_int8');
+            if (!referenceModel || referenceModel.installed) return true;
+            const accepted = window.confirm(`Enable MiniMax H3 ${requestedMode === 'v2v' ? 'Video-to-Video (V2V)' : 'Reference-to-Video (R2V)'}?\n\nREF2VA supports up to 9 image references, 3 reference videos with paired soundtracks and 3 standalone audio references. It requires this additional local model:\n${referenceModel.label || referenceModel.filename}\n${formatModelAssetBytes(referenceModel.size_bytes_min)}\nDestination: ${referenceModel.destination || referenceModel.filename}\n\nDownload it now?`);
+            if (!accepted) {
+                fallBackToI2V();
+                showToast('MiniMax H3 REF2VA Not Downloaded', 'Kept I2V. You can choose R2V/V2V again later.');
+                savePresetRuntimeState(activePreset);
+                updateWorkflowPreview();
+                return false;
+            }
+            showToast('MiniMax H3 R2V Download', `Downloading ${formatModelAssetBytes(referenceModel.size_bytes_min)} for the local R2V workflow.`);
+            const started = await nexusFetch('/minimax-h3/assets/download/start', {
+                method: 'POST',
+                body: JSON.stringify({ assets: ['ref2va_pruned_int8'] })
+            });
+            await pollDownloadJob(started.job_id, 'MiniMax H3 R2V model');
+            await refreshModelCatalog();
+            showToast('MiniMax H3 R2V Ready', 'REF2VA is local: up to 9 images, 3 videos and 3 standalone audios are available.');
+            return true;
+        }
+
         function maybePrepareTemplateOptionalAssets(presetName) {
             if (presetName === 'Wan') {
                 maybePrepareWan22TemplateAssets().catch(error => showToast('WAN 2.2 Download Failed', String(error?.message || error).slice(0, 180)));
             } else if (presetName === 'LTX') {
                 maybePrepareLtx23TemplateAssets().catch(error => showToast('LTX 2.3 Download Failed', String(error?.message || error).slice(0, 180)));
+            } else if (presetName === 'MiniMaxH3') {
+                maybePrepareMiniMaxH3TemplateAssets().catch(error => showToast('MiniMax H3 Download Failed', String(error?.message || error).slice(0, 180)));
             } else if (presetName === 'Ideogram4') {
                 maybePrepareIdeogram4TemplateAssets().catch(error => showToast('Ideogram 4 Download Failed', String(error?.message || error).slice(0, 180)));
             }
@@ -13381,6 +13548,10 @@
                 length = Math.max(9, Math.round(length));
                 return (length - 1) % 8 === 0 ? length : (Math.floor((length - 1) / 8) + 1) * 8 + 1;
             }
+            if (presetName === 'MiniMaxH3') {
+                length = Math.max(22, Math.round(length));
+                return (length - 5) % 17 === 0 ? length : (Math.floor((length - 5) / 17) + 1) * 17 + 5;
+            }
             return Math.max(1, Math.round(length));
         }
 
@@ -13480,10 +13651,11 @@
             setElementOptions('vaeSelect', profile.vae);
             setElementOptions('textEncoderSelect', profile.encoder);
             const legacyAssetState = savedState && Number(savedState.version || 0) < 3;
-            const restoredVae = legacyAssetState && isKnownIncompatibleSideAsset(presetName, 'vae', savedFields.vaeSelect)
+            const validateSavedSideAssets = legacyAssetState || presetName === 'MiniMaxH3';
+            const restoredVae = validateSavedSideAssets && isKnownIncompatibleSideAsset(presetName, 'vae', savedFields.vaeSelect)
                 ? null
                 : savedFields.vaeSelect;
-            const restoredTextEncoder = legacyAssetState && isKnownIncompatibleSideAsset(presetName, 'text', savedFields.textEncoderSelect)
+            const restoredTextEncoder = validateSavedSideAssets && isKnownIncompatibleSideAsset(presetName, 'text', savedFields.textEncoderSelect)
                 ? null
                 : savedFields.textEncoderSelect;
             setSelectValue('vaeSelect', restoredVae || profile.vae?.[0] || 'Automatic');
@@ -13498,14 +13670,29 @@
             setSelectValue('schedulerSelect', savedFields.schedulerSelect || profile.scheduler);
             setElementOptions('refinerSelect', profile.refiners || ['Off']);
             setElementOptions('motionSelect', profile.motionAdapters || ['None']);
+            setSelectValue('minimaxH3ModeSelect', savedFields.minimaxH3ModeSelect || profile.minimaxH3Mode || 'i2v');
+            if (presetName === 'MiniMaxH3' && ['txt2img', 'img2img'].includes(currentActivity)) {
+                const restoredH3Mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
+                currentActivity = restoredH3Mode === 't2v' ? 'txt2img' : 'img2img';
+                localStorage.setItem('nexus_current_activity', currentActivity);
+                setActiveActivityButton(getActivityButton(currentActivity));
+            }
             setElementOptions('videoVaeSelect', profile.videoVae || ['Automatic', 'None']);
             setElementOptions('audioVaeSelect', profile.audioVae || ['Automatic', 'None']);
             setElementOptions('latentUpscaleSelect', profile.latentUpscaleModels || ['Automatic', 'None']);
             setElementOptions('ltxDetailerLoraSelect', profile.detailerLoras || ['None', 'Automatic']);
             setElementOptions('ltxTransitionLoraSelect', profile.transitionLoras || ['Automatic', 'ltx_transition\\ltx2.3-transition.safetensors', 'None']);
             setElementOptions('omnicineSelect', ['Off', ...(profile.omnicineLoras || [])]);
-            setSelectValue('videoVaeSelect', savedFields.videoVaeSelect || profile.videoVae?.[0] || 'Automatic');
-            setSelectValue('audioVaeSelect', savedFields.audioVaeSelect || profile.audioVae?.[0] || 'Automatic');
+            const restoredVideoVae = validateSavedSideAssets && isKnownIncompatibleSideAsset(presetName, 'vae', savedFields.videoVaeSelect)
+                ? null
+                : savedFields.videoVaeSelect;
+            const restoredAudioVae = presetName === 'MiniMaxH3' && savedFields.audioVaeSelect
+                && !/^(automatic|auto|none)$/i.test(savedFields.audioVaeSelect)
+                && !/minimax.*h3.*audio/i.test(savedFields.audioVaeSelect)
+                ? null
+                : savedFields.audioVaeSelect;
+            setSelectValue('videoVaeSelect', restoredVideoVae || profile.videoVae?.[0] || 'Automatic');
+            setSelectValue('audioVaeSelect', restoredAudioVae || profile.audioVae?.[0] || 'Automatic');
             setSelectValue('latentUpscaleSelect', savedFields.latentUpscaleSelect || profile.latentUpscaleModels?.[0] || 'Automatic');
             setSelectValue('ltxDetailerLoraSelect', savedFields.ltxDetailerLoraSelect || profile.detailerLoras?.[0] || 'None');
             setSelectValue('ltxTransitionLoraSelect', savedFields.ltxTransitionLoraSelect || profile.transitionLoras?.[0] || 'Automatic');
@@ -13519,6 +13706,9 @@
                 if (transitionToggle) transitionToggle.checked = savedFields.ltxTransitionLoraToggle !== undefined ? !!savedFields.ltxTransitionLoraToggle : false;
                 const motionTransferToggle = document.getElementById('ltxMotionTransferToggle');
                 if (motionTransferToggle) motionTransferToggle.checked = savedFields.ltxMotionTransferToggle !== undefined ? !!savedFields.ltxMotionTransferToggle : false;
+            } else if (presetName === 'MiniMaxH3') {
+                const audioToggle = document.getElementById('activeAudioToggle');
+                if (audioToggle) audioToggle.checked = savedFields.activeAudioToggle !== undefined ? !!savedFields.activeAudioToggle : true;
             }
             setElementOptions('distilledLoraOneSelect', profile.distilledLoras || ['None']);
             setElementOptions('distilledLoraTwoSelect', profile.distilledLoras || ['None']);
@@ -13677,17 +13867,41 @@
             }
         }
 
+        function syncMiniMaxH3CheckpointForMode() {
+            if (activePreset !== 'MiniMaxH3') return false;
+            const select = document.getElementById('modelSelect');
+            if (!select) return false;
+            const mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
+            const requiredVariant = ['r2v', 'v2v'].includes(mode) ? 'ref2va' : 'fl2va';
+            const option = [...select.options].find(item => {
+                const identity = `${item.dataset?.model || ''} ${item.textContent || ''} ${item.value || ''}`.toLowerCase();
+                return identity.includes('minimax_h3') && identity.includes(requiredVariant);
+            });
+            if (!option) return false;
+            const changed = select.value !== option.value;
+            select.value = option.value;
+            const profile = modelProfiles.MiniMaxH3;
+            if (profile) {
+                profile.selectedModelPath = option.value;
+                profile.checkpoint = option.dataset?.model || option.textContent?.trim() || profile.checkpoint;
+            }
+            return changed;
+        }
+
         function updateModelTypeUi() {
             const profile = modelProfiles[activePreset];
             const isVideo = profile?.type === 'video';
             const videoPanel = document.getElementById('videoSettingsPanel');
             const dimensionsTitle = document.getElementById('dimensionsTitle');
             const ltxOnly = activePreset === 'LTX';
+            const h3NativeAudio = activePreset === 'MiniMaxH3';
+            if (h3NativeAudio) syncMiniMaxH3CheckpointForMode();
             const framesWrapper = document.getElementById('framesFieldWrapper');
             const ltxVaePanel = document.getElementById('ltxVaePanel');
             const latentUpscaleWrapper = document.getElementById('latentUpscaleWrapper');
             const ltxLatentUpscaleRefineWrapper = document.getElementById('ltxLatentUpscaleRefineWrapper');
             const activeAudioWrapper = document.getElementById('activeAudioWrapper');
+            const minimaxH3ModeWrapper = document.getElementById('minimaxH3ModeWrapper');
             const omnicineWrapper = document.getElementById('omnicineWrapper');
             const ltxUpscaleControls = document.getElementById('ltxUpscaleControls');
             const ltxDetailerControls = document.getElementById('ltxDetailerControls');
@@ -13699,7 +13913,8 @@
             if (ltxVaePanel) ltxVaePanel.classList.toggle('hidden', !ltxOnly);
             if (latentUpscaleWrapper) latentUpscaleWrapper.classList.toggle('hidden', !ltxOnly);
             if (ltxLatentUpscaleRefineWrapper) ltxLatentUpscaleRefineWrapper.classList.toggle('hidden', !ltxOnly);
-            if (activeAudioWrapper) activeAudioWrapper.classList.toggle('hidden', !ltxOnly);
+            if (activeAudioWrapper) activeAudioWrapper.classList.toggle('hidden', !(ltxOnly || h3NativeAudio));
+            if (minimaxH3ModeWrapper) minimaxH3ModeWrapper.classList.toggle('hidden', activePreset !== 'MiniMaxH3');
             if (omnicineWrapper) omnicineWrapper.classList.toggle('hidden', !ltxOnly);
             if (ltxUpscaleControls) ltxUpscaleControls.classList.toggle('hidden', !ltxOnly);
             if (ltxDetailerControls) ltxDetailerControls.classList.toggle('hidden', !ltxOnly);
@@ -14266,6 +14481,7 @@
             if (activePreset === 'Ideogram4') return true;
             if (isModel3DTemplateActive()) return true;
             if (poseGenerationHandoffActive && activePreset === 'Qwen') return true;
+            if (activePreset === 'MiniMaxH3' && currentActivity === 'img2img') return true;
             return isQwenImageEditTemplateActive() || isFlux2ImageEditTemplateActive() || isStartEndFrameMode();
         }
 
@@ -14273,6 +14489,10 @@
             if (activePreset === 'Ideogram4') return [2, 3];
             if (isModel3DTemplateActive()) return [2, 3, 4];
             if (poseGenerationHandoffActive && activePreset === 'Qwen') return [2, 3];
+            if (activePreset === 'MiniMaxH3' && currentActivity === 'img2img') {
+                const mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
+                return ['r2v', 'v2v'].includes(mode) ? [2, 3, 4, 5, 6, 7, 8, 9] : [2];
+            }
             if (isFlux2ImageEditTemplateActive()) return [2, 3, 4, 5];
             if (isQwenImageEditTemplateActive()) return [2, 3];
             if (isWanMotionCaptureMode()) return [2];
@@ -14290,6 +14510,11 @@
 
         function referenceSlotLabel(slot) {
             const motionTransferOn = activePreset === 'LTX' && !!document.getElementById('ltxMotionTransferToggle')?.checked;
+            if (activePreset === 'MiniMaxH3') {
+                const mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
+                if (mode === 'i2v') return slot === 1 ? 'First Frame' : 'Last Frame';
+                return `Picture ${slot}`;
+            }
             if (isWanMotionCaptureMode()) {
                 return slot === 1 ? 'Motion Video' : 'Target Image';
             }
@@ -20899,33 +21124,47 @@
             const empty = document.getElementById('inpaintEmptyState');
             const hasImage = !!referenceImageMeta.src;
             const hasBaseVideo = !!referenceBaseVideoMeta.src;
+            const h3VideoCount = activePreset === 'MiniMaxH3' ? (minimaxH3ReferenceVideos || []).filter(item => item?.src).length : 0;
+            const h3AudioCount = activePreset === 'MiniMaxH3' ? (minimaxH3ReferenceAudios || []).filter(item => item?.src).length : 0;
+            const h3Mode = activePreset === 'MiniMaxH3' ? (document.getElementById('minimaxH3ModeSelect')?.value || 'i2v') : '';
+            const h3ReferenceMode = ['r2v', 'v2v'].includes(h3Mode);
+            const hasAnyReference = hasImage || hasBaseVideo || h3VideoCount > 0 || h3AudioCount > 0;
             const showCanvasVideo = !hasImage && hasBaseVideo && activePreset === 'LTX' && activeWorkspace === 'canvas';
             const startEndFrame = isStartEndFrameMode();
             const cameraMotionEndFrame = isLtxCameraMotionTransferMode();
             if (isModel3DTemplateActive()) {
                 renderModel3DReferenceGrid();
             }
-            panel?.classList.toggle('has-reference', hasImage || hasBaseVideo);
+            panel?.classList.toggle('has-reference', hasAnyReference);
             if (clearButton) {
-                clearButton.classList.toggle('hidden', (!hasImage && !hasBaseVideo) || startEndFrame);
-                clearButton.classList.toggle('flex', (hasImage || hasBaseVideo) && !startEndFrame);
+                clearButton.classList.toggle('hidden', !hasAnyReference || startEndFrame);
+                clearButton.classList.toggle('flex', hasAnyReference && !startEndFrame);
             }
             if (thumb) {
                 thumb.classList.toggle('hidden', (!hasImage && !hasBaseVideo) || startEndFrame);
                 thumb.src = hasImage && !startEndFrame ? referenceImageMeta.src : '';
             }
             document.querySelector('#referenceImagePanel .reference-placeholder')?.classList.toggle('hidden', startEndFrame);
+            const placeholderLabel = document.getElementById('referenceImagePlaceholderLabel');
+            if (placeholderLabel) {
+                placeholderLabel.innerText = activePreset === 'MiniMaxH3'
+                    ? (h3ReferenceMode ? 'Picture 1 / Video / Audio' : 'First Frame')
+                    : 'Reference Image';
+            }
             if (loadedLabel) {
-                loadedLabel.classList.toggle('hidden', (!hasImage && !hasBaseVideo) || startEndFrame);
+                loadedLabel.classList.toggle('hidden', !hasAnyReference || startEndFrame);
                 const extraCount = (referenceImageExtraDataUrls || []).filter(item => item?.src).length;
+                const h3MediaLabel = activePreset === 'MiniMaxH3'
+                    ? ` · ${h3VideoCount} video${h3VideoCount === 1 ? '' : 's'} · ${h3AudioCount} audio${h3AudioCount === 1 ? '' : 's'}`
+                    : '';
                 const extraLabel = startEndFrame
                     ? (extraCount ? ' + End Frame' : '')
-                    : (extraCount ? ` + ${extraCount} ${activePreset === 'Ideogram4' ? 'Ideogram ref' : 'Qwen ref'}` : '');
+                    : (extraCount ? ` + ${extraCount} ${activePreset === 'Ideogram4' ? 'Ideogram ref' : (activePreset === 'MiniMaxH3' ? 'H3 ref' : 'Qwen ref')}` : '');
                 loadedLabel.innerText = hasBaseVideo
-                    ? `${referenceBaseVideoMeta.label || 'base video'}${referenceBaseVideoMeta.duration ? ` - ${referenceBaseVideoMeta.duration.toFixed(1)}s` : ''}${extraCount ? ' + Image Reference' : ''}`
+                    ? `${referenceBaseVideoMeta.label || 'base video'}${referenceBaseVideoMeta.duration ? ` - ${referenceBaseVideoMeta.duration.toFixed(1)}s` : ''}${extraCount ? ` + ${extraCount + (hasImage ? 1 : 0)} picture refs` : ''}${h3MediaLabel}`
                     : hasImage
-                    ? `${referenceImageMeta.label || referenceSlotLabel(1)}${referenceImageMeta.width && referenceImageMeta.height ? ` - ${referenceImageMeta.width}x${referenceImageMeta.height}` : ''}${extraLabel}`
-                    : '';
+                    ? `${referenceImageMeta.label || referenceSlotLabel(1)}${referenceImageMeta.width && referenceImageMeta.height ? ` - ${referenceImageMeta.width}x${referenceImageMeta.height}` : ''}${extraLabel}${h3MediaLabel}`
+                    : h3MediaLabel.replace(/^ · /, '');
             }
             if (multiList) {
                 const extraSlots = referenceExtraSlotNumbers();
@@ -21033,8 +21272,25 @@
                         </div>
                     `;
                 }
+                if (activePreset === 'MiniMaxH3' && h3ReferenceMode) {
+                    const h3MediaCards = [
+                        ...(minimaxH3ReferenceVideos || []).filter(item => item?.src).slice(0, 3).map((item, index) => ({ kind: 'video', index, label: item.label || `Reference video ${index + 1}`, icon: 'fa-film' })),
+                        ...(minimaxH3ReferenceAudios || []).filter(item => item?.src).slice(0, 3).map((item, index) => ({ kind: 'audio', index, label: item.label || `Reference audio ${index + 1}`, icon: 'fa-waveform-lines' }))
+                    ];
+                    multiList.innerHTML += h3MediaCards.map(item => `
+                        <div class="relative min-h-16 border border-nexus-border bg-zinc-950 px-2 py-2 overflow-hidden" title="${escapeHtml(item.label)}">
+                            <span class="flex items-center gap-2 pr-6 text-[9px] font-mono text-nexus-muted"><i class="fa-solid ${item.icon} text-nexus-red"></i><span class="truncate">${escapeHtml(item.label)}</span></span>
+                            <span class="absolute left-2 bottom-1.5 text-[8px] font-bold uppercase text-white">${item.kind} ${item.index + 1}</span>
+                            <button type="button" class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red" onclick="event.preventDefault();event.stopPropagation();${item.kind === 'video' ? `removeMiniMaxH3ReferenceVideo(${item.index})` : `removeMiniMaxH3ReferenceAudio(${item.index})`};" title="Remove ${item.kind} reference"><i class="fa-solid fa-xmark text-[9px]"></i></button>
+                        </div>
+                    `).join('');
+                }
             }
-            if (state && !hasImage) state.innerText = 'drop or click to load';
+            if (state && !hasImage) {
+                state.innerText = activePreset === 'MiniMaxH3' && h3ReferenceMode
+                    ? 'drop up to 9 images, 3 videos, 3 audios'
+                    : 'drop or click to load';
+            }
             if (baseImage) {
                 baseImage.classList.toggle('hidden', !hasImage);
                 baseImage.src = hasImage ? referenceImageMeta.src : '';
@@ -21061,11 +21317,37 @@
         function clearReferenceBaseVideo(options = {}) {
             referenceBaseVideoDataUrl = '';
             referenceBaseVideoMeta = { src: '', label: '', width: 0, height: 0, duration: 0 };
+            minimaxH3ReferenceVideos = [];
             clearLtxMotionPreprocess({ quiet: true });
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
             if (activePreset === 'Ideogram4') ensureIdeogramLinearGuideOutput({ force: true });
             if (!options.quiet) showToast("Motion Video Cleared", "Motion video source was removed.");
+        }
+
+        function removeMiniMaxH3ReferenceVideo(index) {
+            if (activePreset !== 'MiniMaxH3') return;
+            const updated = (minimaxH3ReferenceVideos || []).filter(item => item?.src);
+            updated.splice(Number(index), 1);
+            minimaxH3ReferenceVideos = updated.slice(0, 3);
+            if (Number(index) === 0) {
+                referenceBaseVideoDataUrl = '';
+                referenceBaseVideoMeta = { src: '', label: '', width: 0, height: 0, duration: 0 };
+                if (minimaxH3ReferenceVideos[0]) {
+                    loadReferenceVideoSource(minimaxH3ReferenceVideos[0].src, minimaxH3ReferenceVideos[0].label, { keepH3VideoList: true });
+                }
+            }
+            syncReferenceImageSurfaces();
+            updateWorkflowPreview();
+        }
+
+        function removeMiniMaxH3ReferenceAudio(index) {
+            if (activePreset !== 'MiniMaxH3') return;
+            const updated = (minimaxH3ReferenceAudios || []).filter(item => item?.src);
+            updated.splice(Number(index), 1);
+            minimaxH3ReferenceAudios = updated.slice(0, 3);
+            syncReferenceImageSurfaces();
+            updateWorkflowPreview();
         }
 
         function clearReferenceImageOnly(options = {}) {
@@ -21082,6 +21364,8 @@
             referenceImageDataUrl = '';
             referenceBaseVideoDataUrl = '';
             referenceImageExtraDataUrls = [];
+            minimaxH3ReferenceVideos = [];
+            minimaxH3ReferenceAudios = [];
             inpaintExtendCompositeMaskDataUrl = '';
             inpaintExtendSourceImageDataUrl = '';
             inpaintExtendPad = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -21924,7 +22208,7 @@
                 return true;
             }
             const droppedFiles = [...event.dataTransfer?.files || []];
-            const files = droppedFiles.filter(file => isImageFile(file) || isVideoFile(file));
+            const files = droppedFiles.filter(file => isImageFile(file) || isVideoFile(file) || (activePreset === 'MiniMaxH3' && isAudioFile(file)));
             if (files.length) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -22226,6 +22510,10 @@
             return !!file && (file.type?.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi)$/i.test(file.name || ''));
         }
 
+        function isAudioFile(file) {
+            return !!file && (file.type?.startsWith('audio/') || /\.(wav|mp3|flac|ogg|m4a|aac|opus)$/i.test(file.name || ''));
+        }
+
         function readVideoFileAsDataUrl(file) {
             return new Promise((resolve, reject) => {
                 if (!isVideoFile(file)) {
@@ -22241,9 +22529,18 @@
 
         function loadReferenceVideoSource(src, label = 'base video', options = {}) {
             if (!src) return false;
-            if (!isMotionTemplateActive() && activePreset !== 'Wan' && activePreset !== 'LTX') {
-                showToast("Video Base Unsupported", "Select Wan 2.2 or LTX 2.3 for video base.");
+            if (!isMotionTemplateActive() && activePreset !== 'Wan' && activePreset !== 'LTX' && activePreset !== 'MiniMaxH3') {
+                showToast("Video Base Unsupported", "Select MiniMax H3, Wan 2.2 or LTX 2.3 for video reference.");
                 return false;
+            }
+            const h3ReferenceVideo = activePreset === 'MiniMaxH3';
+            if (h3ReferenceVideo) {
+                if (!options.keepH3VideoList) minimaxH3ReferenceVideos = [{ src, label }];
+                const modeSelect = document.getElementById('minimaxH3ModeSelect');
+                if (modeSelect && modeSelect.value !== 'v2v') {
+                    modeSelect.value = 'v2v';
+                    queueMicrotask(() => modeSelect.dispatchEvent(new Event('change', { bubbles: true })));
+                }
             }
             referenceBaseVideoDataUrl = src;
             referenceBaseVideoMeta = { src, label, width: 0, height: 0, duration: 0 };
@@ -22284,7 +22581,7 @@
                     if (fpsInput) fpsInput.value = String(Math.max(1, Math.round(fps)));
                     if (secondsInput && referenceBaseVideoMeta.duration) secondsInput.value = String(Number(referenceBaseVideoMeta.duration).toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
                     resizeInpaintSurface(targetWidth, targetHeight, { preserveHistory: true });
-                } else if (!isLtxMotionGuide && referenceBaseVideoMeta.width && referenceBaseVideoMeta.height) {
+                } else if (!h3ReferenceVideo && !isLtxMotionGuide && referenceBaseVideoMeta.width && referenceBaseVideoMeta.height) {
                     setDimensions(referenceBaseVideoMeta.width, referenceBaseVideoMeta.height);
                 }
                 syncLtxLinearMotionTransferTimeLock();
@@ -22294,7 +22591,9 @@
             syncLtxLinearMotionTransferTimeLock();
             syncReferenceImageSurfaces();
             syncGenerationActionUi();
-            showToast("Base Video Loaded", ltxOutpaintCanvas
+            showToast(h3ReferenceVideo ? "H3 Video Reference Loaded" : "Base Video Loaded", h3ReferenceVideo
+                ? `${label || 'Video'} ready as <Video 1>. Add up to nine <Picture i> references if needed.`
+                : ltxOutpaintCanvas
                 ? `${label || 'Video'} ready for LTX outpainting. Drag an edge to reframe.`
                 : `${label || 'Video'} ready. Image 2 can be used as reference/end frame.`);
             return true;
@@ -22315,17 +22614,48 @@
                 return;
             }
             setReferenceImageSource(dataUrl, file.name || 'clipboard image', {
-                preserveBaseVideo: isWanMotionCaptureMode(),
+                preserveBaseVideo: isWanMotionCaptureMode() || (activePreset === 'MiniMaxH3' && !!referenceBaseVideoDataUrl),
             });
             if (!options.quiet) showToast("Reference Loaded", `${file.name || 'Clipboard image'} ready for ${img2imgActivityLabel()}.`);
         }
 
         async function loadReferenceImageFiles(files) {
             const allFiles = [...(files || [])];
-            const video = allFiles.find(isVideoFile);
-            if (video) {
-                await loadReferenceVideoFile(video);
+            const videos = allFiles.filter(isVideoFile);
+            const audioFiles = allFiles.filter(isAudioFile);
+            const video = videos[0];
+            if (activePreset === 'MiniMaxH3') {
+                const h3Videos = await Promise.all(videos.slice(0, 3).map(async file => ({ src: await readVideoFileAsDataUrl(file), label: file.name || 'reference video' })));
+                const h3Audios = await Promise.all(audioFiles.slice(0, 3).map(async file => ({ src: await readAudioFileAsDataUrl(file), label: file.name || 'reference audio' })));
+                if (h3Videos.length) {
+                    loadReferenceVideoSource(h3Videos[0].src, h3Videos[0].label, { keepH3VideoList: true });
+                    minimaxH3ReferenceVideos = h3Videos;
+                }
+                if (h3Audios.length) minimaxH3ReferenceAudios = h3Audios;
+                const images = allFiles.filter(isImageFile).slice(0, 9);
+                const requestedReferenceMode = h3Videos.length ? 'v2v' : ((h3Audios.length || images.length > 2) ? 'r2v' : (document.getElementById('minimaxH3ModeSelect')?.value || 'i2v'));
+                const modeSelect = document.getElementById('minimaxH3ModeSelect');
+                if (modeSelect && modeSelect.value !== requestedReferenceMode) {
+                    modeSelect.value = requestedReferenceMode;
+                    queueMicrotask(() => modeSelect.dispatchEvent(new Event('change', { bubbles: true })));
+                }
+                if (images.length) {
+                    referenceImageExtraDataUrls = [];
+                    const loaded = await Promise.all(images.map(async (file, index) => ({ file, index, dataUrl: await readImageFileAsDataUrl(file) })));
+                    loaded.forEach(({ file, index, dataUrl }) => {
+                        if (index === 0) {
+                            setReferenceImageSource(dataUrl, file.name || 'Picture 1', { keepExtraReferences: true, preserveBaseVideo: h3Videos.length > 0 });
+                        } else {
+                            setReferenceImageExtraSlot(index + 1, dataUrl, file.name || `Picture ${index + 1}`);
+                        }
+                    });
+                }
+                syncReferenceImageSurfaces();
+                updateWorkflowPreview();
+                showToast("H3 References Loaded", `${images.length} picture${images.length === 1 ? '' : 's'}, ${h3Videos.length} video${h3Videos.length === 1 ? '' : 's'} and ${h3Audios.length} audio reference${h3Audios.length === 1 ? '' : 's'} ready.`);
+                return;
             }
+            if (video) await loadReferenceVideoFile(video);
             const maxImageRefs = isModel3DTemplateActive() ? 4 : (video ? 2 : 3);
             const images = allFiles.filter(isImageFile).slice(0, maxImageRefs);
             if (!images.length) return;
@@ -22678,6 +23008,19 @@
             });
             stage.addEventListener('pointercancel', () => {
                 tracking = false;
+            });
+        }
+
+        function readAudioFileAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                if (!isAudioFile(file)) {
+                    reject(new Error("Not an audio file."));
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error("Audio read failed."));
+                reader.readAsDataURL(file);
             });
         }
 
@@ -26136,6 +26479,20 @@
             currentActivity = activity;
             localStorage.setItem('nexus_current_activity', activity);
 
+            // H3 has separate T2V/I2V routes. Keep the activity tabs and the
+            // H3 mode selector aligned before rebuilding the default graph.
+            if (activePreset === 'MiniMaxH3') {
+                const modeSelect = document.getElementById('minimaxH3ModeSelect');
+                const desiredMode = activity === 'txt2img'
+                    ? 't2v'
+                    : (['r2v', 'v2v'].includes(modeSelect?.value) ? modeSelect.value : 'i2v');
+                if (modeSelect && modeSelect.value !== desiredMode) {
+                    modeSelect.value = desiredMode;
+                    savePresetRuntimeState(activePreset);
+                }
+                syncMiniMaxH3CheckpointForMode();
+            }
+
             if (activity === 'txt2img' || activity === 'img2img') {
                 if (previousActivity !== activity && !activeWorkflowId) {
                     activeWorkflowGraph = defaultGraphForPreset(activePreset);
@@ -26152,6 +26509,10 @@
                     updateWorkflowPreview();
                 }
                 switchView(activeWorkspace);
+                if (activePreset === 'MiniMaxH3') {
+                    updateWorkflowPreview();
+                    syncSideMenuToWorkflowGraph({ immediate: true });
+                }
                 if (activePreset === 'Ideogram4') ensureIdeogramLinearGuideOutput({ force: true });
                 const motionLabel = isMotionTemplateActive() ? 'img2video' : 'img2img';
                 showToast("Workspace", activity === 'img2img' ? `${motionLabel} controls synced with Linear/Inpaint/Node.` : "txt2img workspace ready.");
@@ -32958,6 +33319,13 @@
 
         async function loadTemplateWorkflow(preset, options = {}) {
             if (!backendOnline) return;
+            // The H3 route is deliberately represented by Nexus' flat API
+            // graph.  The vendor UI files use nested subgraphs whose widgets
+            // cannot round-trip reliably on every supported Comfy frontend.
+            if (preset === 'MiniMaxH3') {
+                resetWorkflowToDefault(preset, options);
+                return;
+            }
             if (!comfyRuntimeReady && !options.allowBeforeComfy) {
                 pendingTemplateWorkflowPreset = preset || activePreset;
                 scheduleComfyReadySync();
@@ -33063,6 +33431,102 @@
             const sideCfg = document.getElementById('cfgSlider')?.value || profile.cfg || 7;
             const sideSampler = document.getElementById('samplingMethodSelect')?.value || profile.sampler || 'Euler';
             const sideScheduler = document.getElementById('schedulerSelect')?.value || profile.scheduler || 'Simple';
+            if (preset === 'MiniMaxH3') {
+                const h3Mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
+                const h3ReferenceMode = ['r2v', 'v2v'].includes(h3Mode);
+                const h3VideoReferenceMode = h3Mode === 'v2v';
+                const h3AudioEnabled = !!document.getElementById('activeAudioToggle')?.checked;
+                const h3VideoVae = document.getElementById('videoVaeSelect')?.value || document.getElementById('vaeSelect')?.value || 'minimax_h3_video_vae_fp16.safetensors';
+                const h3AudioVae = document.getElementById('audioVaeSelect')?.value || 'minimax_h3_audio_vae_fp32.safetensors';
+                const h3Prompt = document.getElementById('posPrompt')?.value || 'Cinematic video with synchronized native audio.';
+                const h3References = [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean).slice(0, h3ReferenceMode ? 9 : 2);
+                const h3Generator = h3ReferenceMode ? 'MiniMaxH3ReferenceToVideo' : 'MiniMaxH3ImageToVideo';
+                const h3GeneratorTitle = h3VideoReferenceMode ? 'MiniMax H3 Video-to-Video Reference' : (h3ReferenceMode ? 'MiniMax H3 Reference-to-Video' : (h3Mode === 't2v' ? 'MiniMax H3 Text-to-Video' : 'MiniMax H3 Image-to-Video'));
+                const h3Nodes = [
+                    { id: 'model', class_type: 'UNETLoader', title: 'MiniMax H3 Diffusion Model', x: 60, y: 80, width: 290, height: 110, inputs: [], outputs: ['MODEL'], widgets: [{ name: 'unet_name', value: selectedModelName }, { name: 'weight_dtype', value: 'default' }], color: '#1f3b63' },
+                    { id: 'clip', class_type: 'CLIPLoader', title: 'MiniMax H3 Qwen3-VL Text Encoder', x: 60, y: 245, width: 300, height: 118, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors' }, { name: 'type', value: 'minimax' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
+                    { id: 'video_vae', class_type: 'VAELoader', title: 'MiniMax H3 Video VAE', x: 60, y: 415, width: 270, height: 102, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: h3VideoVae }], color: '#62305a' },
+                    { id: 'noise', class_type: 'RandomNoise', title: 'MiniMax H3 Seed', x: 410, y: 80, width: 230, height: 88, inputs: [], outputs: ['NOISE'], widgets: [{ name: 'noise_seed', value: document.getElementById('seedInput')?.value || '-1' }], color: '#2f3c4f' },
+                    { id: 'generator', class_type: h3Generator, title: h3GeneratorTitle, x: 410, y: 245, width: 335, height: 230, inputs: h3ReferenceMode ? ['clip', 'vae', 'audio_vae', 'ref_images', 'ref_videos', 'ref_video_audios', 'ref_audios'] : ['clip', 'vae', 'first_frame', 'last_frame'], outputs: ['CONDITIONING', 'LATENT'], widgets: [{ name: 'prompt', value: h3Prompt }, { name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'length', value: document.getElementById('framesInput')?.value || profile.videoSettings?.frames || 56 }, ...(h3ReferenceMode ? [{ name: 'ref_image_size', value: 'match' }] : [])], color: '#0f766e' },
+                    { id: 'sampler_select', class_type: 'KSamplerSelect', title: 'MiniMax H3 Sampler', x: 790, y: 70, width: 235, height: 84, inputs: [], outputs: ['SAMPLER'], widgets: [{ name: 'sampler_name', value: sideSampler }], color: '#2f3c4f' },
+                    { id: 'scheduler', class_type: 'BasicScheduler', title: 'MiniMax H3 Scheduler', x: 790, y: 180, width: 245, height: 118, inputs: ['model'], outputs: ['SIGMAS'], widgets: [{ name: 'scheduler', value: sideScheduler }, { name: 'steps', value: sideSteps }, { name: 'denoise', value: '1.0' }], color: '#2f3c4f' },
+                    { id: 'guider', class_type: 'BasicGuider', title: 'MiniMax H3 Guider', x: 790, y: 335, width: 235, height: 98, inputs: ['model', 'conditioning'], outputs: ['GUIDER'], widgets: [], color: '#0f766e' },
+                    { id: 'sample', class_type: 'SamplerCustomAdvanced', title: 'MiniMax H3 Sampling', x: 1075, y: 210, width: 295, height: 160, inputs: ['noise', 'guider', 'sampler', 'sigmas', 'latent_image'], outputs: ['LATENT'], widgets: [], color: '#2f3c4f' },
+                    { id: 'decode_video', class_type: 'VAEDecode', title: 'MiniMax H3 Video Decode', x: 1420, y: 200, width: 245, height: 105, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [], color: '#62305a' },
+                    { id: 'create_video', class_type: 'CreateVideo', title: 'MiniMax H3 Create Video', x: 1710, y: 220, width: 245, height: 112, inputs: h3AudioEnabled ? ['images', 'audio'] : ['images'], outputs: ['VIDEO'], widgets: [{ name: 'fps', value: document.getElementById('fpsInput')?.value || 24 }], color: '#3f3f46' },
+                    { id: 'save', class_type: 'SaveVideo', title: 'Save MiniMax H3 Video', x: 2000, y: 220, width: 235, height: 105, inputs: ['video'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'video/MiniMax_H3' }], color: '#3f3f46' }
+                ];
+                const h3Links = [
+                    { from_node: 'clip', from_slot: 0, to_node: 'generator', to_slot: 0, type: 'CLIP' },
+                    { from_node: 'video_vae', from_slot: 0, to_node: 'generator', to_slot: 1, type: 'VAE' },
+                    { from_node: 'model', from_slot: 0, to_node: 'scheduler', to_slot: 0, type: 'MODEL' },
+                    { from_node: 'model', from_slot: 0, to_node: 'guider', to_slot: 0, type: 'MODEL' },
+                    { from_node: 'generator', from_slot: 0, to_node: 'guider', to_slot: 1, type: 'CONDITIONING' },
+                    { from_node: 'noise', from_slot: 0, to_node: 'sample', to_slot: 0, type: 'NOISE' },
+                    { from_node: 'guider', from_slot: 0, to_node: 'sample', to_slot: 1, type: 'GUIDER' },
+                    { from_node: 'sampler_select', from_slot: 0, to_node: 'sample', to_slot: 2, type: 'SAMPLER' },
+                    { from_node: 'scheduler', from_slot: 0, to_node: 'sample', to_slot: 3, type: 'SIGMAS' },
+                    { from_node: 'generator', from_slot: 1, to_node: 'sample', to_slot: 4, type: 'LATENT' },
+                    { from_node: 'sample', from_slot: 0, to_node: 'decode_video', to_slot: 0, type: 'LATENT' },
+                    { from_node: 'video_vae', from_slot: 0, to_node: 'decode_video', to_slot: 1, type: 'VAE' },
+                    { from_node: 'decode_video', from_slot: 0, to_node: 'create_video', to_slot: 0, type: 'IMAGE' },
+                    { from_node: 'create_video', from_slot: 0, to_node: 'save', to_slot: 0, type: 'VIDEO' }
+                ];
+                if (h3ReferenceMode) {
+                    [0, 1, 2, 3, 4, 5, 6, 7, 8].forEach(index => {
+                        const id = `reference_${index + 1}`;
+                        h3Nodes.push({ id, class_type: 'LoadImage', title: `MiniMax H3 Reference ${index + 1}${h3References[index] ? '' : ' (optional)'}`, x: 410, y: 500 + index * 135, width: 275, height: 102, inputs: [], outputs: ['IMAGE'], widgets: [{ name: 'image', value: h3References[index] ? `reference image ${index + 1}` : 'not loaded' }], color: h3References[index] ? '#164e63' : '#27272a', disabled: !h3References[index] });
+                        if (h3References[index]) h3Links.push({ from_node: id, from_slot: 0, to_node: 'generator', to_slot: 3 + index, type: 'IMAGE' });
+                    });
+                    if (h3VideoReferenceMode) {
+                        const h3Videos = (minimaxH3ReferenceVideos || []).filter(item => item?.src).slice(0, 3);
+                        h3Videos.forEach((item, index) => {
+                            const loadId = `reference_video_${index + 1}`;
+                            const componentsId = `reference_video_components_${index + 1}`;
+                            h3Nodes.push(
+                                { id: loadId, class_type: 'LoadVideo', title: `MiniMax H3 Video ${index + 1}`, x: 60, y: 585 + index * 285, width: 285, height: 105, inputs: [], outputs: ['VIDEO'], widgets: [{ name: 'file', value: item.label || `reference video ${index + 1}` }], color: '#164e63' },
+                                { id: componentsId, class_type: 'GetVideoComponents', title: `H3 Video ${index + 1} Frames + Soundtrack`, x: 60, y: 720 + index * 285, width: 285, height: 115, inputs: ['video'], outputs: ['IMAGE', 'AUDIO', 'FLOAT', 'INT'], widgets: [], color: '#164e63' }
+                            );
+                            h3Links.push(
+                                { from_node: loadId, from_slot: 0, to_node: componentsId, to_slot: 0, type: 'VIDEO' },
+                                { from_node: componentsId, from_slot: 0, to_node: 'generator', to_slot: 12 + index, type: 'IMAGE' },
+                                { from_node: componentsId, from_slot: 1, to_node: 'generator', to_slot: 15 + index, type: 'AUDIO' }
+                            );
+                        });
+                    }
+                    (minimaxH3ReferenceAudios || []).filter(item => item?.src).slice(0, 3).forEach((item, index) => {
+                        const id = `reference_audio_${index + 1}`;
+                        h3Nodes.push({ id, class_type: 'LoadAudio', title: `MiniMax H3 Audio ${index + 1}`, x: 790, y: 500 + index * 135, width: 250, height: 100, inputs: [], outputs: ['AUDIO'], widgets: [{ name: 'audio', value: item.label || `reference audio ${index + 1}` }], color: '#5a4320' });
+                        h3Links.push({ from_node: id, from_slot: 0, to_node: 'generator', to_slot: 18 + index, type: 'AUDIO' });
+                    });
+                } else if (h3Mode !== 't2v') {
+                    ['First Frame', 'Last Frame'].forEach((label, index) => {
+                        const id = index === 0 ? 'first_frame' : 'last_frame';
+                        h3Nodes.push({ id, class_type: 'LoadImage', title: `MiniMax H3 ${label}${h3References[index] ? '' : ' (optional)'}`, x: 410, y: 500 + index * 135, width: 275, height: 102, inputs: [], outputs: ['IMAGE'], widgets: [{ name: 'image', value: h3References[index] ? `${label.toLowerCase()} image` : 'not loaded' }], color: h3References[index] ? '#164e63' : '#27272a', disabled: !h3References[index] });
+                        if (h3References[index]) h3Links.push({ from_node: id, from_slot: 0, to_node: 'generator', to_slot: 2 + index, type: 'IMAGE' });
+                    });
+                }
+                if (h3AudioEnabled || h3ReferenceMode) {
+                    h3Nodes.push({ id: 'audio_vae', class_type: 'VAELoader', title: 'MiniMax H3 Audio VAE', x: 1420, y: 390, width: 245, height: 102, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: h3AudioVae }], color: '#62305a' });
+                    if (h3ReferenceMode) h3Links.push({ from_node: 'audio_vae', from_slot: 0, to_node: 'generator', to_slot: 2, type: 'VAE' });
+                }
+                if (h3AudioEnabled) {
+                    h3Nodes.push({ id: 'decode_audio', class_type: 'VAEDecodeAudio', title: 'MiniMax H3 Audio Decode', x: 1710, y: 390, width: 245, height: 105, inputs: ['samples', 'vae'], outputs: ['AUDIO'], widgets: [], color: '#62305a' });
+                    h3Links.push(
+                        { from_node: 'sample', from_slot: 0, to_node: 'decode_audio', to_slot: 0, type: 'LATENT' },
+                        { from_node: 'audio_vae', from_slot: 0, to_node: 'decode_audio', to_slot: 1, type: 'VAE' },
+                        { from_node: 'decode_audio', from_slot: 0, to_node: 'create_video', to_slot: 1, type: 'AUDIO' }
+                    );
+                }
+                return {
+                    nodes: h3Nodes,
+                    links: h3Links,
+                    groups: [{ id: 'h3', title: `MiniMax H3 ${h3Mode.toUpperCase()} — side-menu synchronized`, x: 35, y: 45, width: 2230, height: h3ReferenceMode ? 1810 : (h3Mode === 'i2v' ? 770 : 560), color: '#3f789e' }],
+                    width: 2340,
+                    height: h3ReferenceMode ? 1950 : (h3Mode === 'i2v' ? 900 : 680),
+                    nexus_preset: preset
+                };
+            }
             const externalQwenRoute = preset === 'Qwen';
             const externalSplitRoute = preset === 'Anima';
             const modelOnlyLora = externalQwenRoute || isVideo;
@@ -34222,6 +34686,15 @@
                     video_vae: document.getElementById('videoVaeSelect')?.value || 'Automatic',
                     audio_vae: document.getElementById('audioVaeSelect')?.value || 'Automatic',
                     active_audio: !!document.getElementById('activeAudioToggle')?.checked,
+                    minimax_h3_mode: activePreset === 'MiniMaxH3'
+                        ? (document.getElementById('minimaxH3ModeSelect')?.value || ((activeWorkflowId || '').toLowerCase().includes('r2v') || (workflowReferenceImages || []).length > 1 ? 'r2v' : 'i2v'))
+                        : undefined,
+                    minimax_h3_reference_videos: activePreset === 'MiniMaxH3'
+                        ? (minimaxH3ReferenceVideos || []).filter(item => item?.src).slice(1, 3).map(item => item.src)
+                        : undefined,
+                    minimax_h3_reference_audios: activePreset === 'MiniMaxH3'
+                        ? (minimaxH3ReferenceAudios || []).filter(item => item?.src).slice(0, 3).map(item => item.src)
+                        : undefined,
                     qwen_multiview: qwenMultiViewRoute,
                     qwen_linear_view: qwenLinearView,
                     flux_multiview: fluxMultiViewRoute,
@@ -34463,6 +34936,12 @@
                     : 'model3d-trellis2-meshwithvoxel-texturing-multiview';
                 payload.workflow_override = null;
                 if (document.getElementById('model3DRandomSeedToggle')?.checked) payload.seed = -1;
+            } else if (activePreset === 'MiniMaxH3') {
+                const h3Mode = payload.video.minimax_h3_mode || 'i2v';
+                const h3ReferenceMode = ['r2v', 'v2v'].includes(h3Mode);
+                payload.template = h3ReferenceMode ? 'MINIMAX_H3_R2V' : (h3Mode === 't2v' ? 'MINIMAX_H3_T2V' : 'MINIMAX_H3_I2V');
+                payload.workflow_id = h3ReferenceMode ? 'minimax-h3-r2v' : (h3Mode === 't2v' ? 'minimax-h3-t2v' : 'minimax-h3-i2v');
+                if (h3Mode === 't2v') payload.activity = 'txt2img';
             } else if (generatingDirectorWorkflow) {
                 const director = serializeLtxDirectorState();
                 const directorHasTransition = !!director.timeline_data?.segments?.some(segment => segment.transitionLoraEnabled);
@@ -35094,6 +35573,10 @@
 
         // Lora Modal functions
         function openLoraModal() {
+            if (activePreset === 'MiniMaxH3') {
+                showToast('MiniMax H3 LoRA', 'The official H3 local workflow does not expose a compatible LoRA loader. Use its base FL2VA/REF2VA route; LoRAs remain available in the other templates.');
+                return;
+            }
             if (isMobileUiLayout()) closeMobilePanels();
             pendingLoraSelections = {};
             workflowConceptLorasForPreset(activePreset).forEach(lora => {
@@ -35186,6 +35669,11 @@
         function isConceptLoraNameForPreset(name, presetName = activePreset) {
             const rawName = String(name || '').trim();
             if (!rawName || /^(none|automatic|auto)$/i.test(rawName)) return false;
+            // Do not attach an arbitrary SD/Flux/LTX LoRA to MiniMax H3. The
+            // official H3 Comfy workflow has no LoRA loader contract, so this
+            // keeps its native route valid and leaves every other template's
+            // existing LoRA behavior untouched.
+            if (presetName === 'MiniMaxH3') return false;
             return !isOperationalLoraNameForPreset(rawName, presetName);
         }
 
@@ -35618,7 +36106,7 @@
         applyModelProfile(activePreset, false);
         updateRangeLabel('steps');
         updateRangeLabel('cfg');
-        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'inpaintEngineSelect', 'differentialStrengthInput', 'lanpaintThinkingStepsInput', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
+        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'inpaintEngineSelect', 'differentialStrengthInput', 'lanpaintThinkingStepsInput', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'minimaxH3ModeSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
             const element = document.getElementById(id);
             if (element) element.addEventListener('input', event => {
                 updateWorkflowPreview();
@@ -35638,6 +36126,46 @@
             if (!event.target.checked || activePreset !== 'LTX') return;
             if (comfyRuntimeReady && (!comfyObjectInfoChecked || !comfyObjectInfo)) await refreshComfyObjectInfo({ quiet: true });
             if (!ltxAudioVolumeNormalizationAvailable()) notifyLtxAudioNormalizationFallback();
+        });
+        document.getElementById('minimaxH3ModeSelect')?.addEventListener('change', async event => {
+            if (activePreset !== 'MiniMaxH3') return;
+            const serial = ++minimaxH3ModeTransitionSerial;
+            syncMiniMaxH3CheckpointForMode();
+            syncReferenceImageSurfaces();
+            updateWorkflowPreview();
+            if (['r2v', 'v2v'].includes(event.target.value)) {
+                try {
+                    await maybePrepareMiniMaxH3ReferenceAssets();
+                } catch (error) {
+                    if (serial === minimaxH3ModeTransitionSerial) {
+                        event.target.value = 'i2v';
+                        showToast('MiniMax H3 R2V Check Failed', String(error?.message || error).slice(0, 160));
+                    }
+                }
+            }
+            if (serial !== minimaxH3ModeTransitionSerial || activePreset !== 'MiniMaxH3') return;
+
+            const finalMode = ['t2v', 'r2v', 'v2v'].includes(event.target.value) ? event.target.value : 'i2v';
+            const desiredActivity = finalMode === 't2v' ? 'txt2img' : 'img2img';
+            if (currentActivity !== desiredActivity && currentActivity !== 'trainLora') {
+                switchActivity(desiredActivity, getActivityButton(desiredActivity));
+            }
+
+            // A mode change changes node classes and reference inputs, so a
+            // widget-only sync would leave the previous route visually active.
+            // Do not replace a user-opened custom workflow tab.
+            updateModelTypeUi();
+            if (!activeWorkflowId) resetWorkflowToDefault('MiniMaxH3', { quiet: true, keepTabs: true });
+            syncReferenceImageSurfaces();
+            updateWorkflowPreview();
+            syncSideMenuToWorkflowGraph({ element: event.target, immediate: true });
+            savePresetRuntimeState(activePreset);
+        });
+        document.getElementById('minimaxH3ModeSelect')?.addEventListener('input', () => {
+            if (activePreset !== 'MiniMaxH3') return;
+            syncMiniMaxH3CheckpointForMode();
+            syncReferenceImageSurfaces();
+            updateWorkflowPreview();
         });
         document.getElementById('omnicineSelect')?.addEventListener('change', updateOmnicineStatus);
         document.getElementById('embeddingGrid')?.addEventListener('click', handleEmbeddingGridClick, true);
@@ -35866,16 +36394,12 @@
                 loadReferenceImageFile(files[0]);
             } else if (referenceExtraSlotNumbers().includes(slot) && files[0]) {
                 loadReferenceImageFile(files[0], { slot });
-            } else if (files.length > 1) {
+            } else if (files.length) {
                 loadReferenceImageFiles(files);
-            } else if (files[0] && isVideoFile(files[0])) {
-                loadReferenceVideoFile(files[0]);
-            } else if (files[0]) {
-                loadReferenceImageFile(files[0]);
             }
             event.target.value = '';
         });
-        [2, 3, 4].forEach(slot => {
+        [2, 3, 4, 5, 6, 7, 8, 9].forEach(slot => {
             document.getElementById(`referenceImage${slot}Input`)?.addEventListener('change', event => {
                 const file = event.target.files?.[0];
                 if (file) {
@@ -35919,7 +36443,7 @@
             }
         });
         document.getElementById('referenceImagePanel')?.addEventListener('dragover', event => {
-            const file = [...event.dataTransfer?.items || []].some(item => item.kind === 'file' && (item.type?.startsWith('image/') || item.type?.startsWith('video/')));
+            const file = [...event.dataTransfer?.items || []].some(item => item.kind === 'file' && (item.type?.startsWith('image/') || item.type?.startsWith('video/') || (activePreset === 'MiniMaxH3' && item.type?.startsWith('audio/'))));
             const galleryImage = galleryIndexFromDataTransfer(event.dataTransfer) >= 0;
             if (file || galleryImage) {
                 event.preventDefault();
