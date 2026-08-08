@@ -35,6 +35,8 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
         assets.update(_resolve_anima(by_category, selected_name, request))
     elif preset in {"ideogram4", "ideogram"}:
         assets.update(_resolve_ideogram4(by_category, selected_name, request))
+    elif preset in {"minimaxh3", "minimax_h3", "minimax-h3"}:
+        assets.update(_resolve_minimax_h3(by_category, selected_name, request))
     elif preset == "qwen":
         assets.pop("primary_model", None)
         assets.update(_resolve_qwen(by_category, selected_name, request))
@@ -571,6 +573,52 @@ def _resolve_ideogram4(by_category: dict[str, list[ModelFile]], selected_name: s
     )
     if gemma:
         assets["ideogram4_gemma_prompt_encoder"] = _comfy_name(gemma)
+    return assets
+
+
+def _resolve_minimax_h3(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
+    """Resolve the official Comfy-Org MiniMax H3 split files without mixing H3 variants."""
+    assets: dict[str, str] = {}
+    video_options = request.video or {}
+    workflow_hint = str(request.workflow_id or "").strip().lower()
+    mode = str(video_options.get("minimax_h3_mode") or ("r2v" if "r2v" in workflow_hint or "reference" in workflow_hint else "i2v")).strip().lower()
+    wants_reference = mode in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
+    model_prefix = "minimax_h3_ref2va" if wants_reference else "minimax_h3_fl2va"
+
+    primary = _find_name(by_category, selected_name)
+    if primary and model_prefix not in " ".join([primary.name, primary.folder, primary.relative_path]).lower():
+        primary = None
+    primary = primary or (
+        _first_exact(by_category, ["diffusion_models", "unet"], f"{model_prefix}_pruned_int8_convrot.safetensors")
+        or _first(by_category, ["diffusion_models", "unet"], [model_prefix, "pruned", "int8"])
+        or _first(by_category, ["diffusion_models", "unet"], [model_prefix, "int8"])
+    )
+    if primary:
+        assets["primary_model"] = _comfy_name(primary)
+
+    selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    text_encoder = (
+        selected_text_encoder
+        if selected_text_encoder and "qwen3vl_32b_minimax_h3" in " ".join([selected_text_encoder.name, selected_text_encoder.folder, selected_text_encoder.relative_path]).lower()
+        else _first_exact(by_category, ["text_encoders", "clip"], "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors")
+        or _first(by_category, ["text_encoders", "clip"], ["qwen3vl", "minimax", "h3"])
+    )
+    if text_encoder:
+        assets["text_encoder"] = _comfy_name(text_encoder)
+
+    selected_vae = _selected_model_choice(by_category, request.vae)
+    video_vae = (
+        selected_vae
+        if selected_vae and "minimax_h3_video_vae" in " ".join([selected_vae.name, selected_vae.folder, selected_vae.relative_path]).lower()
+        else _first_exact(by_category, ["vae"], "minimax_h3_video_vae_fp16.safetensors")
+        or _first(by_category, ["vae"], ["minimax", "h3", "video", "vae"])
+    )
+    audio_vae = _first_exact(by_category, ["vae"], "minimax_h3_audio_vae_fp32.safetensors") or _first(by_category, ["vae"], ["minimax", "h3", "audio", "vae"])
+    if video_vae:
+        assets["vae"] = _comfy_name(video_vae)
+        assets["video_vae"] = _comfy_name(video_vae)
+    if audio_vae:
+        assets["audio_vae"] = _comfy_name(audio_vae)
     return assets
 
 

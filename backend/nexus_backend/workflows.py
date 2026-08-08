@@ -286,6 +286,9 @@ class WorkflowRegistry:
                 "ltx": [],
                 "anima": [],
                 "wan": ["wan"],
+                "minimaxh3": ["minimax-h3-i2v", "minimax-h3-t2v"],
+                "minimax_h3": ["minimax-h3-i2v", "minimax-h3-t2v"],
+                "minimax-h3": ["minimax-h3-i2v", "minimax-h3-t2v"],
                 "flux": [],
                 "qwen": [],
                 "model3d": ["meshwithvoxel", "meshwithtexturing", "trellis", "3d", "meshonly"],
@@ -4086,6 +4089,270 @@ def build_basic_flux_workflow(
     )
     workflow["7"]["inputs"]["positive"] = positive_ref
     workflow["7"]["inputs"]["negative"] = negative_ref
+    return workflow
+
+
+def _minimax_h3_dimension(value: Any) -> int:
+    """MiniMax H3 uses a 32-pixel latent grid."""
+    numeric = max(32, int(round(_number_or_none(value) or 32)))
+    return max(32, (numeric // 32) * 32)
+
+
+def _minimax_h3_length(value: Any, fps: float, seconds: float) -> int:
+    """H3 accepts frame counts of 17k + 5, matching the official workflow."""
+    raw = _number_or_none(value)
+    frames = int(round(raw)) if raw is not None and raw > 0 else int(round(max(0.25, seconds) * max(1.0, fps)))
+    frames = max(5, frames)
+    if (frames - 5) % 17 == 0:
+        return frames
+    lower = max(5, ((frames - 5) // 17) * 17 + 5)
+    upper = lower + 17
+    return lower if (frames - lower) <= (upper - frames) else upper
+
+
+def build_basic_minimax_h3_workflow(
+    request: GenerateRequest,
+    model_name: str,
+    text_encoder_name: str,
+    video_vae_name: str,
+    audio_vae_name: str,
+    reference_image_name: str | None = None,
+    reference_end_image_name: str | None = None,
+    reference_image_names: list[str] | None = None,
+    base_video_name: str | None = None,
+    reference_video_names: list[str] | None = None,
+    reference_audio_names: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build the official H3 API graph directly.
+
+    The supplied Comfy template uses nested subgraphs.  Building the equivalent
+    API graph here keeps every Nexus side-menu value authoritative instead of
+    relying on subgraph widget serialization (which loses prompt/height/audio
+    bindings on older Comfy frontends).
+    """
+    video_options = request.video or {}
+    mode = str(video_options.get("minimax_h3_mode") or "i2v").strip().lower()
+    reference_mode = mode in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
+    fps = max(1.0, float(_number_or_none(video_options.get("fps")) or 24.0))
+    seconds = max(0.25, float(_number_or_none(video_options.get("seconds") or video_options.get("duration")) or 2.0))
+    length = _minimax_h3_length(video_options.get("frames") or video_options.get("length"), fps, seconds)
+    width = _minimax_h3_dimension(request.width)
+    height = _minimax_h3_dimension(request.height)
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    active_audio = str(video_options.get("active_audio", True)).strip().lower() not in {"false", "0", "off", "none", "no"}
+    booster_enabled = str(video_options.get("minimax_h3_booster_enabled", True)).strip().lower() not in {"false", "0", "off", "none", "no"}
+    booster = str(video_options.get("minimax_h3_booster") or "first_block_cache").strip().lower()
+    sampler = normalize_sampler(request.sampler or "res_multistep")
+    scheduler = normalize_scheduler(request.scheduler or "simple")
+
+    workflow: dict[str, Any] = {
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": {"unet_name": model_name, "weight_dtype": "default"},
+            "_meta": {"title": "MiniMax H3 Diffusion Model"},
+        },
+        "2": {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": text_encoder_name, "type": "minimax", "device": "default"},
+            "_meta": {"title": "MiniMax H3 Qwen3-VL Text Encoder"},
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": video_vae_name},
+            "_meta": {"title": "MiniMax H3 Video VAE"},
+        },
+        "4": {
+            "class_type": "RandomNoise",
+            "inputs": {"noise_seed": seed},
+            "_meta": {"title": "MiniMax H3 Seed"},
+        },
+        "5": {
+            "class_type": "KSamplerSelect",
+            "inputs": {"sampler_name": sampler},
+            "_meta": {"title": "MiniMax H3 Sampler"},
+        },
+        "6": {
+            "class_type": "BasicScheduler",
+            "inputs": {"model": ["1", 0], "scheduler": scheduler, "steps": max(1, int(request.steps)), "denoise": 1.0},
+            "_meta": {"title": "MiniMax H3 Scheduler"},
+        },
+    }
+
+    model_output = ["1", 0]
+    if booster_enabled:
+        if booster == "first_block_cache":
+            workflow["15"] = {
+                "class_type": "ApplyMiniMaxH3FirstBlockCache",
+                "inputs": {
+                    "model": ["1", 0],
+                    "mode": "H3 Fast — 0.10 / max 2",
+                    "threshold": 0.10,
+                    "start_percent": 0.10,
+                    "end_percent": 0.95,
+                    "max_consecutive_hits": 2,
+                    "temporal_guard": False,
+                },
+                "_meta": {"title": "MiniMax H3 Booster — FirstBlockCache (H3 Fast)"},
+            }
+            model_output = ["15", 0]
+        elif booster == "spectrum":
+            workflow["15"] = {
+                "class_type": "SpectrumApplyMiniMaxH3",
+                "inputs": {
+                    "model": ["1", 0],
+                    "enabled": True,
+                    "blend_weight": 0.50,
+                    "degree": 1,
+                    "ridge_lambda": 0.10,
+                    "window_size": 2.0,
+                    "flex_window": 0.75,
+                    "warmup_steps": 1,
+                    "tail_actual_steps": 1,
+                    "max_history": 8,
+                    "debug": False,
+                    "history_storage": "system_ram",
+                    "bootstrap_first_forecast": True,
+                    "anchor_residual_feedback": False,
+                    "selective_rollback_correction": False,
+                    "offline_smoothing_replay": True,
+                    "audio_blend_weight": 0.0,
+                },
+                "_meta": {"title": "MiniMax H3 Booster — Spectrum"},
+            }
+            model_output = ["15", 0]
+        else:
+            raise ValueError(f"Unsupported MiniMax H3 booster: {booster}")
+        workflow["6"]["inputs"]["model"] = model_output
+
+    if reference_mode or active_audio:
+        workflow["11"] = {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": audio_vae_name},
+            "_meta": {"title": "MiniMax H3 Audio VAE"},
+        }
+
+    if reference_mode:
+        refs = [item for item in (reference_image_names or []) if item][:9]
+        if not refs and reference_image_name:
+            refs.append(reference_image_name)
+        if len(refs) < 2 and reference_end_image_name:
+            refs.append(reference_end_image_name)
+        h3_inputs: dict[str, Any] = {
+            "clip": ["2", 0],
+            "vae": ["3", 0],
+            "audio_vae": ["11", 0],
+            "prompt": request.prompt,
+            "width": width,
+            "height": height,
+            "length": length,
+            "ref_image_size": "match",
+        }
+        for index, image_name in enumerate(refs[:9]):
+            node_id = str(20 + index)
+            workflow[node_id] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": image_name},
+                "_meta": {"title": f"MiniMax H3 Reference {index + 1}"},
+            }
+            h3_inputs[f"ref_images.ref_image_{index}"] = [node_id, 0]
+        videos = [item for item in (reference_video_names or []) if item][:3]
+        if not videos and base_video_name:
+            videos.append(base_video_name)
+        for index, video_name in enumerate(videos):
+            load_id = str(40 + index * 2)
+            components_id = str(41 + index * 2)
+            workflow[load_id] = {
+                "class_type": "LoadVideo",
+                "inputs": {"file": video_name},
+                "_meta": {"title": f"MiniMax H3 Reference Video {index + 1}"},
+            }
+            workflow[components_id] = {
+                "class_type": "GetVideoComponents",
+                "inputs": {"video": [load_id, 0]},
+                "_meta": {"title": f"MiniMax H3 Video {index + 1} Frames + Soundtrack"},
+            }
+            h3_inputs[f"ref_videos.ref_video_{index}"] = [components_id, 0]
+            h3_inputs[f"ref_video_audios.ref_video_audio_{index}"] = [components_id, 1]
+        for index, audio_name in enumerate([item for item in (reference_audio_names or []) if item][:3]):
+            node_id = str(50 + index)
+            workflow[node_id] = {
+                "class_type": "LoadAudio",
+                "inputs": {"audio": audio_name},
+                "_meta": {"title": f"MiniMax H3 Standalone Audio {index + 1}"},
+            }
+            h3_inputs[f"ref_audios.ref_audio_{index}"] = [node_id, 0]
+        workflow["7"] = {
+            "class_type": "MiniMaxH3ReferenceToVideo",
+            "inputs": h3_inputs,
+            "_meta": {"title": "MiniMax H3 Reference-to-Video"},
+        }
+    else:
+        h3_inputs = {
+            "clip": ["2", 0],
+            "vae": ["3", 0],
+            "prompt": request.prompt,
+            "width": width,
+            "height": height,
+            "length": length,
+        }
+        if reference_image_name:
+            workflow["20"] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": reference_image_name},
+                "_meta": {"title": "MiniMax H3 First Frame"},
+            }
+            h3_inputs["first_frame"] = ["20", 0]
+        if reference_end_image_name:
+            workflow["21"] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": reference_end_image_name},
+                "_meta": {"title": "MiniMax H3 Last Frame"},
+            }
+            h3_inputs["last_frame"] = ["21", 0]
+        workflow["7"] = {
+            "class_type": "MiniMaxH3ImageToVideo",
+            "inputs": h3_inputs,
+            "_meta": {"title": "MiniMax H3 Text / Image-to-Video"},
+        }
+
+    workflow["8"] = {
+        "class_type": "BasicGuider",
+        "inputs": {"model": model_output, "conditioning": ["7", 0]},
+        "_meta": {"title": "MiniMax H3 Guider"},
+    }
+    workflow["9"] = {
+        "class_type": "SamplerCustomAdvanced",
+        "inputs": {"noise": ["4", 0], "guider": ["8", 0], "sampler": ["5", 0], "sigmas": ["6", 0], "latent_image": ["7", 1]},
+        "_meta": {"title": "MiniMax H3 Sampler"},
+    }
+    workflow["10"] = {
+        "class_type": "VAEDecode",
+        "inputs": {"samples": ["9", 0], "vae": ["3", 0]},
+        "_meta": {"title": "MiniMax H3 Video Decode"},
+    }
+    create_video_inputs: dict[str, Any] = {"images": ["10", 0], "fps": fps}
+    if active_audio:
+        workflow["12"] = {
+            "class_type": "VAEDecodeAudio",
+            "inputs": {"samples": ["9", 0], "vae": ["11", 0]},
+            "_meta": {"title": "MiniMax H3 Audio Decode"},
+        }
+        create_video_inputs["audio"] = ["12", 0]
+    workflow["13"] = {
+        "class_type": "CreateVideo",
+        "inputs": create_video_inputs,
+        "_meta": {"title": "MiniMax H3 Create Video"},
+    }
+    workflow["14"] = {
+        "class_type": "SaveVideo",
+        "inputs": {
+            "video": ["13", 0],
+            "filename_prefix": "video/MiniMax_H3",
+            "format": "mp4",
+            "codec": "h264",
+        },
+        "_meta": {"title": "Save MiniMax H3 Video"},
+    }
     return workflow
 
 

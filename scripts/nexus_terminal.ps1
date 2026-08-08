@@ -91,24 +91,31 @@ function Invoke-NexusRepositoryUpdate {
 
     if (!(Test-Path -LiteralPath (Join-Path $ProjectRoot ".git"))) {
         Write-NexusLine "Git repository not found; skipping updates." "Warn"
-        return
+        return $false
     }
     if (!(Get-Command git -ErrorAction SilentlyContinue)) {
         Write-NexusLine "Git was not found in PATH; skipping updates." "Warn"
-        return
+        return $false
     }
 
     try {
         Write-NexusLine "Checking GitHub..." "Info"
-        git -C $ProjectRoot fetch --all --prune 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "git fetch failed"
-        }
-
         $upstream = git -C $ProjectRoot rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>$null
         if ($LASTEXITCODE -ne 0 -or !$upstream) {
             Write-NexusLine "No upstream branch configured; automatic pull skipped." "Warn"
-            return
+            return $false
+        }
+        $upstream = $upstream.Trim()
+        $remoteName, $branchName = $upstream -split "/", 2
+        $knownRemote = (git -C $ProjectRoot rev-parse $upstream 2>$null).Trim()
+        $remoteLine = git -C $ProjectRoot ls-remote $remoteName "refs/heads/$branchName" 2>$null | Select-Object -First 1
+        $remoteRevision = if ($remoteLine) { ([string]$remoteLine).Split("`t")[0].Trim() } else { "" }
+        $needsFetch = $Strict -or [string]::IsNullOrWhiteSpace($remoteRevision) -or $remoteRevision -ne $knownRemote
+        if ($needsFetch) {
+            git -C $ProjectRoot fetch --all --prune 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+        } else {
+            Write-NexusLine "Git manifest is unchanged; using the local update state." "Ok"
         }
 
         $counts = (git -C $ProjectRoot rev-list --left-right --count "$upstream...HEAD").Trim() -split "\s+"
@@ -117,22 +124,22 @@ function Invoke-NexusRepositoryUpdate {
 
         if ($behind -eq 0 -and $ahead -eq 0) {
             Write-NexusLine "Repository is up to date." "Ok"
-            return
+            return $false
         }
 
         $dirty = @(git -C $ProjectRoot status --porcelain | Where-Object { -not (Test-NexusIgnoredLocalChange $_) })
         if ($dirty) {
             Write-NexusLine "GitHub has $behind update(s), but local code changes would block an automatic pull." "Warn"
             Write-NexusLine "Commit, stash, or remove local edits before running update.bat again." "Info"
-            return
+            return $false
         }
         if ($ahead -gt 0 -and $behind -gt 0) {
             Write-NexusLine "Branch diverged from remote; resolve it manually before pulling." "Warn"
-            return
+            return $false
         }
         if ($ahead -gt 0) {
             Write-NexusLine "Local commits are not pushed yet; automatic pull skipped." "Warn"
-            return
+            return $false
         }
 
         $latest = (git -C $ProjectRoot log --oneline -1 "HEAD..$upstream" 2>$null)
@@ -144,7 +151,7 @@ function Invoke-NexusRepositoryUpdate {
             $answer = Read-Host "Update Nexus BTA now? [Y/N]"
             if ($answer -notmatch "^(y|yes|s|sim)$") {
                 Write-NexusLine "Update skipped by user." "Info"
-                return
+                return $false
             }
         }
 
@@ -154,10 +161,12 @@ function Invoke-NexusRepositoryUpdate {
             throw "git pull --ff-only failed"
         }
         Write-NexusLine "Update applied." "Ok"
+        return $true
     } catch {
         if ($Strict) {
             throw
         }
         Write-NexusLine "Could not check for updates: $($_.Exception.Message)" "Warn"
+        return $false
     }
 }

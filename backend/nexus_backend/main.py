@@ -39,7 +39,9 @@ from .importer import import_resource
 from .lora_training import (
     build_train_lora_catalog,
     build_train_lora_job,
+    install_trainer_dependency,
     public_train_lora_job,
+    trainer_dependency_status,
     train_lora_command_text,
     train_lora_job_root,
 )
@@ -75,6 +77,7 @@ from .workflows import (
     build_basic_flux_workflow,
     build_basic_ideogram4_workflow,
     build_basic_ltx_img2video_workflow,
+    build_basic_minimax_h3_workflow,
     build_basic_qwen_image_workflow,
     build_basic_sd_workflow,
     build_basic_wan_i2video_workflow,
@@ -522,6 +525,91 @@ CONTROLNET_OPTIONAL_ARTIFACTS: dict[str, dict[str, Any]] = {
         "size_bytes": 1_200_000_000,
         "min_bytes": 100_000_000,
         "scope": "dependency",
+    },
+}
+
+# Official Comfy-Org split files for the open-weight MiniMax H3 release.
+# Keep FL2VA (T2V/I2V) and REF2VA (reference-to-video) separate: they are
+# different diffusion weights and must never be silently substituted.
+MINIMAX_H3_HF_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "fl2va_pruned_int8": {
+        "label": "MiniMax H3 FL2VA pruned INT8 (T2V / I2V)",
+        "filename": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors?download=true",
+        "target": ("diffusion_models", "minimax_h3", "minimax_h3_fl2va_pruned_int8_convrot.safetensors"),
+        "min_bytes": 19 * 1024 * 1024 * 1024,
+        "kind": "diffusion_model",
+        "scope": "base_model",
+        "profiles": ["rtx_3060_local", "rtx_5090"],
+    },
+    "ref2va_pruned_int8": {
+        "label": "MiniMax H3 REF2VA pruned INT8 (reference-to-video)",
+        "filename": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors?download=true",
+        "target": ("diffusion_models", "minimax_h3", "minimax_h3_ref2va_pruned_int8_convrot.safetensors"),
+        "min_bytes": 19 * 1024 * 1024 * 1024,
+        "kind": "diffusion_model",
+        "scope": "optional_reference_model",
+        "profiles": ["rtx_3060_local", "rtx_5090"],
+    },
+    "qwen3vl_32b_nvfp4": {
+        "label": "MiniMax H3 Qwen3-VL 32B NVFP4 text encoder",
+        "filename": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors?download=true",
+        "target": ("text_encoders", "minimax_h3", "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"),
+        "min_bytes": 14 * 1024 * 1024 * 1024,
+        "kind": "text_encoder",
+        "scope": "base_model",
+        "profiles": ["rtx_3060_local", "rtx_5090"],
+    },
+    "video_vae": {
+        "label": "MiniMax H3 video VAE FP16",
+        "filename": "minimax_h3_video_vae_fp16.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors?download=true",
+        "target": ("vae", "minimax_h3", "minimax_h3_video_vae_fp16.safetensors"),
+        "min_bytes": 4 * 1024 * 1024 * 1024,
+        "kind": "vae",
+        "scope": "base_model",
+        "profiles": ["rtx_3060_local", "rtx_5090"],
+    },
+    "audio_vae": {
+        "label": "MiniMax H3 native audio VAE FP32",
+        "filename": "minimax_h3_audio_vae_fp32.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors?download=true",
+        "target": ("vae", "minimax_h3", "minimax_h3_audio_vae_fp32.safetensors"),
+        "min_bytes": 512 * 1024 * 1024,
+        "kind": "audio_vae",
+        "scope": "optional_audio",
+        "profiles": ["rtx_3060_local", "rtx_5090"],
+    },
+}
+
+MINIMAX_H3_REQUIRED_COMFY_NODES = (
+    "MiniMaxH3ImageToVideo",
+    "MiniMaxH3ReferenceToVideo",
+    "VAEDecodeAudio",
+    "CreateVideo",
+    "LoadVideo",
+    "GetVideoComponents",
+    "LoadAudio",
+)
+
+MINIMAX_H3_BOOSTERS: dict[str, dict[str, Any]] = {
+    "first_block_cache": {
+        "label": "MiniMax H3 FirstBlockCache (H3 Fast)",
+        "repo": "https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache.git",
+        "folder": "ComfyUI-MiniMaxH3-FirstBlockCache",
+        "class_type": "ApplyMiniMaxH3FirstBlockCache",
+        "license": "MIT",
+        "note": "Dependency-free model patch; calibrated H3 Fast threshold 0.10.",
+    },
+    "spectrum": {
+        "label": "Spectrum MiniMax H3",
+        "repo": "https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3.git",
+        "folder": "ComfyUI-Spectrum-MiniMax-H3",
+        "class_type": "SpectrumApplyMiniMaxH3",
+        "license": "GPL-3.0",
+        "note": "Spectral forecasting accelerator; faster but approximate and more sensitive to quality/audio drift.",
     },
 }
 
@@ -1497,6 +1585,40 @@ def _prepare_video_value(value: str, prefix: str = "nexus_base_video") -> str:
     return filename
 
 
+def _prepare_audio_value(value: str, prefix: str = "nexus_reference_audio") -> str:
+    value = (value or "").strip()
+    if not value:
+        raise ValueError("Reference audio could not be resolved.")
+    if value.startswith("data:audio/"):
+        return _write_input_data_audio(value, prefix)
+    source: Path | None = None
+    if value.startswith("/outputs/") or "/outputs/" in value:
+        relative = _output_relative_from_url(value)
+        source = (settings.output_dir / relative).resolve()
+    else:
+        candidate = Path(value)
+        if candidate.exists():
+            source = candidate.resolve()
+    if not source or not source.exists():
+        raise ValueError("Reference audio could not be resolved.")
+    suffix = source.suffix.lower() if source.suffix else ".wav"
+    filename = f"{prefix}_{uuid.uuid4().hex[:10]}{suffix}"
+    target = settings.input_dir / filename
+    shutil.copy2(source, target)
+    return filename
+
+
+def _minimax_h3_reference_media_values(request: GenerateRequest, key: str) -> list[str]:
+    raw = (request.video or {}).get(key) if isinstance(request.video, dict) else None
+    values = raw if isinstance(raw, list) else ([raw] if isinstance(raw, str) else [])
+    normalized: list[str] = []
+    for item in values:
+        value = str(item.get("src") if isinstance(item, dict) else item or "").strip()
+        if value:
+            normalized.append(value)
+    return normalized
+
+
 def _prepare_base_video(request: GenerateRequest) -> str | None:
     value = (request.img2img.base_video or "").strip()
     if request.activity != "img2img" or not value:
@@ -1637,7 +1759,7 @@ def _prepare_reference_images(request: GenerateRequest) -> list[str]:
     preset = request.preset.lower()
     raw_model = f"{request.model_name or ''} {request.model_path or ''} {request.template or ''}"
     flux2_refs = preset == "flux" and any(token in raw_model.lower() for token in ("flux-2", "flux2", "flux_2", "flux.2", "klein"))
-    max_refs = 5 if flux2_refs else (4 if preset == "model3d" else 3)
+    max_refs = 9 if preset in {"minimaxh3", "minimax_h3", "minimax-h3"} else (5 if flux2_refs else (4 if preset == "model3d" else 3))
     values = _reference_image_values(request)[:max_refs]
     return [_prepare_reference_value(value, f"nexus_reference_{index + 1}") for index, value in enumerate(values)]
 
@@ -6877,6 +6999,257 @@ async def ideogram4_assets_status() -> dict[str, Any]:
     return await _ideogram4_status_snapshot()
 
 
+def _minimax_h3_artifact_target(key: str) -> Path:
+    artifact = MINIMAX_H3_HF_ARTIFACTS[key]
+    return settings.models_dir.joinpath(*(str(part) for part in artifact["target"]))
+
+
+def _minimax_h3_artifact_status(key: str) -> dict[str, Any]:
+    artifact = MINIMAX_H3_HF_ARTIFACTS[key]
+    target = _minimax_h3_artifact_target(key)
+    min_bytes = int(artifact.get("min_bytes") or 1024 * 1024)
+    installed = target.exists() and target.stat().st_size >= min_bytes
+    return {
+        "key": key,
+        "label": artifact["label"],
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "kind": artifact.get("kind") or "model",
+        "scope": artifact.get("scope") or "dependency",
+        "profiles": list(artifact.get("profiles") or []),
+        "destination": str(target),
+        "path": str(target) if installed else "",
+        "installed": installed,
+        "size_bytes_min": min_bytes,
+        "size_bytes": target.stat().st_size if target.exists() else min_bytes,
+    }
+
+
+def _minimax_h3_missing_core_support(object_info: dict[str, Any] | None) -> list[str]:
+    registry = object_info or {}
+    missing = [name for name in MINIMAX_H3_REQUIRED_COMFY_NODES if name not in registry]
+    clip_info = registry.get("CLIPLoader") or {}
+    clip_type_options = ((clip_info.get("input") or {}).get("required") or {}).get("type") or [[], {}]
+    try:
+        clip_types = {str(item) for item in (clip_type_options[0] or [])}
+    except (TypeError, IndexError):
+        clip_types = set()
+    if "minimax" not in clip_types:
+        missing.append("CLIPLoader type minimax")
+    return missing
+
+
+def _minimax_h3_static_missing_core_support() -> list[str]:
+    """Report an old stopped Comfy checkout before the first H3 generation attempt."""
+    source_root = settings.comfy_root
+    if not source_root.exists():
+        return ["ComfyUI runtime source"]
+    required = set(MINIMAX_H3_REQUIRED_COMFY_NODES)
+    has_minimax_clip = False
+    try:
+        for source in source_root.rglob("*.py"):
+            if not required and has_minimax_clip:
+                break
+            try:
+                content = source.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            required = {name for name in required if name not in content}
+            has_minimax_clip = has_minimax_clip or bool(re.search(r"[\"']minimax[\"']", content, flags=re.IGNORECASE))
+    except OSError:
+        return ["ComfyUI runtime source"]
+    missing = sorted(required)
+    if not has_minimax_clip:
+        missing.append("CLIPLoader type minimax")
+    return missing
+
+
+def _minimax_h3_booster_status(key: str, object_info: dict[str, Any] | None, runtime_checked: bool) -> dict[str, Any]:
+    booster = MINIMAX_H3_BOOSTERS[key]
+    target = settings.custom_nodes_dir / str(booster["folder"])
+    installed = target.is_dir() and (target / ".git").exists()
+    loaded = bool(runtime_checked and object_info and booster["class_type"] in object_info)
+    return {
+        "key": key,
+        "label": booster["label"],
+        "repo": booster["repo"],
+        "folder": booster["folder"],
+        "class_type": booster["class_type"],
+        "license": booster["license"],
+        "note": booster["note"],
+        "installed": installed,
+        "loaded": loaded,
+        "path": str(target) if installed else "",
+    }
+
+
+async def _minimax_h3_status_snapshot() -> dict[str, Any]:
+    assets = [_minimax_h3_artifact_status(key) for key in MINIMAX_H3_HF_ARTIFACTS]
+    required_keys = {"fl2va_pruned_int8", "qwen3vl_32b_nvfp4", "video_vae", "audio_vae"}
+    missing_required = [item for item in assets if item["key"] in required_keys and not item["installed"]]
+    missing_optional = [item for item in assets if item["key"] not in required_keys and not item["installed"]]
+    runtime_checked = await comfy.is_running()
+    object_info: dict[str, Any] | None = None
+    missing_core_nodes: list[str] = []
+    if runtime_checked:
+        try:
+            object_info = await comfy.object_info()
+            missing_core_nodes = _minimax_h3_missing_core_support(object_info)
+        except Exception as exc:
+            missing_core_nodes = [f"Comfy object_info unavailable: {exc}"]
+    else:
+        missing_core_nodes = _minimax_h3_static_missing_core_support()
+    boosters = [_minimax_h3_booster_status(key, object_info, runtime_checked) for key in MINIMAX_H3_BOOSTERS]
+    missing_boosters = [item for item in boosters if not item["installed"]]
+    unloaded_boosters = [item for item in boosters if item["installed"] and runtime_checked and not item["loaded"]]
+    gpu = _nvidia_smi_memory_snapshot()
+    gpu_vram_gb = float(gpu.get("total_mb") or 0) / 1024 if gpu.get("available") else 0.0
+    disk = shutil.disk_usage(settings.models_dir)
+    required_bytes = sum(int(item.get("size_bytes_min") or 0) for item in missing_required)
+    audio_bytes = sum(int(item.get("size_bytes_min") or 0) for item in missing_optional if item["key"] == "audio_vae")
+    return {
+        "template": "MiniMaxH3",
+        "label": "MiniMax H3",
+        "installed": not missing_required,
+        "generation_ready": not missing_required and not missing_core_nodes,
+        "dependencies_installed": not missing_required and not missing_core_nodes,
+        "assets": assets,
+        "missing_assets": missing_required + missing_optional,
+        "missing_required_assets": missing_required,
+        "missing_optional_assets": missing_optional,
+        "runtime_checked": runtime_checked,
+        "missing_core_nodes": missing_core_nodes,
+        "boosters": boosters,
+        "missing_boosters": missing_boosters,
+        "unloaded_boosters": unloaded_boosters,
+        "booster_installation": {
+            "path": str(settings.custom_nodes_dir),
+            "python_dependencies": False,
+            "exclusive_runtime": True,
+        },
+        "models_dir": str(settings.models_dir),
+        "storage_layout": {
+            "root": str(settings.models_dir),
+            "diffusion_models": str(settings.models_dir / "diffusion_models" / "minimax_h3"),
+            "text_encoders": str(settings.models_dir / "text_encoders" / "minimax_h3"),
+            "vae": str(settings.models_dir / "vae" / "minimax_h3"),
+            "comfy_compatibility": "Files remain inside standard Comfy categories, so models/diffusion_models, models/text_encoders and models/vae are discovered through Nexus extra_model_paths.yaml.",
+        },
+        "gpu": gpu,
+        "profiles": {
+            "rtx_3060_local": {
+                "supported": gpu_vram_gb >= 11.0,
+                "resolution": "832x480",
+                "duration_seconds": 2,
+                "steps": 20,
+                "runtime_flags": ["--enable-dynamic-vram", "--disable-smart-memory", "--disable-pinned-memory", "--cache-none", "--fast-disk", "--use-sage-attention"],
+                "note": "Fully local CPU/disk offload profile. Needs at least 32 GB system RAM and a fast SSD; this is intentionally slow but avoids loading all H3 weights into 12 GB VRAM.",
+            },
+            "rtx_5090": {
+                "supported": gpu_vram_gb >= 30.0,
+                "resolution": "1344x768",
+                "duration_seconds": 5,
+                "steps": 20,
+                "runtime_flags": ["--enable-dynamic-vram", "--use-sage-attention"],
+                "note": "Higher-resolution profile with the same official INT8 files and native SageAttention support.",
+            },
+        },
+        "capabilities": {
+            "text_to_video": True,
+            "image_to_video": True,
+            "first_last_frame": True,
+            "reference_to_video": True,
+            "native_audio": True,
+            "video_to_video": True,
+            "reference_images_max": 9,
+            "reference_videos_max": 3,
+            "reference_audios_max": 3,
+            "motion_transfer": False,
+            "pose_or_depth_transfer": False,
+            "mid_frame": False,
+        },
+        "estimated_missing_required_bytes": required_bytes,
+        "estimated_missing_optional_bytes": sum(int(item.get("size_bytes_min") or 0) for item in missing_optional),
+        "estimated_audio_bytes": audio_bytes,
+        "disk_free_bytes": disk.free,
+        "note": "MiniMax H3's official local workflow supports T2V, I2V with optional first/last frames, and REF2VA with up to nine images, three videos with paired soundtracks, and three standalone audio references. ControlNet motion, pose/depth transfer and a mid-frame control remain on LTX/WAN.",
+    }
+
+
+async def _run_minimax_h3_assets_download_job(job_id: str, keys: list[str] | None = None) -> None:
+    try:
+        selected_keys = [key for key in (keys or []) if key in MINIMAX_H3_HF_ARTIFACTS]
+        if not selected_keys:
+            selected_keys = [item["key"] for item in (await _minimax_h3_status_snapshot())["missing_required_assets"]]
+        if not selected_keys:
+            raise ValueError("No MiniMax H3 assets selected for download.")
+        completed: list[dict[str, Any]] = []
+        total = max(1, len(selected_keys))
+        for index, key in enumerate(selected_keys, start=1):
+            status = _minimax_h3_artifact_status(key)
+            if status["installed"]:
+                completed.append({**status, "already_downloaded": True})
+                _update_download_job(job_id, {"message": f"MiniMax H3 asset already present: {status['filename']}", "progress": round(index / total * 100, 2)})
+                continue
+            artifact = MINIMAX_H3_HF_ARTIFACTS[key]
+            _update_download_job(job_id, {"status": "downloading", "message": f"Downloading {artifact['label']}: {artifact['filename']}"})
+            result = await asyncio.to_thread(_download_url_to_file, str(artifact["url"]), _minimax_h3_artifact_target(key), job_id)
+            completed.append({**result, "key": key, "label": artifact["label"]})
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {"status": "downloaded", "progress": 100, "message": "MiniMax H3 selected local assets ready.", "assets": completed, "status_snapshot": await _minimax_h3_status_snapshot(), "completed_at": datetime.now().isoformat(timespec="seconds")})
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/minimax-h3/assets/status")
+async def minimax_h3_assets_status() -> dict[str, Any]:
+    return await _minimax_h3_status_snapshot()
+
+
+@app.post("/api/minimax-h3/boosters/install")
+async def minimax_h3_boosters_install(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw_keys = (payload or {}).get("boosters") or (payload or {}).get("keys") or list(MINIMAX_H3_BOOSTERS)
+    keys = list(dict.fromkeys(str(item) for item in raw_keys if str(item) in MINIMAX_H3_BOOSTERS)) if isinstance(raw_keys, list) else []
+    if not keys:
+        raise HTTPException(status_code=400, detail="No supported MiniMax H3 booster was selected.")
+    repos = [MINIMAX_H3_BOOSTERS[key]["repo"] for key in keys]
+    installed, errors = await asyncio.to_thread(
+        install_custom_node_dependencies,
+        settings,
+        repos,
+        False,
+    )
+    restarted = False
+    if installed and await comfy.is_running():
+        cleanup_embedded_comfy_artifacts()
+        await comfy.restart()
+        restarted = True
+    return {
+        "installed": installed,
+        "errors": errors,
+        "requested": keys,
+        "restarted_comfy": restarted,
+        "status": await _minimax_h3_status_snapshot(),
+    }
+
+
+@app.post("/api/minimax-h3/assets/download/start")
+async def minimax_h3_assets_download_start(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw_keys = (payload or {}).get("assets") or (payload or {}).get("keys") or []
+    keys = list(dict.fromkeys(str(item) for item in raw_keys if str(item) in MINIMAX_H3_HF_ARTIFACTS)) if isinstance(raw_keys, list) else []
+    active_statuses = {"queued", "resolving", "downloading"}
+    for active_job in reversed(list(download_jobs.values())):
+        if active_job.get("kind") != "minimax_h3_assets" or active_job.get("status") not in active_statuses:
+            continue
+        active_keys = {str(item) for item in active_job.get("requested_assets") or []}
+        if not keys or not active_keys or set(keys).issubset(active_keys):
+            return {**active_job, "deduplicated": True}
+    job_id = f"minimax_h3_{uuid.uuid4().hex[:8]}"
+    download_jobs[job_id] = {"job_id": job_id, "kind": "minimax_h3_assets", "requested_assets": keys, "status": "queued", "progress": 0, "message": "MiniMax H3 local asset download queued.", "error": None, "created_at": datetime.now().isoformat(timespec="seconds"), "updated_at": datetime.now().isoformat(timespec="seconds")}
+    asyncio.create_task(_run_minimax_h3_assets_download_job(job_id, keys))
+    return download_jobs[job_id]
+
+
 def _ideogram4_prompt_generator_instruction(user_prompt: str, width: int, height: int, regions: list[dict[str, Any]]) -> str:
     regions_hint = json.dumps(regions[:24], ensure_ascii=False, separators=(",", ":")) if regions else "[]"
     layout_rule = (
@@ -9881,6 +10254,28 @@ async def train_lora_start(plan: str = Form("{}"), files: list[UploadFile] = Fil
     return public_train_lora_job(train_lora_jobs[job_id])
 
 
+@app.get("/api/train-lora/dependency")
+async def train_lora_dependency(trainer: str = Query(""), script: str = Query("")) -> dict[str, Any]:
+    try:
+        return trainer_dependency_status(settings, trainer, script or None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/train-lora/dependency/install")
+async def train_lora_dependency_install(payload: dict[str, Any]) -> dict[str, Any]:
+    trainer = str(payload.get("trainer") or "").strip()
+    script = str(payload.get("script") or "").strip() or None
+    if not trainer:
+        raise HTTPException(status_code=400, detail="LoRA trainer is required.")
+    try:
+        return await asyncio.to_thread(install_trainer_dependency, settings, trainer, script)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.get("/api/train-lora/{job_id}")
 async def train_lora_status(job_id: str) -> dict[str, Any]:
     job = train_lora_jobs.get(job_id)
@@ -10061,6 +10456,37 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     "Ideogram 4 local Comfy route does not support true mask inpaint yet. "
                     "Use Linear Viewer ADD boxes as regional JSON guides."
                 )
+        if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"}:
+            h3_mode = str((request.video or {}).get("minimax_h3_mode") or "i2v").strip().lower()
+            h3_reference_mode = h3_mode in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
+            expected_model = "minimax_h3_ref2va" if h3_reference_mode else "minimax_h3_fl2va"
+            missing_h3_assets: list[str] = []
+            if expected_model not in str(assets.get("primary_model") or "").lower():
+                missing_h3_assets.append(f"{expected_model}_pruned_int8_convrot.safetensors")
+            if Path(str(assets.get("text_encoder") or "")).name.lower() != "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors":
+                missing_h3_assets.append("qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors")
+            if Path(str(assets.get("video_vae") or assets.get("vae") or "")).name.lower() != "minimax_h3_video_vae_fp16.safetensors":
+                missing_h3_assets.append("minimax_h3_video_vae_fp16.safetensors")
+            if Path(str(assets.get("audio_vae") or "")).name.lower() != "minimax_h3_audio_vae_fp32.safetensors":
+                missing_h3_assets.append("minimax_h3_audio_vae_fp32.safetensors")
+            if missing_h3_assets:
+                raise ValueError("MiniMax H3 missing required local assets: " + ", ".join(missing_h3_assets) + ".")
+            if str(getattr(request.img2img, "base_video", "") or "").strip() and not h3_reference_mode:
+                raise ValueError("MiniMax H3 video references require the REF2VA R2V/V2V mode.")
+            if bool(getattr(request.controlnet, "enabled", False)):
+                raise ValueError("MiniMax H3 does not expose native ControlNet, pose or depth transfer. Use its first/last-frame or reference-to-video controls, or select LTX/WAN for motion control.")
+            h3_reference_limit = 9 if h3_reference_mode else 2
+            if len(_reference_image_values(request)) > h3_reference_limit:
+                raise ValueError(f"MiniMax H3 {h3_mode.upper()} supports up to {h3_reference_limit} ordered image references in Nexus.")
+            h3_extra_videos = _minimax_h3_reference_media_values(request, "minimax_h3_reference_videos")
+            h3_reference_audios = _minimax_h3_reference_media_values(request, "minimax_h3_reference_audios")
+            h3_video_count = (1 if str(getattr(request.img2img, "base_video", "") or "").strip() else 0) + len(h3_extra_videos)
+            if h3_video_count > 3:
+                raise ValueError("MiniMax H3 REF2VA supports up to 3 reference videos.")
+            if len(h3_reference_audios) > 3:
+                raise ValueError("MiniMax H3 REF2VA supports up to 3 standalone audio references.")
+            if (h3_video_count or h3_reference_audios) and not h3_reference_mode:
+                raise ValueError("MiniMax H3 video/audio references require the REF2VA R2V/V2V mode.")
         _apply_inpaint_intent_prompt(request)
         reference_image_names = _prepare_reference_images(request)
         ltx_director_frame_guides: list[dict[str, Any]] = []
@@ -10082,6 +10508,24 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             request.workflow_override = None
             request.workflow_id = None
         base_video_name = ltx_director_motion_video or _prepare_base_video(request)
+        h3_reference_video_names: list[str] = []
+        h3_reference_audio_names: list[str] = []
+        if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"}:
+            if base_video_name:
+                h3_reference_video_names.append(base_video_name)
+            remaining_video_slots = max(0, 3 - len(h3_reference_video_names))
+            h3_reference_video_names.extend(
+                _prepare_video_value(value, f"nexus_h3_reference_video_{index + 1}")
+                for index, value in enumerate(
+                    _minimax_h3_reference_media_values(request, "minimax_h3_reference_videos")[:remaining_video_slots]
+                )
+            )
+            h3_reference_audio_names = [
+                _prepare_audio_value(value, f"nexus_h3_reference_audio_{index + 1}")
+                for index, value in enumerate(
+                    _minimax_h3_reference_media_values(request, "minimax_h3_reference_audios")[:3]
+                )
+            ]
         if (
             base_video_name
             and request.preset.lower() == "ltx"
@@ -10143,6 +10587,10 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     assets["outpaint_reference_image"] = outpaint_reference_image
         if reference_image_names:
             assets["reference_images"] = reference_image_names
+        if h3_reference_video_names:
+            assets["minimax_h3_reference_videos"] = h3_reference_video_names
+        if h3_reference_audio_names:
+            assets["minimax_h3_reference_audios"] = h3_reference_audio_names
         if mask_image_name:
             assets["mask_image"] = mask_image_name
         if composite_mask_image_name:
@@ -10202,6 +10650,25 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     "Ideogram 4 requires a newer ComfyUI core with official Day-0 Ideogram nodes. "
                     f"Missing runtime support: {missing}. Update the embedded ComfyUI runtime, then restart Nexus."
                 )
+        if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"}:
+            missing_h3_core = _minimax_h3_missing_core_support(object_info)
+            if missing_h3_core:
+                missing = ", ".join(missing_h3_core[:8])
+                raise ValueError(
+                    "MiniMax H3 requires a newer ComfyUI core with the official H3 nodes. "
+                    f"Missing runtime support: {missing}. Update the embedded ComfyUI runtime, then restart Nexus."
+                )
+            h3_booster_enabled = _truthy((request.video or {}).get("minimax_h3_booster_enabled", True))
+            h3_booster_key = str((request.video or {}).get("minimax_h3_booster") or "first_block_cache").strip().lower()
+            if h3_booster_enabled:
+                h3_booster = MINIMAX_H3_BOOSTERS.get(h3_booster_key)
+                if not h3_booster:
+                    raise ValueError(f"Unsupported MiniMax H3 booster: {h3_booster_key}.")
+                if h3_booster["class_type"] not in object_info:
+                    raise ValueError(
+                        f"MiniMax H3 booster '{h3_booster['label']}' is not loaded. "
+                        f"Install {h3_booster['repo']} in {settings.custom_nodes_dir} and restart ComfyUI."
+                    )
         director_segment_response = await _run_ltx_director_segment_render(request, assets, object_info, job_id=job_id)
         if director_segment_response:
             _cleanup_generation_temp()
@@ -10209,7 +10676,33 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             _schedule_comfy_idle_release()
             return director_segment_response
 
-        if request.workflow_override:
+        if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"} and not request.workflow_override:
+            # The official H3 UI templates contain nested subgraphs.  Build the
+            # equivalent API graph so Nexus side-menu changes are preserved
+            # exactly (including prompt, both dimensions, native audio and
+            # frame length) instead of depending on subgraph widget conversion.
+            h3_model_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
+            h3_text_encoder = assets.get("text_encoder")
+            h3_video_vae = assets.get("video_vae") or assets.get("vae")
+            h3_audio_vae = assets.get("audio_vae")
+            if not h3_model_name or not h3_text_encoder or not h3_video_vae or not h3_audio_vae:
+                raise ValueError("MiniMax H3 requires its FL2VA/REF2VA model, Qwen3-VL text encoder, video VAE and audio VAE.")
+            if job_id:
+                _update_generation_job(job_id, {"status": "building", "progress": 9, "message": "Building synchronized MiniMax H3 workflow"})
+            prompt = build_basic_minimax_h3_workflow(
+                request,
+                h3_model_name,
+                h3_text_encoder,
+                h3_video_vae,
+                h3_audio_vae,
+                reference_image_name=reference_image_name,
+                reference_end_image_name=reference_end_image_name,
+                reference_image_names=reference_image_names,
+                base_video_name=base_video_name,
+                reference_video_names=h3_reference_video_names,
+                reference_audio_names=h3_reference_audio_names,
+            )
+        elif request.workflow_override:
             if job_id:
                 _update_generation_job(job_id, {"status": "building", "progress": 9, "message": "Building visual workflow"})
             override = request.workflow_override

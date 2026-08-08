@@ -10,6 +10,8 @@ $bootstrap = Join-Path $root "scripts\bootstrap_nexus_runtime.ps1"
 $customNodeDeps = Join-Path $root "scripts\install_comfy_custom_node_deps.ps1"
 $ltxDirectorDeps = Join-Path $root "scripts\install_ltx_director_deps.ps1"
 $wan22Deps = Join-Path $root "scripts\install_wan22_deps.ps1"
+$minimaxH3Deps = Join-Path $root "scripts\install_minimax_h3_deps.ps1"
+$minimaxH3Workflows = Join-Path $root "scripts\import_minimax_h3_workflows.ps1"
 $terminalHelpers = Join-Path $root "scripts\nexus_terminal.ps1"
 $settingsPath = Join-Path $root "config\nexus_settings.json"
 
@@ -95,6 +97,37 @@ function Get-NexusConfiguredCustomNodesDir {
     return Join-Path $root "custom_nodes"
 }
 
+function Update-NexusComfyCoreSafely {
+    param([string]$ComfyRoot)
+
+    if (!(Test-Path -LiteralPath (Join-Path $ComfyRoot ".git"))) {
+        Write-NexusLine "ComfyUI is not a Git checkout; skipping core update." "Warn"
+        return $false
+    }
+    $dirty = @(git -C $ComfyRoot status --porcelain)
+    if ($dirty.Count -gt 0) {
+        Write-NexusLine "ComfyUI has local changes; preserving them and skipping the core update. Commit/stash them, then rerun update_nexus.ps1." "Warn"
+        return $false
+    }
+    git -C $ComfyRoot fetch origin --prune
+    if ($LASTEXITCODE -ne 0) { throw "Could not fetch ComfyUI origin." }
+    $counts = (git -C $ComfyRoot rev-list --left-right --count HEAD...origin/master).Trim().Split("`t")
+    $ahead = [int]$counts[0]
+    $behind = [int]$counts[1]
+    if ($ahead -gt 0) {
+        Write-NexusLine "ComfyUI has $ahead local commit(s); preserving them and skipping fast-forward update." "Warn"
+        return $false
+    }
+    if ($behind -eq 0) {
+        Write-NexusLine "ComfyUI core is already current." "Ok"
+        return $true
+    }
+    git -C $ComfyRoot pull --ff-only origin master
+    if ($LASTEXITCODE -ne 0) { throw "ComfyUI fast-forward update failed." }
+    Write-NexusLine "ComfyUI core updated by $behind commit(s)." "Ok"
+    return $true
+}
+
 $comfyRoot = Get-NexusConfiguredComfyRoot
 $comfyPython = Get-NexusConfiguredComfyPython
 $customNodesDir = Get-NexusConfiguredCustomNodesDir
@@ -130,6 +163,9 @@ if (!(Test-Path -LiteralPath (Join-Path $comfyRoot "main.py")) -or !(Test-Path -
     $comfyRoot = Get-NexusConfiguredComfyRoot
     $comfyPython = Get-NexusConfiguredComfyPython
 }
+
+Write-NexusLine "Checking ComfyUI core update..." "Info"
+Update-NexusComfyCoreSafely -ComfyRoot $comfyRoot | Out-Null
 
 if (Test-Path -LiteralPath $python) {
     Write-NexusSection "Requirements"
@@ -172,6 +208,20 @@ if (Test-Path -LiteralPath $python) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $wan22Deps -ProjectRoot $root -RuntimePython $comfyPython -ModelsDir $modelsDir -Strict
     }
 
+    if (Test-Path -LiteralPath $minimaxH3Deps) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $minimaxH3Deps -ProjectRoot $root -RuntimePython $comfyPython -ComfyRoot $comfyRoot
+        if ($LASTEXITCODE -eq 2) {
+            Write-NexusLine "MiniMax H3 stays disabled until the protected ComfyUI core update can be completed." "Warn"
+        } elseif ($LASTEXITCODE -ne 0) {
+            throw "MiniMax H3 dependency check failed."
+        }
+    }
+
+    if (Test-Path -LiteralPath $minimaxH3Workflows) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $minimaxH3Workflows -ProjectRoot $root
+        if ($LASTEXITCODE -ne 0) { throw "MiniMax H3 workflow import failed." }
+    }
+
 } else {
     Write-NexusLine "Runtime Python not found; run run.bat after bootstrap." "Warn"
 }
@@ -189,9 +239,12 @@ foreach ($dir in @(
     "checkpoints\anima",
     "checkpoints\ideogram4",
     "diffusion_models\ideogram4",
+    "diffusion_models\minimax_h3",
     "loras",
     "vae",
+    "vae\minimax_h3",
     "text_encoders",
+    "text_encoders\minimax_h3",
     "clip_vision",
     "controlnet",
     "upscale_models",
