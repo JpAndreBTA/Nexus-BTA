@@ -4341,7 +4341,12 @@ def build_basic_minimax_h3_workflow(
     }
     workflow["14"] = {
         "class_type": "SaveVideo",
-        "inputs": {"video": ["13", 0], "filename_prefix": "video/MiniMax_H3"},
+        "inputs": {
+            "video": ["13", 0],
+            "filename_prefix": "video/MiniMax_H3",
+            "format": "mp4",
+            "codec": "h264",
+        },
         "_meta": {"title": "Save MiniMax H3 Video"},
     }
     return workflow
