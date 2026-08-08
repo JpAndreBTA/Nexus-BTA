@@ -7232,6 +7232,7 @@
         let workflowGraphRendering = false;
         let workflowLoadSerial = 0;
         let minimaxH3ModeTransitionSerial = 0;
+        let minimaxH3FirstLastEnabled = false;
         let ltxMotionPreprocessReady = null;
         const NEXUS_BACKEND_ORIGIN = 'http://127.0.0.1:7861';
         const NEXUS_API = window.location.protocol.startsWith('http')
@@ -8206,7 +8207,7 @@
                 motionAdapters: ['First/last frame', 'Reference-to-video', 'None'],
                 videoVae: ['minimax_h3_video_vae_fp16.safetensors', 'Automatic'],
                 audioVae: ['minimax_h3_audio_vae_fp32.safetensors', 'Automatic', 'None'],
-                minimaxH3Mode: 'i2v',
+                minimaxH3Mode: 'r2v',
                 latentUpscaleModels: ['None'],
                 denoise: 1,
                 supportsExtend: false,
@@ -13670,7 +13671,10 @@
             setSelectValue('schedulerSelect', savedFields.schedulerSelect || profile.scheduler);
             setElementOptions('refinerSelect', profile.refiners || ['Off']);
             setElementOptions('motionSelect', profile.motionAdapters || ['None']);
-            setSelectValue('minimaxH3ModeSelect', savedFields.minimaxH3ModeSelect || profile.minimaxH3Mode || 'i2v');
+            setSelectValue('minimaxH3ModeSelect', savedFields.minimaxH3ModeSelect || profile.minimaxH3Mode || 'r2v');
+            if (presetName === 'MiniMaxH3') {
+                minimaxH3FirstLastEnabled = document.getElementById('minimaxH3ModeSelect')?.value === 'i2v';
+            }
             if (presetName === 'MiniMaxH3' && ['txt2img', 'img2img'].includes(currentActivity)) {
                 const restoredH3Mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
                 currentActivity = restoredH3Mode === 't2v' ? 'txt2img' : 'img2img';
@@ -13886,6 +13890,21 @@
                 profile.checkpoint = option.dataset?.model || option.textContent?.trim() || profile.checkpoint;
             }
             return changed;
+        }
+
+        function syncMiniMaxH3FirstLastToggle(enabled) {
+            if (activePreset !== 'MiniMaxH3') return;
+            minimaxH3FirstLastEnabled = !!enabled;
+            const modeSelect = document.getElementById('minimaxH3ModeSelect');
+            const desiredMode = minimaxH3FirstLastEnabled ? 'i2v' : 'r2v';
+            if (modeSelect && modeSelect.value !== desiredMode) {
+                modeSelect.value = desiredMode;
+                modeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                return;
+            }
+            syncMiniMaxH3CheckpointForMode();
+            syncReferenceImageSurfaces();
+            updateWorkflowPreview();
         }
 
         function updateModelTypeUi() {
@@ -14512,7 +14531,7 @@
             const motionTransferOn = activePreset === 'LTX' && !!document.getElementById('ltxMotionTransferToggle')?.checked;
             if (activePreset === 'MiniMaxH3') {
                 const mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
-                if (mode === 'i2v') return slot === 1 ? 'First Frame' : 'Last Frame';
+                if (mode === 'i2v') return slot === 1 ? 'Start Frame' : 'End Frame';
                 return `Picture ${slot}`;
             }
             if (isWanMotionCaptureMode()) {
@@ -21130,7 +21149,8 @@
             const h3ReferenceMode = ['r2v', 'v2v'].includes(h3Mode);
             const hasAnyReference = hasImage || hasBaseVideo || h3VideoCount > 0 || h3AudioCount > 0;
             const showCanvasVideo = !hasImage && hasBaseVideo && activePreset === 'LTX' && activeWorkspace === 'canvas';
-            const startEndFrame = isStartEndFrameMode();
+            const startEndFrame = isStartEndFrameMode()
+                || (activePreset === 'MiniMaxH3' && currentActivity === 'img2img' && h3Mode === 'i2v');
             const cameraMotionEndFrame = isLtxCameraMotionTransferMode();
             if (isModel3DTemplateActive()) {
                 renderModel3DReferenceGrid();
@@ -21270,6 +21290,21 @@
                         <div class="col-span-2 border border-nexus-border bg-black/40 px-2 py-1.5 text-[9px] font-mono leading-4 text-nexus-muted ${wanMotionCaptureEnabled ? '' : 'hidden'}">
                             WAN Motion Capture uses the target image plus a motion video source. DWPose/control nodes are optional; LoRAs can accelerate motion routes but do not replace a compatible motion-control checkpoint.
                         </div>
+                    `;
+                } else if (activePreset === 'MiniMaxH3') {
+                    multiList.innerHTML += `
+                        <label class="col-span-2 flex items-center justify-between gap-3 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted" onclick="event.preventDefault();event.stopPropagation();syncMiniMaxH3FirstLastToggle(!document.getElementById('minimaxH3FirstLastInlineToggle')?.checked);">
+                            <span><i class="fa-solid fa-right-left text-nexus-red mr-1"></i>First / Last Frame</span>
+                            <span class="toggle-switch"><input id="minimaxH3FirstLastInlineToggle" type="checkbox" ${minimaxH3FirstLastEnabled ? 'checked' : ''} onclick="event.stopPropagation();" onchange="event.stopPropagation();syncMiniMaxH3FirstLastToggle(this.checked)"><span class="toggle-track"></span></span>
+                        </label>
+                    `;
+                }
+                if (activePreset === 'MiniMaxH3' && currentActivity === 'img2img' && h3Mode !== 't2v' && !startEndFrame) {
+                    multiList.innerHTML += `
+                        <label class="col-span-2 flex items-center justify-between gap-3 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted" onclick="event.preventDefault();event.stopPropagation();syncMiniMaxH3FirstLastToggle(!document.getElementById('minimaxH3FirstLastInlineToggle')?.checked);">
+                            <span><i class="fa-solid fa-right-left text-nexus-red mr-1"></i>First / Last Frame</span>
+                            <span class="toggle-switch"><input id="minimaxH3FirstLastInlineToggle" type="checkbox" ${minimaxH3FirstLastEnabled ? 'checked' : ''} onclick="event.stopPropagation();" onchange="event.stopPropagation();syncMiniMaxH3FirstLastToggle(this.checked)"><span class="toggle-track"></span></span>
+                        </label>
                     `;
                 }
                 if (activePreset === 'MiniMaxH3' && h3ReferenceMode) {
@@ -26485,11 +26520,12 @@
                 const modeSelect = document.getElementById('minimaxH3ModeSelect');
                 const desiredMode = activity === 'txt2img'
                     ? 't2v'
-                    : (['r2v', 'v2v'].includes(modeSelect?.value) ? modeSelect.value : 'i2v');
+                    : (minimaxH3FirstLastEnabled ? 'i2v' : (modeSelect?.value === 'v2v' ? 'v2v' : 'r2v'));
                 if (modeSelect && modeSelect.value !== desiredMode) {
                     modeSelect.value = desiredMode;
                     savePresetRuntimeState(activePreset);
                 }
+                syncReferenceImageSurfaces();
                 syncMiniMaxH3CheckpointForMode();
             }
 
@@ -36130,6 +36166,7 @@
         document.getElementById('minimaxH3ModeSelect')?.addEventListener('change', async event => {
             if (activePreset !== 'MiniMaxH3') return;
             const serial = ++minimaxH3ModeTransitionSerial;
+            minimaxH3FirstLastEnabled = event.target.value === 'i2v';
             syncMiniMaxH3CheckpointForMode();
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
@@ -36163,6 +36200,7 @@
         });
         document.getElementById('minimaxH3ModeSelect')?.addEventListener('input', () => {
             if (activePreset !== 'MiniMaxH3') return;
+            minimaxH3FirstLastEnabled = document.getElementById('minimaxH3ModeSelect')?.value === 'i2v';
             syncMiniMaxH3CheckpointForMode();
             syncReferenceImageSurfaces();
             updateWorkflowPreview();
