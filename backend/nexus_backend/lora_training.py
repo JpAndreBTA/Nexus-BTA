@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -799,6 +800,121 @@ def resolve_trainer_runner(settings: NexusSettings, preset: dict[str, Any], conf
         "command": [],
         "install_hint": _install_hint(trainer),
     }
+
+
+_TRAINER_REPOSITORIES: dict[str, tuple[str, str, str]] = {
+    "kohya_ss": ("https://github.com/kohya-ss/sd-scripts.git", "sd-scripts", "train_network.py"),
+    "ai_toolkit": ("https://github.com/ostris/ai-toolkit.git", "ai-toolkit", "run.py"),
+    "ai_toolkit_perceptual": (
+        "https://github.com/BuffaloBuffaloBuffaloBuffalo/ai-toolkit-perceptual.git",
+        "ai-toolkit-perceptual",
+        "run.py",
+    ),
+    "ltx_trainer": ("https://github.com/Lightricks/LTX-2.git", "LTX-2", "packages/ltx-trainer/scripts/train.py"),
+    "musubi_tuner": ("https://github.com/kohya-ss/musubi-tuner.git", "musubi-tuner", "wan_train_network.py"),
+    "simpletuner": ("https://github.com/bghira/SimpleTuner.git", "SimpleTuner", "train.py"),
+}
+
+
+def trainer_dependency_status(settings: NexusSettings, trainer: str, script: str | None = None) -> dict[str, Any]:
+    """Return the local install target used by the selected LoRA runner."""
+    normalized = str(trainer or "").strip().lower()
+    repo = _TRAINER_REPOSITORIES.get(normalized)
+    if not repo:
+        return {
+            "trainer": normalized,
+            "available": False,
+            "install_dir": "",
+            "python": str(runtime_python(settings)),
+            "repo_url": "",
+            "install_hint": _install_hint(normalized),
+        }
+    repo_url, folder, default_script = repo
+    requested_script = str(script or default_script).replace("\\", "/")
+    requested_path = Path(requested_script)
+    if requested_path.is_absolute() or ".." in requested_path.parts:
+        raise ValueError("Trainer script path must stay inside the selected trainer folder.")
+    install_dir = settings.runtime_dir / folder
+    script_path = install_dir / requested_script
+    requirements_path = install_dir / "requirements.txt"
+    return {
+        "trainer": normalized,
+        "available": install_dir.is_dir() and script_path.is_file(),
+        "install_dir": str(install_dir),
+        "python": str(runtime_python(settings)),
+        "repo_url": repo_url,
+        "script": requested_script,
+        "requirements": str(requirements_path),
+        "requirements_available": requirements_path.is_file(),
+        "install_hint": _install_hint(normalized),
+    }
+
+
+def install_trainer_dependency(settings: NexusSettings, trainer: str, script: str | None = None) -> dict[str, Any]:
+    """Clone/update a trainer inside the configured runtime and install its requirements."""
+    status = trainer_dependency_status(settings, trainer, script)
+    normalized = status["trainer"]
+    repo = _TRAINER_REPOSITORIES.get(normalized)
+    if not repo:
+        raise ValueError(f"Unsupported LoRA trainer: {trainer}")
+    git = shutil.which("git")
+    if not git:
+        raise RuntimeError("Git is required to download the selected LoRA trainer.")
+    python_exe = Path(status["python"])
+    if not python_exe.is_file():
+        raise RuntimeError(f"Nexus runtime Python was not found: {python_exe}")
+
+    settings.runtime_dir.mkdir(parents=True, exist_ok=True)
+    target = Path(status["install_dir"])
+    repo_url = str(repo[0])
+    if target.exists():
+        if not (target / ".git").is_dir():
+            raise RuntimeError(f"Install target exists but is not a Git checkout: {target}")
+        dirty = subprocess.run(
+            [git, "-C", str(target), "status", "--porcelain"],
+            cwd=str(settings.project_root),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if dirty.returncode != 0:
+            raise RuntimeError((dirty.stderr or dirty.stdout or "Unable to inspect trainer checkout.").strip())
+        if not dirty.stdout.strip():
+            pulled = subprocess.run(
+                [git, "-C", str(target), "pull", "--ff-only"],
+                cwd=str(settings.project_root),
+                capture_output=True,
+                text=True,
+                timeout=900,
+            )
+            if pulled.returncode != 0:
+                raise RuntimeError((pulled.stderr or pulled.stdout or "Trainer update failed.").strip()[-2000:])
+    else:
+        cloned = subprocess.run(
+            [git, "clone", "--depth", "1", repo_url, str(target)],
+            cwd=str(settings.runtime_dir),
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if cloned.returncode != 0:
+            raise RuntimeError((cloned.stderr or cloned.stdout or "Trainer download failed.").strip()[-2000:])
+
+    requirements = target / "requirements.txt"
+    if requirements.is_file():
+        installed = subprocess.run(
+            [str(python_exe), "-m", "pip", "install", "-r", str(requirements)],
+            cwd=str(target),
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if installed.returncode != 0:
+            raise RuntimeError((installed.stderr or installed.stdout or "Trainer requirements installation failed.").strip()[-3000:])
+
+    refreshed = trainer_dependency_status(settings, normalized, script)
+    refreshed["message"] = f"{normalized} installed in {target}."
+    return refreshed
 
 
 def _install_hint(trainer: str) -> str:

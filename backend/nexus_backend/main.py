@@ -39,7 +39,9 @@ from .importer import import_resource
 from .lora_training import (
     build_train_lora_catalog,
     build_train_lora_job,
+    install_trainer_dependency,
     public_train_lora_job,
+    trainer_dependency_status,
     train_lora_command_text,
     train_lora_job_root,
 )
@@ -10250,6 +10252,28 @@ async def train_lora_start(plan: str = Form("{}"), files: list[UploadFile] = Fil
     if _truthy(parsed_plan.get("launch")) and (job.get("runner") or {}).get("available"):
         _launch_train_lora_job(job_id)
     return public_train_lora_job(train_lora_jobs[job_id])
+
+
+@app.get("/api/train-lora/dependency")
+async def train_lora_dependency(trainer: str = Query(""), script: str = Query("")) -> dict[str, Any]:
+    try:
+        return trainer_dependency_status(settings, trainer, script or None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/train-lora/dependency/install")
+async def train_lora_dependency_install(payload: dict[str, Any]) -> dict[str, Any]:
+    trainer = str(payload.get("trainer") or "").strip()
+    script = str(payload.get("script") or "").strip() or None
+    if not trainer:
+        raise HTTPException(status_code=400, detail="LoRA trainer is required.")
+    try:
+        return await asyncio.to_thread(install_trainer_dependency, settings, trainer, script)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/api/train-lora/{job_id}")
