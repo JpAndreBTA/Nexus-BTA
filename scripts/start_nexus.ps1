@@ -555,7 +555,7 @@ if ($dependencyCheckRequired -and (Test-Path -LiteralPath $wan22Deps)) {
 
 if ($dependencyCheckRequired -and (Test-Path -LiteralPath $minimaxH3Deps)) {
     Write-NexusSection "MiniMax H3"
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $minimaxH3Deps -ProjectRoot $root -RuntimePython $comfyPython -ComfyRoot $comfyRoot
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $minimaxH3Deps -ProjectRoot $root -RuntimePython $comfyPython -ComfyRoot $comfyRoot -CustomNodesDir $customNodesDir
     if ($LASTEXITCODE -eq 2) {
         Write-NexusLine "MiniMax H3 remains gated until the configured ComfyUI core includes its official nodes." "Warn"
     } elseif ($LASTEXITCODE -ne 0) {

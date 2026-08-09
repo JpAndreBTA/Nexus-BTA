@@ -4260,19 +4260,22 @@ def build_basic_minimax_h3_workflow(
             videos.append(base_video_name)
         for index, video_name in enumerate(videos):
             load_id = str(40 + index * 2)
-            components_id = str(41 + index * 2)
             workflow[load_id] = {
-                "class_type": "LoadVideo",
-                "inputs": {"file": video_name},
-                "_meta": {"title": f"MiniMax H3 Reference Video {index + 1}"},
+                "class_type": "VHS_LoadVideo",
+                "inputs": {
+                    "video": video_name,
+                    "force_rate": fps,
+                    "custom_width": width,
+                    "custom_height": height,
+                    "frame_load_cap": length,
+                    "skip_first_frames": 0,
+                    "select_every_nth": 1,
+                    "format": "None",
+                },
+                "_meta": {"title": f"MiniMax H3 Optimized Reference Video {index + 1}"},
             }
-            workflow[components_id] = {
-                "class_type": "GetVideoComponents",
-                "inputs": {"video": [load_id, 0]},
-                "_meta": {"title": f"MiniMax H3 Video {index + 1} Frames + Soundtrack"},
-            }
-            h3_inputs[f"ref_videos.ref_video_{index}"] = [components_id, 0]
-            h3_inputs[f"ref_video_audios.ref_video_audio_{index}"] = [components_id, 1]
+            h3_inputs[f"ref_videos.ref_video_{index}"] = [load_id, 0]
+            h3_inputs[f"ref_video_audios.ref_video_audio_{index}"] = [load_id, 2]
         for index, audio_name in enumerate([item for item in (reference_audio_names or []) if item][:3]):
             node_id = str(50 + index)
             workflow[node_id] = {

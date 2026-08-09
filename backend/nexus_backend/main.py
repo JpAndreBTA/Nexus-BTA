@@ -589,8 +589,7 @@ MINIMAX_H3_REQUIRED_COMFY_NODES = (
     "MiniMaxH3ReferenceToVideo",
     "VAEDecodeAudio",
     "CreateVideo",
-    "LoadVideo",
-    "GetVideoComponents",
+    "VHS_LoadVideo",
     "LoadAudio",
 )
 
@@ -7045,6 +7044,17 @@ def _minimax_h3_static_missing_core_support() -> list[str]:
     if not source_root.exists():
         return ["ComfyUI runtime source"]
     required = set(MINIMAX_H3_REQUIRED_COMFY_NODES)
+    try:
+        video_helper_available = any(
+            item.is_dir()
+            and item.name.casefold() == "comfyui-videohelpersuite"
+            and (item / "__init__.py").is_file()
+            for item in settings.custom_nodes_dir.iterdir()
+        )
+    except OSError:
+        video_helper_available = False
+    if video_helper_available:
+        required.discard("VHS_LoadVideo")
     has_minimax_clip = False
     try:
         for source in source_root.rglob("*.py"):

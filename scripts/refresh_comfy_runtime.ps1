@@ -203,7 +203,7 @@ if (Test-Path -LiteralPath $customNodeDeps) {
 }
 
 if (Test-Path -LiteralPath $minimaxH3Deps) {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $minimaxH3Deps -ProjectRoot $root -RuntimePython $RuntimePython -ComfyRoot $ComfyRoot
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $minimaxH3Deps -ProjectRoot $root -RuntimePython $RuntimePython -ComfyRoot $ComfyRoot -CustomNodesDir $CustomNodesDir
     if ($LASTEXITCODE -eq 2) {
         Write-NexusLine "MiniMax H3 remains gated until this configured ComfyUI core contains the official H3 nodes." "Warn"
     } elseif ($LASTEXITCODE -ne 0) {

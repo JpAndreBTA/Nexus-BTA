@@ -209,7 +209,7 @@ if (Test-Path -LiteralPath $python) {
     }
 
     if (Test-Path -LiteralPath $minimaxH3Deps) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $minimaxH3Deps -ProjectRoot $root -RuntimePython $comfyPython -ComfyRoot $comfyRoot
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $minimaxH3Deps -ProjectRoot $root -RuntimePython $comfyPython -ComfyRoot $comfyRoot -CustomNodesDir $customNodesDir
         if ($LASTEXITCODE -eq 2) {
             Write-NexusLine "MiniMax H3 stays disabled until the protected ComfyUI core update can be completed." "Warn"
         } elseif ($LASTEXITCODE -ne 0) {

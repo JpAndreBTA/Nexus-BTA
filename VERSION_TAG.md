@@ -1,14 +1,14 @@
-# NexusBTA v0.2.40
+# NexusBTA v0.2.42
 
-`NexusBTA v0.2.40 - Gallery workflow isolation hotfix`
+`NexusBTA v0.2.42 - MiniMax H3 video-reference optimization`
 
 Short release summary:
 
-- Gallery handoff: txt2img receives only the positive and negative prompts.
-- Reference handoff: img2img, inpaint and img2video receive only prompts and the selected image or video.
-- Workflow isolation: VAE, text encoder, video/audio VAE, Concept LoRAs, Lightning LoRAs and distilled LoRAs remain owned by the active template.
-- Template safety: sending an older gallery output no longer contaminates another model workflow.
+- Video references are normalized to the FPS and resolution selected in the UI.
+- Frame loading stops at the H3-aligned frame count before VAE and Qwen processing.
+- Reference audio is limited to the same normalized time window.
+- Video Helper Suite is installed only when missing and uses the configured custom-nodes path.
 
 Complete version:
 
-[docs/releases/v0.2.40.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.40/docs/releases/v0.2.40.md)
+[docs/releases/v0.2.42.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.42/docs/releases/v0.2.42.md)
