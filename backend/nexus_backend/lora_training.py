@@ -376,7 +376,7 @@ TRAIN_LORA_PRESETS: dict[str, dict[str, Any]] = {
         "base": "Anima / anime SD family",
         "trainer": "kohya_ss",
         "trainer_label": "kohya-ss sd-scripts",
-        "script": "train_network.py",
+        "script": "anima_train_network.py",
         "resolution": 768,
         "caption": "Use tag-style captions for anime and keep character tags stable.",
         "templates": {
@@ -938,6 +938,7 @@ def _toml_string(value: Any) -> str:
 
 
 def write_kohya_dataset_toml(path: Path, dataset_dir: Path, config: dict[str, Any]) -> None:
+    resolution = _int(config.get("resolution"), 768, 64, 4096)
     lines = [
         "[general]",
         "shuffle_caption = true",
@@ -945,7 +946,7 @@ def write_kohya_dataset_toml(path: Path, dataset_dir: Path, config: dict[str, An
         "keep_tokens = 1",
         "",
         "[[datasets]]",
-        f"resolution = {_toml_string(config['resolution'])}",
+        f"resolution = {resolution}",
         "batch_size = 1",
         "enable_bucket = true",
         "bucket_no_upscale = false",
@@ -954,6 +955,69 @@ def write_kohya_dataset_toml(path: Path, dataset_dir: Path, config: dict[str, An
         f"image_dir = {_toml_string(str(dataset_dir))}",
         f"num_repeats = {int(config['repeats'])}",
     ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _first_existing_model(models_dir: Path, relative_names: tuple[str, ...]) -> str:
+    for relative_name in relative_names:
+        candidate = models_dir / relative_name
+        if candidate.is_file():
+            return str(candidate)
+    return ""
+
+
+def write_kohya_training_toml(path: Path, config: dict[str, Any], dataset_toml: Path, job_root: Path, settings: NexusSettings) -> None:
+    """Write the actual kohya config; its --config_file argument must be TOML."""
+    is_anima = str(config.get("preset") or "").lower() == "anima"
+    optimizer = str(config.get("optimizer") or "adamw8bit").strip().lower()
+    optimizer_type = {
+        "adamw8bit": "AdamW8bit",
+        "adamw": "AdamW",
+        "prodigy": "Prodigy",
+    }.get(optimizer, optimizer)
+    values: dict[str, Any] = {
+        "pretrained_model_name_or_path": config.get("base_model_path") or "",
+        "dataset_config": str(dataset_toml),
+        "output_dir": config.get("output_dir") or str(train_lora_root(settings) / "outputs"),
+        "output_name": config.get("output_name") or "nexus_lora",
+        "network_module": "networks.lora_anima" if is_anima else "networks.lora",
+        "network_dim": int(config.get("rank") or 16),
+        "network_alpha": int(config.get("alpha") or config.get("rank") or 16),
+        "learning_rate": float(config.get("learning_rate") or 1e-4),
+        "max_train_steps": int(config.get("steps") or 1200),
+        "save_every_n_steps": int(config.get("save_every_n_steps") or 250),
+        "train_batch_size": int(config.get("batch_size") or 1),
+        "gradient_accumulation_steps": int(config.get("gradient_accumulation") or 1),
+        "mixed_precision": str(config.get("precision") or "fp16").lower(),
+        "optimizer_type": optimizer_type,
+        "gradient_checkpointing": bool(config.get("gradient_checkpointing", True)),
+        "cache_latents": bool(config.get("cache_latents", True)),
+        "max_data_loader_n_workers": 0,
+        "seed": 42,
+        "save_model_as": "safetensors",
+        "save_precision": "fp16",
+        "logging_dir": str(job_root / "logs"),
+    }
+    if config.get("resume_from"):
+        values["resume"] = str(config["resume_from"])
+    if is_anima:
+        values["qwen3"] = _first_existing_model(
+            settings.models_dir,
+            (
+                "text_encoders/qwen_3_06b_base.safetensors",
+                "text_encoders/qwen3_06b_base.safetensors",
+                "text_encoders/qwen_3_0.6b_base.safetensors",
+            ),
+        )
+        values["vae"] = _first_existing_model(
+            settings.models_dir,
+            (
+                "vae/Qwen_Image-VAE.safetensors",
+                "vae/qwen_image_vae.safetensors",
+                "vae/Qwen2D_VAE.safetensors",
+            ),
+        )
+    lines = [f"{key} = {_toml_string(value) if isinstance(value, str) else str(value).lower() if isinstance(value, bool) else value}" for key, value in values.items() if value not in {"", None}]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -1084,13 +1148,21 @@ def build_train_lora_job(
     config_path.write_text(json.dumps(trainer_config, indent=2), encoding="utf-8")
 
     dataset_toml = None
+    trainer_config_path = config_path
     if config["trainer"] == "kohya_ss":
         dataset_toml = job_root / "dataset.toml"
         write_kohya_dataset_toml(dataset_toml, dataset_dir, config)
+        trainer_config_path = job_root / "train_lora_config.toml"
+        write_kohya_training_toml(trainer_config_path, config, dataset_toml, job_root, settings)
     readme_path = job_root / "README.md"
     readme_path.write_text(_job_readme(config, config_path, dataset_toml), encoding="utf-8")
-    runner_preset = {**preset, "trainer": config["trainer"], "trainer_label": config["trainer_label"], "script": ""}
-    runner = resolve_trainer_runner(settings, runner_preset, config_path)
+    runner_preset = {
+        **preset,
+        "trainer": config["trainer"],
+        "trainer_label": config["trainer_label"],
+        "script": str(preset.get("script") or ""),
+    }
+    runner = resolve_trainer_runner(settings, runner_preset, trainer_config_path)
     ltx_launch_issue = _ltx_launch_issue(config) if is_ltx_trainer else ""
     if ltx_launch_issue:
         runner = {**runner, "available": False, "install_hint": ltx_launch_issue}
@@ -1118,6 +1190,7 @@ def build_train_lora_job(
             "job": str(job_root),
             "dataset": str(dataset_dir),
             "config": str(config_path),
+            "trainer_config": str(trainer_config_path),
             "dataset_toml": str(dataset_toml) if dataset_toml else "",
             "readme": str(readme_path),
             "output": str(output_dir),

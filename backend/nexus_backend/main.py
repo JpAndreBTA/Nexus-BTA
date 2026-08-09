@@ -3712,8 +3712,12 @@ def _launch_train_lora_job(job_id: str) -> None:
         handle.write(f"\n[{datetime.now().isoformat(timespec='seconds')}] Launching runner\n")
         handle.write("command=" + " ".join(command) + "\n\n")
     log_handle = log_path.open("ab")
+    runner_env = os.environ.copy()
+    # Kohya/Anima prints non-ASCII status text; force UTF-8 on Windows consoles.
+    runner_env["PYTHONIOENCODING"] = "utf-8"
+    runner_env["PYTHONUTF8"] = "1"
     try:
-        process = subprocess.Popen(command, cwd=cwd, stdout=log_handle, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(command, cwd=cwd, env=runner_env, stdout=log_handle, stderr=subprocess.STDOUT)
     except Exception as exc:
         log_handle.close()
         _update_train_lora_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
