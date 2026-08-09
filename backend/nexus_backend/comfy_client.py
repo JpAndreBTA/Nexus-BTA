@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import quote, urlparse
 
 import httpx
+import yaml
 
 from .config import NexusSettings, runtime_python
 
@@ -258,6 +259,7 @@ class ComfyClient:
         database_path = self.settings.user_dir / "comfyui.db"
         database_path.parent.mkdir(parents=True, exist_ok=True)
         extra_model_paths = self.settings.project_root / "config" / "nexus_extra_model_paths.yaml"
+        configured_model_paths = self._write_configured_model_paths()
         comfy_base_dir = self._comfy_base_directory()
 
         args = [
@@ -284,8 +286,9 @@ class ComfyClient:
             "--enable-cors-header",
             "*",
         ]
-        if extra_model_paths.exists():
-            args.extend(["--extra-model-paths-config", str(extra_model_paths)])
+        model_path_configs = [path for path in (extra_model_paths, configured_model_paths) if path.exists()]
+        if model_path_configs:
+            args.extend(["--extra-model-paths-config", *(str(path) for path in model_path_configs)])
         args.extend(self._runtime_flags())
 
         env = os.environ.copy()
@@ -339,6 +342,35 @@ class ComfyClient:
         except OSError:
             use_project_base = str(self.settings.comfy_root).strip().rstrip("\\/").lower() == str(embedded_comfy_root).strip().rstrip("\\/").lower()
         return self.settings.project_root if use_project_base else self.settings.comfy_root
+
+    def _write_configured_model_paths(self) -> Path:
+        """Expose the user-selected models root through native Comfy categories."""
+        target = self.settings.temp_dir / "nexus_extra_model_paths.generated.yaml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        categories = (
+            "checkpoints",
+            "diffusion_models",
+            "unet",
+            "loras",
+            "vae",
+            "text_encoders",
+            "clip",
+            "clip_vision",
+            "controlnet",
+            "model_patches",
+            "upscale_models",
+            "latent_upscale_models",
+            "embeddings",
+        )
+        payload = {
+            "nexus_bta_configured_models": {
+                "base_path": str(self.settings.models_dir.resolve()),
+                "is_default": True,
+                **{category: category for category in categories},
+            }
+        }
+        target.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=False), encoding="utf-8")
+        return target
 
     def _close_log_handle(self) -> None:
         handle = self._log_handle

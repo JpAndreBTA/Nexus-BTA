@@ -14,13 +14,14 @@ import { useUiStore } from '../stores/uiStore';
 import { useGenerationStore } from '../stores/generationStore';
 import type { CivitaiModelItem } from '../api/types';
 
-const shellPresets = ['SD', 'SDXL', 'Flux', 'Qwen', 'ZImageTurbo', 'Lumina', 'Wan', 'LTX', 'Anima', 'Ideogram4'];
+const shellPresets = ['SD', 'SDXL', 'Flux', 'Qwen', 'ZImageTurbo', 'Lumina', 'Wan', 'LTX', 'Krea2', 'Anima', 'Ideogram4'];
 
 function shellPresetLabel(preset: string) {
   if (preset === 'SD') return 'SD 1.5';
   if (preset === 'Wan') return 'WAN 2.2';
   if (preset === 'LTX') return 'LTX 2.3';
   if (preset === 'Ideogram4') return 'IDEOGRAM 4';
+  if (preset === 'Krea2') return 'KREA 2';
   return preset === 'ZImageTurbo' ? 'Z-IMG' : preset.toUpperCase();
 }
 
@@ -55,6 +56,8 @@ function checkpointOptions(catalog: ReturnType<typeof useModelCatalogQuery>['dat
     anima: ['anima'],
     ideogram4: ['ideogram'],
     ideogram: ['ideogram'],
+    krea2: ['krea2', 'krea-2', 'krea'],
+    'krea-2': ['krea2', 'krea-2', 'krea'],
   };
   const assets = [...(catalog?.categories.checkpoints ?? []), ...(catalog?.categories.unet ?? []), ...(catalog?.categories.diffusion_models ?? [])];
   const tokens = rules[lowerPreset] || [lowerPreset];

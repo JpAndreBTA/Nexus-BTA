@@ -224,6 +224,30 @@ export interface GenerateRequest {
   runtime?: Record<string, unknown>;
 }
 
+export interface Krea2AssetsStatus {
+  template: 'Krea2' | string;
+  label: string;
+  installed: boolean;
+  generation_ready: boolean;
+  dependencies_installed: boolean;
+  assets: TemplateAssetStatusItem[];
+  missing_assets: TemplateAssetStatusItem[];
+  missing_required_assets: TemplateAssetStatusItem[];
+  missing_optional_assets: TemplateAssetStatusItem[];
+  missing_core_nodes?: string[];
+  runtime_checked?: boolean;
+  estimated_missing_required_bytes?: number;
+  estimated_missing_optional_bytes?: number;
+  models_dir?: string;
+  gpu?: Record<string, unknown>;
+  detected_vram_gb?: number;
+  recommended_profile?: 'rtx_3060_local' | 'rtx_5090' | string;
+  storage_layout?: Record<string, string>;
+  profiles?: Record<string, { supported: boolean; resolution: string; steps: number; runtime_flags: string[]; note?: string }>;
+  capabilities?: Record<string, boolean | number>;
+  note?: string;
+}
+
 export interface Ideogram4PromptJsonRequest {
   prompt: string;
   width: number;

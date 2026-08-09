@@ -4359,6 +4359,154 @@ def build_basic_minimax_h3_workflow(
     return workflow
 
 
+def build_basic_krea2_workflow(
+    request: GenerateRequest,
+    model_name: str,
+    text_encoder_name: str,
+    vae_name: str,
+    reference_image_names: list[str] | None = None,
+    style_lora_name: str | None = None,
+) -> dict[str, Any]:
+    """Build Krea 2's official local text-to-image/reference graph.
+
+    Krea 2 is an image model. Its native reference route is the core
+    TextEncodeQwenImageEditPlus node (up to three ordered images), not a
+    generic ControlNet or video adapter.
+    """
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    width = max(64, (int(request.width) // 16) * 16)
+    height = max(64, (int(request.height) // 16) * 16)
+    refs = [str(item) for item in (reference_image_names or []) if str(item).strip()][:3]
+    sampler = normalize_sampler(request.sampler or "euler")
+    scheduler = normalize_scheduler(request.scheduler or "simple")
+    model_ref: list[Any] = ["1", 0]
+    workflow: dict[str, Any] = {
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": {"unet_name": model_name, "weight_dtype": "default"},
+            "_meta": {"title": "Krea 2 Turbo Diffusion Model"},
+        },
+        "2": {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": text_encoder_name, "type": "krea2", "device": "default"},
+            "_meta": {"title": "Krea 2 Qwen3-VL Text Encoder"},
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": vae_name},
+            "_meta": {"title": "Krea 2 Qwen Image VAE"},
+        },
+        "4": {
+            "class_type": "RandomNoise",
+            "inputs": {"noise_seed": seed},
+            "_meta": {"title": "Krea 2 Seed"},
+        },
+        "5": {
+            "class_type": "KSamplerSelect",
+            "inputs": {"sampler_name": sampler},
+            "_meta": {"title": "Krea 2 Sampler"},
+        },
+        "6": {
+            "class_type": "BasicScheduler",
+            "inputs": {"model": model_ref, "scheduler": scheduler, "steps": max(1, int(request.steps or 8)), "denoise": 1.0},
+            "_meta": {"title": "Krea 2 Scheduler"},
+        },
+        "7": {
+            "class_type": "EmptyLatentImage",
+            "inputs": {"width": width, "height": height, "batch_size": max(1, int(request.batch_size or 1))},
+            "_meta": {"title": "Krea 2 Latent"},
+        },
+    }
+    next_lora_id = 15
+    selected_lora_names = {
+        str(name).replace("/", "\\").lower()
+        for name, _strength_model, _strength_clip in _active_lora_selections(
+            request,
+            model_name=request.model_name or request.model_path,
+        )
+    }
+    normalized_style_lora = str(style_lora_name or "").replace("/", "\\").lower()
+    style_lora_already_selected = bool(
+        normalized_style_lora
+        and any(
+            selected == normalized_style_lora or Path(selected).name == Path(normalized_style_lora).name
+            for selected in selected_lora_names
+        )
+    )
+    if style_lora_name and refs and not style_lora_already_selected:
+        style_node_id = str(next_lora_id)
+        workflow[style_node_id] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {"model": model_ref, "lora_name": style_lora_name, "strength_model": 1.0},
+            "_meta": {"title": "Krea 2 Style Reference LoRA"},
+        }
+        model_ref = [style_node_id, 0]
+        next_lora_id += 1
+    user_lora_model, _unused_clip, next_lora_id = _append_lora_chain(
+        workflow,
+        request,
+        model_ref,
+        ["2", 0],
+        start_id=next_lora_id,
+        model_only=True,
+    )
+    model_ref = user_lora_model
+    workflow["6"]["inputs"]["model"] = model_ref
+
+    positive_ref: list[Any]
+    if refs:
+        for index, image_name in enumerate(refs):
+            node_id = str(20 + index)
+            workflow[node_id] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": image_name},
+                "_meta": {"title": f"Krea 2 Reference Image {index + 1}"},
+            }
+        inputs: dict[str, Any] = {"clip": ["2", 0], "prompt": request.prompt, "vae": ["3", 0]}
+        for index in range(3):
+            if index < len(refs):
+                inputs[f"image{index + 1}"] = [str(20 + index), 0]
+        workflow["8"] = {
+            "class_type": "TextEncodeQwenImageEditPlus",
+            "inputs": inputs,
+            "_meta": {"title": "Krea 2 Multi-Reference Conditioning"},
+        }
+        positive_ref = ["8", 0]
+    else:
+        workflow["8"] = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": ["2", 0], "text": request.prompt},
+            "_meta": {"title": "Krea 2 Prompt"},
+        }
+        positive_ref = ["8", 0]
+    workflow["9"] = {
+        "class_type": "ConditioningZeroOut",
+        "inputs": {"conditioning": positive_ref},
+        "_meta": {"title": "Krea 2 Negative Conditioning"},
+    }
+    workflow["10"] = {
+        "class_type": "SamplerCustomAdvanced",
+        "inputs": {"noise": ["4", 0], "guider": ["11", 0], "sampler": ["5", 0], "sigmas": ["6", 0], "latent_image": ["7", 0]},
+        "_meta": {"title": "Krea 2 Sampling"},
+    }
+    workflow["11"] = {
+        "class_type": "CFGGuider",
+        "inputs": {"model": model_ref, "positive": positive_ref, "negative": ["9", 0], "cfg": float(request.cfg or 1.0)},
+        "_meta": {"title": "Krea 2 CFG"},
+    }
+    workflow["12"] = {
+        "class_type": "VAEDecode",
+        "inputs": {"samples": ["10", 0], "vae": ["3", 0]},
+        "_meta": {"title": "Krea 2 Decode"},
+    }
+    workflow["13"] = {
+        "class_type": "SaveImage",
+        "inputs": {"images": ["12", 0], "filename_prefix": "image/Krea2"},
+        "_meta": {"title": "Save Krea 2 Image"},
+    }
+    return workflow
+
+
 def build_basic_wan_i2video_workflow(
     request: GenerateRequest,
     high_model_name: str,

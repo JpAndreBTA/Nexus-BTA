@@ -1,4 +1,4 @@
-import type { CivitaiSearchResponse, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
+import type { CivitaiSearchResponse, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, Krea2AssetsStatus, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -53,6 +53,13 @@ export const nexusApi = {
   },
   nvidiaExtrasStatus: (engine: string) => nexusFetch<NvidiaExtrasStatus>(`/extras/nvidia/${encodeURIComponent(engine)}/status`),
   ideogram4AssetsStatus: () => nexusFetch<Ideogram4AssetsStatus>('/ideogram4/assets/status'),
+  krea2AssetsStatus: () => nexusFetch<Krea2AssetsStatus>('/krea2/assets/status'),
+  startKrea2AssetDownload: (payload: Record<string, unknown>) =>
+    nexusFetch<GenerationJob>('/krea2/assets/download/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
   startIdeogram4AssetDownload: (payload: Record<string, unknown>) =>
     nexusFetch<GenerationJob>('/ideogram4/assets/download/start', {
       method: 'POST',

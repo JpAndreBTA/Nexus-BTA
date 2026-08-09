@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type PointerEvent, type WheelEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Play, Redo2, Save, Send, SlidersHorizontal, Undo2, Wand2, Workflow, X } from 'lucide-react';
 
@@ -90,6 +90,7 @@ function modelMatchesPreset(model: { label: string; name: string }, preset: stri
     wan: ['wan'],
     ltx: ['ltx'],
     anima: ['anima'],
+    krea2: ['krea2', 'krea-2', 'krea'],
   };
   return (rules[key] || [key]).some((token) => haystack.includes(token));
 }
@@ -548,7 +549,7 @@ export function HomePage() {
   const workflowAnalysis = useWorkflowAnalysisQuery(studioWorkflow?.id || '');
   const models = useMemo(() => {
     const filtered = allModels.filter((model) => primaryModelMatchesPreset(model, generation.preset));
-    if (['ideogram4', 'ideogram'].includes(generation.preset.toLowerCase())) return filtered;
+    if (['ideogram4', 'ideogram', 'krea2', 'krea-2'].includes(generation.preset.toLowerCase())) return filtered;
     return filtered.length ? filtered : allModels;
   }, [allModels, generation.preset]);
   const newestGalleryItem = gallery.data?.[0];
@@ -556,6 +557,7 @@ export function HomePage() {
   const videoMode = videoPreset(generation.preset);
   const qwenImageEdit = generation.preset.toLowerCase() === 'qwen';
   const ideogram4Mode = ['ideogram4', 'ideogram'].includes(generation.preset.toLowerCase());
+  const krea2Mode = ['krea2', 'krea-2'].includes(generation.preset.toLowerCase());
   const ltxDirectorView = generation.preset.toLowerCase() === 'ltx' && viewMode === 'director';
   const directorMode = generation.preset.toLowerCase() === 'ltx' && generation.directorEnabled;
   const alignedFrames = alignVideoFrames(generation.preset, generation.videoFrames);
@@ -578,6 +580,19 @@ export function HomePage() {
     },
     onError: (error) => setLocalError(error instanceof Error ? error.message : 'Ideogram 4 dependency download failed.'),
   });
+  const krea2Status = useQuery({
+    queryKey: ['krea2-assets-status'],
+    queryFn: nexusApi.krea2AssetsStatus,
+    enabled: krea2Mode,
+    refetchInterval: krea2Mode ? 5000 : false,
+  });
+  const krea2Download = useMutation({
+    mutationFn: (assets: string[]) => nexusApi.startKrea2AssetDownload({ assets }),
+    onSuccess: () => { void krea2Status.refetch(); },
+    onError: (error) => setLocalError(error instanceof Error ? error.message : 'Krea 2 dependency download failed.'),
+  });
+  const krea2PromptShown = useRef(false);
+  const krea2ProfileApplied = useRef(false);
   const ideogramPromptJson = useMutation({
     mutationFn: (request: Ideogram4PromptJsonRequest) => nexusApi.ideogram4PromptJson(request),
     onSuccess: (result) => {
@@ -609,10 +624,34 @@ export function HomePage() {
   }, [loras.data, loraSearch]);
 
   useEffect(() => {
+    if (!krea2Mode) {
+      krea2PromptShown.current = false;
+      krea2ProfileApplied.current = false;
+      return;
+    }
+    if (krea2PromptShown.current || krea2Status.isLoading || !krea2Status.data || krea2Status.data.generation_ready || !krea2Status.data.missing_required_assets?.length) return;
+    krea2PromptShown.current = true;
+    const missing = krea2Status.data.missing_required_assets ?? [];
+    const answer = window.confirm(`Krea 2 não encontrou todos os modelos locais (${missing.map((item) => item.filename).join(', ')}). Deseja baixar os arquivos necessários agora para ${krea2Status.data.models_dir || 'a pasta de modelos configurada'}?`);
+    if (answer) krea2Download.mutate(missing.map((item) => item.key));
+  }, [krea2Download, krea2Mode, krea2Status.data, krea2Status.isLoading]);
+
+  useEffect(() => {
+    if (!krea2Mode || krea2ProfileApplied.current || !krea2Status.data?.recommended_profile) return;
+    krea2ProfileApplied.current = true;
+    generation.setSize(
+      krea2Status.data.recommended_profile === 'rtx_5090' ? 1024 : 768,
+      krea2Status.data.recommended_profile === 'rtx_5090' ? 1024 : 768,
+    );
+  }, [generation, krea2Mode, krea2Status.data?.recommended_profile]);
+
+  useEffect(() => {
     if ((!generation.modelPath || !models.some((model) => model.value === generation.modelPath)) && models[0]) {
       generation.setModel(models[0].value, models[0].name);
+    } else if (krea2Mode && !models.length && generation.modelPath) {
+      generation.setModel('', '');
     }
-  }, [generation, models]);
+  }, [generation, krea2Mode, models]);
 
   useEffect(() => {
     if (!controlNetCompatible && generation.controlNetEnabled) {
@@ -998,10 +1037,10 @@ export function HomePage() {
                   const file = event.currentTarget.files?.[0];
                   if (!file) return;
                   generation.setReferenceImage(await readFileAsDataUrl(file), file.name);
-                  if (qwenImageEdit || ideogram4Mode) generation.setActivity('img2img');
+                  if (qwenImageEdit || ideogram4Mode || krea2Mode) generation.setActivity('img2img');
                 }}
               />
-              <span>{generation.referenceImageName || (qwenImageEdit ? 'Select Qwen edit reference image' : ideogram4Mode ? 'Select Ideogram layout reference' : 'Select reference image')}</span>
+              <span>{generation.referenceImageName || (qwenImageEdit ? 'Select Qwen edit reference image' : ideogram4Mode ? 'Select Ideogram layout reference' : krea2Mode ? 'Select Krea 2 style reference' : 'Select reference image')}</span>
             </label>
             <label className="dropzone small-dropzone multi-reference-dropzone">
               <input
@@ -1015,7 +1054,7 @@ export function HomePage() {
                 }}
               />
               <Images size={16} />
-              <span>{generation.extraReferenceImages.length ? `${generation.extraReferenceImages.length} extra reference(s)` : 'Add multi-image references'}</span>
+              <span>{generation.extraReferenceImages.length ? `${generation.extraReferenceImages.length} extra reference(s)` : (krea2Mode ? 'Add up to 3 style references' : 'Add multi-image references')}</span>
             </label>
             {generation.extraReferenceImages.length > 0 && (
               <div className="reference-chip-list">
@@ -1129,6 +1168,52 @@ export function HomePage() {
                   Download selected
                 </button>
                 <p className="compact-note">The local img2img image is shown as a layout guide for regional JSON; current open Ideogram 4 Comfy route is text-to-image.</p>
+              </div>
+            </details>
+          )}
+
+          {krea2Mode && (
+            <details className="control-section" open>
+              <summary>Krea 2 Dependencies <span>{krea2Status.data?.generation_ready ? 'Ready' : 'Download required'}</span></summary>
+              <div className="control-stack ideogram-assets-panel">
+                <div className={krea2Status.data?.generation_ready ? 'studio-inline-status' : 'studio-inline-status error'}>
+                  {krea2Status.isLoading
+                    ? 'Checking Krea 2 assets...'
+                    : krea2Status.data?.generation_ready
+                      ? 'Krea 2 local model and native Comfy nodes are ready.'
+                      : `${formatBytes(krea2Status.data?.estimated_missing_required_bytes)} required assets missing.`}
+                </div>
+                {krea2Status.data?.runtime_checked === false && <p className="compact-note">Core support is checked after the runtime starts. No backend restart was requested.</p>}
+                <div className="asset-check-list">
+                  {(krea2Status.data?.assets ?? []).map((asset) => (
+                    <label key={asset.key} className={asset.installed ? 'asset-check installed' : 'asset-check'}>
+                      <input type="checkbox" checked={!asset.installed} disabled={asset.installed || krea2Download.isPending} readOnly />
+                      <span><strong>{asset.label}</strong><em>{asset.installed ? 'installed' : `${asset.scope || 'dependency'} - ${formatBytes(asset.size_bytes || asset.size_bytes_min)}`}</em></span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={krea2Download.isPending || !(krea2Status.data?.missing_required_assets?.length)}
+                  onClick={() => krea2Download.mutate((krea2Status.data?.missing_required_assets ?? []).map((asset) => asset.key))}
+                >
+                  {krea2Download.isPending ? <LoaderCircle className="spin" size={14} /> : <FilePlus2 size={14} />}
+                  Download Krea 2 base files
+                </button>
+                {!!krea2Status.data?.missing_optional_assets?.some((asset) => asset.kind === 'lora') && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={krea2Download.isPending}
+                    onClick={() => krea2Download.mutate((krea2Status.data?.missing_optional_assets ?? []).filter((asset) => asset.kind === 'lora').map((asset) => asset.key))}
+                  >
+                    {krea2Download.isPending ? <LoaderCircle className="spin" size={14} /> : <FilePlus2 size={14} />}
+                    Download optional Krea 2 LoRAs
+                  </button>
+                )}
+                <p className="compact-note">Detected profile: {krea2Status.data?.recommended_profile === 'rtx_5090' ? 'RTX 5090 / 1024px' : 'shared VRAM / 768px'} ({krea2Status.data?.detected_vram_gb?.toFixed(1) || 'unknown'} GB VRAM).</p>
+                <p className="compact-note">Official local route: text-to-image or up to 3 ordered reference images. Optional `krea2_style_reference.safetensors` enables the style adapter; ordinary Krea LoRAs remain selectable from Concepts.</p>
               </div>
             </details>
           )}

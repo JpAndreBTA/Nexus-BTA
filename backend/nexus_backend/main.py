@@ -76,6 +76,7 @@ from .workflows import (
     build_basic_anima_workflow,
     build_basic_flux_workflow,
     build_basic_ideogram4_workflow,
+    build_basic_krea2_workflow,
     build_basic_ltx_img2video_workflow,
     build_basic_minimax_h3_workflow,
     build_basic_qwen_image_workflow,
@@ -527,6 +528,76 @@ CONTROLNET_OPTIONAL_ARTIFACTS: dict[str, dict[str, Any]] = {
         "scope": "dependency",
     },
 }
+
+KREA2_HF_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "turbo_model": {
+        "label": "Krea 2 Turbo FP8 diffusion model",
+        "filename": "krea2_turbo_fp8_scaled.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_fp8_scaled.safetensors?download=true",
+        "target": ("diffusion_models", "krea2", "krea2_turbo_fp8_scaled.safetensors"),
+        "min_bytes": 12 * 1024 * 1024 * 1024,
+        "size_bytes": 13_141_730_784,
+        "kind": "diffusion_model",
+        "scope": "base_model",
+        "profiles": ["rtx_3060_local", "rtx_5090"],
+    },
+    "qwen3vl_4b": {
+        "label": "Krea 2 Qwen3-VL 4B FP8 text encoder",
+        "filename": "qwen3vl_4b_fp8_scaled.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors?download=true",
+        "target": ("text_encoders", "krea2", "qwen3vl_4b_fp8_scaled.safetensors"),
+        "min_bytes": 5 * 1024 * 1024 * 1024,
+        "size_bytes": 5_242_467_968,
+        "kind": "text_encoder",
+        "scope": "base_model",
+        "profiles": ["rtx_3060_local", "rtx_5090"],
+    },
+    "vae": {
+        "label": "Krea 2 Qwen Image VAE",
+        "filename": "qwen_image_vae.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/vae/qwen_image_vae.safetensors?download=true",
+        "target": ("vae", "krea2", "qwen_image_vae.safetensors"),
+        "min_bytes": 200 * 1024 * 1024,
+        "size_bytes": 253_806_246,
+        "kind": "vae",
+        "scope": "base_model",
+        "profiles": ["rtx_3060_local", "rtx_5090"],
+    },
+    "style_reference_lora": {
+        "label": "Krea 2 Style Reference LoRA",
+        "filename": "krea2_style_reference.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/loras/krea2_style_reference.safetensors?download=true",
+        "target": ("loras", "krea2", "krea2_style_reference.safetensors"),
+        "min_bytes": 400 * 1024 * 1024,
+        "size_bytes": 457_111_760,
+        "kind": "lora",
+        "scope": "optional_style_reference",
+        "profiles": ["rtx_3060_local", "rtx_5090"],
+    },
+    "darkbrush_lora": {
+        "label": "Krea 2 Darkbrush LoRA",
+        "filename": "krea2_darkbrush.safetensors",
+        "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/loras/krea2_darkbrush.safetensors?download=true",
+        "target": ("loras", "krea2", "krea2_darkbrush.safetensors"),
+        "min_bytes": 400 * 1024 * 1024,
+        "size_bytes": 469_291_992,
+        "kind": "lora",
+        "scope": "optional_lora",
+        "profiles": ["rtx_3060_local", "rtx_5090"],
+    },
+}
+
+KREA2_REQUIRED_COMFY_NODES = (
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "TextEncodeQwenImageEditPlus",
+    "KSamplerSelect",
+    "BasicScheduler",
+    "SamplerCustomAdvanced",
+    "CFGGuider",
+    "ConditioningZeroOut",
+)
 
 # Official Comfy-Org split files for the open-weight MiniMax H3 release.
 # Keep FL2VA (T2V/I2V) and REF2VA (reference-to-video) separate: they are
@@ -1759,6 +1830,8 @@ def _prepare_reference_images(request: GenerateRequest) -> list[str]:
     raw_model = f"{request.model_name or ''} {request.model_path or ''} {request.template or ''}"
     flux2_refs = preset == "flux" and any(token in raw_model.lower() for token in ("flux-2", "flux2", "flux_2", "flux.2", "klein"))
     max_refs = 9 if preset in {"minimaxh3", "minimax_h3", "minimax-h3"} else (5 if flux2_refs else (4 if preset == "model3d" else 3))
+    if preset in {"krea2", "krea-2"}:
+        max_refs = 3
     values = _reference_image_values(request)[:max_refs]
     return [_prepare_reference_value(value, f"nexus_reference_{index + 1}") for index, value in enumerate(values)]
 
@@ -7002,6 +7075,162 @@ async def ideogram4_assets_status() -> dict[str, Any]:
     return await _ideogram4_status_snapshot()
 
 
+def _krea2_artifact_target(key: str) -> Path:
+    artifact = KREA2_HF_ARTIFACTS[key]
+    return settings.models_dir.joinpath(*(str(part) for part in artifact["target"]))
+
+
+def _krea2_artifact_status(key: str) -> dict[str, Any]:
+    artifact = KREA2_HF_ARTIFACTS[key]
+    target = _krea2_artifact_target(key)
+    min_bytes = int(artifact.get("min_bytes") or 1024 * 1024)
+    installed = target.exists() and target.stat().st_size >= min_bytes
+    return {
+        "key": key,
+        "label": artifact["label"],
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "kind": artifact.get("kind") or "model",
+        "scope": artifact.get("scope") or "dependency",
+        "profiles": list(artifact.get("profiles") or []),
+        "destination": str(target),
+        "path": str(target) if installed else "",
+        "installed": bool(installed),
+        "size_bytes_min": min_bytes,
+        "size_bytes": target.stat().st_size if target.exists() else int(artifact.get("size_bytes") or min_bytes),
+    }
+
+
+def _krea2_missing_core_support(object_info: dict[str, Any] | None) -> list[str]:
+    registry = object_info or {}
+    missing = [name for name in KREA2_REQUIRED_COMFY_NODES if name not in registry]
+    clip_info = registry.get("CLIPLoader") or {}
+    clip_type_options = ((clip_info.get("input") or {}).get("required") or {}).get("type") or [[], {}]
+    try:
+        clip_types = {str(item) for item in (clip_type_options[0] or [])}
+    except (TypeError, IndexError):
+        clip_types = set()
+    if "krea2" not in clip_types:
+        missing.append("CLIPLoader type krea2")
+    return missing
+
+
+async def _krea2_status_snapshot() -> dict[str, Any]:
+    assets = [_krea2_artifact_status(key) for key in KREA2_HF_ARTIFACTS]
+    required_keys = {"turbo_model", "qwen3vl_4b", "vae"}
+    missing_required = [item for item in assets if item["key"] in required_keys and not item["installed"]]
+    missing_optional = [item for item in assets if item["key"] not in required_keys and not item["installed"]]
+    runtime_checked = await comfy.is_running()
+    missing_core_nodes: list[str] = []
+    if runtime_checked:
+        try:
+            missing_core_nodes = _krea2_missing_core_support(await comfy.object_info())
+        except Exception as exc:
+            missing_core_nodes = [f"Comfy object_info unavailable: {exc}"]
+    gpu = _nvidia_smi_memory_snapshot()
+    gpu_vram_gb = float(gpu.get("total_mb") or 0) / 1024 if gpu.get("available") else 0.0
+    recommended_profile = "rtx_5090" if gpu_vram_gb >= 30.0 else "rtx_3060_local"
+    return {
+        "template": "Krea2",
+        "label": "Krea 2",
+        "installed": not missing_required,
+        "generation_ready": not missing_required and not missing_core_nodes,
+        "dependencies_installed": not missing_required and not missing_core_nodes,
+        "assets": assets,
+        "missing_assets": missing_required + missing_optional,
+        "missing_required_assets": missing_required,
+        "missing_optional_assets": missing_optional,
+        "runtime_checked": runtime_checked,
+        "missing_core_nodes": missing_core_nodes,
+        "models_dir": str(settings.models_dir),
+        "gpu": gpu,
+        "detected_vram_gb": round(gpu_vram_gb, 2),
+        "recommended_profile": recommended_profile,
+        "storage_layout": {
+            "root": str(settings.models_dir / "krea2"),
+            "diffusion_models": str(settings.models_dir / "diffusion_models" / "krea2"),
+            "text_encoders": str(settings.models_dir / "text_encoders" / "krea2"),
+            "vae": str(settings.models_dir / "vae" / "krea2"),
+            "loras": str(settings.models_dir / "loras" / "krea2"),
+            "comfy_compatibility": "Krea 2 files stay in standard Comfy categories with a krea2 subfolder; configured extra model paths discover them automatically.",
+        },
+        "profiles": {
+            "rtx_3060_local": {
+                "supported": gpu_vram_gb >= 11.0,
+                "resolution": "768x768",
+                "steps": 8,
+                "runtime_flags": ["--enable-dynamic-vram", "--use-sage-attention"],
+                "note": "FP8 split model with shared VRAM/offload; keep one image at a time on 12 GB cards.",
+            },
+            "rtx_5090": {
+                "supported": gpu_vram_gb >= 30.0,
+                "resolution": "1024x1024",
+                "steps": 8,
+                "runtime_flags": ["--use-sage-attention"],
+                "note": "FP8 split model with native high-throughput attention.",
+            },
+        },
+        "capabilities": {
+            "text_to_image": True,
+            "style_reference": True,
+            "reference_images_max": 3,
+            "lora": True,
+            "video": False,
+            "native_local_nodes": True,
+        },
+        "estimated_missing_required_bytes": sum(int(item.get("size_bytes") or item.get("size_bytes_min") or 0) for item in missing_required),
+        "estimated_missing_optional_bytes": sum(int(item.get("size_bytes") or item.get("size_bytes_min") or 0) for item in missing_optional),
+        "note": "Krea 2 Turbo is an open local image model. The official local workflow supports text-to-image and a three-image Qwen reference conditioning route; Krea API moodboards/style chains are not the local Comfy graph.",
+    }
+
+
+async def _run_krea2_assets_download_job(job_id: str, keys: list[str] | None = None) -> None:
+    try:
+        selected_keys = [key for key in (keys or []) if key in KREA2_HF_ARTIFACTS]
+        if not selected_keys:
+            selected_keys = [item["key"] for item in (await _krea2_status_snapshot())["missing_required_assets"]]
+        if not selected_keys:
+            raise ValueError("No Krea 2 dependency assets selected.")
+        completed: list[dict[str, Any]] = []
+        total = max(1, len(selected_keys))
+        for index, key in enumerate(selected_keys, start=1):
+            status = _krea2_artifact_status(key)
+            if status["installed"]:
+                completed.append({**status, "already_downloaded": True})
+                _update_download_job(job_id, {"message": f"Krea 2 asset already present: {status['filename']}", "progress": round(index / total * 100, 2)})
+                continue
+            artifact = KREA2_HF_ARTIFACTS[key]
+            _update_download_job(job_id, {"status": "downloading", "message": f"Downloading {artifact['label']}: {artifact['filename']}"})
+            result = await asyncio.to_thread(_download_url_to_file, str(artifact["url"]), _krea2_artifact_target(key), job_id)
+            completed.append({**result, "key": key, "label": artifact["label"]})
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {"status": "downloaded", "progress": 100, "message": "Krea 2 selected local assets ready.", "assets": completed, "status_snapshot": await _krea2_status_snapshot(), "completed_at": datetime.now().isoformat(timespec="seconds")})
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/krea2/assets/status")
+async def krea2_assets_status() -> dict[str, Any]:
+    return await _krea2_status_snapshot()
+
+
+@app.post("/api/krea2/assets/download/start")
+async def krea2_assets_download_start(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw_keys = (payload or {}).get("assets") or (payload or {}).get("keys") or []
+    keys = list(dict.fromkeys(str(item) for item in raw_keys if str(item) in KREA2_HF_ARTIFACTS)) if isinstance(raw_keys, list) else []
+    active_statuses = {"queued", "resolving", "downloading"}
+    for active_job in reversed(list(download_jobs.values())):
+        if active_job.get("kind") != "krea2_assets" or active_job.get("status") not in active_statuses:
+            continue
+        active_keys = {str(item) for item in active_job.get("requested_assets") or []}
+        if not keys or set(keys).issubset(active_keys):
+            return {**active_job, "deduplicated": True}
+    job_id = f"krea2_{uuid.uuid4().hex[:8]}"
+    download_jobs[job_id] = {"job_id": job_id, "kind": "krea2_assets", "requested_assets": keys, "status": "queued", "progress": 0, "message": "Krea 2 local asset download queued.", "error": None, "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat()}
+    asyncio.create_task(_run_krea2_assets_download_job(job_id, keys))
+    return download_jobs[job_id]
+
+
 def _minimax_h3_artifact_target(key: str) -> Path:
     artifact = MINIMAX_H3_HF_ARTIFACTS[key]
     return settings.models_dir.joinpath(*(str(part) for part in artifact["target"]))
@@ -10470,6 +10699,20 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     "Ideogram 4 local Comfy route does not support true mask inpaint yet. "
                     "Use Linear Viewer ADD boxes as regional JSON guides."
                 )
+        if request.preset.lower() in {"krea2", "krea-2"}:
+            missing_krea2_assets: list[str] = []
+            if not assets.get("primary_model"):
+                missing_krea2_assets.append("krea2_turbo_fp8_scaled.safetensors")
+            if Path(str(assets.get("text_encoder") or "")).name.lower() != "qwen3vl_4b_fp8_scaled.safetensors":
+                missing_krea2_assets.append("qwen3vl_4b_fp8_scaled.safetensors")
+            if Path(str(assets.get("vae") or "")).name.lower() != "qwen_image_vae.safetensors":
+                missing_krea2_assets.append("qwen_image_vae.safetensors")
+            if missing_krea2_assets:
+                raise ValueError("Krea 2 missing required local assets: " + ", ".join(missing_krea2_assets) + ". Open the Krea 2 dependency panel and confirm the download.")
+            if bool(getattr(request.controlnet, "enabled", False)):
+                raise ValueError("Krea 2 uses its native style-reference conditioning; ControlNet is not part of the official local workflow.")
+            if len(_reference_image_values(request)) > 3:
+                raise ValueError("Krea 2 local reference conditioning supports up to three ordered images.")
         if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"}:
             h3_mode = str((request.video or {}).get("minimax_h3_mode") or "i2v").strip().lower()
             h3_reference_mode = h3_mode in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
@@ -10627,6 +10870,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             workflow_path = None
         if request.preset.lower() == "wan" and not request.workflow_id:
             workflow_path = None
+        if request.preset.lower() in {"krea2", "krea-2"} and not request.workflow_id:
+            workflow_path = None
         if base_video_name and not request.workflow_id and request.preset.lower() in {"wan", "ltx"}:
             workflow_path = None
         if request.preset.lower() == "qwen" and request.activity == "img2img" and reference_image_name:
@@ -10663,6 +10908,14 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 raise ValueError(
                     "Ideogram 4 requires a newer ComfyUI core with official Day-0 Ideogram nodes. "
                     f"Missing runtime support: {missing}. Update the embedded ComfyUI runtime, then restart Nexus."
+                )
+        if request.preset.lower() in {"krea2", "krea-2"}:
+            missing_krea2_core = _krea2_missing_core_support(object_info)
+            if missing_krea2_core:
+                missing = ", ".join(missing_krea2_core[:8])
+                raise ValueError(
+                    "Krea 2 requires a newer ComfyUI core with the official Krea 2 nodes. "
+                    f"Missing runtime support: {missing}. Update ComfyUI, then restart Nexus when the active training job is finished."
                 )
         if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"}:
             missing_h3_core = _minimax_h3_missing_core_support(object_info)
@@ -10715,6 +10968,22 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 base_video_name=base_video_name,
                 reference_video_names=h3_reference_video_names,
                 reference_audio_names=h3_reference_audio_names,
+            )
+        elif request.preset.lower() in {"krea2", "krea-2"} and not request.workflow_override:
+            krea2_model_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
+            krea2_text_encoder = assets.get("text_encoder")
+            krea2_vae = assets.get("vae")
+            if not krea2_model_name or not krea2_text_encoder or not krea2_vae:
+                raise ValueError("Krea 2 requires its diffusion model, Qwen3-VL 4B text encoder and Qwen Image VAE.")
+            if job_id:
+                _update_generation_job(job_id, {"status": "building", "progress": 9, "message": "Building synchronized Krea 2 workflow"})
+            prompt = build_basic_krea2_workflow(
+                request,
+                krea2_model_name,
+                krea2_text_encoder,
+                krea2_vae,
+                reference_image_names=reference_image_names,
+                style_lora_name=assets.get("krea2_style_lora"),
             )
         elif request.workflow_override:
             if job_id:
@@ -10795,6 +11064,21 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     mask_image_name=mask_image_name,
                     controlnet_name=assets.get("controlnet_model"),
                     controlnet_image_name=assets.get("controlnet_image"),
+                )
+            elif request.preset.lower() in {"krea2", "krea-2"}:
+                text_encoder_name = assets.get("text_encoder")
+                vae_name = assets.get("vae")
+                if not text_encoder_name:
+                    raise ValueError("Krea 2 requires qwen3vl_4b_fp8_scaled.safetensors in models/text_encoders/krea2.")
+                if not vae_name:
+                    raise ValueError("Krea 2 requires qwen_image_vae.safetensors in models/vae/krea2.")
+                prompt = build_basic_krea2_workflow(
+                    request,
+                    checkpoint_name,
+                    text_encoder_name,
+                    vae_name,
+                    reference_image_names=reference_image_names,
+                    style_lora_name=assets.get("krea2_style_lora"),
                 )
             elif request.preset.lower() == "ltx":
                 text_encoder_name = assets.get("text_encoder")

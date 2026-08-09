@@ -37,6 +37,8 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
         assets.update(_resolve_ideogram4(by_category, selected_name, request))
     elif preset in {"minimaxh3", "minimax_h3", "minimax-h3"}:
         assets.update(_resolve_minimax_h3(by_category, selected_name, request))
+    elif preset in {"krea2", "krea-2"}:
+        assets.update(_resolve_krea2(by_category, selected_name, request))
     elif preset == "qwen":
         assets.pop("primary_model", None)
         assets.update(_resolve_qwen(by_category, selected_name, request))
@@ -716,6 +718,46 @@ def _resolve_zimage(by_category: dict[str, list[ModelFile]], selected_name: str,
     vae = selected_vae or _first_exact(by_category, ["vae"], "ae.safetensors")
     if vae:
         assets["vae"] = _comfy_name(vae)
+    return assets
+
+
+def _resolve_krea2(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
+    """Resolve the open Krea 2 Turbo split files from the configured model root."""
+    assets: dict[str, str] = {}
+    primary = _find_name(by_category, selected_name)
+    if primary and primary.category not in {"diffusion_models", "unet", "checkpoints"}:
+        primary = None
+    primary = primary or _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["krea2", "turbo"])
+    if not primary:
+        primary = _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["krea", "2"])
+    if primary:
+        assets["primary_model"] = _comfy_name(primary)
+
+    selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    if selected_text_encoder and "qwen" not in _model_haystack(selected_text_encoder).lower():
+        selected_text_encoder = None
+    text_encoder = selected_text_encoder or _first_exact(by_category, ["text_encoders", "clip"], "qwen3vl_4b_fp8_scaled.safetensors")
+    if not text_encoder:
+        text_encoder = _first(by_category, ["text_encoders", "clip"], ["qwen3vl", "4b"])
+    if text_encoder:
+        assets["text_encoder"] = _comfy_name(text_encoder)
+
+    selected_vae = _selected_model_choice(by_category, request.vae)
+    if selected_vae and "qwen" not in _model_haystack(selected_vae).lower():
+        selected_vae = None
+    vae = selected_vae or _first_exact(by_category, ["vae"], "qwen_image_vae.safetensors")
+    if not vae:
+        vae = _first(by_category, ["vae"], ["qwen_image_vae"])
+    if vae:
+        assets["vae"] = _comfy_name(vae)
+
+    # Krea's reference workflow uses a model-only style adapter. Keep this
+    # optional: text-to-image remains fully functional without the adapter.
+    style_lora = _first(by_category, ["loras"], ["krea2", "style"])
+    if not style_lora:
+        style_lora = _first(by_category, ["loras"], ["krea2"])
+    if style_lora:
+        assets["krea2_style_lora"] = _comfy_name(style_lora)
     return assets
 
 

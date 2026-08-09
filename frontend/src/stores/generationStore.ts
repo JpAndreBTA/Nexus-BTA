@@ -280,6 +280,29 @@ export const useGenerationStore = create<GenerationState>()(
           distilledLoraEnabled: false,
         };
       }
+      if (lower === 'krea2' || lower === 'krea-2') {
+        return {
+          ...state,
+          preset,
+          activity: 'txt2img',
+          img2imgMode: 'image',
+          workflowId: '',
+          workflowName: '',
+          modelPath: '',
+          modelName: '',
+          width: 1024,
+          height: 1024,
+          steps: 8,
+          cfg: 1,
+          sampler: 'euler',
+          scheduler: 'simple',
+          denoise: 1,
+          controlNetEnabled: false,
+          distilledLoraEnabled: false,
+          lightningLoraEnabled: false,
+          latentUpscaleEnabled: false,
+        };
+      }
       return { preset };
     }),
   setWorkflow: (workflowId, workflowName) => set({ workflowId, workflowName }),

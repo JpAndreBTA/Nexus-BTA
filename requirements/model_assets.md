@@ -18,6 +18,7 @@ models/upscale_models     ESRGAN/RealESRGAN-style upscalers
 models/latent_upscale_models  LTX latent upscalers
 models/background_removal  2026 ComfyUI background-removal models such as BiRefNet
 models/diffusion_models/MelRoFormer  Mel-Band RoFormer audio cleanup model for LTX Director audio workflows
+models/krea2                Krea 2 organization marker; weights stay in the standard category subfolders below
 ```
 
 ## Core Model Links
@@ -30,6 +31,7 @@ models/diffusion_models/MelRoFormer  Mel-Band RoFormer audio cleanup model for L
 | Flux.2 Dev | [black-forest-labs/FLUX.2-dev](https://github.com/black-forest-labs/flux2) or Comfy split files | `models/checkpoints/flux` or `models/diffusion_models`, `models/text_encoders/mistral_3_small_flux2_bf16.safetensors`, `models/vae/flux2-vae.safetensors` |
 | Flux.2 Klein | [FLUX.2 Klein 4B/9B](https://docs.comfy.org/tutorials/flux/flux-2-klein) | `models/checkpoints/flux` or `models/diffusion_models`, 4B: `qwen_3_4b.safetensors`, 9B: `qwen_3_8b_fp8mixed.safetensors`, plus `models/vae/flux2-vae.safetensors` |
 | Ideogram 4 | [Comfy-Org/Ideogram-4](https://huggingface.co/Comfy-Org/Ideogram-4), [Comfy-Org/Qwen3-VL](https://huggingface.co/Comfy-Org/Qwen3-VL), optional [Comfy-Org/gemma-4](https://huggingface.co/Comfy-Org/gemma-4) | `models/diffusion_models/ideogram4/ideogram4_fp8_scaled.safetensors`, `models/diffusion_models/ideogram4/ideogram4_unconditional_fp8_scaled.safetensors`, `models/text_encoders/qwen3vl_8b_fp8_scaled.safetensors`, `models/vae/flux2-vae.safetensors`; optional `models/text_encoders/gemma4_e4b_it_fp8_scaled.safetensors` |
+| Krea 2 Turbo | [Comfy-Org/Krea-2](https://huggingface.co/Comfy-Org/Krea-2) and [Comfy Krea 2 guide](https://docs.comfy.org/tutorials/image/krea/krea-2) | `models/diffusion_models/krea2/krea2_turbo_fp8_scaled.safetensors`, `models/text_encoders/krea2/qwen3vl_4b_fp8_scaled.safetensors`, `models/vae/krea2/qwen_image_vae.safetensors`; optional `models/loras/krea2/krea2_style_reference.safetensors` and `models/loras/krea2/krea2_darkbrush.safetensors` |
 | WAN 2.2 | [Wan-AI/Wan2.2-I2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B), [Wan-AI/Wan2.2-T2V-A14B](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B), [Wan-AI/Wan2.2-TI2V-5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B), compatible CLIP Vision such as `clip_vision_h.safetensors` | `models/checkpoints/wan`, `models/text_encoders`, `models/vae`, `models/clip_vision` |
 | LTX 2.3 | [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3), [joyfox/LTX-2.3-Transition-LORA](https://huggingface.co/joyfox/LTX-2.3-Transition-LORA) | `models/checkpoints/ltx`, `models/loras/ltx`, `models/loras/ltx_transition`, `models/latent_upscale_models`, `models/vae`, `models/text_encoders` |
 | Extras Remove BG | [Comfy-Org/BiRefNet](https://huggingface.co/Comfy-Org/BiRefNet) | `models/background_removal/birefnet.safetensors` |

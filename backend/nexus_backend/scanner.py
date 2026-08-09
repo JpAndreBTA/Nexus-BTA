@@ -239,6 +239,11 @@ def _custom_node_version(path: Path) -> str:
 
 def ensure_model_tree(settings: NexusSettings) -> list[str]:
     created: list[str] = []
+    # Keep a visible per-template root for organization while storing weights
+    # under standard Comfy categories for loader compatibility.
+    krea2_root = settings.models_dir / "krea2"
+    krea2_root.mkdir(parents=True, exist_ok=True)
+    created.append(str(krea2_root))
     for category in MODEL_CATEGORIES:
         path = settings.models_dir / category
         path.mkdir(parents=True, exist_ok=True)
