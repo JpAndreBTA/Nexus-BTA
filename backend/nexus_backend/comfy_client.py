@@ -353,6 +353,7 @@ class ComfyClient:
             "unet",
             "loras",
             "vae",
+            "audio_vae",
             "text_encoders",
             "clip",
             "clip_vision",

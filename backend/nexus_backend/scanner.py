@@ -13,6 +13,7 @@ MODEL_CATEGORIES = [
     "unet",
     "loras",
     "vae",
+    "audio_vae",
     "text_encoders",
     "clip",
     "clip_vision",
@@ -44,6 +45,7 @@ CHECKPOINT_PRESET_FOLDERS = [
     "lumina",
     "wan",
     "ltx",
+    "ltx_25",
     "anima",
     "zimage",
 ]

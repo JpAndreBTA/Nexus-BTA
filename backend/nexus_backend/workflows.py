@@ -95,6 +95,8 @@ LTX_DISTILLED_8_STEP_SIGMAS = "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0
 LTX_TRANSITION_8_STEP_SIGMAS = "1.0, 0.9375, 0.8125, 0.5625, 0.25, 0.0"
 LTX_UPSCALE_REFINER_SIGMAS = "0.85, 0.7250, 0.4219, 0.0"
 LTX_TRANSITION_REFINER_SIGMAS = "0.85, 0.45, 0.0"
+LTX25_DISTILLED_8_STEP_SIGMAS = "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+LTX25_UPSCALE_4_STEP_SIGMAS = "0.85, 0.6375, 0.425, 0.2125, 0.0"
 
 
 def normalize_sampler(value: str) -> str:
@@ -4145,6 +4147,7 @@ def build_basic_minimax_h3_workflow(
     sampler = normalize_sampler(request.sampler or "res_multistep")
     scheduler = normalize_scheduler(request.scheduler or "simple")
 
+    model_output: list[Any] = ["1", 0]
     workflow: dict[str, Any] = {
         "1": {
             "class_type": "UNETLoader",
@@ -4173,18 +4176,36 @@ def build_basic_minimax_h3_workflow(
         },
         "6": {
             "class_type": "BasicScheduler",
-            "inputs": {"model": ["1", 0], "scheduler": scheduler, "steps": max(1, int(request.steps)), "denoise": 1.0},
+            "inputs": {"model": model_output, "scheduler": scheduler, "steps": max(1, int(request.steps)), "denoise": 1.0},
             "_meta": {"title": "MiniMax H3 Scheduler"},
         },
     }
 
-    model_output = ["1", 0]
+    # MiniMax H3 LoRAs modify the DiT/UNet only.  They must be applied before
+    # an optional performance patch so the patch receives the final model.
+    # The two Turbo/Distill slots and the Concepts modal both arrive through
+    # _active_lora_selections(), so their order is deterministic in the graph.
+    next_lora_id = 60
+    for lora_name, strength_model, _strength_clip in _active_lora_selections(request, model_name):
+        workflow[str(next_lora_id)] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": model_output,
+                "lora_name": lora_name,
+                "strength_model": max(-2.0, min(2.0, float(strength_model))),
+            },
+            "_meta": {"title": f"MiniMax H3 LoRA — {lora_name}"},
+        }
+        model_output = [str(next_lora_id), 0]
+        next_lora_id += 1
+    workflow["6"]["inputs"]["model"] = model_output
+
     if booster_enabled:
         if booster == "first_block_cache":
             workflow["15"] = {
                 "class_type": "ApplyMiniMaxH3FirstBlockCache",
                 "inputs": {
-                    "model": ["1", 0],
+                    "model": model_output,
                     "mode": "H3 Fast — 0.10 / max 2",
                     "threshold": 0.10,
                     "start_percent": 0.10,
@@ -4199,7 +4220,7 @@ def build_basic_minimax_h3_workflow(
             workflow["15"] = {
                 "class_type": "SpectrumApplyMiniMaxH3",
                 "inputs": {
-                    "model": ["1", 0],
+                    "model": model_output,
                     "enabled": True,
                     "blend_weight": 0.50,
                     "degree": 1,
@@ -5062,17 +5083,67 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
     selections: list[tuple[str, float, float]] = []
     seen: set[str] = set()
     flux_family = _flux_family_from_name(model_name or request.model_name or request.model_path or "")
+    h3_reference_mode = str((request.video or {}).get("minimax_h3_mode") or "").strip().lower() in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
+    h3_turbo_families: set[str] = set()
+    ltx25_distill_families: set[str] = set()
+
+    def turbo_family(preset_key: str, name: str) -> str:
+        """Group alternate ranks/step counts so one adapter is never doubled."""
+
+        lower = name.lower().replace("/", "\\")
+        if preset_key in {"minimaxh3", "minimax_h3", "minimax-h3"}:
+            # The 4 and 8-step local files are alternate FL2VA inference
+            # schedules, not two independent deltas to stack.
+            if "fl2v_turbo" in lower:
+                return "minimax_h3_fl2va_turbo"
+        if preset_key in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"}:
+            # r128/r256 are alternate ranks of the official 450 distilled
+            # adapter.  They may be swapped, but not combined.
+            if re.search(r"ltx25_turbo_distill_r\d+", lower):
+                return "ltx25_turbo_distill"
+        return lower
+
+    def unsupported_h3_turbo(name: str) -> bool:
+        # Its embedded metadata says that this partial conversion removed
+        # AdaLN adapters and warns that the 4-step distillation is degraded.
+        return "turbo_v4_step600_pruned" in name.lower()
 
     def append_selection(name: str, strength_model: float, strength_clip: float = 0.0, *, allow_cross_folder: bool = False) -> None:
+        nonlocal h3_turbo_families, ltx25_distill_families
         normalized = _normalize_lora_name(name)
-        if request.preset.lower() == "ltx" and "\\" not in normalized and normalized.lower().startswith(("ltx", "singularity")):
+        preset_key = request.preset.lower()
+        if preset_key == "ltx" and "\\" not in normalized and normalized.lower().startswith(("ltx", "singularity")):
             normalized = f"ltx\\{normalized}"
+        if preset_key in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"} and "\\" not in normalized and normalized.lower().startswith("ltx25"):
+            normalized = f"LTX25\\{normalized}"
+        if preset_key in {"minimaxh3", "minimax_h3", "minimax-h3"} and "\\" not in normalized:
+            normalized = f"minimax_h3\\{normalized}"
         if not normalized:
             return
-        if not allow_cross_folder and not _lora_is_compatible_with_preset(normalized, request.preset):
+        # Browser-selected concept LoRAs carry a relative path and historically
+        # opted out of folder filtering.  H3 must keep the filter even in that
+        # case: an SD/Flux/LTX LoRA can otherwise be sent to its DiT loader.
+        if (not allow_cross_folder or preset_key in {"minimaxh3", "minimax_h3", "minimax-h3"}) and not _lora_is_compatible_with_preset(normalized, request.preset):
             return
         if request.preset.lower() == "flux" and not _flux_lora_is_compatible(normalized, flux_family):
             return
+        lower = normalized.lower()
+        if preset_key in {"minimaxh3", "minimax_h3", "minimax-h3"} and any(token in lower for token in ("turbo", "distill", "distilled")):
+            # The locally installed 4/8-step Turbo LoRAs declare FL2VA as the
+            # base model.  REF2VA is a different H3 path, so do not apply one
+            # silently during R2V/V2V generation.
+            family = turbo_family(preset_key, normalized)
+            if h3_reference_mode or unsupported_h3_turbo(normalized) or family in h3_turbo_families:
+                return
+            h3_turbo_families.add(family)
+        if preset_key in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"} and any(token in lower for token in ("turbo", "distill", "distilled")):
+            # r128 and r256 are alternate SVD ranks of the same official
+            # distilled adapter, not independent style LoRAs.  Applying both
+            # doubles the same delta and destabilizes the denoiser.
+            family = turbo_family(preset_key, normalized)
+            if "distilled" in str(model_name or request.model_name or request.model_path or "").lower() or family in ltx25_distill_families:
+                return
+            ltx25_distill_families.add(family)
         key = normalized.lower()
         if key in seen:
             return
@@ -5091,7 +5162,7 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
                 continue
             strength_model = _number_or_none(item.get("strength_model", item.get("strength", 1.0))) or 1.0
             strength_clip_value = _number_or_none(item.get("strength_clip", item.get("clip_strength")))
-            if request.preset.lower() in {"flux", "ltx", "qwen", "wan", "zimageturbo", "zimage"}:
+            if request.preset.lower() in {"flux", "ltx", "ltx25", "ltx_25", "ltx-2.5", "ltx2.5", "minimaxh3", "minimax_h3", "minimax-h3", "qwen", "wan", "zimageturbo", "zimage"}:
                 strength_clip = strength_clip_value if strength_clip_value is not None else 0.0
             else:
                 strength_clip = strength_model if strength_clip_value in {None, 0.0} else strength_clip_value
@@ -5110,7 +5181,7 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
             strength_model = _number_or_none(getattr(item, "strength", 1.0)) or 1.0
             append_selection(name, float(strength_model), 0.0)
 
-    if request.preset.lower() == "ltx":
+    if request.preset.lower() in {"ltx", "ltx25", "ltx_25", "ltx-2.5", "ltx2.5", "minimaxh3", "minimax_h3", "minimax-h3"}:
         append_distilled_loras()
         append_user_loras()
     elif request.preset.lower() == "qwen" and request.activity == "img2img":
@@ -5119,6 +5190,11 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
     else:
         append_user_loras()
         append_distilled_loras()
+    if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"} and h3_reference_mode and h3_turbo_families:
+        # A stale UI request may still contain a Turbo name.  Return no H3
+        # Turbo selection for REF2VA; main.py also emits a user-facing error
+        # before generation instead of allowing accidental cross-route use.
+        selections[:] = [item for item in selections if not any(token in item[0].lower() for token in ("turbo", "distill", "distilled"))]
     video_options = request.video or {}
     omnicine_enabled = video_options.get("omnicine_enabled", False)
     if isinstance(omnicine_enabled, str):
@@ -5208,13 +5284,15 @@ def _lora_is_compatible_with_preset(name: str, preset: str) -> bool:
         "qwen": {"qwen"},
         "anima": {"anima"},
         "ltx": {"ltx", "ltx2", "ltx23", "ltxv", "ltx_transition"},
+        "ltx25": {"ltx25", "ltx2.5", "ltx_25", "ltx-2.5"},
+        "minimaxh3": {"minimax_h3", "minimax-h3", "minimaxh3", "h3"},
         "wan": {"wan"},
         "flux": {"flux"},
         "lumina": {"lumina"},
         "zimage": {"zimage", "zimageturbo", "z-image", "z_image"},
     }
     preset_key = str(preset or "").lower()
-    preset_key = {"sd": "sd15", "sd 1.5": "sd15", "sdxl": "xl", "zimageturbo": "zimage", "z-image": "zimage", "z_image": "zimage"}.get(preset_key, preset_key)
+    preset_key = {"sd": "sd15", "sd 1.5": "sd15", "sdxl": "xl", "zimageturbo": "zimage", "z-image": "zimage", "z_image": "zimage", "ltx_25": "ltx25", "ltx-2.5": "ltx25", "ltx2.5": "ltx25", "minimax_h3": "minimaxh3", "minimax-h3": "minimaxh3"}.get(preset_key, preset_key)
     all_known = set().union(*known.values())
     if folder not in all_known:
         return True
@@ -5319,6 +5397,167 @@ def _ltx_transition_prompt(prompt: str, request: GenerateRequest, has_end_refere
     if not additions:
         return text
     return f"{text}, {', '.join(additions)}" if text else ", ".join(additions)
+
+
+def _ltx25_manual_sigmas(steps: int, *, refiner: bool = False) -> str:
+    """Return a deterministic schedule without changing an explicit step count.
+
+    The published distilled LTX 2.5 graph uses eight base steps and four
+    refinement steps.  A user may choose any positive number in the UI, so for
+    other counts we preserve the endpoints and interpolate that same schedule.
+    """
+
+    count = max(1, int(steps))
+    if refiner and count == 4:
+        return LTX25_UPSCALE_4_STEP_SIGMAS
+    if not refiner and count == 8:
+        return LTX25_DISTILLED_8_STEP_SIGMAS
+    start = 0.85 if refiner else 1.0
+    end = 0.0
+    return ", ".join(f"{start + (end - start) * index / count:.6g}" for index in range(count + 1))
+
+
+def build_basic_ltx25_img2video_workflow(
+    request: GenerateRequest,
+    checkpoint_name: str,
+    text_encoder_name: str,
+    video_vae_name: str,
+    audio_vae_name: str,
+    reference_image_name: str | None = None,
+    reference_end_image_name: str | None = None,
+    latent_upscale_name: str | None = None,
+    available_nodes: set[str] | None = None,
+) -> dict[str, Any]:
+    """Build LTX 2.5's native AV pipeline without reusing LTX 2.3 loaders.
+
+    The first stage is always an AV latent because LTX 2.5 is a joint
+    audio-video model.  Audio decoding/attachment remains optional, so turning
+    audio off does not produce an audio track in the exported file.
+    """
+
+    video_options = request.video or {}
+    available_nodes = set(available_nodes or ())
+    final_width = max(32, int(request.width) // 32 * 32)
+    final_height = max(32, int(request.height) // 32 * 32)
+    fps = max(1.0, float(_number_or_none(video_options.get("fps")) or 12.0))
+    seconds = max(0.1, float(_number_or_none(video_options.get("seconds")) or 3.0))
+    requested_length = int(_number_or_none(video_options.get("frames")) or round(seconds * fps) + 1)
+    length = max(9, requested_length)
+    length = ((length - 1) // 8) * 8 + 1
+    seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
+    sampler = normalize_sampler(request.sampler or "euler_ancestral")
+    base_steps = max(1, int(request.steps))
+    cfg = float(request.cfg)
+    active_audio = _bool_option(video_options.get("active_audio"), True)
+    requested_upscale = str(latent_upscale_name or "").strip()
+    # "Automatic" is a UI sentinel.  The resolver may not have an optional
+    # model installed, so it must never be serialized as a Comfy model name.
+    use_spatial_upscale = bool(requested_upscale) and requested_upscale.lower() not in {"automatic", "auto", "none", "off", "disabled", "false", "0", "no"}
+    refine_spatial = use_spatial_upscale and _bool_option(video_options.get("latent_upscale_refine"), True)
+    refine_steps = max(1, _int_option(video_options.get("ltx25_upscale_steps"), 4))
+    refine_cfg = float(_number_or_none(video_options.get("ltx25_upscale_cfg")) if _number_or_none(video_options.get("ltx25_upscale_cfg")) is not None else cfg)
+    decode_tile = max(128, _int_option(video_options.get("ltx25_decode_tile"), 512))
+    decode_overlap = max(0, min(decode_tile // 4, _int_option(video_options.get("ltx25_decode_overlap"), 64)))
+    decode_temporal = max(8, _int_option(video_options.get("ltx25_decode_temporal"), 64))
+    decode_temporal_overlap = max(4, min(decode_temporal // 2, _int_option(video_options.get("ltx25_decode_temporal_overlap"), 8)))
+
+    if use_spatial_upscale:
+        width = _ltx_base_dimension_for_upscale(final_width, latent_upscale_name)
+        height = _ltx_base_dimension_for_upscale(final_height, latent_upscale_name)
+    else:
+        width, height = final_width, final_height
+
+    workflow: dict[str, Any] = {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": checkpoint_name, "weight_dtype": "default"}, "_meta": {"title": "Load LTX 2.5 Transformer"}},
+        "2": _clip_loader_node(text_encoder_name, "ltxv", "Load LTX 2.5 Gemma 4 + Projection"),
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": video_vae_name}, "_meta": {"title": "Load LTX 2.5 Video VAE"}},
+        "4": {"class_type": "LTXVAudioVAELoader", "inputs": {"ckpt_name": audio_vae_name}, "_meta": {"title": "Load LTX 2.5 Audio VAE"}},
+        "5": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": request.prompt}, "_meta": {"title": "LTX 2.5 Positive Prompt"}},
+        "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": request.negative_prompt}, "_meta": {"title": "LTX 2.5 Negative Prompt"}},
+        "7": {"class_type": "LTXVConditioning", "inputs": {"positive": ["5", 0], "negative": ["6", 0], "frame_rate": fps}, "_meta": {"title": "LTX 2.5 FPS Conditioning"}},
+        "8": {"class_type": "EmptyLTXVLatentVideo", "inputs": {"width": width, "height": height, "length": length, "batch_size": max(1, request.batch_size)}, "_meta": {"title": "LTX 2.5 Video Latent"}},
+        "9": {"class_type": "LTXVEmptyLatentAudio", "inputs": {"frames_number": length, "frame_rate": fps, "batch_size": max(1, request.batch_size), "audio_vae": ["4", 0]}, "_meta": {"title": "LTX 2.5 Audio Latent"}},
+        "10": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}, "_meta": {"title": "Seed"}},
+        "11": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": sampler}, "_meta": {"title": "Sampler"}},
+        "12": {"class_type": "ManualSigmas", "inputs": {"sigmas": _ltx25_manual_sigmas(base_steps)}, "_meta": {"title": f"LTX 2.5 Base Schedule ({base_steps} steps)"}},
+        "13": {"class_type": "CFGGuider", "inputs": {"model": ["1", 0], "positive": ["7", 0], "negative": ["7", 1], "cfg": cfg}, "_meta": {"title": "LTX 2.5 CFG"}},
+    }
+
+    current_positive: list[Any] = ["7", 0]
+    current_negative: list[Any] = ["7", 1]
+    current_video_latent: list[Any] = ["8", 0]
+    next_id = 20
+
+    def add_guide(image_name: str, frame_index: int, strength: float, title: str) -> None:
+        nonlocal current_positive, current_negative, current_video_latent, next_id
+        image_id, preprocess_id, guide_id = str(next_id), str(next_id + 1), str(next_id + 2)
+        workflow[image_id] = {"class_type": "LoadImage", "inputs": {"image": image_name}, "_meta": {"title": title}}
+        workflow[preprocess_id] = {"class_type": "LTXVPreprocess", "inputs": {"image": [image_id, 0], "img_compression": _int_option(video_options.get("img_compression"), 35, 0, 100)}, "_meta": {"title": f"{title} Preprocess"}}
+        workflow[guide_id] = {
+            "class_type": "LTXVAddGuide",
+            "inputs": {"positive": current_positive, "negative": current_negative, "vae": ["3", 0], "latent": current_video_latent, "image": [preprocess_id, 0], "frame_idx": frame_index, "strength": max(0.0, min(10.0, strength))},
+            "_meta": {"title": title},
+        }
+        current_positive, current_negative, current_video_latent = [guide_id, 0], [guide_id, 1], [guide_id, 2]
+        next_id += 3
+
+    if reference_image_name:
+        add_guide(reference_image_name, 0, float(_number_or_none(video_options.get("start_frame_strength")) or 1.0), "LTX 2.5 First Frame")
+    if reference_end_image_name:
+        add_guide(reference_end_image_name, -1, float(_number_or_none(video_options.get("end_frame_strength")) or 1.0), "LTX 2.5 Last Frame")
+
+    concat_id = str(next_id)
+    workflow[concat_id] = {"class_type": "LTXVConcatAVLatent", "inputs": {"video_latent": current_video_latent, "audio_latent": ["9", 0]}, "_meta": {"title": "Combine LTX 2.5 AV Latents"}}
+    workflow["13"]["inputs"].update({"positive": current_positive, "negative": current_negative})
+    sample_id = str(next_id + 1)
+    workflow[sample_id] = {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["10", 0], "guider": ["13", 0], "sampler": ["11", 0], "sigmas": ["12", 0], "latent_image": [concat_id, 0]}, "_meta": {"title": "LTX 2.5 Base Sample"}}
+    split_id = str(next_id + 2)
+    workflow[split_id] = {"class_type": "LTXVSeparateAVLatent", "inputs": {"av_latent": [sample_id, 0]}, "_meta": {"title": "Separate LTX 2.5 AV"}}
+    decode_video_ref: list[Any] = [split_id, 0]
+    decode_audio_ref: list[Any] = [split_id, 1]
+
+    if use_spatial_upscale:
+        upscale_loader_id, upscale_id = str(next_id + 3), str(next_id + 4)
+        workflow[upscale_loader_id] = {"class_type": "LatentUpscaleModelLoader", "inputs": {"model_name": latent_upscale_name}, "_meta": {"title": "Load LTX 2.5 x2 Spatial Upscaler"}}
+        workflow[upscale_id] = {"class_type": "LTXVLatentUpsampler", "inputs": {"samples": decode_video_ref, "upscale_model": [upscale_loader_id, 0], "vae": ["3", 0]}, "_meta": {"title": "LTX 2.5 Native Latent Upscale ×2"}}
+        decode_video_ref = [upscale_id, 0]
+        if refine_spatial:
+            upscale_concat, refine_noise, refine_guider, refine_sampler, refine_sigmas, refine_sample, refine_split = (str(next_id + offset) for offset in range(5, 12))
+            workflow[upscale_concat] = {"class_type": "LTXVConcatAVLatent", "inputs": {"video_latent": decode_video_ref, "audio_latent": decode_audio_ref}, "_meta": {"title": "Combine AV For LTX 2.5 Upscale Refiner"}}
+            workflow[refine_noise] = {"class_type": "RandomNoise", "inputs": {"noise_seed": (seed + 1) % (2**32 - 1)}, "_meta": {"title": "Upscale Refiner Seed"}}
+            workflow[refine_guider] = {"class_type": "CFGGuider", "inputs": {"model": ["1", 0], "positive": current_positive, "negative": current_negative, "cfg": refine_cfg}, "_meta": {"title": "LTX 2.5 Upscale CFG"}}
+            workflow[refine_sampler] = {"class_type": "KSamplerSelect", "inputs": {"sampler_name": sampler}, "_meta": {"title": "LTX 2.5 Upscale Sampler"}}
+            workflow[refine_sigmas] = {"class_type": "ManualSigmas", "inputs": {"sigmas": _ltx25_manual_sigmas(refine_steps, refiner=True)}, "_meta": {"title": f"LTX 2.5 Upscale Schedule ({refine_steps} steps)"}}
+            workflow[refine_sample] = {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": [refine_noise, 0], "guider": [refine_guider, 0], "sampler": [refine_sampler, 0], "sigmas": [refine_sigmas, 0], "latent_image": [upscale_concat, 0]}, "_meta": {"title": "LTX 2.5 Spatial Upscale Refiner"}}
+            workflow[refine_split] = {"class_type": "LTXVSeparateAVLatent", "inputs": {"av_latent": [refine_sample, 0]}, "_meta": {"title": "Separate Refined AV"}}
+            decode_video_ref, decode_audio_ref = [refine_split, 0], [refine_split, 1]
+    decode_id = str(max(int(key) for key in workflow if key.isdigit()) + 1)
+    workflow[decode_id] = {"class_type": "VAEDecodeTiled", "inputs": {"samples": decode_video_ref, "vae": ["3", 0], "tile_size": decode_tile, "overlap": decode_overlap, "temporal_size": decode_temporal, "temporal_overlap": decode_temporal_overlap}, "_meta": {"title": "Decode LTX 2.5 Video"}}
+    image_ref: list[Any] = [decode_id, 0]
+    if use_spatial_upscale and (width * 2 != final_width or height * 2 != final_height):
+        scale_id = str(int(decode_id) + 1)
+        workflow[scale_id] = {"class_type": "ImageScale", "inputs": {"image": image_ref, "upscale_method": "lanczos", "width": final_width, "height": final_height, "crop": "disabled"}, "_meta": {"title": "Match Requested LTX 2.5 Output Size"}}
+        image_ref = [scale_id, 0]
+    if active_audio:
+        audio_id = str(max(int(key) for key in workflow if key.isdigit()) + 1)
+        workflow[audio_id] = {"class_type": "LTXVAudioVAEDecode", "inputs": {"samples": decode_audio_ref, "audio_vae": ["4", 0]}, "_meta": {"title": "Decode LTX 2.5 Audio"}}
+    else:
+        audio_id = ""
+    create_id = str(max(int(key) for key in workflow if key.isdigit()) + 1)
+    save_id = str(int(create_id) + 1)
+    create_inputs: dict[str, Any] = {"images": image_ref, "fps": fps}
+    if audio_id:
+        create_inputs["audio"] = [audio_id, 0]
+    workflow[create_id] = {"class_type": "CreateVideo", "inputs": create_inputs, "_meta": {"title": "Create LTX 2.5 Video"}}
+    workflow[save_id] = {"class_type": "SaveVideo", "inputs": {"video": [create_id, 0], "filename_prefix": f"NEXUS_BTA_LTX25_{final_width}x{final_height}", "format": "mp4", "codec": "h264"}, "_meta": {"title": "Save LTX 2.5 Video"}}
+
+    lora_model_ref: list[Any] = ["1", 0]
+    for lora_name, strength_model, _strength_clip in _active_lora_selections(request, checkpoint_name):
+        lora_id = str(max(int(key) for key in workflow if key.isdigit()) + 1)
+        workflow[lora_id] = {"class_type": "LoraLoaderModelOnly", "inputs": {"model": lora_model_ref, "lora_name": lora_name, "strength_model": float(strength_model)}, "_meta": {"title": f"LTX 2.5 LoRA - {Path(lora_name).name}"}}
+        lora_model_ref = [lora_id, 0]
+    workflow["13"]["inputs"]["model"] = lora_model_ref
+    return workflow
 
 
 def build_basic_ltx_img2video_workflow(

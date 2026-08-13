@@ -116,6 +116,31 @@ DEFAULT_MODEL_TEMPLATES: dict[str, dict[str, Any]] = {
         "supports": ["ltx_2_3", "image_to_video", "distilled_lora_1", "distilled_lora_2"],
         "workflow_hint": "ltx23",
     },
+    "LTX25": {
+        "label": "LTX 2.5",
+        "family": "ltx_2_5",
+        "type": "video",
+        "model_folder": "./models/checkpoints/ltx_25",
+        "native_size": [832, 480],
+        "sampler": "euler_ancestral",
+        "scheduler": "simple",
+        "steps": 8,
+        "cfg": 1.0,
+        "supports": [
+            "text_to_video",
+            "image_to_video",
+            "first_last_frame",
+            "native_audio",
+            "latent_spatial_upscale_x2",
+            "two_stage_refiner",
+            "turbo_lora",
+            "fp8",
+            "rtx_3060_local",
+            "rtx_5090",
+        ],
+        "unsupported": ["ltx23_motion_transfer", "ltx23_ic_lora_video_reference"],
+        "workflow_hint": "ltx25",
+    },
     "MiniMaxH3": {
         "label": "MiniMax H3",
         "family": "minimax_h3",
@@ -210,4 +235,16 @@ def ensure_templates_file() -> None:
 
 def load_templates() -> dict[str, dict[str, Any]]:
     ensure_templates_file()
-    return json.loads(TEMPLATES_PATH.read_text(encoding="utf-8"))
+    # Existing installations have a user-owned model_templates.json.  Merge
+    # newly shipped presets into it instead of requiring users to delete or
+    # overwrite their configuration just to receive a new template.
+    saved = json.loads(TEMPLATES_PATH.read_text(encoding="utf-8"))
+    if not isinstance(saved, dict):
+        return dict(DEFAULT_MODEL_TEMPLATES)
+    merged = {key: dict(value) for key, value in DEFAULT_MODEL_TEMPLATES.items()}
+    for key, value in saved.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    return merged

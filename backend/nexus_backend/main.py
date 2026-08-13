@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from .asset_resolver import resolve_generation_assets
+from .asset_resolver import _is_ltx25_item, _minimax_h3_model_variant, resolve_generation_assets
 from .civitai import download_civitai_asset, resolve_civitai_asset, search_civitai_models
 from .comfy_client import ComfyClient, extract_outputs
 from .config import DEFAULT_MODEL_SOURCES, coerce_path_list, load_settings, save_settings, sync_startup_model_path
@@ -78,6 +78,7 @@ from .workflows import (
     build_basic_ideogram4_workflow,
     build_basic_krea2_workflow,
     build_basic_ltx_img2video_workflow,
+    build_basic_ltx25_img2video_workflow,
     build_basic_minimax_h3_workflow,
     build_basic_qwen_image_workflow,
     build_basic_sd_workflow,
@@ -655,6 +656,74 @@ MINIMAX_H3_HF_ARTIFACTS: dict[str, dict[str, Any]] = {
     },
 }
 
+# LTX 2.5 is intentionally kept separate from the existing LTX 2.3 downloader.
+# The user may already have a compatible community FP8 transformer; the status
+# resolver recognizes that file instead of downloading a second transformer.
+LTX25_HF_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "transformer_int8": {
+        "label": "LTX 2.5 dev transformer INT8",
+        "filename": "ltx-2.5-22b-dev-transformer-comfy-int8-convrot.safetensors",
+        "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/diffusion_models/ltx-2.5-22b-dev-transformer-comfy-int8-convrot.safetensors?download=true",
+        "target": ("checkpoints", "ltx_25", "ltx-2.5-22b-dev-transformer-comfy-int8-convrot.safetensors"),
+        "min_bytes": 18 * 1024 * 1024 * 1024,
+        "kind": "transformer",
+        "scope": "base_model",
+    },
+    "gemma4_int8": {
+        "label": "LTX 2.5 Gemma 4 12B with projection INT8",
+        "filename": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+        "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors?download=true",
+        "target": ("text_encoders", "ltx_25", "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"),
+        "min_bytes": 12 * 1024 * 1024 * 1024,
+        "kind": "text_encoder",
+        "scope": "base_model",
+    },
+    "audio_vae": {
+        "label": "LTX 2.5 audio VAE",
+        "filename": "ltx-2.5-audio-vae-bf16.safetensors",
+        "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/vae/ltx-2.5-audio-vae-bf16.safetensors?download=true",
+        "target": ("checkpoints", "ltx_25", "ltx-2.5-audio-vae-bf16.safetensors"),
+        "min_bytes": 300 * 1024 * 1024,
+        "kind": "audio_vae",
+        "scope": "base_model",
+    },
+    "video_vae_conv": {
+        "label": "LTX 2.5 convolutional video VAE",
+        "filename": "ltx-2.5-video-vae-conv-bf16.safetensors",
+        "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/vae/ltx-2.5-video-vae-conv-bf16.safetensors?download=true",
+        "target": ("vae", "ltx_25", "ltx-2.5-video-vae-conv-bf16.safetensors"),
+        "min_bytes": 1024 * 1024 * 1024,
+        "kind": "video_vae",
+        "scope": "base_model",
+    },
+    "spatial_upscaler": {
+        "label": "LTX 2.5 native latent spatial upscaler ×2",
+        "filename": "ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+        "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors?download=true",
+        "target": ("latent_upscale_models", "ltx_25", "ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors"),
+        "min_bytes": 700 * 1024 * 1024,
+        "kind": "latent_upscaler",
+        "scope": "optional_upscale",
+    },
+}
+
+LTX25_REQUIRED_COMFY_NODES = (
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "LTXVAudioVAELoader",
+    "LTXVConditioning",
+    "EmptyLTXVLatentVideo",
+    "LTXVEmptyLatentAudio",
+    "LTXVConcatAVLatent",
+    "LTXVSeparateAVLatent",
+    "LTXVAddGuide",
+    "LTXVPreprocess",
+    "VAEDecodeTiled",
+    "CreateVideo",
+    "SaveVideo",
+)
+
 MINIMAX_H3_REQUIRED_COMFY_NODES = (
     "MiniMaxH3ImageToVideo",
     "MiniMaxH3ReferenceToVideo",
@@ -662,6 +731,7 @@ MINIMAX_H3_REQUIRED_COMFY_NODES = (
     "CreateVideo",
     "VHS_LoadVideo",
     "LoadAudio",
+    "LoraLoaderModelOnly",
 )
 
 MINIMAX_H3_BOOSTERS: dict[str, dict[str, Any]] = {
@@ -3691,10 +3761,22 @@ async def _save_train_lora_uploads(job_id: str, files: list[UploadFile]) -> list
     dataset_dir = train_lora_job_root(settings, job_id) / "dataset"
     dataset_dir.mkdir(parents=True, exist_ok=True)
     saved: list[dict[str, Any]] = []
-    for index, upload in enumerate(files):
+    pair_prefixes: dict[str, int] = {}
+    filename_occurrences: dict[tuple[str, str], int] = {}
+    for upload in files:
         if not upload.filename:
             continue
-        target = dataset_dir / f"{index + 1:04d}_{_safe_upload_name(upload.filename, 'dataset')}"
+        safe_name = _safe_upload_name(upload.filename, "dataset")
+        source_path = Path(safe_name)
+        stem = source_path.stem
+        suffix = source_path.suffix.lower()
+        occurrence_key = (stem.lower(), suffix)
+        occurrence = filename_occurrences.get(occurrence_key, 0) + 1
+        filename_occurrences[occurrence_key] = occurrence
+        paired_stem = stem if occurrence == 1 else f"{stem}_{occurrence}"
+        pair_key = paired_stem.lower()
+        prefix = pair_prefixes.setdefault(pair_key, len(pair_prefixes) + 1)
+        target = dataset_dir / f"{prefix:04d}_{paired_stem}{suffix}"
         with target.open("wb") as handle:
             size = 0
             while True:
@@ -7236,6 +7318,245 @@ def _minimax_h3_artifact_target(key: str) -> Path:
     return settings.models_dir.joinpath(*(str(part) for part in artifact["target"]))
 
 
+def _ltx25_artifact_target(key: str) -> Path:
+    artifact = LTX25_HF_ARTIFACTS[key]
+    return settings.models_dir.joinpath(*(str(part) for part in artifact["target"]))
+
+
+def _ltx25_candidate_asset(kind: str) -> Path | None:
+    """Find a valid locally installed LTX 2.5 asset, including user paths."""
+
+    categories = {
+        "transformer": {"checkpoints", "diffusion_models", "unet"},
+        "text_encoder": {"text_encoders", "clip"},
+        "video_vae": {"vae"},
+        "audio_vae": {"audio_vae", "checkpoints", "vae"},
+        "latent_upscaler": {"latent_upscale_models", "upscale_models"},
+    }.get(kind, set())
+    if not categories:
+        return None
+    for items in scan_models(settings, include_references=False).categories.values():
+        for item in items:
+            if item.category not in categories or not _is_ltx25_item(item):
+                continue
+            haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+            if kind == "text_encoder" and "gemma" not in haystack:
+                continue
+            if kind == "video_vae" and "video" not in haystack:
+                continue
+            if kind == "audio_vae" and "audio" not in haystack:
+                continue
+            if kind == "latent_upscaler" and "spatial" not in haystack:
+                continue
+            path = Path(item.path)
+            if path.is_file() and path.stat().st_size >= 256 * 1024 * 1024:
+                return path
+    return None
+
+
+def _ltx25_artifact_status(key: str) -> dict[str, Any]:
+    artifact = LTX25_HF_ARTIFACTS[key]
+    target = _ltx25_artifact_target(key)
+    min_bytes = int(artifact.get("min_bytes") or 1024 * 1024)
+    installed_path = target if target.exists() and target.stat().st_size >= min_bytes else _ltx25_candidate_asset(str(artifact.get("kind") or ""))
+    installed = bool(installed_path and installed_path.is_file() and installed_path.stat().st_size >= min_bytes)
+    return {
+        "key": key,
+        "label": artifact["label"],
+        "filename": artifact["filename"],
+        "url": artifact["url"],
+        "kind": artifact.get("kind") or "model",
+        "scope": artifact.get("scope") or "dependency",
+        "destination": str(target),
+        "path": str(installed_path) if installed and installed_path else "",
+        "installed": installed,
+        "size_bytes_min": min_bytes,
+        "size_bytes": installed_path.stat().st_size if installed and installed_path else 0,
+        "using_existing_user_path": bool(installed_path and installed_path != target),
+    }
+
+
+def _ltx25_missing_core_support(object_info: dict[str, Any] | None) -> list[str]:
+    registry = object_info or {}
+    missing = [name for name in LTX25_REQUIRED_COMFY_NODES if name not in registry]
+    clip_info = registry.get("CLIPLoader") or {}
+    clip_type_options = ((clip_info.get("input") or {}).get("required") or {}).get("type") or [[], {}]
+    try:
+        clip_types = {str(item) for item in (clip_type_options[0] or [])}
+    except (TypeError, IndexError):
+        clip_types = set()
+    if "ltxv" not in clip_types:
+        missing.append("CLIPLoader type ltxv")
+    return missing
+
+
+def _ltx25_missing_upscale_support(object_info: dict[str, Any] | None) -> list[str]:
+    registry = object_info or {}
+    return [name for name in ("LTXVLatentUpsampler", "LatentUpscaleModelLoader") if name not in registry]
+
+
+def _ltx25_static_missing_core_support() -> list[str]:
+    source_root = settings.comfy_root
+    if not source_root.exists():
+        return ["ComfyUI runtime source"]
+    required = set(LTX25_REQUIRED_COMFY_NODES)
+    has_ltxv_clip = False
+    try:
+        for source in source_root.rglob("*.py"):
+            if not required and has_ltxv_clip:
+                break
+            content = source.read_text(encoding="utf-8", errors="ignore")
+            required = {name for name in required if name not in content}
+            has_ltxv_clip = has_ltxv_clip or bool(re.search(r"[\"']ltxv[\"']", content, flags=re.IGNORECASE))
+    except OSError:
+        return ["ComfyUI runtime source"]
+    missing = sorted(required)
+    if not has_ltxv_clip:
+        missing.append("CLIPLoader type ltxv")
+    return missing
+
+
+def _ltx25_static_missing_upscale_support() -> list[str]:
+    source_root = settings.comfy_root
+    if not source_root.exists():
+        return ["ComfyUI runtime source"]
+    required = {"LTXVLatentUpsampler", "LatentUpscaleModelLoader"}
+    try:
+        for source in source_root.rglob("*.py"):
+            if not required:
+                break
+            content = source.read_text(encoding="utf-8", errors="ignore")
+            required = {name for name in required if name not in content}
+    except OSError:
+        return ["ComfyUI runtime source"]
+    return sorted(required)
+
+
+async def _ltx25_status_snapshot() -> dict[str, Any]:
+    assets = [_ltx25_artifact_status(key) for key in LTX25_HF_ARTIFACTS]
+    required_keys = {"transformer_int8", "gemma4_int8", "audio_vae", "video_vae_conv"}
+    missing_required = [item for item in assets if item["key"] in required_keys and not item["installed"]]
+    missing_optional = [item for item in assets if item["key"] not in required_keys and not item["installed"]]
+    runtime_checked = await comfy.is_running()
+    if runtime_checked:
+        try:
+            missing_core_nodes = _ltx25_missing_core_support(await comfy.object_info())
+            missing_upscale_nodes = _ltx25_missing_upscale_support(await comfy.object_info())
+        except Exception as exc:
+            missing_core_nodes = [f"Comfy object_info unavailable: {exc}"]
+            missing_upscale_nodes = list(missing_core_nodes)
+    else:
+        missing_core_nodes = _ltx25_static_missing_core_support()
+        missing_upscale_nodes = _ltx25_static_missing_upscale_support()
+    gpu = _nvidia_smi_memory_snapshot()
+    total_vram_gb = float(gpu.get("total_mb") or 0) / 1024 if gpu.get("available") else 0.0
+    disk = shutil.disk_usage(settings.models_dir)
+    return {
+        "template": "LTX25",
+        "label": "LTX 2.5",
+        "installed": not missing_required,
+        "generation_ready": not missing_required and not missing_core_nodes,
+        "dependencies_installed": not missing_required and not missing_core_nodes,
+        "assets": assets,
+        "missing_assets": missing_required + missing_optional,
+        "missing_required_assets": missing_required,
+        "missing_optional_assets": missing_optional,
+        "runtime_checked": runtime_checked,
+        "missing_core_nodes": missing_core_nodes,
+        "missing_upscale_nodes": missing_upscale_nodes,
+        "latent_upscale_available": not missing_upscale_nodes,
+        "models_dir": str(settings.models_dir),
+        "estimated_missing_required_bytes": sum(int(item.get("size_bytes_min") or 0) for item in missing_required),
+        "estimated_missing_optional_bytes": sum(int(item.get("size_bytes_min") or 0) for item in missing_optional),
+        "disk_free_bytes": disk.free,
+        "profiles": {
+            "rtx_3060_local": {
+                "supported": total_vram_gb >= 11.0,
+                "resolution": "832x480",
+                "fps": 12,
+                "duration_seconds": 3,
+                "frames": 41,
+                "steps": 8,
+                "cfg": 1.0,
+                "sampler": "euler_ancestral",
+                "runtime_flags": ["--enable-dynamic-vram", "--cache-none"],
+                "attention": "SageAttention is selectable when supported; Auto is the safe default.",
+                "note": "Use the convolutional VAE and CPU/disk offload. Start with 832×480 at 12 FPS; native spatial upscale is optional and needs the extra x2 model.",
+            },
+            "rtx_5090": {
+                "supported": total_vram_gb >= 28.0,
+                "resolution": "1280x704",
+                "fps": 24,
+                "duration_seconds": 3,
+                "frames": 73,
+                "steps": 8,
+                "cfg": 1.0,
+                "sampler": "euler_ancestral",
+                "runtime_flags": ["--enable-dynamic-vram"],
+                "attention": "Do not force SageAttention: use Auto/FlashAttention if that backend is not compatible with the installed PyTorch/CUDA build.",
+                "note": "Use 1280×704 for a 32-aligned 16:9-like target. The user can freely change sampler, steps, CFG, FPS and duration.",
+            },
+        },
+        "capabilities": {
+            "text_to_video": True,
+            "image_to_video": True,
+            "first_last_frame": True,
+            "native_audio": True,
+            "latent_spatial_upscale_x2": True,
+            "video_reference_requires_iclora": True,
+            "temporal_upscale": False,
+        },
+        "note": "The template recognizes existing LTX 2.5 user files by path/name and never downloads a duplicate. Source-video reference is a separate official IC-LoRA workflow and is not mixed into the base T2V/I2V graph.",
+    }
+
+
+async def _run_ltx25_assets_download_job(job_id: str, keys: list[str] | None = None) -> None:
+    try:
+        selected_keys = [key for key in (keys or []) if key in LTX25_HF_ARTIFACTS]
+        if not selected_keys:
+            selected_keys = [item["key"] for item in (await _ltx25_status_snapshot())["missing_required_assets"]]
+        if not selected_keys:
+            raise ValueError("No LTX 2.5 assets selected for download.")
+        completed: list[dict[str, Any]] = []
+        total = max(1, len(selected_keys))
+        for index, key in enumerate(selected_keys, start=1):
+            status = _ltx25_artifact_status(key)
+            if status["installed"]:
+                completed.append({**status, "already_downloaded": True})
+                _update_download_job(job_id, {"message": f"LTX 2.5 asset already present: {status['filename']}", "progress": round(index / total * 100, 2)})
+                continue
+            artifact = LTX25_HF_ARTIFACTS[key]
+            _update_download_job(job_id, {"status": "downloading", "message": f"Downloading {artifact['label']}: {artifact['filename']}"})
+            result = await asyncio.to_thread(_download_url_to_file, str(artifact["url"]), _ltx25_artifact_target(key), job_id)
+            completed.append({**result, "key": key, "label": artifact["label"]})
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {"status": "downloaded", "progress": 100, "message": "LTX 2.5 selected local assets ready.", "assets": completed, "status_snapshot": await _ltx25_status_snapshot(), "completed_at": datetime.now().isoformat(timespec="seconds")})
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/ltx25/assets/status")
+async def ltx25_assets_status() -> dict[str, Any]:
+    return await _ltx25_status_snapshot()
+
+
+@app.post("/api/ltx25/assets/download/start")
+async def ltx25_assets_download_start(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw_keys = (payload or {}).get("assets") or (payload or {}).get("keys") or []
+    keys = list(dict.fromkeys(str(item) for item in raw_keys if str(item) in LTX25_HF_ARTIFACTS)) if isinstance(raw_keys, list) else []
+    active_statuses = {"queued", "resolving", "downloading"}
+    for active_job in reversed(list(download_jobs.values())):
+        if active_job.get("kind") != "ltx25_assets" or active_job.get("status") not in active_statuses:
+            continue
+        active_keys = {str(item) for item in active_job.get("requested_assets") or []}
+        if not keys or not active_keys or set(keys).issubset(active_keys):
+            return {**active_job, "deduplicated": True}
+    job_id = f"ltx25_{uuid.uuid4().hex[:8]}"
+    download_jobs[job_id] = {"job_id": job_id, "kind": "ltx25_assets", "requested_assets": keys, "status": "queued", "progress": 0, "message": "LTX 2.5 local asset download queued.", "error": None, "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat()}
+    asyncio.create_task(_run_ltx25_assets_download_job(job_id, keys))
+    return download_jobs[job_id]
+
+
 def _minimax_h3_artifact_status(key: str) -> dict[str, Any]:
     artifact = MINIMAX_H3_HF_ARTIFACTS[key]
     target = _minimax_h3_artifact_target(key)
@@ -10671,6 +10992,24 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 missing_ltx_assets.append("LTX 2.3 audio VAE")
             if missing_ltx_assets:
                 raise ValueError("LTX 2.3 missing required assets: " + ", ".join(missing_ltx_assets) + ".")
+        if request.preset.lower() in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"}:
+            missing_ltx25_assets: list[str] = []
+            if not assets.get("primary_model"):
+                missing_ltx25_assets.append("LTX 2.5 transformer")
+            if not assets.get("text_encoder"):
+                missing_ltx25_assets.append("LTX 2.5 Gemma 4 text encoder with projection")
+            if not (assets.get("video_vae") or assets.get("vae")):
+                missing_ltx25_assets.append("LTX 2.5 video VAE")
+            if not assets.get("audio_vae"):
+                missing_ltx25_assets.append("LTX 2.5 audio VAE")
+            if missing_ltx25_assets:
+                raise ValueError(
+                    "LTX 2.5 missing required local assets: "
+                    + ", ".join(missing_ltx25_assets)
+                    + ". Open the LTX 2.5 dependency prompt and confirm only the missing downloads."
+                )
+            if bool(getattr(request.controlnet, "enabled", False)):
+                raise ValueError("LTX 2.5 base T2V/I2V does not use the LTX 2.3 ControlNet/IC-LoRA route. Disable ControlNet or load the dedicated LTX 2.5 IC-LoRA video-reference workflow.")
         if request.preset.lower() in {"zimageturbo", "zimage"}:
             missing_zimage_assets: list[str] = []
             if not assets.get("primary_model"):
@@ -10716,9 +11055,10 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
         if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"}:
             h3_mode = str((request.video or {}).get("minimax_h3_mode") or "i2v").strip().lower()
             h3_reference_mode = h3_mode in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
-            expected_model = "minimax_h3_ref2va" if h3_reference_mode else "minimax_h3_fl2va"
+            expected_variant = "ref2va" if h3_reference_mode else "fl2va"
+            expected_model = f"minimax_h3_{expected_variant}"
             missing_h3_assets: list[str] = []
-            if expected_model not in str(assets.get("primary_model") or "").lower():
+            if _minimax_h3_model_variant(assets.get("primary_model")) != expected_variant:
                 missing_h3_assets.append(f"{expected_model}_pruned_int8_convrot.safetensors")
             if Path(str(assets.get("text_encoder") or "")).name.lower() != "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors":
                 missing_h3_assets.append("qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors")
@@ -10866,13 +11206,13 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             await comfy.free_memory(unload_models=True, free_memory=True)
         last_generation_model_signature = model_signature
         workflow_path = workflow_registry.find(request.workflow_id, request.preset)
-        if request.preset.lower() == "ltx" and not request.workflow_id:
+        if request.preset.lower() in {"ltx", "ltx25", "ltx_25", "ltx-2.5", "ltx2.5"} and not request.workflow_id:
             workflow_path = None
         if request.preset.lower() == "wan" and not request.workflow_id:
             workflow_path = None
         if request.preset.lower() in {"krea2", "krea-2"} and not request.workflow_id:
             workflow_path = None
-        if base_video_name and not request.workflow_id and request.preset.lower() in {"wan", "ltx"}:
+        if base_video_name and not request.workflow_id and request.preset.lower() in {"wan", "ltx", "ltx25", "ltx_25", "ltx-2.5", "ltx2.5"}:
             workflow_path = None
         if request.preset.lower() == "qwen" and request.activity == "img2img" and reference_image_name:
             request.workflow_override = None
@@ -10936,6 +11276,41 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                         f"MiniMax H3 booster '{h3_booster['label']}' is not loaded. "
                         f"Install {h3_booster['repo']} in {settings.custom_nodes_dir} and restart ComfyUI."
                     )
+            h3_mode = str((request.video or {}).get("minimax_h3_mode") or "i2v").strip().lower()
+            h3_uses_reference_model = h3_mode in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
+            h3_turbo_names = [str(getattr(item, "name", "")) for item in request.distilled_loras]
+            h3_turbo_names.extend(str(item.get("relative_name") or item.get("name") or "") for item in request.loras if isinstance(item, dict))
+            if h3_uses_reference_model and any(any(token in name.lower() for token in ("turbo", "distill", "distilled")) for name in h3_turbo_names):
+                raise ValueError(
+                    "MiniMax H3 Turbo LoRAs in the local catalog target the FL2VA T2V/I2V model and cannot be used with the REF2VA R2V/V2V route. "
+                    "Switch to T2V/I2V or disable the Turbo LoRA."
+                )
+        if request.preset.lower() in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"}:
+            missing_ltx25_core = _ltx25_missing_core_support(object_info)
+            if missing_ltx25_core:
+                missing = ", ".join(missing_ltx25_core[:8])
+                raise ValueError(
+                    "LTX 2.5 requires a newer ComfyUI runtime with its native audio-video nodes. "
+                    f"Missing runtime support: {missing}. Update the embedded ComfyUI runtime, then restart Nexus."
+                )
+            requested_ltx25_upscale = str((request.video or {}).get("latent_upscale") or "").strip().lower()
+            ltx25_upscale_enabled = requested_ltx25_upscale not in {"", "automatic", "auto", "none", "off", "disabled", "false", "0", "no"}
+            if ltx25_upscale_enabled:
+                missing_ltx25_upscale = _ltx25_missing_upscale_support(object_info)
+                if missing_ltx25_upscale:
+                    missing = ", ".join(missing_ltx25_upscale[:8])
+                    raise ValueError(
+                        "LTX 2.5 native latent upscale is enabled but the required runtime nodes are missing: "
+                        f"{missing}. Disable latent upscale or update ComfyUI, then restart Nexus."
+                    )
+            ltx25_turbo_names = [str(getattr(item, "name", "")) for item in request.distilled_loras]
+            ltx25_turbo_names.extend(str(item.get("relative_name") or item.get("name") or "") for item in request.loras if isinstance(item, dict))
+            ltx25_uses_distilled_model = "distilled" in str(request.model_name or request.model_path or "").lower()
+            if ltx25_uses_distilled_model and any(any(token in name.lower() for token in ("turbo", "distill", "distilled")) for name in ltx25_turbo_names):
+                raise ValueError(
+                    "The installed LTX 2.5 Turbo/Distill LoRAs target the dev transformer and cannot be stacked on a distilled checkpoint. "
+                    "Select a dev/FP8 transformer or disable the Turbo LoRA."
+                )
         director_segment_response = await _run_ltx_director_segment_render(request, assets, object_info, job_id=job_id)
         if director_segment_response:
             _cleanup_generation_temp()
@@ -10968,6 +11343,31 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 base_video_name=base_video_name,
                 reference_video_names=h3_reference_video_names,
                 reference_audio_names=h3_reference_audio_names,
+            )
+        elif request.preset.lower() in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"} and not request.workflow_override:
+            if base_video_name:
+                raise ValueError(
+                    "LTX 2.5 source-video reference requires the dedicated official IC-LoRA workflow and its matching IC-LoRA. "
+                    "The base LTX 2.5 template supports text, image, and first/last-frame generation without mixing LTX 2.3 nodes."
+                )
+            ltx25_model_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
+            ltx25_text_encoder = assets.get("text_encoder")
+            ltx25_video_vae = assets.get("video_vae") or assets.get("vae")
+            ltx25_audio_vae = assets.get("audio_vae")
+            if not ltx25_model_name or not ltx25_text_encoder or not ltx25_video_vae or not ltx25_audio_vae:
+                raise ValueError("LTX 2.5 requires its transformer, Gemma 4 encoder with projection, video VAE and audio VAE.")
+            if job_id:
+                _update_generation_job(job_id, {"status": "building", "progress": 9, "message": "Building synchronized LTX 2.5 workflow"})
+            prompt = build_basic_ltx25_img2video_workflow(
+                request,
+                ltx25_model_name,
+                ltx25_text_encoder,
+                ltx25_video_vae,
+                ltx25_audio_vae,
+                reference_image_name=reference_image_name,
+                reference_end_image_name=reference_end_image_name,
+                latent_upscale_name=assets.get("latent_upscale"),
+                available_nodes=set(object_info or {}),
             )
         elif request.preset.lower() in {"krea2", "krea-2"} and not request.workflow_override:
             krea2_model_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
@@ -11163,6 +11563,25 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     detailer_lora_name=assets.get("detailer_lora"),
                     frame_guides=ltx_director_frame_guides,
                     video_combine_node=_available_comfy_node(object_info, "VHS_VideoCombine"),
+                    available_nodes=set(object_info or {}),
+                )
+            elif request.preset.lower() in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"}:
+                if base_video_name:
+                    raise ValueError("LTX 2.5 video-reference generation requires the official IC-LoRA workflow; the base template accepts text, image, or first/last frames.")
+                text_encoder_name = assets.get("text_encoder")
+                video_vae_name = assets.get("video_vae") or assets.get("vae")
+                audio_vae_name = assets.get("audio_vae")
+                if not text_encoder_name or not video_vae_name or not audio_vae_name:
+                    raise ValueError("LTX 2.5 requires a Gemma 4 encoder with projection plus its video and audio VAEs.")
+                prompt = build_basic_ltx25_img2video_workflow(
+                    request,
+                    checkpoint_name,
+                    text_encoder_name,
+                    video_vae_name,
+                    audio_vae_name,
+                    reference_image_name=reference_image_name,
+                    reference_end_image_name=reference_end_image_name,
+                    latent_upscale_name=assets.get("latent_upscale"),
                     available_nodes=set(object_info or {}),
                 )
             elif request.preset.lower() == "wan":

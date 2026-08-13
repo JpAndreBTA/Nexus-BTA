@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .config import NexusSettings
@@ -27,6 +28,8 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
         assets.pop("primary_model", None)
     if preset == "ltx":
         assets.update(_resolve_ltx(by_category, selected_name, request))
+    elif preset in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"}:
+        assets.update(_resolve_ltx25(by_category, selected_name, request))
     elif preset == "wan":
         assets.update(_resolve_wan(by_category, selected_name, request))
     elif preset == "flux":
@@ -578,6 +581,99 @@ def _resolve_ideogram4(by_category: dict[str, list[ModelFile]], selected_name: s
     return assets
 
 
+def _is_ltx25_item(item: ModelFile, *required: str) -> bool:
+    haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+    compact = re.sub(r"[^a-z0-9]", "", haystack)
+    if "ltx25" not in compact and "ltxv25" not in compact:
+        return False
+    return all(token.lower() in haystack for token in required)
+
+
+def _first_ltx25(
+    by_category: dict[str, list[ModelFile]],
+    categories: list[str],
+    *required: str,
+) -> ModelFile | None:
+    candidates: list[tuple[int, str, ModelFile]] = []
+    for category in categories:
+        for item in by_category.get(category, []):
+            if not _is_ltx25_item(item, *required):
+                continue
+            score = 0
+            haystack = " ".join([item.name, item.folder, item.relative_path]).lower()
+            if "distill" in haystack:
+                score -= 10
+            if "conv" in haystack and "video" in required:
+                score -= 5
+            candidates.append((score, item.name.lower(), item))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda row: row[:2])
+    return candidates[0][2]
+
+
+def _resolve_ltx25(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
+    """Resolve LTX 2.5 only from its own named assets.
+
+    LTX 2.3 and 2.5 do not share the text encoder or VAE set.  Keeping the
+    matcher deliberately strict prevents a valid LTX 2.3 installation from
+    being silently used by the 2.5 template.
+    """
+
+    assets: dict[str, str] = {}
+    video_options = request.video or {}
+    primary = _find_name(by_category, selected_name)
+    if primary and not _is_ltx25_item(primary):
+        primary = None
+    primary = primary or _first_ltx25(by_category, ["checkpoints", "unet", "diffusion_models"])
+    if primary:
+        assets["primary_model"] = _comfy_name(primary)
+
+    selected_text_encoder = _selected_model_choice(by_category, request.text_encoder)
+    if selected_text_encoder and not (_is_ltx25_item(selected_text_encoder) and "gemma" in selected_text_encoder.name.lower()):
+        selected_text_encoder = None
+    text_encoder = selected_text_encoder or _first_ltx25(by_category, ["text_encoders", "clip"], "gemma")
+    if text_encoder:
+        assets["text_encoder"] = _comfy_name(text_encoder)
+
+    selected_video_vae = _selected_asset(video_options.get("video_vae")) or _selected_asset(request.vae)
+    selected_audio_vae = _selected_asset(video_options.get("audio_vae"))
+    video_vae = _find_name(by_category, selected_video_vae)
+    if video_vae and not (video_vae.category == "vae" and _is_ltx25_item(video_vae, "video")):
+        video_vae = None
+    audio_vae = _find_name(by_category, selected_audio_vae)
+    if audio_vae and not (audio_vae.category in {"vae", "audio_vae", "checkpoints"} and _is_ltx25_item(audio_vae, "audio")):
+        audio_vae = None
+    video_vae = video_vae or _first_ltx25(by_category, ["vae"], "video")
+    audio_vae = audio_vae or _first_ltx25(by_category, ["audio_vae", "checkpoints", "vae"], "audio")
+    if video_vae:
+        assets["video_vae"] = _comfy_name(video_vae)
+        assets["vae"] = _comfy_name(video_vae)
+    if audio_vae:
+        assets["audio_vae"] = _comfy_name(audio_vae)
+
+    raw_latent_upscale = str(video_options.get("latent_upscale") or "").strip().lower()
+    latent_upscale_disabled = raw_latent_upscale in {"automatic", "auto", "none", "off", "disabled", "false", "0", "no"}
+    selected_upscale = _selected_asset(video_options.get("latent_upscale"))
+    upscale = _find_name(by_category, selected_upscale)
+    if upscale and not (upscale.category in {"latent_upscale_models", "upscale_models"} and _is_ltx25_item(upscale, "spatial")):
+        upscale = None
+    if not latent_upscale_disabled:
+        upscale = upscale or _first_ltx25(by_category, ["latent_upscale_models", "upscale_models"], "spatial")
+    if upscale:
+        assets["latent_upscale"] = _comfy_name(upscale)
+
+    turbo_loras = [
+        item
+        for item in by_category.get("loras", [])
+        if _is_ltx25_item(item) and any(token in item.name.lower() for token in ("turbo", "distill", "distilled"))
+    ]
+    turbo_loras.sort(key=lambda item: ("r256" not in item.name.lower(), item.name.lower()))
+    if turbo_loras:
+        assets["turbo_lora"] = _comfy_name(turbo_loras[0])
+    return assets
+
+
 def _resolve_minimax_h3(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
     """Resolve the official Comfy-Org MiniMax H3 split files without mixing H3 variants."""
     assets: dict[str, str] = {}
@@ -585,10 +681,11 @@ def _resolve_minimax_h3(by_category: dict[str, list[ModelFile]], selected_name: 
     workflow_hint = str(request.workflow_id or "").strip().lower()
     mode = str(video_options.get("minimax_h3_mode") or ("r2v" if "r2v" in workflow_hint or "reference" in workflow_hint else "i2v")).strip().lower()
     wants_reference = mode in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
-    model_prefix = "minimax_h3_ref2va" if wants_reference else "minimax_h3_fl2va"
+    required_variant = "ref2va" if wants_reference else "fl2va"
+    model_prefix = f"minimax_h3_{required_variant}"
 
     primary = _find_name(by_category, selected_name)
-    if primary and model_prefix not in " ".join([primary.name, primary.folder, primary.relative_path]).lower():
+    if primary and _minimax_h3_model_variant(primary) != required_variant:
         primary = None
     primary = primary or (
         _first_exact(by_category, ["diffusion_models", "unet"], f"{model_prefix}_pruned_int8_convrot.safetensors")
@@ -786,6 +883,20 @@ def _model_haystack(item: ModelFile) -> str:
     return " ".join([item.name, item.folder, item.relative_path])
 
 
+def _minimax_h3_model_variant(value: ModelFile | str | None) -> str:
+    """Classify H3 weights by architecture, independent of vendor file naming."""
+    if isinstance(value, ModelFile):
+        raw = _model_haystack(value)
+    else:
+        raw = str(value or "")
+    normalized = re.sub(r"[^a-z0-9]", "", raw.lower())
+    if "ref2va" in normalized or "ref2v" in normalized:
+        return "ref2va"
+    if "fl2va" in normalized:
+        return "fl2va"
+    return ""
+
+
 def _first_exact(by_category: dict[str, list[ModelFile]], categories: list[str], name: str) -> ModelFile | None:
     expected = name.lower()
     for category in categories:
@@ -941,6 +1052,7 @@ def _find_name(by_category: dict[str, list[ModelFile]], name: str) -> ModelFile 
                 f"loras\\{normalized_lower}",
                 f"loras\\ltx\\{normalized_lower}",
                 f"loras\\ltx_ic\\{normalized_lower}",
+                f"loras\\ltx25\\{normalized_lower}",
             }
         )
     elif normalized_lower.startswith("ltx\\") or normalized_lower.startswith("ltx_ic\\"):

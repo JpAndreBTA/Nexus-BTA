@@ -220,6 +220,9 @@ def _civitai_base_model(value: Any) -> str:
         "wan22": "WAN 2.2",
         "ltx": "LTXV 2.3",
         "ltx23": "LTXV 2.3",
+        "ltx25": "LTXV 2.5",
+        "ltxv25": "LTXV 2.5",
+        "minimaxh3": "MiniMax H3",
     }
     return aliases.get(normalized, raw)
 
@@ -808,7 +811,9 @@ def _preset_from_base_model(base_model: Any, fallback: str | None = None) -> str
             ("qwen", ("qwen", "qwen image", "qwenimage")),
             ("zimage", ("zimage", "z image", "z-image", "zimage turbo", "z image turbo")),
             ("wan", ("wan", "wan2", "wan22", "wan21")),
+            ("ltx25", ("ltx25", "ltx 2.5", "ltxv25", "ltxv 2.5")),
             ("ltx", ("ltx", "ltx video", "ltxvideo", "ltx23")),
+            ("minimaxh3", ("minimaxh3", "minimax h3", "minimax-h3")),
             ("anima", ("anima",)),
             ("lumina", ("lumina",)),
         )
@@ -831,6 +836,8 @@ def _preset_folder(preset: str | None) -> str:
         "animagine": "animagine",
         "pony": "pony",
         "ltx": "ltx",
+        "ltx25": "LTX25",
+        "minimaxh3": "minimax_h3",
         "anima": "anima",
         "wan": "wan",
         "flux": "flux",
