@@ -67,6 +67,111 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
     return {key: value for key, value in assets.items() if value}
 
 
+def resolve_minimax_h3_ltx_pixel_upscale_assets(settings: NexusSettings, scale_factor: int = 2) -> dict[str, str]:
+    """Resolve the local LTX 2.3 files used by the H3 pixel-upscale bridge.
+
+    This deliberately does *not* route through the LTX 2.5 resolver.  LTX 2.5's
+    spatial-upscale model consumes an LTX 2.5 latent and therefore cannot be
+    connected to a MiniMax H3 latent.  The bridge starts from decoded H3 frames
+    and uses the official LTX 2.3 Pixel Spatial IC-LoRA path instead.
+
+    Model discovery is used rather than hard-coded Nexus paths so an existing
+    extra_model_paths.yaml / user-selected model folder continues to work.
+    """
+    scale = 4 if int(scale_factor or 2) == 4 else 2
+    catalog = scan_models(settings, include_references=False)
+    by_category = catalog.categories
+
+    def haystack(item: ModelFile) -> str:
+        return " ".join([item.name, item.folder, item.relative_path]).lower()
+
+    def first_ltx(
+        categories: list[str],
+        required: tuple[str, ...],
+        *,
+        excluded: tuple[str, ...] = (),
+        extensions: set[str] | None = None,
+    ) -> ModelFile | None:
+        candidates: list[tuple[int, str, ModelFile]] = []
+        for category in categories:
+            for item in by_category.get(category, []):
+                text = haystack(item)
+                compact = text.replace("-", "").replace("_", "")
+                if "ltx" not in text or "ltx25" in compact:
+                    continue
+                if extensions and item.extension.lower() not in extensions:
+                    continue
+                if any(token in text for token in excluded):
+                    continue
+                if not all(token in text for token in required):
+                    continue
+                score = 0
+                if "ltx-2.3" in text or "ltx23" in compact:
+                    score -= 30
+                if category == "checkpoints":
+                    score -= 10
+                candidates.append((score, item.name.lower(), item))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda row: row[:2])
+        return candidates[0][2]
+
+    assets: dict[str, str] = {}
+    # The native LTX route already supports complete community checkpoints in
+    # models/checkpoints/ltx.  Prefer those over a split transformer because
+    # this bridge also needs the text-projection checkpoint loader.
+    model = (
+        first_ltx(["checkpoints"], (), excluded=("projection",), extensions={".safetensors", ".ckpt"})
+        or first_ltx(["diffusion_models", "unet"], (), extensions={".safetensors", ".ckpt"})
+    )
+    gemma = first_ltx(["text_encoders", "clip"], ("gemma",), excluded=("gemma4",))
+    if not gemma:
+        # Gemma 3 encoders are commonly stored without "ltx" in the filename.
+        for category in ("text_encoders", "clip"):
+            gemma = next(
+                (
+                    item
+                    for item in by_category.get(category, [])
+                    if "gemma" in haystack(item) and "gemma4" not in haystack(item)
+                ),
+                None,
+            )
+            if gemma:
+                break
+    projection = first_ltx(["checkpoints", "text_encoders"], ("projection",), extensions={".safetensors", ".ckpt"})
+    video_vae = first_ltx(["vae"], ("video",), excluded=("audio", "taeltx", "preview"))
+    distilled = first_ltx(["loras"], ("distilled", "384"))
+    pixel_lora = first_ltx(["loras"], ("pixel", "spatial", "upscaler", f"x{scale}"))
+
+    for key, item in {
+        "model": model,
+        "text_encoder": gemma,
+        "text_projection": projection,
+        "video_vae": video_vae,
+        "distilled_lora": distilled,
+        "pixel_lora": pixel_lora,
+    }.items():
+        if item:
+            assets[key] = _comfy_name(item)
+    return assets
+
+
+def resolve_minimax_h3_ltx25_upscale_assets(settings: NexusSettings) -> dict[str, str]:
+    """Resolve the isolated LTX 2.5 stage used after a decoded H3 draft."""
+    request = GenerateRequest(
+        preset="LTX25",
+        video={"latent_upscale": "ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors"},
+    )
+    assets = _resolve_ltx25(scan_models(settings, include_references=False).categories, "", request)
+    if assets.get("primary_model"):
+        assets["model"] = assets["primary_model"]
+    catalog = scan_models(settings, include_references=False).categories
+    pixel = _first_ltx25(catalog, ["loras"], "pixel", "spatial", "upscaler")
+    if pixel:
+        assets["pixel_lora"] = _comfy_name(pixel)
+    return assets
+
+
 def _resolve_controlnet(by_category: dict[str, list[ModelFile]], request: GenerateRequest) -> dict[str, str]:
     control = request.controlnet
     if not control.enabled:
@@ -662,6 +767,14 @@ def _resolve_ltx25(by_category: dict[str, list[ModelFile]], selected_name: str, 
         upscale = upscale or _first_ltx25(by_category, ["latent_upscale_models", "upscale_models"], "spatial")
     if upscale:
         assets["latent_upscale"] = _comfy_name(upscale)
+
+    temporal_enabled = str(video_options.get("ltx25_temporal_upscale_enabled", False)).strip().lower() not in {
+        "", "false", "0", "off", "none", "no", "disabled"
+    }
+    if temporal_enabled:
+        temporal_upscale = _first_ltx25(by_category, ["latent_upscale_models", "upscale_models"], "temporal")
+        if temporal_upscale:
+            assets["temporal_upscale"] = _comfy_name(temporal_upscale)
 
     turbo_loras = [
         item

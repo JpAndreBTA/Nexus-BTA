@@ -3901,14 +3901,14 @@
                         <span id="referenceImageLoadedLabel" class="hidden text-[9px] font-mono text-nexus-muted truncate"></span>
                         <div id="referenceImageMultiList" class="hidden mt-2 grid grid-cols-2 gap-2"></div>
                         <input id="referenceImageInput" type="file" accept="image/*,video/*,audio/*" multiple class="hidden">
-                        <input id="referenceImage2Input" type="file" accept="image/*" class="hidden">
-                        <input id="referenceImage3Input" type="file" accept="image/*" class="hidden">
-                        <input id="referenceImage4Input" type="file" accept="image/*" class="hidden">
-                        <input id="referenceImage5Input" type="file" accept="image/*" class="hidden">
-                        <input id="referenceImage6Input" type="file" accept="image/*" class="hidden">
-                        <input id="referenceImage7Input" type="file" accept="image/*" class="hidden">
-                        <input id="referenceImage8Input" type="file" accept="image/*" class="hidden">
-                        <input id="referenceImage9Input" type="file" accept="image/*" class="hidden">
+                        <input id="referenceImage2Input" type="file" accept="image/*,video/*" class="hidden">
+                        <input id="referenceImage3Input" type="file" accept="image/*,video/*" class="hidden">
+                        <input id="referenceImage4Input" type="file" accept="image/*,video/*" class="hidden">
+                        <input id="referenceImage5Input" type="file" accept="image/*,video/*" class="hidden">
+                        <input id="referenceImage6Input" type="file" accept="image/*,video/*" class="hidden">
+                        <input id="referenceImage7Input" type="file" accept="image/*,video/*" class="hidden">
+                        <input id="referenceImage8Input" type="file" accept="image/*,video/*" class="hidden">
+                        <input id="referenceImage9Input" type="file" accept="image/*,video/*" class="hidden">
                     </div>
                 </div>
 
@@ -4177,6 +4177,17 @@
                             <button type="button" onclick="setAspectRatio(9, 16)" class="flex items-center justify-center gap-1 py-1.5 bg-nexus-bg hover:bg-nexus-hover text-nexus-muted hover:text-white rounded-sm border border-nexus-border transition-all text-[9px] font-mono" title="Portrait 9:16"><i class="fa-solid fa-mobile-screen text-[10px]"></i>9:16</button>
                             <button type="button" onclick="setAspectRatio(16, 9)" class="flex items-center justify-center gap-1 py-1.5 bg-nexus-bg hover:bg-nexus-hover text-nexus-muted hover:text-white rounded-sm border border-nexus-border transition-all text-[9px] font-mono" title="Widescreen 16:9"><i class="fa-solid fa-tv text-[10px]"></i>16:9</button>
                         </div>
+                        <label id="videoMegapixelsWrapper" class="hidden flex items-center gap-3">
+                            <span class="text-[10px] font-bold text-nexus-muted w-10">Pixels</span>
+                            <select id="videoMegapixelsSelect" class="flat-input flex-1 font-mono" onchange="applyVideoMegapixels(this.value)">
+                                <option value="custom">Custom</option>
+                                <option value="0.4">0.40 MP</option>
+                                <option value="0.5">0.50 MP</option>
+                                <option value="0.75">0.75 MP</option>
+                                <option value="1">1.00 MP</option>
+                                <option value="1.5">1.50 MP</option>
+                            </select>
+                        </label>
                         <!-- Width Row -->
                         <div class="flex items-center gap-3">
                             <span class="text-[10px] font-bold text-nexus-muted w-10">Width</span>
@@ -4393,6 +4404,30 @@
                                             <option value="spectrum">Spectrum — spectral forecast</option>
                                         </select>
                                     </label>
+                                    <div id="minimaxH3LtxUpscalePanel" class="hidden space-y-2 border-t border-cyan-900/70 pt-2">
+                                        <label class="flex items-center justify-between gap-3 text-xs text-white">
+                                            <span class="font-bold">H3 → LTX 2.5 Latent Upscale</span>
+                                            <span class="toggle-switch"><input id="minimaxH3LtxUpscaleToggle" type="checkbox"><span class="toggle-track"></span></span>
+                                        </label>
+                                        <label class="space-y-1 block">
+                                            <span class="mini-label">Scale factor</span>
+                                            <select id="minimaxH3LtxUpscaleFactorSelect" class="flat-input appearance-none cursor-pointer">
+                                                <option value="2" selected>×2 — recommended / lower cost</option>
+                                                <option value="4">×4 — quarter-resolution H3 draft</option>
+                                            </select>
+                                        </label>
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <label class="space-y-1">
+                                                <span class="mini-label">LTX upscale steps</span>
+                                                <input id="minimaxH3LtxUpscaleStepsInput" class="flat-input font-mono text-right" type="number" value="8" min="1" max="50">
+                                            </label>
+                                            <label class="space-y-1">
+                                                <span class="mini-label">LTX upscale CFG</span>
+                                                <input id="minimaxH3LtxUpscaleCfgInput" class="flat-input font-mono text-right" type="number" value="1" min="0" max="20" step="0.1">
+                                            </label>
+                                        </div>
+                                        <span id="minimaxH3LtxUpscaleStatus" class="text-[9px] font-mono text-nexus-muted">Off. Native MiniMax H3 workflow remains unchanged.</span>
+                                    </div>
                                     <span id="minimaxH3BoosterStatus" class="text-[9px] font-mono text-nexus-muted">Enabled by default. FirstBlockCache is the recommended RTX 3060 profile.</span>
                                 </div>
                                 <div id="ltxVaePanel" class="hidden grid grid-cols-2 gap-2">
@@ -4423,6 +4458,10 @@
                                     <span class="font-bold">Latent upscale refine</span>
                                     <span class="toggle-switch"><input id="ltxLatentUpscaleRefineToggle" type="checkbox" checked><span class="toggle-track"></span></span>
                                 </label>
+                                <label id="ltx25TemporalUpscaleWrapper" class="hidden flex items-center justify-between gap-3 bg-nexus-panel border border-nexus-border px-2 py-2 rounded-sm text-xs text-white">
+                                    <span class="font-bold">Temporal latent upscale x2</span>
+                                    <span class="toggle-switch"><input id="ltx25TemporalUpscaleToggle" type="checkbox"><span class="toggle-track"></span></span>
+                                </label>
                                 <div id="ltx25UpscaleControls" class="hidden grid grid-cols-2 gap-2">
                                     <label class="space-y-1">
                                         <span class="mini-label">Upscale steps</span>
@@ -4432,6 +4471,21 @@
                                         <span class="mini-label">Upscale CFG</span>
                                         <input id="ltx25UpscaleCfgInput" class="flat-input font-mono text-right" type="number" value="1" min="0" max="20" step="0.1">
                                     </label>
+                                </div>
+                                <div id="ltx25MultishotPanel" class="hidden space-y-2 bg-nexus-panel border border-amber-900/70 px-2 py-2 rounded-sm">
+                                    <label class="flex items-center justify-between gap-3 text-xs text-white">
+                                        <span class="font-bold">LTX 2.5 MultiShot</span>
+                                        <span class="toggle-switch"><input id="ltx25MultishotToggle" type="checkbox"><span class="toggle-track"></span></span>
+                                    </label>
+                                    <label class="space-y-1 block">
+                                        <span class="mini-label">Shots / image guides</span>
+                                        <select id="ltx25MultishotCountSelect" class="flat-input appearance-none cursor-pointer">
+                                            <option value="2">2 shots — start / end</option>
+                                            <option value="3" selected>3 shots — recommended</option>
+                                            <option value="4">4 shots — more control</option>
+                                        </select>
+                                    </label>
+                                    <span id="ltx25MultishotStatus" class="text-[9px] font-mono text-nexus-muted">Off. Enable to place each loaded image on a separate point of the LTX 2.5 timeline.</span>
                                 </div>
                                 <div id="ltxUpscaleControls" class="hidden grid grid-cols-3 gap-2">
                                     <label class="space-y-1">
@@ -8263,8 +8317,8 @@
                 distilledDefaults: ['None', 'None'],
                 distilledStrengthDefaults: [1, 1],
                 distilledRoute: 'LTX 2.5 uses native AV latents. The r128/r256 Turbo files are alternatives for a dev/FP8 transformer (choose one); 8 steps and CFG 1 are the safe default. Native x2 latent upscale runs as a separate second stage.',
-                summary: 'LTX 2.5 supports text-to-video, image-to-video, first/last-frame guides, optional audio and native latent spatial upscale without using LTX 2.3 nodes.',
-                chips: ['LTX 2.5', 'FP8', 'Audio', 'Native Upscale'],
+                summary: 'LTX 2.5 supports text-to-video, image-to-video, first/last-frame and MultiShot timeline guides, optional audio and native latent spatial upscale without using LTX 2.3 nodes.',
+                chips: ['LTX 2.5', 'FP8', 'Audio', 'MultiShot', 'Native Upscale'],
                 video: 'RTX 3060 default: 832×480, 3 seconds, 12 FPS, 8 steps / CFG 1. RTX 5090 may raise resolution and duration manually.',
                 videoSettings: { frames: 41, fps: 12, seconds: 3 }
             },
@@ -9361,9 +9415,7 @@
         function h3TurboLoraOptions() {
             const profile = modelProfiles.MiniMaxH3 || {};
             const all = uniqueOptions(profile.distilledLoras || ['None']);
-            return isMiniMaxH3ReferenceRoute()
-                ? all.filter(option => /^(none|automatic|auto)$/i.test(String(option || '')))
-                : all.filter(option => !isUnsafeH3TurboLora(option));
+            return all.filter(option => !isUnsafeH3TurboLora(option));
         }
 
         function isUnsafeH3TurboLora(name) {
@@ -9397,24 +9449,15 @@
             const first = document.getElementById('distilledLoraOneSelect');
             const second = document.getElementById('distilledLoraTwoSelect');
             if (!first || !second) return;
-            const referenceRoute = isMiniMaxH3ReferenceRoute();
             const current = [first.value || 'None', second.value || 'None'];
             const available = h3TurboLoraOptions();
             setElementOptions('distilledLoraOneSelect', available);
             setElementOptions('distilledLoraTwoSelect', available);
-            setSelectValue('distilledLoraOneSelect', referenceRoute ? 'None' : current[0]);
-            setSelectValue('distilledLoraTwoSelect', referenceRoute ? 'None' : current[1]);
+            setSelectValue('distilledLoraOneSelect', current[0]);
+            setSelectValue('distilledLoraTwoSelect', current[1]);
             enforceTurboLoraSlotCompatibility({ quiet: true });
-            first.disabled = referenceRoute;
-            second.disabled = referenceRoute;
-            document.getElementById('distilledLoraOneStrength')?.toggleAttribute('disabled', referenceRoute);
-            document.getElementById('distilledLoraTwoStrength')?.toggleAttribute('disabled', referenceRoute);
             const route = document.getElementById('distilledLoraRouteText');
-            if (route && referenceRoute) route.innerText = 'Turbo LoRAs installed here target FL2VA T2V/I2V and are disabled for the REF2VA R2V/V2V route.';
-            else if (route) route.innerText = modelProfiles.MiniMaxH3?.distilledRoute || '';
-            if (!options.quiet && referenceRoute && current.some(value => !/^(none|automatic|auto)$/i.test(value))) {
-                showToast('H3 Turbo LoRA Disabled', 'The selected Turbo LoRA targets FL2VA T2V/I2V; REF2VA R2V/V2V remains isolated.');
-            }
+            if (route) route.innerText = 'Turbo LoRAs can be tested in FL2VA and REF2VA. 4-step and 8-step are alternative schedules, so choose only one.';
         }
 
         function renderGallerySidebar() {
@@ -10090,7 +10133,7 @@
             const removeBgModels = extrasCatalogNames(['background_removal', 'RMBG'], name => /biref|rmbg|bria|inspy|isnet|ben|rembg|background/i.test(name));
             const nvidiaImageOptions = ['nvidia_pid', 'nvidia_rtx'];
             const imageOptions = setSelectOptions('extrasImageUpscaler', rasterUpscalers, [...nvidiaImageOptions, 'Lanczos']);
-            const videoOptions = setSelectOptions('extrasVideoUpscaleModel', [...rasterUpscalers, ...latentUpscalers], ['Lanczos']);
+            const videoOptions = setSelectOptions('extrasVideoUpscaleModel', rasterUpscalers, ['Lanczos']);
             const videoRestoreOptions = setSelectOptions('extrasVideoRestoreModel', videoRestoreModels, ['Wan2_1-T2V-1_3B_FlashVSR_fp32.safetensors', 'seedvr2_ema_3b_fp8_e4m3fn.safetensors', 'ltx-2-19b-ic-lora-detailer.safetensors']);
             const interpolationOptions = setSelectOptions('extrasVideoInterpolator', interpolators, ['frame_interpolation/rife_v4.26.safetensors']);
             const denoiseOptions = setSelectOptions('extrasVideoDenoiseModel', denoiseModels, ['ffmpeg_hqdn3d']);
@@ -10099,10 +10142,9 @@
             const removeOptions = setSelectOptions('extrasRemoveBgModel', removeBgModels, ['BiRefNet', 'RMBG-2.0', 'InSPyReNet', 'BEN2']);
             const upscaleStatus = document.getElementById('extrasVideoUpscaleStatus');
             if (upscaleStatus) {
-                const latentLabel = latentUpscalers.length ? `${latentUpscalers.length} latent` : 'no latent';
                 const rasterLabel = rasterUpscalers.length ? `${rasterUpscalers.length} raster` : 'no raster';
                 const restoreLabel = videoRestoreModels.length ? `${videoRestoreModels.length} VSR` : 'VSR fallback';
-                upscaleStatus.innerText = `${latentLabel}, ${rasterLabel}, ${restoreLabel}, NVIDIA optional`;
+                upscaleStatus.innerText = `${rasterLabel}, ${restoreLabel}, NVIDIA optional. LTX latent upscalers require an LTX generation workflow.`;
             }
             const imageSelect = document.getElementById('extrasImageUpscaler');
             if (imageSelect) {
@@ -10119,7 +10161,7 @@
             const videoSelect = document.getElementById('extrasVideoUpscaleModel');
             if (videoSelect) {
                 videoSelect.dataset.hasModel = videoOptions.length ? '1' : '0';
-                const realVideoOptions = [...rasterUpscalers, ...latentUpscalers];
+                const realVideoOptions = [...rasterUpscalers];
                 if (realVideoOptions.length && (!videoSelect.value || videoSelect.value === 'Lanczos')) videoSelect.value = realVideoOptions[0];
             }
             const restoreSelect = document.getElementById('extrasVideoRestoreModel');
@@ -10170,7 +10212,7 @@
             const latentUpscalers = cache.latentUpscalers || extrasCatalogNames(['latent_upscale_models']);
             const denoiseModels = cache.denoiseModels || extrasCatalogNames(['denoise_models', 'upscale_models'], name => /denoise|fastdvd|dvdnet|noise|restore|scunet|swinir|vrt|basicvsr/i.test(name));
             const faceRestoreModels = cache.faceRestoreModels || extrasCatalogNames(['face_restore_models', 'facerestore_models', 'GFPGAN'], name => /gfpgan|codeformer|restoreformer|face/i.test(name));
-            window.sideExtrasRasterUpscalers = [...rasterUpscalers, ...latentUpscalers];
+            window.sideExtrasRasterUpscalers = [...rasterUpscalers];
             setSelectOptions('sideDenoiseModel', denoiseModels, ['fastdvdnet_model_clipped_noise.pth', 'ffmpeg_hqdn3d']);
             setSelectOptions('sideFaceRestoreModel', faceRestoreModels, ['GFPGANv1.4.pth']);
             const denoiseSelect = document.getElementById('sideDenoiseModel');
@@ -12772,6 +12814,35 @@
             return true;
         }
 
+        async function maybePrepareLtx25TemporalUpscale() {
+            if (activePreset !== 'LTX25' || !backendOnline) return false;
+            let status = null;
+            try {
+                status = await nexusFetch('/ltx25/assets/status');
+            } catch (error) {
+                showToast('LTX 2.5 Temporal Check Failed', String(error?.message || error).slice(0, 160));
+                return false;
+            }
+            const missingNodes = Array.isArray(status?.missing_upscale_nodes) ? status.missing_upscale_nodes : [];
+            if (missingNodes.length) {
+                showToast('LTX 2.5 Temporal Unavailable', `Update the ComfyUI runtime for: ${missingNodes.join(', ')}`.slice(0, 180));
+                return false;
+            }
+            const missing = (Array.isArray(status?.missing_optional_assets) ? status.missing_optional_assets : [])
+                .filter(item => item?.key === 'temporal_upscaler');
+            if (!missing.length) return true;
+            const item = missing[0];
+            const ok = window.confirm(`LTX 2.5 temporal latent upscale ×2 requires one optional local model.\n\n${item.label || item.filename}\nDestination: ${item.destination || item.filename}\nSize: ${formatModelAssetBytes(item.size_bytes_min)}\n\nDownload it now?`);
+            if (!ok) return false;
+            const started = await nexusFetch('/ltx25/assets/download/start', {
+                method: 'POST',
+                body: JSON.stringify({ assets: ['temporal_upscaler'] })
+            });
+            await pollDownloadJob(started.job_id, 'LTX 2.5 temporal latent upscale');
+            await refreshModelCatalog();
+            return true;
+        }
+
         async function maybePrepareMiniMaxH3TemplateAssets() {
             if (!backendOnline) return false;
             if (sessionStorage.getItem('nexus_minimax_h3_template_assets_prompted') === '1') return false;
@@ -12874,6 +12945,50 @@
             await refreshModelCatalog();
             showToast('MiniMax H3 R2V Ready', 'REF2VA is local: up to 9 images, 3 videos and 3 standalone audios are available.');
             return true;
+        }
+
+        async function ensureMiniMaxH3LtxPixelUpscale(payload) {
+            if (payload?.preset !== 'MiniMaxH3' || !payload?.video?.minimax_h3_ltx_upscale_enabled) return true;
+            if (!backendOnline) {
+                showToast('H3 → LTX Upscale', 'Connect the Nexus backend to validate the local LTX 2.5 files.');
+                return false;
+            }
+            const factor = Number(payload?.video?.minimax_h3_ltx_upscale_factor) === 4 ? 4 : 2;
+            let status;
+            try {
+                status = await nexusFetch(`/minimax-h3/ltx-upscale/status?scale_factor=${factor}`);
+            } catch (error) {
+                showToast('H3 → LTX Upscale Check Failed', String(error?.message || error).slice(0, 180));
+                return false;
+            }
+            const missingNodes = Array.isArray(status?.missing_core_nodes) ? status.missing_core_nodes : [];
+            if (missingNodes.length) {
+                showToast('H3 → LTX Upscale Unavailable', `Update/restart ComfyUI for: ${missingNodes.join(', ')}`.slice(0, 180));
+                return false;
+            }
+            const missing = Array.isArray(status?.missing_required_assets) ? status.missing_required_assets : [];
+            if (!missing.length) return true;
+            if (nexusBrowserOffline()) return warnOfflineDependencyDownload('H3 → LTX 2.5 Latent Upscale', 'The required local LTX 2.5 files are not available.');
+            const missingList = missing.map(item => `- ${item.label || item.key}`).join('\n');
+            const accepted = window.confirm(
+                `Enable MiniMax H3 → LTX 2.5 native latent upscale ×${factor}?\n\nH3 renders a 1/${factor}-resolution draft. Its decoded frames guide a new LTX 2.5 latent, which is then spatially upscaled by LTX 2.5 to the requested output resolution. H3 audio is preserved.\n\nMissing local files:\n${missingList}\n\nNexus will keep compatible files already present in your configured paths and download only these missing files.\n\nDownload now?`
+            );
+            if (!accepted) return false;
+            try {
+                const started = await nexusFetch('/minimax-h3/ltx-upscale/download/start', { method: 'POST', body: JSON.stringify({ scale_factor: factor }) });
+                if (started?.job_id) await pollDownloadJob(started.job_id, 'LTX 2.5 latent upscale assets');
+                await refreshModelCatalog();
+                status = await nexusFetch(`/minimax-h3/ltx-upscale/status?scale_factor=${factor}`);
+                if (!status?.ready) {
+                    const remaining = (status?.missing_required_assets || []).map(item => item.label || item.key).join(', ');
+                    throw new Error(remaining || 'The LTX 2.5 latent upscale files are still not ready.');
+                }
+                showToast('H3 → LTX 2.5 Latent Upscale Ready', 'The native LTX 2.5 upscale bridge is ready in the configured model paths.');
+                return true;
+            } catch (error) {
+                showToast('H3 → LTX Upscale Download Failed', String(error?.message || error).slice(0, 180));
+                return false;
+            }
         }
 
         function maybePrepareTemplateOptionalAssets(presetName) {
@@ -13707,9 +13822,51 @@
         }
 
         function alignDimension(value, presetName = activePreset) {
-            const step = presetName === 'LTX' ? 32 : 8;
+            const step = ['LTX', 'LTX25', 'MiniMaxH3'].includes(presetName) ? 32 : 8;
             const aligned = Math.round(Number(value || 0) / step) * step;
             return Math.max(64, Math.min(4096, aligned || 512));
+        }
+
+        function videoMegapixelTarget() {
+            const select = document.getElementById('videoMegapixelsSelect');
+            const value = Number(select?.value);
+            return Number.isFinite(value) && value > 0 ? value : null;
+        }
+
+        function syncVideoMegapixelsUi() {
+            const wrapper = document.getElementById('videoMegapixelsWrapper');
+            const select = document.getElementById('videoMegapixelsSelect');
+            const supported = ['LTX25', 'MiniMaxH3'].includes(activePreset);
+            wrapper?.classList.toggle('hidden', !supported);
+            if (!supported || !select) return;
+            const width = Math.max(32, Number(document.getElementById('widthInput')?.value || 0));
+            const height = Math.max(32, Number(document.getElementById('heightInput')?.value || 0));
+            const megapixels = (width * height) / 1000000;
+            const matchingOption = [...select.options].find(option => {
+                const target = Number(option.value);
+                return Number.isFinite(target) && target > 0 && Math.abs(megapixels - target) <= Math.max(0.015, target * 0.06);
+            });
+            select.value = matchingOption?.value || 'custom';
+        }
+
+        function applyVideoMegapixels(value) {
+            if (!['LTX25', 'MiniMaxH3'].includes(activePreset)) return;
+            const megapixels = Number(value);
+            if (!Number.isFinite(megapixels) || megapixels <= 0) {
+                updateWorkflowPreview();
+                return;
+            }
+            const currentWidth = Math.max(32, Number(document.getElementById('widthInput')?.value || 832));
+            const currentHeight = Math.max(32, Number(document.getElementById('heightInput')?.value || 480));
+            const ratio = Math.max(0.05, currentWidth / currentHeight);
+            const grid = 32;
+            const rawWidth = Math.sqrt(megapixels * 1000000 * ratio);
+            const rawHeight = rawWidth / ratio;
+            const width = Math.max(grid, Math.min(4096, Math.round(rawWidth / grid) * grid));
+            const height = Math.max(grid, Math.min(4096, Math.round(rawHeight / grid) * grid));
+            setDimensions(width, height);
+            syncVideoMegapixelsUi();
+            showToast('Video Resolution', `${width}x${height} (${((width * height) / 1000000).toFixed(2)} MP) applied to the synchronized workflow.`);
         }
 
         function nearestLtxFrameCount(value) {
@@ -13899,11 +14056,15 @@
                     fps,
                     source === 'framesInput' ? framesInput.value : null
                 );
-                framesInput.value = String(frames);
+                const compatibleFrames = minimaxH3LtxPixelUpscaleEnabled()
+                    ? minimaxH3LtxPixelFrames(frames)
+                    : frames;
+                framesInput.value = String(compatibleFrames);
                 // H3's official 17k+5 frame constraint can make the exact
                 // duration differ slightly from the requested seconds.
                 // Reflect the aligned duration in the side menu and payload.
-                secondsInput.value = (frames / fps).toFixed(2).replace(/\.00$/, '');
+                secondsInput.value = (compatibleFrames / fps).toFixed(2).replace(/\.00$/, '');
+                syncMiniMaxH3LtxUpscaleUi({ keepFrames: true });
             }
         }
 
@@ -13986,6 +14147,12 @@
                 const promptBoosterToggle = document.getElementById('minimaxH3PromptBoosterEnabled');
                 if (promptBoosterToggle) promptBoosterToggle.checked = minimaxH3BoosterEnabled;
                 setSelectValue('minimaxH3PromptBoosterSelect', minimaxH3Booster);
+                const h3PixelToggle = document.getElementById('minimaxH3LtxUpscaleToggle');
+                if (h3PixelToggle) h3PixelToggle.checked = !!savedFields.minimaxH3LtxUpscaleToggle;
+                if (savedFields.minimaxH3LtxUpscaleFactorSelect) setSelectValue('minimaxH3LtxUpscaleFactorSelect', savedFields.minimaxH3LtxUpscaleFactorSelect);
+                if (savedFields.minimaxH3LtxUpscaleStepsInput) document.getElementById('minimaxH3LtxUpscaleStepsInput').value = savedFields.minimaxH3LtxUpscaleStepsInput;
+                if (savedFields.minimaxH3LtxUpscaleCfgInput) document.getElementById('minimaxH3LtxUpscaleCfgInput').value = savedFields.minimaxH3LtxUpscaleCfgInput;
+                syncMiniMaxH3LtxUpscaleUi({ keepFrames: true });
             }
             if (presetName === 'MiniMaxH3' && ['txt2img', 'img2img'].includes(currentActivity)) {
                 const restoredH3Mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
@@ -14029,6 +14196,8 @@
                 if (refineToggle) refineToggle.checked = savedFields.ltxLatentUpscaleRefineToggle !== undefined ? !!savedFields.ltxLatentUpscaleRefineToggle : true;
                 if (document.getElementById('ltx25UpscaleStepsInput')) document.getElementById('ltx25UpscaleStepsInput').value = savedFields.ltx25UpscaleStepsInput || '4';
                 if (document.getElementById('ltx25UpscaleCfgInput')) document.getElementById('ltx25UpscaleCfgInput').value = savedFields.ltx25UpscaleCfgInput || '1';
+                const temporalToggle = document.getElementById('ltx25TemporalUpscaleToggle');
+                if (temporalToggle) temporalToggle.checked = !!savedFields.ltx25TemporalUpscaleToggle;
             } else if (presetName === 'MiniMaxH3') {
                 const audioToggle = document.getElementById('activeAudioToggle');
                 if (audioToggle) audioToggle.checked = savedFields.activeAudioToggle !== undefined ? !!savedFields.activeAudioToggle : true;
@@ -14282,6 +14451,53 @@
             updateWorkflowPreview();
         }
 
+        function minimaxH3ImageEditEnabled() {
+            return activePreset === 'MiniMaxH3'
+                && ['r2v', 'reference', 'reference_to_video'].includes(document.getElementById('minimaxH3ModeSelect')?.value || '')
+                && !!document.getElementById('minimaxH3ImageEditToggle')?.checked;
+        }
+
+        function syncMiniMaxH3ImageEditUi(options = {}) {
+            if (activePreset !== 'MiniMaxH3') return false;
+            const toggle = document.getElementById('minimaxH3ImageEditToggle');
+            const steps = document.getElementById('minimaxH3ImageEditStepsInput');
+            const status = document.getElementById('minimaxH3ImageEditStatus');
+            if (!toggle) return false;
+            const imageCount = [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)].filter(Boolean).length;
+            const videoCount = (minimaxH3ReferenceVideos || []).filter(item => item?.src).length;
+            const audioCount = (minimaxH3ReferenceAudios || []).filter(item => item?.src).length;
+            const mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
+            const eligible = mode === 'r2v' && imageCount === 1 && videoCount === 0 && audioCount === 0;
+            if (!eligible && toggle.checked) {
+                toggle.checked = false;
+                if (!options.quiet) showToast('Image Edit Disabled', 'REF2VA Image Edit requires exactly one image and no video/audio references.');
+            }
+            toggle.disabled = !eligible;
+            if (steps) {
+                steps.disabled = !eligible || !toggle.checked;
+                const parsed = Math.max(1, Math.min(100, Number.parseInt(steps.value || '8', 10) || 8));
+                steps.value = String(parsed);
+            }
+            if (status) {
+                status.innerText = !eligible
+                    ? 'Requires R2V + exactly one image reference.'
+                    : toggle.checked
+                        ? `Enabled: one edited image, first H3 frame, ${steps?.value || 8} steps.`
+                        : 'Off. REF2VA video workflow remains unchanged.';
+            }
+            return eligible && toggle.checked;
+        }
+
+        function syncMiniMaxH3ImageEditToggle(enabled) {
+            if (activePreset !== 'MiniMaxH3') return;
+            const toggle = document.getElementById('minimaxH3ImageEditToggle');
+            if (toggle) toggle.checked = !!enabled;
+            syncMiniMaxH3ImageEditUi();
+            updateWorkflowPreview();
+            syncSideMenuToWorkflowGraph({ immediate: true });
+            savePresetRuntimeState(activePreset);
+        }
+
         function minimaxH3BoosterReady(status = minimaxH3BoosterStatus, booster = minimaxH3Booster) {
             const item = (status?.boosters || []).find(entry => entry?.key === booster);
             return !!item?.installed && (!status?.runtime_checked || !!item?.loaded);
@@ -14317,6 +14533,58 @@
             syncSideMenuToWorkflowGraph({ immediate: true });
         }
 
+        function minimaxH3LtxPixelUpscaleEnabled() {
+            return activePreset === 'MiniMaxH3' && !!document.getElementById('minimaxH3LtxUpscaleToggle')?.checked;
+        }
+
+        function minimaxH3LtxPixelScaleFactor() {
+            return Number(document.getElementById('minimaxH3LtxUpscaleFactorSelect')?.value) === 4 ? 4 : 2;
+        }
+
+        function minimaxH3LtxPixelCanvas(value, factor = minimaxH3LtxPixelScaleFactor()) {
+            const grid = 32 * (Number(factor) === 4 ? 4 : 2);
+            const numeric = Math.max(grid, Math.round(Number(value) || grid));
+            return Math.max(grid, Math.floor(numeric / grid) * grid);
+        }
+
+        function minimaxH3LtxPixelFrames(value) {
+            const desired = Math.max(5, Math.round(Number(value) || 56));
+            // First common H3 (17k+5) / LTX (8n+1) frame count is 73.
+            return Math.max(73, 73 + Math.max(0, Math.round((desired - 73) / 136)) * 136);
+        }
+
+        function syncMiniMaxH3LtxUpscaleUi(options = {}) {
+            const toggle = document.getElementById('minimaxH3LtxUpscaleToggle');
+            const steps = document.getElementById('minimaxH3LtxUpscaleStepsInput');
+            const cfg = document.getElementById('minimaxH3LtxUpscaleCfgInput');
+            const factorSelect = document.getElementById('minimaxH3LtxUpscaleFactorSelect');
+            const status = document.getElementById('minimaxH3LtxUpscaleStatus');
+            const frames = document.getElementById('framesInput');
+            const enabled = minimaxH3LtxPixelUpscaleEnabled();
+            if (steps) steps.disabled = !enabled;
+            if (cfg) cfg.disabled = !enabled;
+            if (factorSelect) factorSelect.disabled = !enabled;
+            if (!status) return enabled;
+            if (!enabled) {
+                status.innerText = 'Off. Native MiniMax H3 workflow remains unchanged.';
+                return false;
+            }
+            const requestedWidth = Math.max(32, Math.round(Number(document.getElementById('widthInput')?.value) || 832));
+            const requestedHeight = Math.max(32, Math.round(Number(document.getElementById('heightInput')?.value) || 480));
+            const factor = minimaxH3LtxPixelScaleFactor();
+            const canvasWidth = minimaxH3LtxPixelCanvas(requestedWidth, factor);
+            const canvasHeight = minimaxH3LtxPixelCanvas(requestedHeight, factor);
+            const draftWidth = canvasWidth / factor;
+            const draftHeight = canvasHeight / factor;
+            const snappedFrames = minimaxH3LtxPixelFrames(frames?.value);
+            if (frames && !options.keepFrames && Number(frames.value) !== snappedFrames) frames.value = String(snappedFrames);
+            const outputPad = canvasWidth !== requestedWidth || canvasHeight !== requestedHeight
+                ? ` Final ${requestedWidth}×${requestedHeight} is white-padded from ${canvasWidth}×${canvasHeight}; no stretch.`
+                : '';
+            status.innerText = `H3 draft ${draftWidth}×${draftHeight} → new LTX 2.5 guide latent → native spatial latent upscale ×${factor} ${canvasWidth}×${canvasHeight}; ${snappedFrames} frames for H3/LTX audio sync.${outputPad}`;
+            return true;
+        }
+
         function minimaxH3BoosterInlineMarkup() {
             return `
                 <label class="col-span-2 flex items-center justify-between gap-3 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted" onclick="event.preventDefault();event.stopPropagation();handleMiniMaxH3BoosterChange(!document.getElementById('minimaxH3BoosterInlineToggle')?.checked, document.getElementById('minimaxH3BoosterInlineSelect')?.value || minimaxH3Booster)">
@@ -14346,9 +14614,11 @@
             const ltxVaePanel = document.getElementById('ltxVaePanel');
             const latentUpscaleWrapper = document.getElementById('latentUpscaleWrapper');
             const ltxLatentUpscaleRefineWrapper = document.getElementById('ltxLatentUpscaleRefineWrapper');
+            const ltx25MultishotPanel = document.getElementById('ltx25MultishotPanel');
             const activeAudioWrapper = document.getElementById('activeAudioWrapper');
             const minimaxH3ModeWrapper = document.getElementById('minimaxH3ModeWrapper');
             const minimaxH3BoosterPanel = document.getElementById('minimaxH3BoosterPanel');
+            const minimaxH3LtxUpscalePanel = document.getElementById('minimaxH3LtxUpscalePanel');
             const minimaxH3PromptBoosterPanel = document.getElementById('minimaxH3PromptBoosterPanel');
             const omnicineWrapper = document.getElementById('omnicineWrapper');
             const ltxUpscaleControls = document.getElementById('ltxUpscaleControls');
@@ -14361,21 +14631,27 @@
             if (ltxVaePanel) ltxVaePanel.classList.toggle('hidden', !(ltxOnly || ltx25Native));
             if (latentUpscaleWrapper) latentUpscaleWrapper.classList.toggle('hidden', !(ltxOnly || ltx25Native));
             if (ltxLatentUpscaleRefineWrapper) ltxLatentUpscaleRefineWrapper.classList.toggle('hidden', !(ltxOnly || ltx25Native));
+            document.getElementById('ltx25TemporalUpscaleWrapper')?.classList.toggle('hidden', !ltx25Native);
             if (activeAudioWrapper) activeAudioWrapper.classList.toggle('hidden', !(ltxOnly || ltx25Native || h3NativeAudio));
             if (minimaxH3ModeWrapper) minimaxH3ModeWrapper.classList.toggle('hidden', activePreset !== 'MiniMaxH3');
             if (minimaxH3BoosterPanel) minimaxH3BoosterPanel.classList.toggle('hidden', activePreset !== 'MiniMaxH3');
+            if (minimaxH3LtxUpscalePanel) minimaxH3LtxUpscalePanel.classList.toggle('hidden', activePreset !== 'MiniMaxH3');
             if (minimaxH3PromptBoosterPanel) minimaxH3PromptBoosterPanel.classList.toggle('hidden', activePreset !== 'MiniMaxH3' || currentActivity !== 'txt2img');
             if (omnicineWrapper) omnicineWrapper.classList.toggle('hidden', !ltxOnly);
             if (ltxUpscaleControls) ltxUpscaleControls.classList.toggle('hidden', !ltxOnly);
             document.getElementById('ltx25UpscaleControls')?.classList.toggle('hidden', !ltx25Native);
+            if (ltx25MultishotPanel) ltx25MultishotPanel.classList.toggle('hidden', !ltx25Native);
             if (ltxDetailerControls) ltxDetailerControls.classList.toggle('hidden', !ltxOnly);
             if (ltxTransitionLoraWrapper) ltxTransitionLoraWrapper.classList.toggle('hidden', !ltxOnly);
             if (ideogramMethod2Panel) ideogramMethod2Panel.classList.toggle('hidden', activePreset !== 'Ideogram4');
             updateExtrasModeUi();
             updateEmbeddingButtonState();
             if (dimensionsTitle) dimensionsTitle.innerText = isVideo ? 'Frame Dimensions' : 'Image Dimensions';
+            syncVideoMegapixelsUi();
             updateControlNetUi();
             updateOmnicineStatus();
+            syncMiniMaxH3LtxUpscaleUi({ keepFrames: true });
+            syncLtx25MultishotUi();
             arrangeSidePanelsForPreset();
             updateDirectorTabVisibility();
             updateModel3DTemplateUi();
@@ -14386,10 +14662,10 @@
             const stack = document.getElementById('generationSubStack');
             const videoPanel = document.getElementById('videoSettingsPanel');
             const controlPanel = document.getElementById('controlNetPanel');
-            if (stack && videoPanel && controlPanel && activePreset === 'LTX') {
+            if (stack && videoPanel && controlPanel && ['LTX', 'LTX25'].includes(activePreset)) {
                 stack.insertBefore(videoPanel, controlPanel);
             }
-            if (activePreset === 'LTX') {
+            if (['LTX', 'LTX25'].includes(activePreset)) {
                 const accordion = document.getElementById('videoAccordion');
                 const icon = document.getElementById('videoAccordionIcon');
                 accordion?.classList.remove('hidden');
@@ -14928,6 +15204,29 @@
             return isWanStartEndFrameMode() || isLtxLinearStartEndFrameMode() || (activePreset === 'LTX25' && currentActivity === 'img2img');
         }
 
+        function ltx25MultishotEnabled() {
+            return activePreset === 'LTX25' && !!document.getElementById('ltx25MultishotToggle')?.checked;
+        }
+
+        function ltx25MultishotCount() {
+            const requested = Number(document.getElementById('ltx25MultishotCountSelect')?.value || 3);
+            return Math.max(2, Math.min(4, Math.round(requested) || 3));
+        }
+
+        function syncLtx25MultishotUi() {
+            const panel = document.getElementById('ltx25MultishotPanel');
+            const status = document.getElementById('ltx25MultishotStatus');
+            const enabled = ltx25MultishotEnabled();
+            const count = ltx25MultishotCount();
+            panel?.classList.toggle('border-amber-500/80', enabled);
+            panel?.classList.toggle('border-amber-900/70', !enabled);
+            if (status) status.innerText = enabled
+                ? `${count} image guides are distributed across the LTX 2.5 timeline. Load Shot 1–${count}; frames stay aligned to 8n + 1.`
+                : 'Off. Enable to place each loaded image on a separate point of the LTX 2.5 timeline.';
+            syncReferenceImageSurfaces();
+            updateWorkflowPreview();
+        }
+
         function referenceExtraSlotsEnabled() {
             if (activePreset === 'Ideogram4') return true;
             if (isModel3DTemplateActive()) return true;
@@ -14945,7 +15244,11 @@
                 const mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
                 return ['r2v', 'v2v'].includes(mode) ? [2, 3, 4, 5, 6, 7, 8, 9] : [2];
             }
-            if (activePreset === 'LTX25' && currentActivity === 'img2img') return [2];
+            if (activePreset === 'LTX25' && currentActivity === 'img2img') {
+                return ltx25MultishotEnabled()
+                    ? Array.from({ length: ltx25MultishotCount() - 1 }, (_, index) => index + 2)
+                    : [2];
+            }
             if (isFlux2ImageEditTemplateActive()) return [2, 3, 4, 5];
             if (isQwenImageEditTemplateActive()) return [2, 3];
             if (isWanMotionCaptureMode()) return [2];
@@ -14968,6 +15271,7 @@
                 if (mode === 'i2v') return slot === 1 ? 'Start Frame' : 'End Frame';
                 return `Picture ${slot}`;
             }
+            if (activePreset === 'LTX25' && ltx25MultishotEnabled()) return `Shot ${slot}`;
             if (isWanMotionCaptureMode()) {
                 return slot === 1 ? 'Motion Video' : 'Target Image';
             }
@@ -15509,6 +15813,8 @@
                 'ltxDetailerToggle',
                 'ltxLatentUpscaleRefineToggle',
                 'latentUpscaleSelect',
+                'ltx25MultishotToggle',
+                'ltx25MultishotCountSelect',
                 'activeAudioToggle',
                 'controlNetEnabledToggle',
                 'controlNetModelSelect',
@@ -21584,6 +21890,7 @@
             const h3AudioCount = activePreset === 'MiniMaxH3' ? (minimaxH3ReferenceAudios || []).filter(item => item?.src).length : 0;
             const h3Mode = activePreset === 'MiniMaxH3' ? (document.getElementById('minimaxH3ModeSelect')?.value || 'i2v') : '';
             const h3ReferenceMode = ['r2v', 'v2v'].includes(h3Mode);
+            const ltx25MultiShot = activePreset === 'LTX25' && ltx25MultishotEnabled();
             const hasAnyReference = hasImage || hasBaseVideo || h3VideoCount > 0 || h3AudioCount > 0;
             const showCanvasVideo = !hasImage && hasBaseVideo && activePreset === 'LTX' && activeWorkspace === 'canvas';
             const startEndFrame = isStartEndFrameMode()
@@ -21614,7 +21921,9 @@
                 const h3MediaLabel = activePreset === 'MiniMaxH3'
                     ? ` · ${h3VideoCount} video${h3VideoCount === 1 ? '' : 's'} · ${h3AudioCount} audio${h3AudioCount === 1 ? '' : 's'}`
                     : '';
-                const extraLabel = startEndFrame
+                const extraLabel = ltx25MultiShot
+                    ? (extraCount ? ` + ${extraCount} MultiShot guide${extraCount === 1 ? '' : 's'}` : '')
+                    : startEndFrame
                     ? (extraCount ? ' + End Frame' : '')
                     : (extraCount ? ` + ${extraCount} ${activePreset === 'Ideogram4' ? 'Ideogram ref' : (activePreset === 'MiniMaxH3' ? 'H3 ref' : 'Qwen ref')}` : '');
                 loadedLabel.innerText = hasBaseVideo
@@ -21626,7 +21935,7 @@
             if (multiList) {
                 const extraSlots = referenceExtraSlotNumbers();
                 const extraRefs = referenceImageExtraDataUrls || [];
-                const showSlots = extraSlots.length > 0 || startEndFrame;
+                const showSlots = extraSlots.length > 0 || startEndFrame || (activePreset === 'MiniMaxH3' && h3ReferenceMode && (hasImage || h3VideoCount > 0 || h3AudioCount > 0));
                 multiList.classList.toggle('hidden', !showSlots);
                 multiList.classList.toggle('mt-2', !startEndFrame);
                 multiList.classList.toggle('mt-0', startEndFrame);
@@ -21747,6 +22056,18 @@
                     multiList.innerHTML += minimaxH3BoosterInlineMarkup();
                 }
                 if (activePreset === 'MiniMaxH3' && h3ReferenceMode) {
+                    const imageEditOn = minimaxH3ImageEditEnabled();
+                    multiList.innerHTML += `
+                        <label class="col-span-2 flex items-center justify-between gap-3 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted" onclick="event.preventDefault();event.stopPropagation();syncMiniMaxH3ImageEditToggle(!document.getElementById('minimaxH3ImageEditToggle')?.checked);">
+                            <span><i class="fa-solid fa-wand-magic-sparkles text-nexus-red mr-1"></i>Image Edit <span class="text-[9px] text-nexus-muted">(1 frame)</span></span>
+                            <span class="toggle-switch"><input id="minimaxH3ImageEditToggle" type="checkbox" ${imageEditOn ? 'checked' : ''} onclick="event.stopPropagation();" onchange="event.stopPropagation();syncMiniMaxH3ImageEditToggle(this.checked)"><span class="toggle-track"></span></span>
+                        </label>
+                        <label class="col-span-2 flex items-center justify-between gap-3 border border-nexus-border bg-zinc-950 px-2 py-1.5 text-[10px] font-mono text-nexus-muted">
+                            <span>Image edit steps</span>
+                            <input id="minimaxH3ImageEditStepsInput" type="number" min="1" max="100" step="1" value="${escapeHtml(document.getElementById('minimaxH3ImageEditStepsInput')?.value || '8')}" class="flat-input w-20 text-right" ${imageEditOn ? '' : 'disabled'} onchange="this.value=String(Math.max(1, Math.min(100, Number.parseInt(this.value || '8', 10) || 8)));syncMiniMaxH3ImageEditUi({ quiet: true });updateWorkflowPreview();savePresetRuntimeState(activePreset);">
+                        </label>
+                        <div id="minimaxH3ImageEditStatus" class="col-span-2 border border-nexus-border bg-black/40 px-2 py-1.5 text-[9px] font-mono leading-4 text-nexus-muted"></div>
+                    `;
                     const h3MediaCards = [
                         ...(minimaxH3ReferenceVideos || []).filter(item => item?.src).slice(0, 3).map((item, index) => ({ kind: 'video', index, label: item.label || `Reference video ${index + 1}`, icon: 'fa-film' })),
                         ...(minimaxH3ReferenceAudios || []).filter(item => item?.src).slice(0, 3).map((item, index) => ({ kind: 'audio', index, label: item.label || `Reference audio ${index + 1}`, icon: 'fa-waveform-lines' }))
@@ -21758,6 +22079,7 @@
                             <button type="button" class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center border border-nexus-border text-nexus-muted hover:text-nexus-red hover:border-nexus-red" onclick="event.preventDefault();event.stopPropagation();${item.kind === 'video' ? `removeMiniMaxH3ReferenceVideo(${item.index})` : `removeMiniMaxH3ReferenceAudio(${item.index})`};" title="Remove ${item.kind} reference"><i class="fa-solid fa-xmark text-[9px]"></i></button>
                         </div>
                     `).join('');
+                    syncMiniMaxH3ImageEditUi({ quiet: true });
                 }
             }
             if (state && !hasImage) {
@@ -23158,7 +23480,9 @@
                     setReferenceImageExtraSlot(index + 1, dataUrl, file.name || referenceSlotLabel(index + 1));
                 }
             });
-            const hint = isStartEndFrameMode()
+            const hint = activePreset === 'LTX25' && ltx25MultishotEnabled()
+                ? `Use Shot 1 through Shot ${ltx25MultishotCount()} in timeline order.`
+                : isStartEndFrameMode()
                 ? 'Use the first image as Start Frame and the second as End Frame.'
                 : (isModel3DTemplateActive()
                     ? 'Use Front, Left, Right and Back when available.'
@@ -27055,6 +27379,7 @@
             updateResizePercentGuide();
             updateInpaintAreaLabel();
             if (id === 'width' || id === 'height') syncLtxOutpaintSurfaceFromSideMenu();
+            if (id === 'width' || id === 'height') syncVideoMegapixelsUi();
             if (activePreset === 'Ideogram4' && (id === 'width' || id === 'height')) ensureIdeogramLinearGuideOutput({ force: true });
             if (isDirectorWorkspaceActive() && (id === 'width' || id === 'height')) {
                 ltxDirectorState[id] = Math.max(0, Math.round(Number(inputVal || 0)));
@@ -27074,6 +27399,7 @@
             updateResizePercentGuide();
             updateInpaintAreaLabel();
             if (id === 'width' || id === 'height') syncLtxOutpaintSurfaceFromSideMenu();
+            if (id === 'width' || id === 'height') syncVideoMegapixelsUi();
             if (activePreset === 'Ideogram4' && (id === 'width' || id === 'height')) ensureIdeogramLinearGuideOutput({ force: true });
             if (isDirectorWorkspaceActive() && (id === 'width' || id === 'height')) {
                 ltxDirectorState[id] = Math.max(0, Math.round(Number(sliderVal || 0)));
@@ -27886,9 +28212,9 @@
             'distilledLoraOneSelect', 'distilledLoraOneStrength', 'distilledLoraTwoSelect', 'distilledLoraTwoStrength',
             'widthInput', 'heightInput', 'resizePercentSlider', 'resizePercentInput', 'samplingMethodSelect', 'schedulerSelect', 'stepsSlider', 'cfgSlider', 'seedInput',
             'resizeModeSelect', 'denoiseSlider', 'batchCountInput', 'framesInput', 'fpsInput', 'secondsInput', 'motionSelect',
-            'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltx25UpscaleStepsInput', 'ltx25UpscaleCfgInput', 'extrasPostEnableToggle', 'extrasPostOutputMode', 'extrasPostUpscaleEngine', 'extrasPostUpscaleModel', 'extrasPostScale', 'extrasPostRestoreAlignToggle', 'extrasPostInterpolateToggle', 'extrasPostTargetFps', 'sideFaceRestoreToggle', 'sideFaceRestoreModel', 'sideDenoiseToggle', 'sideDenoiseModel', 'sideDenoiseStrengthSlider', 'sideDetailToggle', 'sideDetailStrengthSlider', 'refinerSelect',
-            'minimaxH3BoosterEnabled', 'minimaxH3BoosterSelect', 'minimaxH3PromptBoosterEnabled', 'minimaxH3PromptBoosterSelect',
-            'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltx25UpscaleStepsInput', 'ltx25UpscaleCfgInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
+            'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltx25UpscaleStepsInput', 'ltx25UpscaleCfgInput', 'ltx25TemporalUpscaleToggle', 'ltx25MultishotToggle', 'ltx25MultishotCountSelect', 'extrasPostEnableToggle', 'extrasPostOutputMode', 'extrasPostUpscaleEngine', 'extrasPostUpscaleModel', 'extrasPostScale', 'extrasPostRestoreAlignToggle', 'extrasPostInterpolateToggle', 'extrasPostTargetFps', 'sideFaceRestoreToggle', 'sideFaceRestoreModel', 'sideDenoiseToggle', 'sideDenoiseModel', 'sideDenoiseStrengthSlider', 'sideDetailToggle', 'sideDetailStrengthSlider', 'refinerSelect',
+            'minimaxH3BoosterEnabled', 'minimaxH3BoosterSelect', 'minimaxH3PromptBoosterEnabled', 'minimaxH3PromptBoosterSelect', 'minimaxH3LtxUpscaleToggle', 'minimaxH3LtxUpscaleFactorSelect', 'minimaxH3LtxUpscaleStepsInput', 'minimaxH3LtxUpscaleCfgInput', 'minimaxH3ImageEditToggle', 'minimaxH3ImageEditStepsInput',
+            'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltx25UpscaleStepsInput', 'ltx25UpscaleCfgInput', 'ltx25TemporalUpscaleToggle', 'ltx25MultishotToggle', 'ltx25MultishotCountSelect', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
             'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'ltxMotionTransferToggle', 'ltxMotionTransferModeSelect',
             'controlNetEnabledToggle', 'controlNetTypeSelect', 'controlNetModelSelect', 'controlNetBalanceSelect',
             'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput', 'ideogramMethod2NoiseSamplerSelect'
@@ -33987,6 +34313,7 @@
             const sideScheduler = document.getElementById('schedulerSelect')?.value || profile.scheduler || 'Simple';
             if (preset === 'MiniMaxH3') {
                 const h3Mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
+                const h3ImageEdit = minimaxH3ImageEditEnabled();
                 const h3ReferenceMode = ['r2v', 'v2v'].includes(h3Mode);
                 const h3TurboLoras = [
                     { name: document.getElementById('distilledLoraOneSelect')?.value || 'None', strength: document.getElementById('distilledLoraOneStrength')?.value || '1', role: 'Turbo' },
@@ -34007,9 +34334,19 @@
                         return true;
                     });
                 const h3VideoReferenceMode = h3Mode === 'v2v';
-                const h3AudioEnabled = !!document.getElementById('activeAudioToggle')?.checked;
+                const h3AudioEnabled = !h3ImageEdit && !!document.getElementById('activeAudioToggle')?.checked;
                 const h3BoosterEnabled = !!document.getElementById('minimaxH3BoosterEnabled')?.checked;
                 const h3Booster = document.getElementById('minimaxH3BoosterSelect')?.value || 'first_block_cache';
+                const h3PixelUpscale = !h3ImageEdit && minimaxH3LtxPixelUpscaleEnabled();
+                const h3PixelFactor = minimaxH3LtxPixelScaleFactor();
+                const h3PixelCanvasWidth = minimaxH3LtxPixelCanvas(sideWidth, h3PixelFactor);
+                const h3PixelCanvasHeight = minimaxH3LtxPixelCanvas(sideHeight, h3PixelFactor);
+                const h3DraftWidth = h3PixelUpscale ? h3PixelCanvasWidth / h3PixelFactor : sideWidth;
+                const h3DraftHeight = h3PixelUpscale ? h3PixelCanvasHeight / h3PixelFactor : sideHeight;
+                const h3PixelFrames = h3ImageEdit ? 5 : (h3PixelUpscale ? minimaxH3LtxPixelFrames(document.getElementById('framesInput')?.value) : (document.getElementById('framesInput')?.value || profile.videoSettings?.frames || 56));
+                const h3ImageEditSteps = Math.max(1, Math.min(100, Number.parseInt(document.getElementById('minimaxH3ImageEditStepsInput')?.value || '8', 10) || 8));
+                const h3PixelSteps = document.getElementById('minimaxH3LtxUpscaleStepsInput')?.value || 8;
+                const h3PixelCfg = document.getElementById('minimaxH3LtxUpscaleCfgInput')?.value || 1;
                 const h3BoosterClass = h3Booster === 'spectrum' ? 'SpectrumApplyMiniMaxH3' : 'ApplyMiniMaxH3FirstBlockCache';
                 const h3ModelBeforeBooster = h3Loras.length ? `h3_lora_${h3Loras.length}` : 'model';
                 const h3ModelSource = h3BoosterEnabled ? 'booster' : h3ModelBeforeBooster;
@@ -34027,14 +34364,19 @@
                     ...h3Loras.map((lora, index) => ({ id: `h3_lora_${index + 1}`, class_type: 'LoraLoaderModelOnly', title: `MiniMax H3 ${lora.role} LoRA ${index + 1}`, x: 390 + index * 285, y: 80, width: 260, height: 112, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: lora.name }, { name: 'strength_model', value: Number(lora.strength || 1).toFixed(2) }], color: '#4c1d95' })),
                     { id: 'noise', class_type: 'RandomNoise', title: 'MiniMax H3 Seed', x: h3BoosterX + (h3BoosterEnabled ? 330 : 0), y: 80, width: 230, height: 88, inputs: [], outputs: ['NOISE'], widgets: [{ name: 'noise_seed', value: document.getElementById('seedInput')?.value || '-1' }], color: '#2f3c4f' },
                     ...(h3BoosterEnabled ? [{ id: 'booster', class_type: h3BoosterClass, title: h3Booster === 'spectrum' ? 'MiniMax H3 Booster — Spectrum' : 'MiniMax H3 Booster — FirstBlockCache (H3 Fast)', x: h3BoosterX, y: 80, width: 300, height: 150, inputs: ['model'], outputs: ['MODEL'], widgets: h3Booster === 'spectrum' ? [{ name: 'enabled', value: true }, { name: 'blend_weight', value: 0.5 }, { name: 'offline_smoothing_replay', value: true }] : [{ name: 'mode', value: 'H3 Fast — 0.10 / max 2' }, { name: 'threshold', value: 0.1 }], color: '#9a3412' }] : []),
-                    { id: 'generator', class_type: h3Generator, title: h3GeneratorTitle, x: 410, y: 245, width: 335, height: 230, inputs: h3ReferenceMode ? ['clip', 'vae', 'audio_vae', 'ref_images', 'ref_videos', 'ref_video_audios', 'ref_audios'] : ['clip', 'vae', 'first_frame', 'last_frame'], outputs: ['CONDITIONING', 'LATENT'], widgets: [{ name: 'prompt', value: h3Prompt }, { name: 'width', value: sideWidth }, { name: 'height', value: sideHeight }, { name: 'length', value: document.getElementById('framesInput')?.value || profile.videoSettings?.frames || 56 }, ...(h3ReferenceMode ? [{ name: 'ref_image_size', value: 'match' }] : [])], color: '#0f766e' },
+                    { id: 'generator', class_type: h3Generator, title: h3ImageEdit ? 'MiniMax H3 Image Edit — REF2VA' : (h3PixelUpscale ? `${h3GeneratorTitle} — Half-Resolution Draft` : h3GeneratorTitle), x: 410, y: 245, width: 335, height: 230, inputs: h3ReferenceMode ? ['clip', 'vae', 'audio_vae', 'ref_images', 'ref_videos', 'ref_video_audios', 'ref_audios'] : ['clip', 'vae', 'first_frame', 'last_frame'], outputs: ['CONDITIONING', 'LATENT'], widgets: [{ name: 'prompt', value: h3Prompt }, { name: 'width', value: h3DraftWidth }, { name: 'height', value: h3DraftHeight }, { name: 'length', value: h3PixelFrames }, ...(h3ReferenceMode ? [{ name: 'ref_image_size', value: 'match' }] : [])], color: '#0f766e' },
                     { id: 'sampler_select', class_type: 'KSamplerSelect', title: 'MiniMax H3 Sampler', x: 790, y: 70, width: 235, height: 84, inputs: [], outputs: ['SAMPLER'], widgets: [{ name: 'sampler_name', value: sideSampler }], color: '#2f3c4f' },
-                    { id: 'scheduler', class_type: 'BasicScheduler', title: 'MiniMax H3 Scheduler', x: 790, y: 180, width: 245, height: 118, inputs: ['model'], outputs: ['SIGMAS'], widgets: [{ name: 'scheduler', value: sideScheduler }, { name: 'steps', value: sideSteps }, { name: 'denoise', value: '1.0' }], color: '#2f3c4f' },
+                    { id: 'scheduler', class_type: 'BasicScheduler', title: 'MiniMax H3 Scheduler', x: 790, y: 180, width: 245, height: 118, inputs: ['model'], outputs: ['SIGMAS'], widgets: [{ name: 'scheduler', value: sideScheduler }, { name: 'steps', value: h3ImageEdit ? h3ImageEditSteps : sideSteps }, { name: 'denoise', value: '1.0' }], color: '#2f3c4f' },
                     { id: 'guider', class_type: 'BasicGuider', title: 'MiniMax H3 Guider', x: 790, y: 335, width: 235, height: 98, inputs: ['model', 'conditioning'], outputs: ['GUIDER'], widgets: [], color: '#0f766e' },
                     { id: 'sample', class_type: 'SamplerCustomAdvanced', title: 'MiniMax H3 Sampling', x: 1075, y: 210, width: 295, height: 160, inputs: ['noise', 'guider', 'sampler', 'sigmas', 'latent_image'], outputs: ['LATENT'], widgets: [], color: '#2f3c4f' },
                     { id: 'decode_video', class_type: 'VAEDecode', title: 'MiniMax H3 Video Decode', x: 1420, y: 200, width: 245, height: 105, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [], color: '#62305a' },
-                    { id: 'create_video', class_type: 'CreateVideo', title: 'MiniMax H3 Create Video', x: 1710, y: 220, width: 245, height: 112, inputs: h3AudioEnabled ? ['images', 'audio'] : ['images'], outputs: ['VIDEO'], widgets: [{ name: 'fps', value: document.getElementById('fpsInput')?.value || 24 }], color: '#3f3f46' },
-                    { id: 'save', class_type: 'SaveVideo', title: 'Save MiniMax H3 Video', x: 2000, y: 220, width: 235, height: 105, inputs: ['video'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'video/MiniMax_H3' }], color: '#3f3f46' }
+                    ...(h3ImageEdit ? [
+                        { id: 'image_first', class_type: 'ImageFromBatch', title: 'Take First H3 Frame', x: 1710, y: 220, width: 250, height: 105, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'batch_index', value: 0 }, { name: 'length', value: 1 }], color: '#0e7490' },
+                        { id: 'save_image', class_type: 'SaveImage', title: 'Save MiniMax H3 Edited Image', x: 2010, y: 220, width: 275, height: 105, inputs: ['images'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'image/MiniMax_H3_ImageEdit' }], color: '#3f3f46' }
+                    ] : [
+                        { id: 'create_video', class_type: 'CreateVideo', title: h3PixelUpscale ? 'Create H3 + LTX 2.5 Latent Upscale Video' : 'MiniMax H3 Create Video', x: h3PixelUpscale ? 3940 : 1710, y: 220, width: 275, height: 112, inputs: h3AudioEnabled ? ['images', 'audio'] : ['images'], outputs: ['VIDEO'], widgets: [{ name: 'fps', value: document.getElementById('fpsInput')?.value || 24 }], color: '#3f3f46' },
+                        { id: 'save', class_type: 'SaveVideo', title: h3PixelUpscale ? 'Save H3 + LTX 2.5 Latent Upscale Video' : 'Save MiniMax H3 Video', x: h3PixelUpscale ? 4260 : 2000, y: 220, width: 275, height: 105, inputs: ['video'], outputs: [], widgets: [{ name: 'filename_prefix', value: h3PixelUpscale ? `video/MiniMax_H3_LTX25_Latent_x${h3PixelFactor}` : 'video/MiniMax_H3' }], color: '#3f3f46' }
+                    ])
                 ];
                 const h3Links = [
                     { from_node: 'clip', from_slot: 0, to_node: 'generator', to_slot: 0, type: 'CLIP' },
@@ -34051,9 +34393,100 @@
                     { from_node: 'generator', from_slot: 1, to_node: 'sample', to_slot: 4, type: 'LATENT' },
                     { from_node: 'sample', from_slot: 0, to_node: 'decode_video', to_slot: 0, type: 'LATENT' },
                     { from_node: 'video_vae', from_slot: 0, to_node: 'decode_video', to_slot: 1, type: 'VAE' },
-                    { from_node: 'decode_video', from_slot: 0, to_node: 'create_video', to_slot: 0, type: 'IMAGE' },
-                    { from_node: 'create_video', from_slot: 0, to_node: 'save', to_slot: 0, type: 'VIDEO' }
+                    ...(h3ImageEdit
+                        ? [{ from_node: 'decode_video', from_slot: 0, to_node: 'image_first', to_slot: 0, type: 'IMAGE' }, { from_node: 'image_first', from_slot: 0, to_node: 'save_image', to_slot: 0, type: 'IMAGE' }]
+                        : [...(!h3PixelUpscale ? [{ from_node: 'decode_video', from_slot: 0, to_node: 'create_video', to_slot: 0, type: 'IMAGE' }] : []), { from_node: 'create_video', from_slot: 0, to_node: 'save', to_slot: 0, type: 'VIDEO' }])
                 ];
+                if (false && h3PixelUpscale) {
+                    const h3NeedsOutputPad = Number(h3PixelCanvasWidth) !== Number(sideWidth) || Number(h3PixelCanvasHeight) !== Number(sideHeight);
+                    const h3PixelOutput = h3NeedsOutputPad ? 'ltx_output_pad' : 'ltx_decode';
+                    h3Nodes.push(
+                        { id: 'ltx_model', class_type: 'CheckpointLoaderSimple', title: 'Automatic Local LTX 2.3 Checkpoint', x: 1720, y: 40, width: 290, height: 95, inputs: [], outputs: ['MODEL', 'CLIP', 'VAE'], widgets: [{ name: 'ckpt_name', value: 'Automatic compatible LTX 2.3 checkpoint' }], color: '#075985' },
+                        { id: 'ltx_text', class_type: 'LTXAVTextEncoderLoader', title: 'LTX 2.3 Gemma + Projection', x: 1720, y: 160, width: 290, height: 105, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'text_encoder', value: 'Automatic Gemma 3' }, { name: 'ckpt_name', value: 'Automatic LTX 2.3 projection' }], color: '#075985' },
+                        { id: 'ltx_video_vae', class_type: 'VAELoader', title: 'LTX 2.3 Video VAE', x: 1720, y: 290, width: 270, height: 90, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: 'Automatic LTX 2.3 video VAE' }], color: '#62305a' },
+                        { id: 'ltx_distill', class_type: 'LoraLoaderModelOnly', title: 'LTX 2.3 Distilled 384 LoRA', x: 2040, y: 40, width: 285, height: 105, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'strength_model', value: 0.5 }], color: '#4c1d95' },
+                        { id: 'ltx_pixel_lora', class_type: 'LTXICLoRALoaderModelOnly', title: `Pixel Spatial IC-LoRA ×${h3PixelFactor}`, x: 2370, y: 40, width: 285, height: 105, inputs: ['model'], outputs: ['MODEL', 'latent_downscale_factor'], widgets: [{ name: 'strength_model', value: 1 }], color: '#0e7490' },
+                        { id: 'ltx_positive', class_type: 'CLIPTextEncode', title: 'LTX Pixel Upscale Prompt', x: 2040, y: 180, width: 280, height: 100, inputs: ['clip'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: h3Prompt }], color: '#0f766e' },
+                        { id: 'ltx_negative', class_type: 'CLIPTextEncode', title: 'LTX Pixel Upscale Negative', x: 2040, y: 305, width: 280, height: 100, inputs: ['clip'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: negativeText }], color: '#0f766e' },
+                        { id: 'ltx_condition', class_type: 'LTXVConditioning', title: 'LTX FPS Conditioning', x: 2370, y: 210, width: 280, height: 95, inputs: ['positive', 'negative'], outputs: ['CONDITIONING', 'CONDITIONING'], widgets: [{ name: 'frame_rate', value: document.getElementById('fpsInput')?.value || 24 }], color: '#0f766e' },
+                        { id: 'ltx_resize', class_type: 'ResizeAndPadImage', title: 'Fit H3 Draft to LTX Canvas — No Stretch', x: 2040, y: 470, width: 295, height: 112, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'target_width', value: h3PixelCanvasWidth }, { name: 'target_height', value: h3PixelCanvasHeight }, { name: 'padding_color', value: 'white' }], color: '#854d0e' },
+                        { id: 'ltx_encode', class_type: 'VAEEncode', title: 'Encode H3 Frames as LTX Guide', x: 2380, y: 470, width: 275, height: 90, inputs: ['pixels', 'vae'], outputs: ['LATENT'], widgets: [], color: '#62305a' },
+                        { id: 'ltx_guide', class_type: 'LTXAddVideoICLoRAGuide', title: 'Guide LTX With H3 Draft', x: 2700, y: 305, width: 305, height: 150, inputs: ['positive', 'negative', 'vae', 'latent', 'image', 'latent_downscale_factor'], outputs: ['CONDITIONING', 'CONDITIONING', 'LATENT'], widgets: [{ name: 'frame_idx', value: 0 }, { name: 'strength', value: 1 }, { name: 'crop', value: 'disabled' }], color: '#0e7490' },
+                        { id: 'ltx_noise', class_type: 'RandomNoise', title: 'LTX Upscale Seed', x: 2700, y: 55, width: 250, height: 82, inputs: [], outputs: ['NOISE'], widgets: [{ name: 'noise_seed', value: 'H3 seed + 1' }], color: '#2f3c4f' },
+                        { id: 'ltx_sampler', class_type: 'KSamplerSelect', title: 'LTX Upscale Sampler', x: 2700, y: 160, width: 250, height: 82, inputs: [], outputs: ['SAMPLER'], widgets: [{ name: 'sampler_name', value: 'euler_cfg_pp' }], color: '#2f3c4f' },
+                        { id: 'ltx_sigmas', class_type: Number(h3PixelSteps) === 8 ? 'ManualSigmas' : 'LTXVScheduler', title: Number(h3PixelSteps) === 8 ? 'Official LTX 2.3 8-Step Sigmas' : 'LTX Pixel Upscale Scheduler', x: 2700, y: 490, width: 305, height: 105, inputs: Number(h3PixelSteps) === 8 ? [] : ['latent'], outputs: ['SIGMAS'], widgets: Number(h3PixelSteps) === 8 ? [{ name: 'sigmas', value: 'Official distilled 8-step schedule' }] : [{ name: 'steps', value: h3PixelSteps }], color: '#2f3c4f' },
+                        { id: 'ltx_guider', class_type: 'CFGGuider', title: 'LTX Pixel Upscale CFG', x: 3055, y: 235, width: 275, height: 110, inputs: ['model', 'positive', 'negative'], outputs: ['GUIDER'], widgets: [{ name: 'cfg', value: h3PixelCfg }], color: '#0f766e' },
+                        { id: 'ltx_sample', class_type: 'SamplerCustomAdvanced', title: `LTX Pixel Spatial Refiner — ${h3PixelSteps} Steps`, x: 3375, y: 250, width: 305, height: 155, inputs: ['noise', 'guider', 'sampler', 'sigmas', 'latent_image'], outputs: ['LATENT'], widgets: [], color: '#2f3c4f' },
+                        { id: 'ltx_crop', class_type: 'LTXVCropGuides', title: 'Crop Pixel Guides', x: 3375, y: 445, width: 275, height: 92, inputs: ['positive', 'negative', 'latent'], outputs: ['CONDITIONING', 'CONDITIONING', 'LATENT'], widgets: [], color: '#0e7490' },
+                        { id: 'ltx_decode', class_type: 'LTXVTiledVAEDecode', title: 'Decode LTX Pixel Upscale', x: 3695, y: 335, width: 275, height: 130, inputs: ['vae', 'latents'], outputs: ['IMAGE'], widgets: [{ name: 'horizontal_tiles', value: 2 }, { name: 'vertical_tiles', value: 2 }, { name: 'overlap', value: 6 }], color: '#62305a' }
+                    );
+                    if (h3NeedsOutputPad) h3Nodes.push({ id: 'ltx_output_pad', class_type: 'ResizeAndPadImage', title: 'Match Requested Output — No Stretch', x: 4010, y: 410, width: 280, height: 108, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'target_width', value: sideWidth }, { name: 'target_height', value: sideHeight }, { name: 'padding_color', value: 'white' }], color: '#854d0e' });
+                    h3Links.push(
+                        { from_node: 'ltx_model', from_slot: 0, to_node: 'ltx_distill', to_slot: 0, type: 'MODEL' },
+                        { from_node: 'ltx_distill', from_slot: 0, to_node: 'ltx_pixel_lora', to_slot: 0, type: 'MODEL' },
+                        { from_node: 'ltx_text', from_slot: 0, to_node: 'ltx_positive', to_slot: 0, type: 'CLIP' },
+                        { from_node: 'ltx_text', from_slot: 0, to_node: 'ltx_negative', to_slot: 0, type: 'CLIP' },
+                        { from_node: 'ltx_positive', from_slot: 0, to_node: 'ltx_condition', to_slot: 0, type: 'CONDITIONING' },
+                        { from_node: 'ltx_negative', from_slot: 0, to_node: 'ltx_condition', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'decode_video', from_slot: 0, to_node: 'ltx_resize', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'ltx_resize', from_slot: 0, to_node: 'ltx_encode', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'ltx_video_vae', from_slot: 0, to_node: 'ltx_encode', to_slot: 1, type: 'VAE' },
+                        { from_node: 'ltx_condition', from_slot: 0, to_node: 'ltx_guide', to_slot: 0, type: 'CONDITIONING' },
+                        { from_node: 'ltx_condition', from_slot: 1, to_node: 'ltx_guide', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'ltx_video_vae', from_slot: 0, to_node: 'ltx_guide', to_slot: 2, type: 'VAE' },
+                        { from_node: 'ltx_encode', from_slot: 0, to_node: 'ltx_guide', to_slot: 3, type: 'LATENT' },
+                        { from_node: 'ltx_resize', from_slot: 0, to_node: 'ltx_guide', to_slot: 4, type: 'IMAGE' },
+                        { from_node: 'ltx_pixel_lora', from_slot: 1, to_node: 'ltx_guide', to_slot: 5, type: 'FLOAT' },
+                        { from_node: 'ltx_pixel_lora', from_slot: 0, to_node: 'ltx_guider', to_slot: 0, type: 'MODEL' },
+                        { from_node: 'ltx_guide', from_slot: 0, to_node: 'ltx_guider', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'ltx_guide', from_slot: 1, to_node: 'ltx_guider', to_slot: 2, type: 'CONDITIONING' },
+                        { from_node: 'ltx_noise', from_slot: 0, to_node: 'ltx_sample', to_slot: 0, type: 'NOISE' },
+                        { from_node: 'ltx_guider', from_slot: 0, to_node: 'ltx_sample', to_slot: 1, type: 'GUIDER' },
+                        { from_node: 'ltx_sampler', from_slot: 0, to_node: 'ltx_sample', to_slot: 2, type: 'SAMPLER' },
+                        { from_node: 'ltx_sigmas', from_slot: 0, to_node: 'ltx_sample', to_slot: 3, type: 'SIGMAS' },
+                        { from_node: 'ltx_guide', from_slot: 2, to_node: 'ltx_sample', to_slot: 4, type: 'LATENT' },
+                        { from_node: 'ltx_guide', from_slot: 0, to_node: 'ltx_crop', to_slot: 0, type: 'CONDITIONING' },
+                        { from_node: 'ltx_guide', from_slot: 1, to_node: 'ltx_crop', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'ltx_sample', from_slot: 0, to_node: 'ltx_crop', to_slot: 2, type: 'LATENT' },
+                        { from_node: 'ltx_video_vae', from_slot: 0, to_node: 'ltx_decode', to_slot: 0, type: 'VAE' },
+                        { from_node: 'ltx_crop', from_slot: 2, to_node: 'ltx_decode', to_slot: 1, type: 'LATENT' },
+                        ...(h3NeedsOutputPad ? [{ from_node: 'ltx_decode', from_slot: 0, to_node: 'ltx_output_pad', to_slot: 0, type: 'IMAGE' }] : []),
+                        { from_node: h3PixelOutput, from_slot: 0, to_node: 'create_video', to_slot: 0, type: 'IMAGE' }
+                    );
+                }
+                if (h3PixelUpscale) {
+                    const h3NeedsOutputPad = Number(h3PixelCanvasWidth) !== Number(sideWidth) || Number(h3PixelCanvasHeight) !== Number(sideHeight);
+                    const h3LtxOutput = h3NeedsOutputPad ? 'ltx25_output_pad' : 'ltx25_decode';
+                    h3Nodes.push(
+                        { id: 'ltx25_model', class_type: 'UNETLoader', title: 'Automatic Local LTX 2.5 Transformer', x: 1720, y: 35, width: 290, height: 92, inputs: [], outputs: ['MODEL'], widgets: [{ name: 'unet_name', value: 'Automatic compatible LTX 2.5 transformer' }], color: '#075985' },
+                        { id: 'ltx25_text', class_type: 'CLIPLoader', title: 'LTX 2.5 Gemma 4', x: 1720, y: 150, width: 290, height: 98, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'type', value: 'ltxv' }], color: '#075985' },
+                        { id: 'ltx25_vae', class_type: 'VAELoader', title: 'LTX 2.5 Convolutional Video VAE', x: 1720, y: 275, width: 290, height: 92, inputs: [], outputs: ['VAE'], widgets: [], color: '#62305a' },
+                        { id: 'ltx25_pos', class_type: 'CLIPTextEncode', title: 'LTX 2.5 Positive Prompt', x: 2040, y: 120, width: 265, height: 88, inputs: ['clip'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: h3Prompt }], color: '#0f766e' },
+                        { id: 'ltx25_neg', class_type: 'CLIPTextEncode', title: 'LTX 2.5 Negative Prompt', x: 2040, y: 225, width: 265, height: 88, inputs: ['clip'], outputs: ['CONDITIONING'], widgets: [{ name: 'text', value: negativeText }], color: '#0f766e' },
+                        { id: 'ltx25_cond', class_type: 'LTXVConditioning', title: 'LTX 2.5 FPS Conditioning', x: 2340, y: 160, width: 275, height: 92, inputs: ['positive', 'negative'], outputs: ['CONDITIONING', 'CONDITIONING'], widgets: [{ name: 'frame_rate', value: document.getElementById('fpsInput')?.value || 24 }], color: '#0f766e' },
+                        { id: 'ltx25_fit', class_type: 'ResizeAndPadImage', title: 'Fit H3 Frames To LTX Base - No Stretch', x: 2040, y: 425, width: 290, height: 102, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'target_width', value: h3DraftWidth }, { name: 'target_height', value: h3DraftHeight }], color: '#854d0e' },
+                        { id: 'ltx25_preprocess', class_type: 'LTXVPreprocess', title: 'Preprocess H3 Draft Guide', x: 2370, y: 435, width: 250, height: 82, inputs: ['image'], outputs: ['IMAGE'], widgets: [], color: '#0e7490' },
+                        { id: 'ltx25_empty', class_type: 'EmptyLTXVLatentVideo', title: 'LTX 2.5 Base Video Latent', x: 2660, y: 365, width: 270, height: 92, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'width', value: h3DraftWidth }, { name: 'height', value: h3DraftHeight }, { name: 'length', value: h3PixelFrames }], color: '#62305a' },
+                        { id: 'ltx25_guide', class_type: 'LTXVAddGuide', title: 'Create LTX 2.5 Latent From H3 Guide', x: 2965, y: 295, width: 305, height: 142, inputs: ['positive', 'negative', 'vae', 'latent', 'image'], outputs: ['CONDITIONING', 'CONDITIONING', 'LATENT'], widgets: [{ name: 'strength', value: 1 }], color: '#0e7490' },
+                        { id: 'ltx25_sample', class_type: 'SamplerCustomAdvanced', title: `LTX 2.5 Guided Sampling - ${h3PixelSteps} Steps`, x: 3320, y: 265, width: 295, height: 125, inputs: ['noise', 'guider', 'sampler', 'sigmas', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'cfg', value: h3PixelCfg }], color: '#2f3c4f' },
+                        { id: 'ltx25_separate', class_type: 'LTXVSeparateAVLatent', title: 'Separate LTX 2.5 Video Latent', x: 3650, y: 285, width: 265, height: 86, inputs: ['av_latent'], outputs: ['video_latent'], widgets: [], color: '#0e7490' },
+                        { id: 'ltx25_upscale_model', class_type: 'LatentUpscaleModelLoader', title: 'LTX 2.5 Native Spatial x2 Model', x: 3945, y: 80, width: 285, height: 90, inputs: [], outputs: ['UPSCALE_MODEL'], widgets: [], color: '#075985' },
+                        { id: 'ltx25_upscale', class_type: 'LTXVLatentUpsampler', title: `LTX 2.5 Native Latent Upscale x${h3PixelFactor}`, x: 3945, y: 245, width: 290, height: 95, inputs: ['samples', 'upscale_model', 'vae'], outputs: ['LATENT'], widgets: [], color: '#0e7490' },
+                        { id: 'ltx25_decode', class_type: 'VAEDecodeTiled', title: 'Decode LTX 2.5 Upscaled Video', x: 4270, y: 245, width: 275, height: 98, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [], color: '#62305a' }
+                    );
+                    if (h3NeedsOutputPad) h3Nodes.push({ id: 'ltx25_output_pad', class_type: 'ResizeAndPadImage', title: 'Match Requested Output - No Stretch', x: 4575, y: 245, width: 275, height: 98, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'target_width', value: sideWidth }, { name: 'target_height', value: sideHeight }], color: '#854d0e' });
+                    h3Links.push(
+                        { from_node: 'decode_video', from_slot: 0, to_node: 'ltx25_fit', to_slot: 0, type: 'IMAGE' }, { from_node: 'ltx25_fit', from_slot: 0, to_node: 'ltx25_preprocess', to_slot: 0, type: 'IMAGE' },
+                        { from_node: 'ltx25_text', from_slot: 0, to_node: 'ltx25_pos', to_slot: 0, type: 'CLIP' }, { from_node: 'ltx25_text', from_slot: 0, to_node: 'ltx25_neg', to_slot: 0, type: 'CLIP' },
+                        { from_node: 'ltx25_pos', from_slot: 0, to_node: 'ltx25_cond', to_slot: 0, type: 'CONDITIONING' }, { from_node: 'ltx25_neg', from_slot: 0, to_node: 'ltx25_cond', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'ltx25_cond', from_slot: 0, to_node: 'ltx25_guide', to_slot: 0, type: 'CONDITIONING' }, { from_node: 'ltx25_cond', from_slot: 1, to_node: 'ltx25_guide', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'ltx25_vae', from_slot: 0, to_node: 'ltx25_guide', to_slot: 2, type: 'VAE' }, { from_node: 'ltx25_empty', from_slot: 0, to_node: 'ltx25_guide', to_slot: 3, type: 'LATENT' }, { from_node: 'ltx25_preprocess', from_slot: 0, to_node: 'ltx25_guide', to_slot: 4, type: 'IMAGE' },
+                        { from_node: 'ltx25_guide', from_slot: 2, to_node: 'ltx25_sample', to_slot: 4, type: 'LATENT' }, { from_node: 'ltx25_sample', from_slot: 0, to_node: 'ltx25_separate', to_slot: 0, type: 'LATENT' },
+                        { from_node: 'ltx25_separate', from_slot: 0, to_node: 'ltx25_upscale', to_slot: 0, type: 'LATENT' }, { from_node: 'ltx25_upscale_model', from_slot: 0, to_node: 'ltx25_upscale', to_slot: 1, type: 'UPSCALE_MODEL' }, { from_node: 'ltx25_vae', from_slot: 0, to_node: 'ltx25_upscale', to_slot: 2, type: 'VAE' },
+                        { from_node: 'ltx25_upscale', from_slot: 0, to_node: 'ltx25_decode', to_slot: 0, type: 'LATENT' }, { from_node: 'ltx25_vae', from_slot: 0, to_node: 'ltx25_decode', to_slot: 1, type: 'VAE' },
+                        ...(h3NeedsOutputPad ? [{ from_node: 'ltx25_decode', from_slot: 0, to_node: 'ltx25_output_pad', to_slot: 0, type: 'IMAGE' }] : []), { from_node: h3LtxOutput, from_slot: 0, to_node: 'create_video', to_slot: 0, type: 'IMAGE' }
+                    );
+                }
                 if (h3ReferenceMode) {
                     [0, 1, 2, 3, 4, 5, 6, 7, 8].forEach(index => {
                         const id = `reference_${index + 1}`;
@@ -34114,6 +34547,16 @@
                 const ltx25Upscale = document.getElementById('latentUpscaleSelect')?.value || 'Automatic';
                 const ltx25UseUpscale = !/^(automatic|auto|none|off|disabled)$/i.test(ltx25Upscale);
                 const ltx25Refine = ltx25UseUpscale && !!document.getElementById('ltxLatentUpscaleRefineToggle')?.checked;
+                const ltx25Temporal = !!document.getElementById('ltx25TemporalUpscaleToggle')?.checked;
+                const ltx25Frames = alignedVideoFrames('LTX25', document.getElementById('secondsInput')?.value || profile.videoSettings?.seconds || 3, document.getElementById('fpsInput')?.value || profile.videoSettings?.fps || 12);
+                const ltx25MultiShot = currentActivity === 'img2img' && ltx25MultishotEnabled();
+                const ltx25ShotCount = ltx25MultiShot ? ltx25MultishotCount() : 0;
+                const ltx25ShotReferences = [referenceImageDataUrl, ...(referenceImageExtraDataUrls || []).map(item => item?.src)]
+                    .slice(0, ltx25ShotCount);
+                const ltx25ShotFrames = Array.from({ length: ltx25ShotCount }, (_, index) => {
+                    const raw = Math.round((Math.max(9, ltx25Frames) - 1) * index / Math.max(1, ltx25ShotCount - 1));
+                    return Math.min(ltx25Frames - 1, Math.max(0, Math.round(raw / 8) * 8));
+                });
                 const ltx25Loras = [
                     { name: document.getElementById('distilledLoraOneSelect')?.value || 'None', strength: document.getElementById('distilledLoraOneStrength')?.value || '1', role: 'Turbo' },
                     { name: document.getElementById('distilledLoraTwoSelect')?.value || 'None', strength: document.getElementById('distilledLoraTwoStrength')?.value || '1', role: 'Turbo' },
@@ -34127,7 +34570,6 @@
                     return true;
                 });
                 const ltx25ModelTail = ltx25UniqueLoras.length ? `ltx25_lora_${ltx25UniqueLoras.length}` : 'model';
-                const ltx25Frames = alignedVideoFrames('LTX25', document.getElementById('secondsInput')?.value || profile.videoSettings?.seconds || 3, document.getElementById('fpsInput')?.value || profile.videoSettings?.fps || 12);
                 const ltx25Nodes = [
                     { id: 'model', class_type: 'UNETLoader', title: 'Load LTX 2.5 Transformer', x: 60, y: 80, width: 280, height: 110, inputs: [], outputs: ['MODEL'], widgets: [{ name: 'unet_name', value: selectedModelName }, { name: 'weight_dtype', value: 'default' }], color: '#1f3b63' },
                     ...ltx25UniqueLoras.map((lora, index) => ({ id: `ltx25_lora_${index + 1}`, class_type: 'LoraLoaderModelOnly', title: `LTX 2.5 ${lora.role} LoRA ${index + 1}`, x: 370 + index * 280, y: 80, width: 255, height: 108, inputs: ['model'], outputs: ['MODEL'], widgets: [{ name: 'lora_name', value: lora.name }, { name: 'strength_model', value: Number(lora.strength || 1).toFixed(2) }], color: '#4c1d95' })),
@@ -34141,12 +34583,13 @@
                     { id: 'sampler', class_type: 'SamplerCustomAdvanced', title: 'LTX 2.5 Base Sampling', x: 980, y: 420, width: 280, height: 145, inputs: ['noise', 'guider', 'sampler', 'sigmas', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'steps', value: sideSteps }, { name: 'cfg', value: sideCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }], color: '#2f3c4f' },
                     { id: 'split', class_type: 'LTXVSeparateAVLatent', title: 'Separate LTX 2.5 AV', x: 1310, y: 430, width: 240, height: 100, inputs: ['av_latent'], outputs: ['VIDEO_LATENT', 'AUDIO_LATENT'], widgets: [], color: '#4338ca' },
                     ...(ltx25UseUpscale ? [{ id: 'upscale_model', class_type: 'LatentUpscaleModelLoader', title: 'LTX 2.5 Native ×2 Upscale Model', x: 1610, y: 420, width: 275, height: 102, inputs: [], outputs: ['UPSCALE_MODEL'], widgets: [{ name: 'model_name', value: ltx25Upscale }], color: '#4c1d95' }, { id: 'upscale', class_type: 'LTXVLatentUpsampler', title: 'LTX 2.5 Native Latent ×2', x: 1920, y: 420, width: 285, height: 108, inputs: ['samples', 'upscale_model', 'vae'], outputs: ['VIDEO_LATENT'], widgets: [{ name: 'upscale_steps', value: document.getElementById('ltx25UpscaleStepsInput')?.value || 4 }, { name: 'upscale_cfg', value: document.getElementById('ltx25UpscaleCfgInput')?.value || 1 }], color: '#4c1d95' }] : []),
+                    ...(ltx25Temporal ? [{ id: 'temporal_model', class_type: 'LatentUpscaleModelLoader', title: 'LTX 2.5 Native ×2 Temporal Model', x: 2215, y: 570, width: 280, height: 96, inputs: [], outputs: ['UPSCALE_MODEL'], widgets: [], color: '#4c1d95' }, { id: 'temporal_upscale', class_type: 'LTXVLatentUpsampler', title: 'LTX 2.5 Native Temporal ×2', x: 2525, y: 570, width: 275, height: 96, inputs: ['samples', 'upscale_model', 'vae'], outputs: ['VIDEO_LATENT'], widgets: [{ name: 'output_fps', value: `${document.getElementById('fpsInput')?.value || 12} × 2` }], color: '#0e7490' }] : []),
                     { id: 'decode_video', class_type: 'VAEDecodeTiled', title: 'Decode LTX 2.5 Video', x: 2250, y: 420, width: 250, height: 108, inputs: ['samples', 'vae'], outputs: ['IMAGE'], widgets: [], color: '#62305a' },
                     ...(ltx25AudioEnabled ? [{ id: 'decode_audio', class_type: 'LTXVAudioVAEDecode', title: 'Decode LTX 2.5 Audio', x: 1930, y: 575, width: 250, height: 104, inputs: ['samples', 'audio_vae'], outputs: ['AUDIO'], widgets: [], color: '#62305a' }] : []),
                     { id: 'create_video', class_type: 'CreateVideo', title: 'Create LTX 2.5 Video', x: 2550, y: 425, width: 245, height: 104, inputs: ltx25AudioEnabled ? ['images', 'audio'] : ['images'], outputs: ['VIDEO'], widgets: [{ name: 'fps', value: document.getElementById('fpsInput')?.value || 12 }], color: '#3f3f46' },
                     { id: 'save', class_type: 'SaveVideo', title: 'Save LTX 2.5 Video', x: 2840, y: 425, width: 235, height: 104, inputs: ['video'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'NEXUS_BTA_LTX25' }], color: '#3f3f46' }
                 ];
-                const ltx25VideoTail = ltx25UseUpscale ? 'upscale' : 'split';
+                const ltx25VideoTail = ltx25Temporal ? 'temporal_upscale' : (ltx25UseUpscale ? 'upscale' : 'split');
                 const ltx25Links = [
                     ...ltx25UniqueLoras.map((lora, index) => ({ from_node: index === 0 ? 'model' : `ltx25_lora_${index}`, from_slot: 0, to_node: `ltx25_lora_${index + 1}`, to_slot: 0, type: 'MODEL' })),
                     { from_node: 'audio_vae', from_slot: 0, to_node: 'audio_latent', to_slot: 0, type: 'VAE' },
@@ -34155,13 +34598,55 @@
                     { from_node: 'concat', from_slot: 0, to_node: 'sampler', to_slot: 4, type: 'LATENT' },
                     { from_node: 'sampler', from_slot: 0, to_node: 'split', to_slot: 0, type: 'LATENT' },
                     ...(ltx25UseUpscale ? [{ from_node: 'split', from_slot: 0, to_node: 'upscale', to_slot: 0, type: 'VIDEO_LATENT' }, { from_node: 'upscale_model', from_slot: 0, to_node: 'upscale', to_slot: 1, type: 'UPSCALE_MODEL' }, { from_node: 'video_vae', from_slot: 0, to_node: 'upscale', to_slot: 2, type: 'VAE' }] : []),
+                    ...(ltx25Temporal ? [{ from_node: ltx25UseUpscale ? 'upscale' : 'split', from_slot: 0, to_node: 'temporal_upscale', to_slot: 0, type: 'VIDEO_LATENT' }, { from_node: 'temporal_model', from_slot: 0, to_node: 'temporal_upscale', to_slot: 1, type: 'UPSCALE_MODEL' }, { from_node: 'video_vae', from_slot: 0, to_node: 'temporal_upscale', to_slot: 2, type: 'VAE' }] : []),
                     { from_node: ltx25VideoTail, from_slot: 0, to_node: 'decode_video', to_slot: 0, type: 'VIDEO_LATENT' },
                     { from_node: 'video_vae', from_slot: 0, to_node: 'decode_video', to_slot: 1, type: 'VAE' },
                     { from_node: 'decode_video', from_slot: 0, to_node: 'create_video', to_slot: 0, type: 'IMAGE' },
                     ...(ltx25AudioEnabled ? [{ from_node: 'split', from_slot: 1, to_node: 'decode_audio', to_slot: 0, type: 'AUDIO_LATENT' }, { from_node: 'audio_vae', from_slot: 0, to_node: 'decode_audio', to_slot: 1, type: 'VAE' }, { from_node: 'decode_audio', from_slot: 0, to_node: 'create_video', to_slot: 1, type: 'AUDIO' }] : []),
                     { from_node: 'create_video', from_slot: 0, to_node: 'save', to_slot: 0, type: 'VIDEO' }
                 ];
-                return { nodes: ltx25Nodes, links: ltx25Links, groups: [{ id: 'ltx25', title: 'LTX 2.5 — native AV / optional latent upscale', x: 35, y: 45, width: 3040, height: 710, color: '#3f789e' }], width: 3140, height: 810, nexus_preset: preset };
+                if (ltx25MultiShot) {
+                    // Match the native backend route: every loaded shot becomes
+                    // LTXVPreprocess → LTXVAddGuide, carrying its conditioning
+                    // and latent forward to the next guide on the AV timeline.
+                    const baseLatentLink = ltx25Links.findIndex(link => link.from_node === 'video_latent' && link.to_node === 'concat' && link.to_slot === 0);
+                    if (baseLatentLink >= 0) ltx25Links.splice(baseLatentLink, 1);
+                    let priorConditioningNode = 'conditioning';
+                    let priorLatentNode = 'video_latent';
+                    for (let index = 0; index < ltx25ShotCount; index += 1) {
+                        const ordinal = index + 1;
+                        const imageId = `ltx25_shot_${ordinal}`;
+                        const preprocessId = `ltx25_shot_${ordinal}_preprocess`;
+                        const guideId = `ltx25_shot_${ordinal}_guide`;
+                        const frameIndex = ltx25ShotFrames[index] ?? 0;
+                        ltx25Nodes.push(
+                            { id: imageId, class_type: 'LoadImage', title: `MultiShot ${ordinal} / ${ltx25ShotCount}`, x: 70 + index * 310, y: 650, width: 250, height: 100, inputs: [], outputs: ['IMAGE', 'MASK'], widgets: [{ name: 'image', value: ltx25ShotReferences[index] ? `Shot ${ordinal} loaded` : `Load Shot ${ordinal}` }], color: '#164e63' },
+                            { id: preprocessId, class_type: 'LTXVPreprocess', title: `Shot ${ordinal} Preprocess`, x: 70 + index * 310, y: 790, width: 250, height: 96, inputs: ['image'], outputs: ['IMAGE'], widgets: [{ name: 'img_compression', value: 35 }], color: '#0f766e' },
+                            { id: guideId, class_type: 'LTXVAddGuide', title: `Guide ${ordinal}: frame ${frameIndex}`, x: 70 + index * 310, y: 930, width: 270, height: 132, inputs: ['positive', 'negative', 'vae', 'latent', 'image'], outputs: ['CONDITIONING', 'CONDITIONING', 'LATENT'], widgets: [{ name: 'frame_idx', value: frameIndex }, { name: 'strength', value: 1 }], color: '#7c3d12' }
+                        );
+                        ltx25Links.push(
+                            { from_node: imageId, from_slot: 0, to_node: preprocessId, to_slot: 0, type: 'IMAGE' },
+                            { from_node: priorConditioningNode, from_slot: 0, to_node: guideId, to_slot: 0, type: 'CONDITIONING' },
+                            { from_node: priorConditioningNode, from_slot: 1, to_node: guideId, to_slot: 1, type: 'CONDITIONING' },
+                            { from_node: 'video_vae', from_slot: 0, to_node: guideId, to_slot: 2, type: 'VAE' },
+                            { from_node: priorLatentNode, from_slot: 0, to_node: guideId, to_slot: 3, type: 'LATENT' },
+                            { from_node: preprocessId, from_slot: 0, to_node: guideId, to_slot: 4, type: 'IMAGE' }
+                        );
+                        priorConditioningNode = guideId;
+                        priorLatentNode = guideId;
+                    }
+                    ltx25Links.push({ from_node: priorLatentNode, from_slot: 2, to_node: 'concat', to_slot: 0, type: 'LATENT' });
+                    const saveNode = ltx25Nodes.find(node => node.id === 'save');
+                    if (saveNode?.widgets?.[0]) saveNode.widgets[0].value = `NEXUS_BTA_LTX25_MultiShot${ltx25ShotCount}`;
+                }
+                return {
+                    nodes: ltx25Nodes,
+                    links: ltx25Links,
+                    groups: [{ id: 'ltx25', title: ltx25MultiShot ? `LTX 2.5 MultiShot (${ltx25ShotCount} guides) — native AV timeline` : `LTX 2.5 — native AV / optional spatial${ltx25Temporal ? ' + temporal' : ''} latent upscale`, x: 35, y: 45, width: 3040, height: ltx25MultiShot ? 1060 : 710, color: '#3f789e' }],
+                    width: 3140,
+                    height: ltx25MultiShot ? 1160 : 810,
+                    nexus_preset: preset
+                };
             }
             const externalQwenRoute = preset === 'Qwen';
             const externalSplitRoute = preset === 'Anima';
@@ -35327,6 +35812,12 @@
                         : undefined,
                     minimax_h3_booster_enabled: activePreset === 'MiniMaxH3' ? !!document.getElementById('minimaxH3BoosterEnabled')?.checked : undefined,
                     minimax_h3_booster: activePreset === 'MiniMaxH3' ? (document.getElementById('minimaxH3BoosterSelect')?.value || 'first_block_cache') : undefined,
+                    minimax_h3_ltx_upscale_enabled: activePreset === 'MiniMaxH3' ? !!document.getElementById('minimaxH3LtxUpscaleToggle')?.checked : undefined,
+                    minimax_h3_ltx_upscale_factor: activePreset === 'MiniMaxH3' ? minimaxH3LtxPixelScaleFactor() : undefined,
+                    minimax_h3_ltx_upscale_steps: activePreset === 'MiniMaxH3' ? parseInt(document.getElementById('minimaxH3LtxUpscaleStepsInput')?.value || '8', 10) : undefined,
+                    minimax_h3_ltx_upscale_cfg: activePreset === 'MiniMaxH3' ? parseFloat(document.getElementById('minimaxH3LtxUpscaleCfgInput')?.value || '1') : undefined,
+                    minimax_h3_image_edit_enabled: activePreset === 'MiniMaxH3' ? minimaxH3ImageEditEnabled() : undefined,
+                    minimax_h3_image_edit_steps: activePreset === 'MiniMaxH3' ? parseInt(document.getElementById('minimaxH3ImageEditStepsInput')?.value || '8', 10) : undefined,
                     minimax_h3_reference_videos: activePreset === 'MiniMaxH3'
                         ? (minimaxH3ReferenceVideos || []).filter(item => item?.src).slice(1, 3).map(item => item.src)
                         : undefined,
@@ -35372,6 +35863,9 @@
                     latent_upscale_refine: !!document.getElementById('ltxLatentUpscaleRefineToggle')?.checked,
                     ltx25_upscale_steps: activePreset === 'LTX25' ? parseInt(document.getElementById('ltx25UpscaleStepsInput')?.value || '4', 10) : undefined,
                     ltx25_upscale_cfg: activePreset === 'LTX25' ? parseFloat(document.getElementById('ltx25UpscaleCfgInput')?.value || '1') : undefined,
+                    ltx25_temporal_upscale_enabled: activePreset === 'LTX25' ? !!document.getElementById('ltx25TemporalUpscaleToggle')?.checked : undefined,
+                    ltx25_multishot_enabled: activePreset === 'LTX25' ? ltx25MultishotEnabled() : undefined,
+                    ltx25_multishot_count: activePreset === 'LTX25' ? ltx25MultishotCount() : undefined,
                     detailer_enabled: activePreset === 'LTX' ? !!document.getElementById('ltxDetailerToggle')?.checked : false,
                     detailer_lora: (activePreset === 'LTX' && !!document.getElementById('ltxDetailerToggle')?.checked && /^(none|off|disabled)$/i.test(String(document.getElementById('ltxDetailerLoraSelect')?.value || '')))
                         ? 'Automatic'
@@ -35579,7 +36073,9 @@
                 payload.workflow_override = null;
                 if (document.getElementById('model3DRandomSeedToggle')?.checked) payload.seed = -1;
             } else if (activePreset === 'MiniMaxH3') {
-                const h3Mode = payload.video.minimax_h3_mode || 'i2v';
+                const h3ImageEdit = !!payload.video.minimax_h3_image_edit_enabled;
+                const h3Mode = h3ImageEdit ? 'r2v' : (payload.video.minimax_h3_mode || 'i2v');
+                payload.video.minimax_h3_mode = h3Mode;
                 const h3ReferenceMode = ['r2v', 'v2v'].includes(h3Mode);
                 payload.template = h3ReferenceMode ? 'MINIMAX_H3_R2V' : (h3Mode === 't2v' ? 'MINIMAX_H3_T2V' : 'MINIMAX_H3_I2V');
                 payload.workflow_id = h3ReferenceMode ? 'minimax-h3-r2v' : (h3Mode === 't2v' ? 'minimax-h3-t2v' : 'minimax-h3-i2v');
@@ -36156,6 +36652,10 @@
                     return;
                 }
                 if (payload.preset === 'Wan' && !await ensureWanMotionCaptureArtifacts(payload)) {
+                    setGenerationUiActive(false);
+                    return;
+                }
+                if (payload.preset === 'MiniMaxH3' && !await ensureMiniMaxH3LtxPixelUpscale(payload)) {
                     setGenerationUiActive(false);
                     return;
                 }
@@ -36741,7 +37241,7 @@
         applyModelProfile(activePreset, false);
         updateRangeLabel('steps');
         updateRangeLabel('cfg');
-        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'inpaintEngineSelect', 'differentialStrengthInput', 'lanpaintThinkingStepsInput', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'minimaxH3ModeSelect', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltx25UpscaleStepsInput', 'ltx25UpscaleCfgInput', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
+        ['posPrompt', 'negPrompt', 'modelSelect', 'vaeSelect', 'textEncoderSelect', 'seedInput', 'samplingMethodSelect', 'schedulerSelect', 'distilledLoraOneSelect', 'distilledLoraTwoSelect', 'distilledLoraOneStrength', 'distilledLoraTwoStrength', 'img2imgModeSelect', 'denoiseSlider', 'batchCountInput', 'maskBlurSlider', 'resizeModeSelect', 'resizePercentSlider', 'resizePercentInput', 'maskContentSelect', 'inpaintEngineSelect', 'differentialStrengthInput', 'lanpaintThinkingStepsInput', 'controlDepthToggle', 'ipAdapterToggle', 'motionSelect', 'minimaxH3ModeSelect', 'minimaxH3ImageEditToggle', 'minimaxH3ImageEditStepsInput', 'minimaxH3LtxUpscaleToggle', 'minimaxH3LtxUpscaleFactorSelect', 'minimaxH3LtxUpscaleStepsInput', 'minimaxH3LtxUpscaleCfgInput', 'videoVaeSelect', 'audioVaeSelect', 'activeAudioToggle', 'omnicineSelect', 'latentUpscaleSelect', 'ltxLatentUpscaleRefineToggle', 'ltx25UpscaleStepsInput', 'ltx25UpscaleCfgInput', 'ltx25TemporalUpscaleToggle', 'ltx25MultishotToggle', 'ltx25MultishotCountSelect', 'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltxDetailerToggle', 'ltxDetailerLoraSelect', 'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'controlNetEnabledToggle', 'controlNetModelSelect', 'controlNetBalanceSelect', 'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput'].forEach(id => {
             const element = document.getElementById(id);
             if (element) element.addEventListener('input', event => {
                 updateWorkflowPreview();
@@ -36762,6 +37262,34 @@
                         showToast('LTX 2.5 Upscale Setup Failed', String(error?.message || error).slice(0, 160));
                         updateWorkflowPreview();
                     });
+                }
+                if (id === 'ltx25TemporalUpscaleToggle' && activePreset === 'LTX25') {
+                    if (element.checked) {
+                        maybePrepareLtx25TemporalUpscale().then(ready => {
+                            if (!ready) element.checked = false;
+                            updateWorkflowPreview();
+                        }).catch(error => {
+                            element.checked = false;
+                            showToast('LTX 2.5 Temporal Upscale Setup Failed', String(error?.message || error).slice(0, 160));
+                            updateWorkflowPreview();
+                        });
+                    }
+                    if (!activeWorkflowId) resetWorkflowToDefault('LTX25', { quiet: true, keepTabs: true });
+                }
+                if (['minimaxH3LtxUpscaleToggle', 'minimaxH3LtxUpscaleFactorSelect', 'minimaxH3LtxUpscaleStepsInput', 'minimaxH3LtxUpscaleCfgInput'].includes(id)) {
+                    syncMiniMaxH3LtxUpscaleUi({ keepFrames: id !== 'minimaxH3LtxUpscaleToggle' && id !== 'minimaxH3LtxUpscaleFactorSelect' });
+                    if (activePreset === 'MiniMaxH3' && !activeWorkflowId) resetWorkflowToDefault('MiniMaxH3', { quiet: true, keepTabs: true });
+                }
+                if (['ltx25MultishotToggle', 'ltx25MultishotCountSelect'].includes(id)) {
+                    if (activePreset === 'LTX25' && activeWorkflowId) {
+                        const toggle = document.getElementById('ltx25MultishotToggle');
+                        if (toggle) toggle.checked = false;
+                        showToast('MultiShot Needs Default Workflow', 'Reset the LTX 2.5 workflow first; custom workflows are kept unchanged.');
+                    } else if (activePreset === 'LTX25' && ltx25MultishotEnabled() && currentActivity !== 'img2img') {
+                        switchActivity('img2img', getActivityButton('img2img'));
+                    }
+                    syncLtx25MultishotUi();
+                    if (activePreset === 'LTX25' && !activeWorkflowId) resetWorkflowToDefault('LTX25', { quiet: true, keepTabs: true });
                 }
                 updateWorkflowPreview();
                 syncSideMenuToWorkflowGraph({ element, immediate: true });
@@ -37089,7 +37617,9 @@
             document.getElementById(`referenceImage${slot}Input`)?.addEventListener('change', event => {
                 const file = event.target.files?.[0];
                 if (file) {
-                    if (isWanMotionCaptureMode() && slot === 2) {
+                    if (activePreset === 'MiniMaxH3' && isVideoFile(file)) {
+                        loadReferenceImageFiles([file]);
+                    } else if (isWanMotionCaptureMode() && slot === 2) {
                         loadReferenceImageFile(file);
                     } else {
                         loadReferenceImageFile(file, { slot });

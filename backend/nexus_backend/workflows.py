@@ -4112,6 +4112,49 @@ def _minimax_h3_length(value: Any, fps: float, seconds: float) -> int:
     return lower if (frames - lower) <= (upper - frames) else upper
 
 
+def _minimax_h3_ltx_pixel_upscale_enabled(video_options: dict[str, Any]) -> bool:
+    value = video_options.get("minimax_h3_ltx_upscale_enabled", False)
+    return str(value).strip().lower() not in {"", "false", "0", "off", "none", "no", "disabled"}
+
+
+def _minimax_h3_ltx_pixel_upscale_factor(video_options: dict[str, Any]) -> int:
+    raw = _number_or_none(video_options.get("minimax_h3_ltx_upscale_factor"))
+    return 4 if raw is not None and int(round(raw)) == 4 else 2
+
+
+def _minimax_h3_ltx_pixel_upscale_length(value: Any, fps: float, seconds: float) -> int:
+    """Return the closest H3/LTX-compatible frame count.
+
+    MiniMax H3 needs ``17k + 5`` frames, while LTX guide videos need
+    ``8n + 1``.  Their first common value is 73, followed by 209.  Snapping
+    here prevents the IC-LoRA node from silently trimming seven H3 frames and
+    leaving the native H3 audio out of sync with the refined video.
+    """
+    desired = _minimax_h3_length(value, fps, seconds)
+    base, period = 73, 136
+    index = max(0, int(round((desired - base) / period)))
+    return base + index * period
+
+
+def _minimax_h3_ltx_pixel_canvas(value: Any, factor: int) -> int:
+    """Use a factor-aligned canvas so the H3 draft has a valid 32px grid."""
+    scale = 4 if int(factor or 2) == 4 else 2
+    grid = 32 * scale
+    numeric = max(grid, int(round(_number_or_none(value) or grid)))
+    return max(grid, (numeric // grid) * grid)
+
+
+def _minimax_h3_image_edit_enabled(video_options: dict[str, Any]) -> bool:
+    """Whether REF2VA should emit a single edited image instead of a video."""
+    value = video_options.get("minimax_h3_image_edit_enabled", False)
+    return str(value).strip().lower() not in {"", "false", "0", "off", "none", "no", "disabled"}
+
+
+def _minimax_h3_image_edit_steps(video_options: dict[str, Any]) -> int:
+    raw = _number_or_none(video_options.get("minimax_h3_image_edit_steps"))
+    return max(1, min(100, int(round(raw if raw is not None else 8))))
+
+
 def build_basic_minimax_h3_workflow(
     request: GenerateRequest,
     model_name: str,
@@ -4123,7 +4166,9 @@ def build_basic_minimax_h3_workflow(
     reference_image_names: list[str] | None = None,
     base_video_name: str | None = None,
     reference_video_names: list[str] | None = None,
+    reference_video_has_audio: list[bool] | None = None,
     reference_audio_names: list[str] | None = None,
+    ltx_pixel_upscale_assets: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build the official H3 API graph directly.
 
@@ -4135,13 +4180,36 @@ def build_basic_minimax_h3_workflow(
     video_options = request.video or {}
     mode = str(video_options.get("minimax_h3_mode") or "i2v").strip().lower()
     reference_mode = mode in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
+    image_edit_enabled = _minimax_h3_image_edit_enabled(video_options)
+    if image_edit_enabled and (not reference_mode or mode not in {"r2v", "reference", "reference_to_video"}):
+        raise ValueError("MiniMax H3 Image Edit requires the REF2VA R2V reference mode.")
+    if image_edit_enabled and ltx_pixel_upscale_assets:
+        raise ValueError("MiniMax H3 Image Edit cannot be combined with latent video upscale.")
     fps = max(1.0, float(_number_or_none(video_options.get("fps")) or 24.0))
     seconds = max(0.25, float(_number_or_none(video_options.get("seconds") or video_options.get("duration")) or 2.0))
-    length = _minimax_h3_length(video_options.get("frames") or video_options.get("length"), fps, seconds)
-    width = _minimax_h3_dimension(request.width)
-    height = _minimax_h3_dimension(request.height)
+    use_ltx_pixel_upscale = _minimax_h3_ltx_pixel_upscale_enabled(video_options)
+    if use_ltx_pixel_upscale and not ltx_pixel_upscale_assets:
+        raise ValueError("MiniMax H3 LTX 2.5 latent upscale is enabled but its resolved LTX 2.5 assets are unavailable.")
+    requested_output_width = max(32, int(round(_number_or_none(request.width) or 32)))
+    requested_output_height = max(32, int(round(_number_or_none(request.height) or 32)))
+    upscale_factor = _minimax_h3_ltx_pixel_upscale_factor(video_options)
+    upscale_canvas_width = _minimax_h3_ltx_pixel_canvas(requested_output_width, upscale_factor)
+    upscale_canvas_height = _minimax_h3_ltx_pixel_canvas(requested_output_height, upscale_factor)
+    length = (
+        _minimax_h3_ltx_pixel_upscale_length(video_options.get("frames") or video_options.get("length"), fps, seconds)
+        if use_ltx_pixel_upscale
+        else _minimax_h3_length(video_options.get("frames") or video_options.get("length"), fps, seconds)
+    )
+    if image_edit_enabled:
+        # H3's AV latent requires 17k + 5 frames; decode only frame zero below.
+        length = 5
+    width = upscale_canvas_width // upscale_factor if use_ltx_pixel_upscale else _minimax_h3_dimension(request.width)
+    height = upscale_canvas_height // upscale_factor if use_ltx_pixel_upscale else _minimax_h3_dimension(request.height)
     seed = request.seed if request.seed >= 0 else random.randint(0, 2**32 - 1)
-    active_audio = str(video_options.get("active_audio", True)).strip().lower() not in {"false", "0", "off", "none", "no"}
+    active_audio = (
+        not image_edit_enabled
+        and str(video_options.get("active_audio", True)).strip().lower() not in {"false", "0", "off", "none", "no"}
+    )
     booster_enabled = str(video_options.get("minimax_h3_booster_enabled", True)).strip().lower() not in {"false", "0", "off", "none", "no"}
     booster = str(video_options.get("minimax_h3_booster") or "first_block_cache").strip().lower()
     sampler = normalize_sampler(request.sampler or "res_multistep")
@@ -4176,7 +4244,7 @@ def build_basic_minimax_h3_workflow(
         },
         "6": {
             "class_type": "BasicScheduler",
-            "inputs": {"model": model_output, "scheduler": scheduler, "steps": max(1, int(request.steps)), "denoise": 1.0},
+            "inputs": {"model": model_output, "scheduler": scheduler, "steps": _minimax_h3_image_edit_steps(video_options) if image_edit_enabled else max(1, int(request.steps)), "denoise": 1.0},
             "_meta": {"title": "MiniMax H3 Scheduler"},
         },
     }
@@ -4296,7 +4364,10 @@ def build_basic_minimax_h3_workflow(
                 "_meta": {"title": f"MiniMax H3 Optimized Reference Video {index + 1}"},
             }
             h3_inputs[f"ref_videos.ref_video_{index}"] = [load_id, 0]
-            h3_inputs[f"ref_video_audios.ref_video_audio_{index}"] = [load_id, 2]
+            # VHS exposes audio lazily. Connecting its audio output for a
+            # silent reference video makes VHS fail only after generation.
+            if index < len(reference_video_has_audio or []) and reference_video_has_audio[index]:
+                h3_inputs[f"ref_video_audios.ref_video_audio_{index}"] = [load_id, 2]
         for index, audio_name in enumerate([item for item in (reference_audio_names or []) if item][:3]):
             node_id = str(50 + index)
             workflow[node_id] = {
@@ -4354,6 +4425,18 @@ def build_basic_minimax_h3_workflow(
         "inputs": {"samples": ["9", 0], "vae": ["3", 0]},
         "_meta": {"title": "MiniMax H3 Video Decode"},
     }
+    if image_edit_enabled:
+        workflow["13"] = {
+            "class_type": "ImageFromBatch",
+            "inputs": {"image": ["10", 0], "batch_index": 0, "length": 1},
+            "_meta": {"title": "MiniMax H3 Image Edit — First Frame"},
+        }
+        workflow["14"] = {
+            "class_type": "SaveImage",
+            "inputs": {"images": ["13", 0], "filename_prefix": "image/MiniMax_H3_ImageEdit"},
+            "_meta": {"title": "Save MiniMax H3 Edited Image"},
+        }
+        return workflow
     create_video_inputs: dict[str, Any] = {"images": ["10", 0], "fps": fps}
     if active_audio:
         workflow["12"] = {
@@ -4362,6 +4445,22 @@ def build_basic_minimax_h3_workflow(
             "_meta": {"title": "MiniMax H3 Audio Decode"},
         }
         create_video_inputs["audio"] = ["12", 0]
+    if use_ltx_pixel_upscale:
+        return _append_minimax_h3_ltx25_upscale_workflow(
+            workflow,
+            request,
+            assets=ltx_pixel_upscale_assets or {},
+            h3_frames_ref=["10", 0],
+            h3_audio_ref=["12", 0] if active_audio else None,
+            fps=fps,
+            length=length,
+            upscale_factor=upscale_factor,
+            canvas_width=upscale_canvas_width,
+            canvas_height=upscale_canvas_height,
+            output_width=requested_output_width,
+            output_height=requested_output_height,
+            seed=seed,
+        )
     workflow["13"] = {
         "class_type": "CreateVideo",
         "inputs": create_video_inputs,
@@ -4376,6 +4475,278 @@ def build_basic_minimax_h3_workflow(
             "codec": "h264",
         },
         "_meta": {"title": "Save MiniMax H3 Video"},
+    }
+    return workflow
+
+
+def _append_minimax_h3_ltx25_upscale_workflow(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    *,
+    assets: dict[str, str],
+    h3_frames_ref: list[Any],
+    h3_audio_ref: list[Any] | None,
+    fps: float,
+    length: int,
+    upscale_factor: int,
+    canvas_width: int,
+    canvas_height: int,
+    output_width: int,
+    output_height: int,
+    seed: int,
+) -> dict[str, Any]:
+    """Render a new LTX 2.5 latent from H3 draft frames, then upscale it.
+
+    H3 and LTX 2.5 latents are incompatible.  The safe bridge is decoded H3
+    frames -> LTX 2.5 guide -> new LTX AV latent -> native spatial upsampler.
+    The final LTX stage is entirely isolated from the ordinary H3 workflow.
+    """
+    required = ("model", "text_encoder", "video_vae", "audio_vae", "latent_upscale")
+    missing = [key for key in required if not str(assets.get(key) or "").strip()]
+    if missing:
+        raise ValueError(f"MiniMax H3 -> LTX 2.5 latent upscale is missing: {', '.join(missing)}")
+    video_options = request.video or {}
+    steps = max(1, min(30, int(_number_or_none(video_options.get("minimax_h3_ltx_upscale_steps")) or 8)))
+    cfg = max(0.0, min(20.0, float(_number_or_none(video_options.get("minimax_h3_ltx_upscale_cfg")) or 1.0)))
+    scale_passes = 2 if int(upscale_factor) == 4 else 1
+    base_width = max(32, canvas_width // (2 ** scale_passes))
+    base_height = max(32, canvas_height // (2 ** scale_passes))
+    sampler = normalize_sampler(request.sampler or "euler_ancestral")
+    positive_ref: list[Any] = ["206", 0]
+    negative_ref: list[Any] = ["206", 1]
+    workflow.update({
+        "200": {"class_type": "UNETLoader", "inputs": {"unet_name": assets["model"], "weight_dtype": "default"}, "_meta": {"title": "LTX 2.5 Refiner Transformer"}},
+        "201": {"class_type": "CLIPLoader", "inputs": {"clip_name": assets["text_encoder"], "type": "ltxv", "device": "default"}, "_meta": {"title": "LTX 2.5 Refiner Gemma 4"}},
+        "202": {"class_type": "VAELoader", "inputs": {"vae_name": assets["video_vae"]}, "_meta": {"title": "LTX 2.5 Refiner Video VAE"}},
+        "203": {"class_type": "LTXVAudioVAELoader", "inputs": {"ckpt_name": assets["audio_vae"]}, "_meta": {"title": "LTX 2.5 Refiner Audio VAE"}},
+        "204": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["201", 0], "text": request.prompt}, "_meta": {"title": "LTX 2.5 Refiner Positive"}},
+        "205": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["201", 0], "text": request.negative_prompt}, "_meta": {"title": "LTX 2.5 Refiner Negative"}},
+        "206": {"class_type": "LTXVConditioning", "inputs": {"positive": ["204", 0], "negative": ["205", 0], "frame_rate": fps}, "_meta": {"title": "LTX 2.5 Refiner FPS Conditioning"}},
+        "207": {"class_type": "ResizeAndPadImage", "inputs": {"image": h3_frames_ref, "target_width": base_width, "target_height": base_height, "padding_color": "white", "interpolation": "lanczos"}, "_meta": {"title": "Fit H3 Draft To LTX 2.5 Base Canvas"}},
+        "208": {"class_type": "LTXVPreprocess", "inputs": {"image": ["207", 0], "img_compression": 35}, "_meta": {"title": "Preprocess H3 Draft Frames"}},
+        "209": {"class_type": "EmptyLTXVLatentVideo", "inputs": {"width": base_width, "height": base_height, "length": length, "batch_size": 1}, "_meta": {"title": "LTX 2.5 Base Video Latent"}},
+        "210": {"class_type": "LTXVAddGuide", "inputs": {"positive": positive_ref, "negative": negative_ref, "vae": ["202", 0], "latent": ["209", 0], "image": ["208", 0], "frame_idx": 0, "strength": 1.0}, "_meta": {"title": "Guide LTX 2.5 With H3 Draft"}},
+        "211": {"class_type": "LTXVEmptyLatentAudio", "inputs": {"frames_number": length, "frame_rate": fps, "batch_size": 1, "audio_vae": ["203", 0]}, "_meta": {"title": "LTX 2.5 Refiner Audio Latent"}},
+        "212": {"class_type": "LTXVConcatAVLatent", "inputs": {"video_latent": ["210", 2], "audio_latent": ["211", 0]}, "_meta": {"title": "Combine LTX 2.5 Refiner AV"}},
+        "213": {"class_type": "RandomNoise", "inputs": {"noise_seed": (seed + 1) % (2 ** 32 - 1)}, "_meta": {"title": "LTX 2.5 Refiner Seed"}},
+        "214": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": sampler}, "_meta": {"title": "LTX 2.5 Refiner Sampler"}},
+        "215": {"class_type": "ManualSigmas", "inputs": {"sigmas": _ltx25_manual_sigmas(steps)}, "_meta": {"title": f"LTX 2.5 Refiner Schedule ({steps} steps)"}},
+        "216": {"class_type": "CFGGuider", "inputs": {"model": ["200", 0], "positive": ["210", 0], "negative": ["210", 1], "cfg": cfg}, "_meta": {"title": "LTX 2.5 Refiner CFG"}},
+        "217": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["213", 0], "guider": ["216", 0], "sampler": ["214", 0], "sigmas": ["215", 0], "latent_image": ["212", 0]}, "_meta": {"title": "LTX 2.5 H3 Guided Base Sample"}},
+        "218": {"class_type": "LTXVSeparateAVLatent", "inputs": {"av_latent": ["217", 0]}, "_meta": {"title": "Separate LTX 2.5 Base AV"}},
+        "219": {"class_type": "LatentUpscaleModelLoader", "inputs": {"model_name": assets["latent_upscale"]}, "_meta": {"title": "Load LTX 2.5 Native Spatial Upscaler"}},
+    })
+    video_ref: list[Any] = ["218", 0]
+    for index in range(scale_passes):
+        node_id = str(220 + index)
+        workflow[node_id] = {"class_type": "LTXVLatentUpsampler", "inputs": {"samples": video_ref, "upscale_model": ["219", 0], "vae": ["202", 0]}, "_meta": {"title": f"LTX 2.5 Native Latent Upscale x2 ({index + 1}/{scale_passes})"}}
+        video_ref = [node_id, 0]
+    workflow["230"] = {"class_type": "VAEDecodeTiled", "inputs": {"samples": video_ref, "vae": ["202", 0], "tile_size": 512, "overlap": 64, "temporal_size": 64, "temporal_overlap": 8}, "_meta": {"title": "Decode H3 + LTX 2.5 Upscale"}}
+    image_ref: list[Any] = ["230", 0]
+    if canvas_width != output_width or canvas_height != output_height:
+        workflow["231"] = {"class_type": "ResizeAndPadImage", "inputs": {"image": image_ref, "target_width": output_width, "target_height": output_height, "padding_color": "white", "interpolation": "lanczos"}, "_meta": {"title": "Match Requested H3 Output Size"}}
+        image_ref = ["231", 0]
+    create_inputs: dict[str, Any] = {"images": image_ref, "fps": fps}
+    if h3_audio_ref:
+        create_inputs["audio"] = h3_audio_ref
+    workflow["232"] = {"class_type": "CreateVideo", "inputs": create_inputs, "_meta": {"title": "Create H3 + LTX 2.5 Latent Upscale Video"}}
+    workflow["233"] = {"class_type": "SaveVideo", "inputs": {"video": ["232", 0], "filename_prefix": f"video/MiniMax_H3_LTX25_Latent_x{upscale_factor}_{output_width}x{output_height}_{length}f", "format": "mp4", "codec": "h264"}, "_meta": {"title": "Save H3 + LTX 2.5 Latent Upscale Video"}}
+    return workflow
+
+
+def _append_minimax_h3_ltx_pixel_upscale_workflow(
+    workflow: dict[str, Any],
+    request: GenerateRequest,
+    *,
+    assets: dict[str, str],
+    h3_frames_ref: list[Any],
+    h3_audio_ref: list[Any] | None,
+    fps: float,
+    length: int,
+    upscale_factor: int,
+    canvas_width: int,
+    canvas_height: int,
+    output_width: int,
+    output_height: int,
+    seed: int,
+) -> dict[str, Any]:
+    """Append the official LTX 2.3 Pixel Spatial IC-LoRA refine stage.
+
+    The LTX 2.5 latent upsampler accepts only LTX 2.5 latents.  This function
+    instead treats the decoded H3 sequence as an image guide, then constructs a
+    new LTX 2.3 latent exactly as the official Pixel Spatial IC-LoRA workflow
+    does.  It does not mutate the normal H3 workflow when the option is off.
+    """
+    required = ("model", "text_encoder", "text_projection", "video_vae", "distilled_lora", "pixel_lora")
+    missing = [key for key in required if not str(assets.get(key) or "").strip()]
+    if missing:
+        raise ValueError(f"MiniMax H3 LTX Pixel Upscale is missing local LTX 2.3 assets: {', '.join(missing)}")
+
+    video_options = request.video or {}
+    steps = max(1, min(50, int(_number_or_none(video_options.get("minimax_h3_ltx_upscale_steps")) or 8)))
+    cfg = max(0.0, min(20.0, float(_number_or_none(video_options.get("minimax_h3_ltx_upscale_cfg")) or 1.0)))
+    strength = max(0.0, min(1.0, float(_number_or_none(video_options.get("minimax_h3_ltx_upscale_strength")) or 1.0)))
+    tiles_x = max(1, min(6, int(_number_or_none(video_options.get("minimax_h3_ltx_upscale_tiles_x")) or 2)))
+    tiles_y = max(1, min(6, int(_number_or_none(video_options.get("minimax_h3_ltx_upscale_tiles_y")) or 2)))
+    overlap = max(1, min(8, int(_number_or_none(video_options.get("minimax_h3_ltx_upscale_overlap")) or 6)))
+    refiner_seed = seed + 1 if seed < 2**32 - 1 else seed
+
+    workflow.update(
+        {
+            "100": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {"ckpt_name": assets["model"]},
+                "_meta": {"title": "LTX 2.3 Pixel Upscale Checkpoint"},
+            },
+            "101": {
+                "class_type": "LTXAVTextEncoderLoader",
+                "inputs": {"text_encoder": assets["text_encoder"], "ckpt_name": assets["text_projection"], "device": str(video_options.get("text_encoder_device") or "default")},
+                "_meta": {"title": "LTX 2.3 Pixel Upscale Text Encoder"},
+            },
+            "102": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"clip": ["101", 0], "text": request.prompt},
+                "_meta": {"title": "LTX Pixel Upscale Positive Prompt"},
+            },
+            "103": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"clip": ["101", 0], "text": request.negative_prompt},
+                "_meta": {"title": "LTX Pixel Upscale Negative Prompt"},
+            },
+            "104": {
+                "class_type": "LTXVConditioning",
+                "inputs": {"positive": ["102", 0], "negative": ["103", 0], "frame_rate": fps},
+                "_meta": {"title": "LTX Pixel Upscale FPS Conditioning"},
+            },
+            "105": {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {"model": ["100", 0], "lora_name": assets["distilled_lora"], "strength_model": LTX_DISTILLED_384_DEFAULT_STRENGTH},
+                "_meta": {"title": "LTX 2.3 Distilled 384 LoRA"},
+            },
+            "106": {
+                "class_type": "LTXICLoRALoaderModelOnly",
+                "inputs": {"model": ["105", 0], "lora_name": assets["pixel_lora"], "strength_model": strength},
+                "_meta": {"title": f"LTX 2.3 Pixel Spatial IC-LoRA ×{upscale_factor}"},
+            },
+            "107": {
+                "class_type": "ResizeAndPadImage",
+                "inputs": {
+                    "image": h3_frames_ref,
+                    "target_width": canvas_width,
+                    "target_height": canvas_height,
+                    "padding_color": "white",
+                    "interpolation": "lanczos",
+                },
+                "_meta": {"title": f"Fit H3 Frames To LTX ×{upscale_factor} Canvas (No Stretch)"},
+            },
+            "108": {
+                "class_type": "VAEEncode",
+                "inputs": {"pixels": ["107", 0], "vae": ["109", 0]},
+                "_meta": {"title": "Encode H3 Frames For LTX Pixel Guide"},
+            },
+            "109": {
+                "class_type": "VAELoader",
+                "inputs": {"vae_name": assets["video_vae"]},
+                "_meta": {"title": "LTX 2.3 Video VAE"},
+            },
+            "110": {
+                "class_type": "LTXAddVideoICLoRAGuide",
+                "inputs": {
+                    "positive": ["104", 0],
+                    "negative": ["104", 1],
+                    "vae": ["109", 0],
+                    "latent": ["108", 0],
+                    "image": ["107", 0],
+                    "frame_idx": 0,
+                    "strength": 1.0,
+                    "latent_downscale_factor": ["106", 1],
+                    "crop": "disabled",
+                    "use_tiled_encode": True,
+                    "tile_size": 256,
+                    "tile_overlap": 64,
+                },
+                "_meta": {"title": "Guide LTX With MiniMax H3 Draft"},
+            },
+            "111": {
+                "class_type": "RandomNoise",
+                "inputs": {"noise_seed": refiner_seed},
+                "_meta": {"title": "LTX Pixel Upscale Seed"},
+            },
+            "112": {
+                "class_type": "KSamplerSelect",
+                "inputs": {"sampler_name": "euler_cfg_pp"},
+                "_meta": {"title": "LTX Pixel Upscale Sampler"},
+            },
+            "114": {
+                "class_type": "CFGGuider",
+                "inputs": {"model": ["106", 0], "positive": ["110", 0], "negative": ["110", 1], "cfg": cfg},
+                "_meta": {"title": "LTX Pixel Upscale CFG"},
+            },
+            "115": {
+                "class_type": "SamplerCustomAdvanced",
+                "inputs": {"noise": ["111", 0], "guider": ["114", 0], "sampler": ["112", 0], "sigmas": ["113", 0], "latent_image": ["110", 2]},
+                "_meta": {"title": f"LTX Pixel Spatial Refiner — {steps} Steps"},
+            },
+            "116": {
+                "class_type": "LTXVCropGuides",
+                "inputs": {"positive": ["110", 0], "negative": ["110", 1], "latent": ["115", 0]},
+                "_meta": {"title": "Crop LTX Pixel Guide Before Decode"},
+            },
+            "117": {
+                "class_type": "LTXVTiledVAEDecode",
+                "inputs": {
+                    "vae": ["109", 0],
+                    "latents": ["116", 2],
+                    "horizontal_tiles": tiles_x,
+                    "vertical_tiles": tiles_y,
+                    "overlap": overlap,
+                    "last_frame_fix": False,
+                    "working_device": "auto",
+                    "working_dtype": "auto",
+                },
+                "_meta": {"title": "Decode LTX Pixel Upscale Frames"},
+            },
+        }
+    )
+    if steps == 8:
+        workflow["113"] = {
+            "class_type": "ManualSigmas",
+            "inputs": {"sigmas": LTX_DISTILLED_8_STEP_SIGMAS},
+            "_meta": {"title": "Official LTX 2.3 8-Step Sigmas"},
+        }
+    else:
+        workflow["113"] = {
+            "class_type": "LTXVScheduler",
+            "inputs": {"steps": steps, "max_shift": 2.05, "base_shift": 0.95, "stretch": True, "terminal": 0.1, "latent": ["110", 2]},
+            "_meta": {"title": "LTX Pixel Upscale Scheduler"},
+        }
+
+    output_image_ref: list[Any] = ["117", 0]
+    if canvas_width != output_width or canvas_height != output_height:
+        workflow["118"] = {
+            "class_type": "ResizeAndPadImage",
+            "inputs": {
+                "image": ["117", 0],
+                "target_width": output_width,
+                "target_height": output_height,
+                "padding_color": "white",
+                "interpolation": "lanczos",
+            },
+            "_meta": {"title": "Match Requested Output Size (No Stretch)"},
+        }
+        output_image_ref = ["118", 0]
+    create_video_inputs: dict[str, Any] = {"images": output_image_ref, "fps": fps}
+    if h3_audio_ref:
+        create_video_inputs["audio"] = h3_audio_ref
+    workflow["119"] = {
+        "class_type": "CreateVideo",
+        "inputs": create_video_inputs,
+        "_meta": {"title": "Create H3 + LTX Pixel Upscale Video"},
+    }
+    workflow["120"] = {
+        "class_type": "SaveVideo",
+        "inputs": {"video": ["119", 0], "filename_prefix": f"video/MiniMax_H3_LTX_Pixel_x{upscale_factor}_{output_width}x{output_height}_{length}f", "format": "mp4", "codec": "h264"},
+        "_meta": {"title": "Save H3 + LTX Pixel Upscale Video"},
     }
     return workflow
 
@@ -5083,7 +5454,6 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
     selections: list[tuple[str, float, float]] = []
     seen: set[str] = set()
     flux_family = _flux_family_from_name(model_name or request.model_name or request.model_path or "")
-    h3_reference_mode = str((request.video or {}).get("minimax_h3_mode") or "").strip().lower() in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
     h3_turbo_families: set[str] = set()
     ltx25_distill_families: set[str] = set()
 
@@ -5129,11 +5499,11 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
             return
         lower = normalized.lower()
         if preset_key in {"minimaxh3", "minimax_h3", "minimax-h3"} and any(token in lower for token in ("turbo", "distill", "distilled")):
-            # The locally installed 4/8-step Turbo LoRAs declare FL2VA as the
-            # base model.  REF2VA is a different H3 path, so do not apply one
-            # silently during R2V/V2V generation.
+            # The 4/8-step files are alternative FL2VA schedules.  REF2VA is
+            # intentionally permitted as an experimental route: the UI and
+            # backend must not silently remove a user-selected H3 Turbo LoRA.
             family = turbo_family(preset_key, normalized)
-            if h3_reference_mode or unsupported_h3_turbo(normalized) or family in h3_turbo_families:
+            if unsupported_h3_turbo(normalized) or family in h3_turbo_families:
                 return
             h3_turbo_families.add(family)
         if preset_key in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"} and any(token in lower for token in ("turbo", "distill", "distilled")):
@@ -5190,11 +5560,6 @@ def _active_lora_selections(request: GenerateRequest, model_name: str | None = N
     else:
         append_user_loras()
         append_distilled_loras()
-    if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"} and h3_reference_mode and h3_turbo_families:
-        # A stale UI request may still contain a Turbo name.  Return no H3
-        # Turbo selection for REF2VA; main.py also emits a user-facing error
-        # before generation instead of allowing accidental cross-route use.
-        selections[:] = [item for item in selections if not any(token in item[0].lower() for token in ("turbo", "distill", "distilled"))]
     video_options = request.video or {}
     omnicine_enabled = video_options.get("omnicine_enabled", False)
     if isinstance(omnicine_enabled, str):
@@ -5417,6 +5782,31 @@ def _ltx25_manual_sigmas(steps: int, *, refiner: bool = False) -> str:
     return ", ".join(f"{start + (end - start) * index / count:.6g}" for index in range(count + 1))
 
 
+def _ltx25_multishot_enabled(video_options: dict[str, Any]) -> bool:
+    return _bool_option(video_options.get("ltx25_multishot_enabled"), False)
+
+
+def _ltx25_multishot_count(video_options: dict[str, Any], available_references: int) -> int:
+    requested = _int_option(video_options.get("ltx25_multishot_count"), 3, 2, 4)
+    return max(2, min(requested, max(available_references, 2)))
+
+
+def _ltx25_multishot_frame_indices(length: int, count: int) -> list[int]:
+    """Return distinct LTX-compatible guide positions, including both ends."""
+
+    safe_length = max(9, ((int(length) - 1) // 8) * 8 + 1)
+    last = safe_length - 1
+    positions: list[int] = []
+    for index in range(max(2, count)):
+        raw = round(last * index / max(1, count - 1))
+        aligned = min(last, max(0, int(round(raw / 8)) * 8))
+        if positions and aligned <= positions[-1]:
+            aligned = min(last, positions[-1] + 8)
+        positions.append(aligned)
+    positions[-1] = last
+    return positions
+
+
 def build_basic_ltx25_img2video_workflow(
     request: GenerateRequest,
     checkpoint_name: str,
@@ -5425,7 +5815,9 @@ def build_basic_ltx25_img2video_workflow(
     audio_vae_name: str,
     reference_image_name: str | None = None,
     reference_end_image_name: str | None = None,
+    reference_image_names: list[str] | None = None,
     latent_upscale_name: str | None = None,
+    temporal_upscale_name: str | None = None,
     available_nodes: set[str] | None = None,
 ) -> dict[str, Any]:
     """Build LTX 2.5's native AV pipeline without reusing LTX 2.3 loaders.
@@ -5454,12 +5846,25 @@ def build_basic_ltx25_img2video_workflow(
     # model installed, so it must never be serialized as a Comfy model name.
     use_spatial_upscale = bool(requested_upscale) and requested_upscale.lower() not in {"automatic", "auto", "none", "off", "disabled", "false", "0", "no"}
     refine_spatial = use_spatial_upscale and _bool_option(video_options.get("latent_upscale_refine"), True)
+    use_temporal_upscale = bool(str(temporal_upscale_name or "").strip())
     refine_steps = max(1, _int_option(video_options.get("ltx25_upscale_steps"), 4))
     refine_cfg = float(_number_or_none(video_options.get("ltx25_upscale_cfg")) if _number_or_none(video_options.get("ltx25_upscale_cfg")) is not None else cfg)
     decode_tile = max(128, _int_option(video_options.get("ltx25_decode_tile"), 512))
     decode_overlap = max(0, min(decode_tile // 4, _int_option(video_options.get("ltx25_decode_overlap"), 64)))
     decode_temporal = max(8, _int_option(video_options.get("ltx25_decode_temporal"), 64))
     decode_temporal_overlap = max(4, min(decode_temporal // 2, _int_option(video_options.get("ltx25_decode_temporal_overlap"), 8)))
+    references: list[str] = []
+    for value in reference_image_names or []:
+        normalized = str(value or "").strip()
+        if normalized and normalized not in references:
+            references.append(normalized)
+    if not references and reference_image_name:
+        references.append(str(reference_image_name))
+    if reference_end_image_name and str(reference_end_image_name) not in references:
+        references.append(str(reference_end_image_name))
+    use_multishot = _ltx25_multishot_enabled(video_options)
+    multishot_count = _ltx25_multishot_count(video_options, len(references)) if use_multishot else 0
+    multishot_references = references[:multishot_count] if use_multishot else []
 
     if use_spatial_upscale:
         width = _ltx_base_dimension_for_upscale(final_width, latent_upscale_name)
@@ -5501,7 +5906,11 @@ def build_basic_ltx25_img2video_workflow(
         current_positive, current_negative, current_video_latent = [guide_id, 0], [guide_id, 1], [guide_id, 2]
         next_id += 3
 
-    if reference_image_name:
+    if multishot_references:
+        for index, guide_name in enumerate(multishot_references):
+            guide_frame = _ltx25_multishot_frame_indices(length, len(multishot_references))[index]
+            add_guide(guide_name, guide_frame, 1.0, f"LTX 2.5 MultiShot {index + 1} / {len(multishot_references)}")
+    elif reference_image_name:
         add_guide(reference_image_name, 0, float(_number_or_none(video_options.get("start_frame_strength")) or 1.0), "LTX 2.5 First Frame")
     if reference_end_image_name:
         add_guide(reference_end_image_name, -1, float(_number_or_none(video_options.get("end_frame_strength")) or 1.0), "LTX 2.5 Last Frame")
@@ -5531,6 +5940,12 @@ def build_basic_ltx25_img2video_workflow(
             workflow[refine_sample] = {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": [refine_noise, 0], "guider": [refine_guider, 0], "sampler": [refine_sampler, 0], "sigmas": [refine_sigmas, 0], "latent_image": [upscale_concat, 0]}, "_meta": {"title": "LTX 2.5 Spatial Upscale Refiner"}}
             workflow[refine_split] = {"class_type": "LTXVSeparateAVLatent", "inputs": {"av_latent": [refine_sample, 0]}, "_meta": {"title": "Separate Refined AV"}}
             decode_video_ref, decode_audio_ref = [refine_split, 0], [refine_split, 1]
+    if use_temporal_upscale:
+        temporal_loader_id = str(max(int(key) for key in workflow if key.isdigit()) + 1)
+        temporal_upscale_id = str(int(temporal_loader_id) + 1)
+        workflow[temporal_loader_id] = {"class_type": "LatentUpscaleModelLoader", "inputs": {"model_name": temporal_upscale_name}, "_meta": {"title": "Load LTX 2.5 x2 Temporal Upscaler"}}
+        workflow[temporal_upscale_id] = {"class_type": "LTXVLatentUpsampler", "inputs": {"samples": decode_video_ref, "upscale_model": [temporal_loader_id, 0], "vae": ["3", 0]}, "_meta": {"title": "LTX 2.5 Native Temporal Upscale ×2"}}
+        decode_video_ref = [temporal_upscale_id, 0]
     decode_id = str(max(int(key) for key in workflow if key.isdigit()) + 1)
     workflow[decode_id] = {"class_type": "VAEDecodeTiled", "inputs": {"samples": decode_video_ref, "vae": ["3", 0], "tile_size": decode_tile, "overlap": decode_overlap, "temporal_size": decode_temporal, "temporal_overlap": decode_temporal_overlap}, "_meta": {"title": "Decode LTX 2.5 Video"}}
     image_ref: list[Any] = [decode_id, 0]
@@ -5545,11 +5960,14 @@ def build_basic_ltx25_img2video_workflow(
         audio_id = ""
     create_id = str(max(int(key) for key in workflow if key.isdigit()) + 1)
     save_id = str(int(create_id) + 1)
-    create_inputs: dict[str, Any] = {"images": image_ref, "fps": fps}
+    output_fps = fps * 2 if use_temporal_upscale else fps
+    create_inputs: dict[str, Any] = {"images": image_ref, "fps": output_fps}
     if audio_id:
         create_inputs["audio"] = [audio_id, 0]
     workflow[create_id] = {"class_type": "CreateVideo", "inputs": create_inputs, "_meta": {"title": "Create LTX 2.5 Video"}}
-    workflow[save_id] = {"class_type": "SaveVideo", "inputs": {"video": [create_id, 0], "filename_prefix": f"NEXUS_BTA_LTX25_{final_width}x{final_height}", "format": "mp4", "codec": "h264"}, "_meta": {"title": "Save LTX 2.5 Video"}}
+    mode_suffix = f"_MultiShot{len(multishot_references)}" if multishot_references else ""
+    temporal_suffix = "_TemporalX2" if use_temporal_upscale else ""
+    workflow[save_id] = {"class_type": "SaveVideo", "inputs": {"video": [create_id, 0], "filename_prefix": f"NEXUS_BTA_LTX25{mode_suffix}{temporal_suffix}_{final_width}x{final_height}", "format": "mp4", "codec": "h264"}, "_meta": {"title": "Save LTX 2.5 Video"}}
 
     lora_model_ref: list[Any] = ["1", 0]
     for lora_name, strength_model, _strength_clip in _active_lora_selections(request, checkpoint_name):

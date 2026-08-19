@@ -24,7 +24,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from .asset_resolver import _is_ltx25_item, _minimax_h3_model_variant, resolve_generation_assets
+from .asset_resolver import (
+    _is_ltx25_item,
+    _minimax_h3_model_variant,
+    resolve_generation_assets,
+    resolve_minimax_h3_ltx25_upscale_assets,
+)
 from .civitai import download_civitai_asset, resolve_civitai_asset, search_civitai_models
 from .comfy_client import ComfyClient, extract_outputs
 from .config import DEFAULT_MODEL_SOURCES, coerce_path_list, load_settings, save_settings, sync_startup_model_path
@@ -143,6 +148,20 @@ LTX_HF_LORA_ARTIFACTS: dict[str, dict[str, str]] = {
         "label": "LTX 2.3 IC-LoRA Outpaint",
         "filename": "ltx-2.3-22b-ic-lora-outpaint.safetensors",
         "url": "https://huggingface.co/oumoumad/LTX-2.3-22b-IC-LoRA-Outpaint/resolve/main/ltx-2.3-22b-ic-lora-outpaint.safetensors",
+    },
+    "pixel_spatial_x2": {
+        "label": "LTX 2.3 Pixel Spatial Upscaler IC-LoRA ×2",
+        "filename": "ltx-2.3-22b-ic-lora-pixel-spatial-upscaler-x2-0.9.safetensors",
+        "url": "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Pixel-Spatial-Upscaler/resolve/main/ltx-2.3-22b-ic-lora-pixel-spatial-upscaler-x2-0.9.safetensors?download=true",
+        "repo_id": "Lightricks/LTX-2.3-22b-IC-LoRA-Pixel-Spatial-Upscaler",
+        "hf_filename": "ltx-2.3-22b-ic-lora-pixel-spatial-upscaler-x2-0.9.safetensors",
+    },
+    "pixel_spatial_x4": {
+        "label": "LTX 2.3 Pixel Spatial Upscaler IC-LoRA ×4",
+        "filename": "ltx-2.3-22b-ic-lora-pixel-spatial-upscaler-x4-0.9.safetensors",
+        "url": "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Pixel-Spatial-Upscaler/resolve/main/ltx-2.3-22b-ic-lora-pixel-spatial-upscaler-x4-0.9.safetensors?download=true",
+        "repo_id": "Lightricks/LTX-2.3-22b-IC-LoRA-Pixel-Spatial-Upscaler",
+        "hf_filename": "ltx-2.3-22b-ic-lora-pixel-spatial-upscaler-x4-0.9.safetensors",
     },
     "denoise": {
         "label": "FastDVDnet Video Denoise",
@@ -705,6 +724,15 @@ LTX25_HF_ARTIFACTS: dict[str, dict[str, Any]] = {
         "kind": "latent_upscaler",
         "scope": "optional_upscale",
     },
+    "temporal_upscaler": {
+        "label": "LTX 2.5 native latent temporal upscaler ×2",
+        "filename": "ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors",
+        "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/latent_upscale_models/ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors?download=true",
+        "target": ("latent_upscale_models", "ltx_25", "ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors"),
+        "min_bytes": 180 * 1024 * 1024,
+        "kind": "latent_upscaler",
+        "scope": "optional_upscale",
+    },
 }
 
 LTX25_REQUIRED_COMFY_NODES = (
@@ -732,6 +760,13 @@ MINIMAX_H3_REQUIRED_COMFY_NODES = (
     "VHS_LoadVideo",
     "LoadAudio",
     "LoraLoaderModelOnly",
+)
+
+MINIMAX_H3_LTX25_UPSCALE_REQUIRED_NODES = (
+    *LTX25_REQUIRED_COMFY_NODES,
+    "LatentUpscaleModelLoader",
+    "LTXVLatentUpsampler",
+    "ResizeAndPadImage",
 )
 
 MINIMAX_H3_BOOSTERS: dict[str, dict[str, Any]] = {
@@ -1900,6 +1935,11 @@ def _prepare_reference_images(request: GenerateRequest) -> list[str]:
     raw_model = f"{request.model_name or ''} {request.model_path or ''} {request.template or ''}"
     flux2_refs = preset == "flux" and any(token in raw_model.lower() for token in ("flux-2", "flux2", "flux_2", "flux.2", "klein"))
     max_refs = 9 if preset in {"minimaxh3", "minimax_h3", "minimax-h3"} else (5 if flux2_refs else (4 if preset == "model3d" else 3))
+    if preset in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"} and _truthy((request.video or {}).get("ltx25_multishot_enabled", False)):
+        # Native LTX 2.5 multi-shot is made from a short chain of image guides
+        # placed through the AV timeline.  Do not silently trim the final shot.
+        requested_shots = int(_number_or_none((request.video or {}).get("ltx25_multishot_count")) or 3)
+        max_refs = max(2, min(4, requested_shots))
     if preset in {"krea2", "krea-2"}:
         max_refs = 3
     values = _reference_image_values(request)[:max_refs]
@@ -3693,6 +3733,83 @@ def _ffprobe_binary() -> str | None:
         if candidate.exists():
             return str(candidate)
     return None
+
+
+def _video_has_audio_stream(source: Path) -> bool:
+    """Return whether a local video exposes an audio stream to Comfy/VHS."""
+    ffprobe = _ffprobe_binary()
+    if not ffprobe or not source.is_file():
+        return False
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=index",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(source),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0 and bool((result.stdout or "").strip())
+
+
+def _ensure_video_audio_stream(video_name: str, prefix: str = "nexus_h3_reference") -> str:
+    """Give a silent reference video an AAC track for VideoHelperSuite.
+
+    VHS always asks FFmpeg for its audio output, even when that output is not
+    connected in the graph.  A silent MP4 therefore fails after sampling has
+    completed.  H3 accepts a silent soundtrack, so normalize only the input
+    copy sent to ComfyUI and keep the original upload untouched.
+    """
+    source = settings.input_dir / str(video_name or "")
+    if not source.is_file():
+        raise ValueError(f"MiniMax H3 reference video was not found: {video_name}")
+    if _video_has_audio_stream(source):
+        return source.name
+    target = settings.input_dir / f"{prefix}_{source.stem}_{uuid.uuid4().hex[:8]}.mp4"
+    command = [
+        _ffmpeg_binary(),
+        "-y",
+        "-i",
+        str(source),
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=channel_layout=stereo:sample_rate=48000",
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "96k",
+        "-shortest",
+        "-movflags",
+        "+faststart",
+        str(target),
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        raise ValueError(f"MiniMax H3 could not prepare silent audio for the video reference: {exc}") from exc
+    if result.returncode != 0 or not target.is_file() or not _video_has_audio_stream(target):
+        target.unlink(missing_ok=True)
+        details = (result.stderr or result.stdout or "FFmpeg returned no details").strip().replace("\n", " ")
+        raise ValueError(f"MiniMax H3 could not prepare a compatible audio track for the video reference: {details[:360]}")
+    return target.name
 
 
 def _extract_audio_to_input(video_path: Path, prefix: str = "nexus_director_audio") -> str:
@@ -7504,7 +7621,7 @@ async def _ltx25_status_snapshot() -> dict[str, Any]:
             "native_audio": True,
             "latent_spatial_upscale_x2": True,
             "video_reference_requires_iclora": True,
-            "temporal_upscale": False,
+            "temporal_upscale": True,
         },
         "note": "The template recognizes existing LTX 2.5 user files by path/name and never downloads a duplicate. Source-video reference is a separate official IC-LoRA workflow and is not mixed into the base T2V/I2V graph.",
     }
@@ -7626,6 +7743,96 @@ def _minimax_h3_static_missing_core_support() -> list[str]:
     if not has_minimax_clip:
         missing.append("CLIPLoader type minimax")
     return missing
+
+
+def _minimax_h3_ltx25_upscale_missing_core_support(object_info: dict[str, Any] | None) -> list[str]:
+    registry = object_info or {}
+    missing = [name for name in MINIMAX_H3_LTX25_UPSCALE_REQUIRED_NODES if name not in registry]
+    clip_info = registry.get("CLIPLoader") or {}
+    clip_type_options = ((clip_info.get("input") or {}).get("required") or {}).get("type") or [[], {}]
+    try:
+        clip_types = {str(item) for item in (clip_type_options[0] or [])}
+    except (TypeError, IndexError):
+        clip_types = set()
+    if "ltxv" not in clip_types:
+        missing.append("CLIPLoader type ltxv")
+    return list(dict.fromkeys(missing))
+
+
+def _minimax_h3_ltx25_upscale_static_missing_core_support() -> list[str]:
+    """Check the stopped embedded runtime without starting ComfyUI."""
+    required = set(MINIMAX_H3_LTX25_UPSCALE_REQUIRED_NODES)
+    source_roots = [settings.comfy_root, settings.custom_nodes_dir / "ComfyUI-LTXVideo"]
+    has_ltxv_clip = False
+    try:
+        for root in source_roots:
+            if not root.exists():
+                continue
+            for source in root.rglob("*.py"):
+                if not required:
+                    break
+                try:
+                    content = source.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                required = {name for name in required if name not in content}
+                has_ltxv_clip = has_ltxv_clip or bool(re.search(r"[\"']ltxv[\"']", content, flags=re.IGNORECASE))
+    except OSError:
+        return ["ComfyUI runtime source"]
+    missing = sorted(required)
+    if not has_ltxv_clip:
+        missing.append("CLIPLoader type ltxv")
+    return missing
+
+
+def _minimax_h3_ltx_pixel_upscale_factor(value: Any) -> int:
+    try:
+        return 4 if int(value) == 4 else 2
+    except (TypeError, ValueError):
+        return 2
+
+
+async def _minimax_h3_ltx_pixel_upscale_status_snapshot(scale_factor: int = 2) -> dict[str, Any]:
+    factor = _minimax_h3_ltx_pixel_upscale_factor(scale_factor)
+    assets = resolve_minimax_h3_ltx25_upscale_assets(settings)
+    labels = {
+        "model": "LTX 2.5 transformer",
+        "text_encoder": "LTX 2.5 Gemma 4 text encoder",
+        "video_vae": "LTX 2.5 convolutional video VAE",
+        "audio_vae": "LTX 2.5 audio VAE",
+        "latent_upscale": "LTX 2.5 native latent spatial upscaler ×2",
+    }
+    required_keys = tuple(labels)
+    missing_assets = [
+        {
+            "key": key,
+            "label": labels[key],
+            "downloadable": key in {"model", "text_encoder", "video_vae", "audio_vae", "latent_upscale"},
+            "destination": "",
+        }
+        for key in required_keys
+        if not assets.get(key)
+    ]
+    runtime_checked = await comfy.is_running()
+    if runtime_checked:
+        try:
+            missing_nodes = _minimax_h3_ltx25_upscale_missing_core_support(await comfy.object_info())
+        except Exception as exc:
+            missing_nodes = [f"Comfy object_info unavailable: {exc}"]
+    else:
+        missing_nodes = _minimax_h3_ltx25_upscale_static_missing_core_support()
+    return {
+        "template": "MiniMaxH3Ltx25LatentUpscale",
+        "label": f"MiniMax H3 → LTX 2.5 Native Latent Upscale ×{factor}",
+        "scale_factor": factor,
+        "ready": not missing_assets and not missing_nodes,
+        "assets": assets,
+        "missing_required_assets": missing_assets,
+        "missing_core_nodes": missing_nodes,
+        "runtime_checked": runtime_checked,
+        "ltx25_download_assets": ["transformer_int8", "gemma4_int8", "video_vae_conv", "audio_vae", "spatial_upscaler"],
+        "note": f"H3 is decoded at 1/{factor} resolution, used as an LTX 2.5 image guide to create a new LTX latent, then native LTX 2.5 spatial latent upscale runs ×{factor}. H3 audio is preserved.",
+    }
 
 
 def _minimax_h3_booster_status(key: str, object_info: dict[str, Any] | None, runtime_checked: bool) -> dict[str, Any]:
@@ -7768,6 +7975,33 @@ async def _run_minimax_h3_assets_download_job(job_id: str, keys: list[str] | Non
 @app.get("/api/minimax-h3/assets/status")
 async def minimax_h3_assets_status() -> dict[str, Any]:
     return await _minimax_h3_status_snapshot()
+
+
+@app.get("/api/minimax-h3/ltx-upscale/status")
+async def minimax_h3_ltx_upscale_status(scale_factor: int = Query(2, ge=2, le=4)) -> dict[str, Any]:
+    return await _minimax_h3_ltx_pixel_upscale_status_snapshot(scale_factor)
+
+
+@app.post("/api/minimax-h3/ltx-upscale/download/start")
+async def minimax_h3_ltx_upscale_download_start(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Download just the missing LTX 2.5 bridge files after confirmation."""
+    factor = _minimax_h3_ltx_pixel_upscale_factor((payload or {}).get("scale_factor"))
+    status = await _minimax_h3_ltx_pixel_upscale_status_snapshot(factor)
+    missing_keys = {str(item.get("key") or "") for item in status["missing_required_assets"]}
+    asset_keys = [
+        artifact
+        for resolver_key, artifact in {
+            "model": "transformer_int8",
+            "text_encoder": "gemma4_int8",
+            "video_vae": "video_vae_conv",
+            "audio_vae": "audio_vae",
+            "latent_upscale": "spatial_upscaler",
+        }.items()
+        if resolver_key in missing_keys
+    ]
+    if not asset_keys:
+        return {"status": "downloaded", "already_downloaded": True, "status_snapshot": status}
+    return await ltx25_assets_download_start({"assets": asset_keys})
 
 
 @app.post("/api/minimax-h3/boosters/install")
@@ -9929,6 +10163,68 @@ async def _run_ltx_hf_lora_download_job(job_id: str, kind: str) -> None:
         _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
 
 
+async def _run_minimax_h3_ltx_pixel_upscale_download_job(job_id: str, scale_factor: int = 2) -> None:
+    """Download the gated official Pixel IC-LoRA using the user's HF token.
+
+    The Lightricks repository requires the account holder to accept its
+    community licence/contact terms.  A plain URL download returns 401, so we
+    surface a precise error instead of creating a misleading partial file.
+    """
+    factor = _minimax_h3_ltx_pixel_upscale_factor(scale_factor)
+    kind = f"pixel_spatial_x{factor}"
+    artifact = _ltx_hf_lora_artifact(kind)
+    target = _ltx_hf_lora_installed_path(kind)
+    try:
+        if target.exists() and target.stat().st_size > 1024 * 1024:
+            _update_download_job(job_id, {
+                "status": "downloaded", "progress": 100, "already_downloaded": True,
+                "filename": target.name, "path": str(target), "relative_path": _download_relative_path(target),
+                "message": f"{artifact['label']} already exists.",
+            })
+            return
+        token = _huggingface_token()
+        if not token:
+            raise RuntimeError(
+                "This official LTX Pixel Spatial IC-LoRA is gated. First accept its licence on Hugging Face, "
+                "then add your read token to config/huggingface_token.txt (or set HF_TOKEN) and retry."
+            )
+        _update_download_job(job_id, {
+            "status": "downloading", "progress": 0,
+            "message": f"Downloading gated {artifact['label']} with the configured Hugging Face token.",
+            "token_configured": True,
+        })
+
+        def _download() -> None:
+            try:
+                from huggingface_hub import hf_hub_download
+            except ImportError as exc:
+                raise RuntimeError("huggingface_hub is required for the LTX Pixel Spatial IC-LoRA download.") from exc
+            downloaded = Path(hf_hub_download(
+                repo_id=str(artifact["repo_id"]),
+                filename=str(artifact["hf_filename"]),
+                token=token,
+            ))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(downloaded, target)
+
+        await asyncio.to_thread(_download)
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {
+            "status": "downloaded", "progress": 100, "filename": target.name,
+            "path": str(target), "relative_path": _download_relative_path(target),
+            "bytes_downloaded": target.stat().st_size, "bytes_total": target.stat().st_size,
+            "message": f"{artifact['label']} ready.", "completed_at": datetime.now().isoformat(timespec="seconds"),
+        })
+    except Exception as exc:
+        message = str(exc)
+        if any(token in message.lower() for token in ("gated", "401", "403", "access", "authorization")):
+            message = (
+                "Hugging Face access was denied for the official LTX Pixel Spatial IC-LoRA. Accept the model licence/contact terms "
+                "at its Hugging Face page, then add a read token in config/huggingface_token.txt and retry."
+            )
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": message, "error": message})
+
+
 @app.get("/api/ltx/detailer/status")
 async def ltx_detailer_status() -> dict[str, Any]:
     artifact = _ltx_hf_lora_artifact("detailer")
@@ -11078,6 +11374,24 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             h3_extra_videos = _minimax_h3_reference_media_values(request, "minimax_h3_reference_videos")
             h3_reference_audios = _minimax_h3_reference_media_values(request, "minimax_h3_reference_audios")
             h3_video_count = (1 if str(getattr(request.img2img, "base_video", "") or "").strip() else 0) + len(h3_extra_videos)
+            h3_image_edit_enabled = _truthy((request.video or {}).get("minimax_h3_image_edit_enabled", False))
+            if h3_image_edit_enabled:
+                if request.workflow_override:
+                    raise ValueError(
+                        "MiniMax H3 Image Edit is available only in the synchronized REF2VA workflow. "
+                        "Reset to the MiniMax H3 default workflow before enabling it."
+                    )
+                if h3_mode not in {"r2v", "reference", "reference_to_video"}:
+                    raise ValueError("MiniMax H3 Image Edit requires REF2VA R2V mode.")
+                if len(_reference_image_values(request)) != 1:
+                    raise ValueError("MiniMax H3 Image Edit requires exactly one reference image.")
+                if h3_video_count or h3_reference_audios:
+                    raise ValueError("MiniMax H3 Image Edit accepts one image only; remove video and audio references.")
+                if _truthy((request.video or {}).get("minimax_h3_ltx_upscale_enabled", False)):
+                    raise ValueError("MiniMax H3 Image Edit cannot be combined with LTX latent video upscale.")
+                if isinstance(request.video, dict):
+                    raw_edit_steps = _number_or_none(request.video.get("minimax_h3_image_edit_steps"))
+                    request.video["minimax_h3_image_edit_steps"] = max(1, min(100, int(round(raw_edit_steps if raw_edit_steps is not None else 8))))
             if h3_video_count > 3:
                 raise ValueError("MiniMax H3 REF2VA supports up to 3 reference videos.")
             if len(h3_reference_audios) > 3:
@@ -11106,17 +11420,21 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             request.workflow_id = None
         base_video_name = ltx_director_motion_video or _prepare_base_video(request)
         h3_reference_video_names: list[str] = []
+        h3_reference_video_has_audio: list[bool] = []
         h3_reference_audio_names: list[str] = []
         if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"}:
             if base_video_name:
+                base_video_name = _ensure_video_audio_stream(base_video_name)
                 h3_reference_video_names.append(base_video_name)
+                h3_reference_video_has_audio.append(True)
             remaining_video_slots = max(0, 3 - len(h3_reference_video_names))
-            h3_reference_video_names.extend(
-                _prepare_video_value(value, f"nexus_h3_reference_video_{index + 1}")
-                for index, value in enumerate(
-                    _minimax_h3_reference_media_values(request, "minimax_h3_reference_videos")[:remaining_video_slots]
-                )
-            )
+            for index, value in enumerate(
+                _minimax_h3_reference_media_values(request, "minimax_h3_reference_videos")[:remaining_video_slots]
+            ):
+                video_name = _prepare_video_value(value, f"nexus_h3_reference_video_{index + 1}")
+                video_name = _ensure_video_audio_stream(video_name, f"nexus_h3_reference_audio_{index + 1}")
+                h3_reference_video_names.append(video_name)
+                h3_reference_video_has_audio.append(True)
             h3_reference_audio_names = [
                 _prepare_audio_value(value, f"nexus_h3_reference_audio_{index + 1}")
                 for index, value in enumerate(
@@ -11277,14 +11595,28 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                         f"Install {h3_booster['repo']} in {settings.custom_nodes_dir} and restart ComfyUI."
                     )
             h3_mode = str((request.video or {}).get("minimax_h3_mode") or "i2v").strip().lower()
-            h3_uses_reference_model = h3_mode in {"r2v", "v2v", "reference", "reference_to_video", "video_to_video"}
-            h3_turbo_names = [str(getattr(item, "name", "")) for item in request.distilled_loras]
-            h3_turbo_names.extend(str(item.get("relative_name") or item.get("name") or "") for item in request.loras if isinstance(item, dict))
-            if h3_uses_reference_model and any(any(token in name.lower() for token in ("turbo", "distill", "distilled")) for name in h3_turbo_names):
-                raise ValueError(
-                    "MiniMax H3 Turbo LoRAs in the local catalog target the FL2VA T2V/I2V model and cannot be used with the REF2VA R2V/V2V route. "
-                    "Switch to T2V/I2V or disable the Turbo LoRA."
-                )
+            h3_ltx_pixel_upscale_enabled = _truthy((request.video or {}).get("minimax_h3_ltx_upscale_enabled", False))
+            if h3_ltx_pixel_upscale_enabled:
+                if request.workflow_override:
+                    raise ValueError(
+                        "MiniMax H3 → LTX Pixel Upscale is available only in the synchronized Nexus H3 workflow. "
+                        "Disable it before using a custom workflow override so existing workflows remain untouched."
+                    )
+                ltx25_assets = resolve_minimax_h3_ltx25_upscale_assets(settings)
+                ltx25_required = ("model", "text_encoder", "video_vae", "audio_vae", "latent_upscale")
+                missing_ltx25_assets = [key for key in ltx25_required if not ltx25_assets.get(key)]
+                if missing_ltx25_assets:
+                    raise ValueError(
+                        "MiniMax H3 → LTX 2.5 latent upscale needs local LTX 2.5 assets: "
+                        f"{', '.join(missing_ltx25_assets)}. Use the UI confirmation to download only the missing "
+                        "files, or add them to one of your configured model paths."
+                    )
+                missing_ltx25_nodes = _minimax_h3_ltx25_upscale_missing_core_support(object_info)
+                if missing_ltx25_nodes:
+                    raise ValueError(
+                        "MiniMax H3 → LTX 2.5 latent upscale requires these LTX runtime nodes: "
+                        f"{', '.join(missing_ltx25_nodes[:8])}. Update/restart ComfyUI before generating."
+                    )
         if request.preset.lower() in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"}:
             missing_ltx25_core = _ltx25_missing_core_support(object_info)
             if missing_ltx25_core:
@@ -11295,6 +11627,7 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 )
             requested_ltx25_upscale = str((request.video or {}).get("latent_upscale") or "").strip().lower()
             ltx25_upscale_enabled = requested_ltx25_upscale not in {"", "automatic", "auto", "none", "off", "disabled", "false", "0", "no"}
+            ltx25_temporal_enabled = _truthy((request.video or {}).get("ltx25_temporal_upscale_enabled", False))
             if ltx25_upscale_enabled:
                 missing_ltx25_upscale = _ltx25_missing_upscale_support(object_info)
                 if missing_ltx25_upscale:
@@ -11302,6 +11635,25 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     raise ValueError(
                         "LTX 2.5 native latent upscale is enabled but the required runtime nodes are missing: "
                         f"{missing}. Disable latent upscale or update ComfyUI, then restart Nexus."
+                    )
+            if ltx25_temporal_enabled and not assets.get("temporal_upscale"):
+                raise ValueError(
+                    "LTX 2.5 temporal latent upscale is enabled but its x2 temporal model was not found. "
+                    "Choose the option in the UI to install it, or place ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors in your configured latent_upscale_models path."
+                )
+            ltx25_multishot_enabled = _truthy((request.video or {}).get("ltx25_multishot_enabled", False))
+            if ltx25_multishot_enabled:
+                if request.workflow_override:
+                    raise ValueError(
+                        "LTX 2.5 MultiShot is available only in the synchronized Nexus LTX 2.5 workflow. "
+                        "Reset to the LTX 2.5 default workflow or disable MultiShot before using a custom workflow."
+                    )
+                requested_shots = max(2, min(4, int(_number_or_none((request.video or {}).get("ltx25_multishot_count")) or 3)))
+                available_shots = len(reference_image_names)
+                if available_shots < requested_shots:
+                    raise ValueError(
+                        f"LTX 2.5 MultiShot is set to {requested_shots} shots but only {available_shots} image guide(s) were loaded. "
+                        f"Load Shot 1 through Shot {requested_shots}, or choose {max(2, available_shots)} shots in the UI."
                     )
             ltx25_turbo_names = [str(getattr(item, "name", "")) for item in request.distilled_loras]
             ltx25_turbo_names.extend(str(item.get("relative_name") or item.get("name") or "") for item in request.loras if isinstance(item, dict))
@@ -11342,7 +11694,13 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 reference_image_names=reference_image_names,
                 base_video_name=base_video_name,
                 reference_video_names=h3_reference_video_names,
+                reference_video_has_audio=h3_reference_video_has_audio,
                 reference_audio_names=h3_reference_audio_names,
+                ltx_pixel_upscale_assets=(
+                    resolve_minimax_h3_ltx25_upscale_assets(settings)
+                    if _truthy((request.video or {}).get("minimax_h3_ltx_upscale_enabled", False))
+                    else None
+                ),
             )
         elif request.preset.lower() in {"ltx25", "ltx_25", "ltx-2.5", "ltx2.5"} and not request.workflow_override:
             if base_video_name:
@@ -11366,7 +11724,9 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 ltx25_audio_vae,
                 reference_image_name=reference_image_name,
                 reference_end_image_name=reference_end_image_name,
+                reference_image_names=reference_image_names,
                 latent_upscale_name=assets.get("latent_upscale"),
+                temporal_upscale_name=assets.get("temporal_upscale"),
                 available_nodes=set(object_info or {}),
             )
         elif request.preset.lower() in {"krea2", "krea-2"} and not request.workflow_override:
