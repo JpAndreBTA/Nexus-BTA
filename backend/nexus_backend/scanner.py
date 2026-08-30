@@ -246,6 +246,13 @@ def ensure_model_tree(settings: NexusSettings) -> list[str]:
     krea2_root = settings.models_dir / "krea2"
     krea2_root.mkdir(parents=True, exist_ok=True)
     created.append(str(krea2_root))
+    music3_root = settings.models_dir / "music3"
+    music3_root.mkdir(parents=True, exist_ok=True)
+    created.append(str(music3_root))
+    for category in ("diffusion_models", "text_encoders", "vae"):
+        path = settings.models_dir / category / "music3"
+        path.mkdir(parents=True, exist_ok=True)
+        created.append(str(path))
     for category in MODEL_CATEGORIES:
         path = settings.models_dir / category
         path.mkdir(parents=True, exist_ok=True)

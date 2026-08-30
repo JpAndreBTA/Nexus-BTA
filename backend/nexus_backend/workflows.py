@@ -4899,6 +4899,83 @@ def build_basic_krea2_workflow(
     return workflow
 
 
+def build_basic_music3_workflow(
+    request: GenerateRequest,
+    model_name: str,
+    text_encoder_name: str,
+    vae_name: str,
+) -> dict[str, Any]:
+    """Build the official Comfy-Org MiniMax Music 3 text-to-music graph."""
+    options = request.music or {}
+    caption = str(options.get("caption") or request.prompt or "").strip()
+    lyrics = str(options.get("lyrics") or "")
+    raw_mode = str(options.get("mode") or options.get("generation_mode") or "").strip()
+    # Older clients did not send ``mode``. Treat an empty lyrics field as the
+    # instrumental route so a stale browser cannot silently reintroduce vocals.
+    mode = raw_mode.lower().replace("-", "_") if raw_mode else ("lyrics" if lyrics.strip() else "instrumental")
+    instrumental_mode = mode in {"instrumental", "instrumental_only", "no_vocals", "no_voice"}
+    vocal_texture_mode = mode in {"instrumental_fx", "instrumental_vocal_fx", "vocal_textures", "instrumental_with_vocal_effects"}
+    if instrumental_mode:
+        # Music 3's tokenizer treats the [instrumental] structure tag as the
+        # reliable no-vocal route. An empty lyrics field still normalizes to
+        # [start] and commonly causes humming or a lead voice.
+        lyrics = "[instrumental]"
+        if "instrumental" not in caption.lower():
+            caption = f"{caption}\nVocal Details: instrumental only; no lead vocals."
+    elif vocal_texture_mode:
+        # Keep lyrics empty so the user can request wordless vocal pads, chops
+        # or humming as part of an instrumental arrangement. Unlike the pure
+        # instrumental route, do not inject a no-vocals constraint.
+        lyrics = ""
+        if "vocal" not in caption.lower():
+            caption = f"{caption}\nVocal Details: wordless vocal textures and atmospheric vocal effects only; no lyrical verses."
+    music_negative = str(options.get("negative_prompt") or options.get("negative") or "").strip()
+    if music_negative:
+        caption = f"{caption}\nAvoid: {music_negative}"
+    duration = max(0.04, min(300.0, float(options.get("duration_seconds") or 60.0)))
+    seed = request.seed if request.seed >= 0 else random.randint(0, 0xffffffffffffffff)
+    cfg_scale = max(0.0, min(100.0, float(options.get("cfg_scale") or request.cfg or 1.7)))
+    top_k = max(1, min(4096, int(options.get("top_k") or 50)))
+    steps = max(1, min(100, int(options.get("steps") or request.steps or 30)))
+    tiled = bool(options.get("tiled_decode", True))
+    output_format = str(options.get("format") or "mp3").lower()
+    if output_format not in {"flac", "mp3", "opus"}:
+        output_format = "mp3"
+    # SaveAudioAdvanced is a ComfyUI DynamicCombo.  Its API representation is
+    # flattened (``format`` + ``format.quality``), not a nested dict.  Passing
+    # the UI-shaped dict makes the executor drop the required ``format``
+    # argument and the job reaches 100% before failing to write the audio file.
+    quality = None
+    if output_format == "mp3":
+        quality = str(options.get("quality") or "V0")
+        if quality not in {"V0", "128k", "320k"}:
+            quality = "V0"
+    elif output_format == "opus":
+        quality = str(options.get("quality") or "128k")
+        if quality not in {"64k", "96k", "128k", "192k", "320k"}:
+            quality = "128k"
+    save_inputs: dict[str, Any] = {
+        "audio": ["10", 0],
+        "filename_prefix": "audio/music3",
+        "format": output_format,
+    }
+    if quality:
+        save_inputs["format.quality"] = quality
+    return {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": model_name, "weight_dtype": "default"}, "_meta": {"title": "MiniMax Music 3 Diffusion Model"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": text_encoder_name, "type": "minimax", "device": "default"}, "_meta": {"title": "MiniMax Music 3 Text Encoder"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": vae_name}, "_meta": {"title": "MiniMax Music 3 Audio VAE"}},
+        "4": {"class_type": "MiniMaxMusic3TextEncode", "inputs": {"clip": ["2", 0], "caption": caption, "lyrics": lyrics, "seed": seed, "max_duration": duration, "cfg_scale": cfg_scale, "top_k": top_k}, "_meta": {"title": "MiniMax Music 3 Caption + Lyrics"}},
+        "5": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["4", 0]}, "_meta": {"title": "Music 3 Negative Conditioning"}},
+        "6": {"class_type": "EmptyMiniMaxMusic3LatentAudio", "inputs": {"seconds": duration, "batch_size": 1}, "_meta": {"title": "Music 3 Audio Latent"}},
+        "7": {"class_type": "KSampler", "inputs": {"model": ["1", 0], "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["6", 0], "seed": seed, "steps": steps, "cfg": cfg_scale, "sampler_name": normalize_sampler(request.sampler or "euler"), "scheduler": normalize_scheduler(request.scheduler or "simple"), "denoise": 1.0}, "_meta": {"title": "Music 3 Sampler"}},
+        "8": {"class_type": "VAEDecodeAudio", "inputs": {"samples": ["7", 0], "vae": ["3", 0]}, "_meta": {"title": "Music 3 Audio Decode"}},
+        "9": {"class_type": "VAEDecodeAudioTiled", "inputs": {"samples": ["7", 0], "vae": ["3", 0], "tile_size": 1536, "overlap": 64}, "_meta": {"title": "Music 3 Tiled Audio Decode"}},
+        "10": {"class_type": "ComfySwitchNode", "inputs": {"switch": tiled, "on_false": ["8", 0], "on_true": ["9", 0]}, "_meta": {"title": "Music 3 Tiled Decode"}},
+        "11": {"class_type": "SaveAudioAdvanced", "inputs": save_inputs, "_meta": {"title": "Save MiniMax Music 3 Audio"}},
+    }
+
+
 def build_basic_wan_i2video_workflow(
     request: GenerateRequest,
     high_model_name: str,

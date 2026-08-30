@@ -82,6 +82,7 @@ from .workflows import (
     build_basic_flux_workflow,
     build_basic_ideogram4_workflow,
     build_basic_krea2_workflow,
+    build_basic_music3_workflow,
     build_basic_ltx_img2video_workflow,
     build_basic_ltx25_img2video_workflow,
     build_basic_minimax_h3_workflow,
@@ -618,6 +619,17 @@ KREA2_REQUIRED_COMFY_NODES = (
     "CFGGuider",
     "ConditioningZeroOut",
 )
+
+MUSIC3_HF_ARTIFACTS: dict[str, dict[str, Any]] = {
+    # Values are the current Hugging Face Content-Lengths (with a small
+    # tolerance), so a complete file is not mistaken for a missing asset and
+    # a partial file is never accepted as installed after a browser refresh.
+    "dit_int8": {"label": "MiniMax Music 3 DiT INT8 (RTX 3060)", "filename": "minimax_music3_dit_int8_convrot.safetensors", "url": "https://huggingface.co/Comfy-Org/MiniMax-Music-3/resolve/main/diffusion_models/minimax_music3_dit_int8_convrot.safetensors?download=true", "target": ("diffusion_models", "music3", "minimax_music3_dit_int8_convrot.safetensors"), "min_bytes": 2450000000, "size_bytes": 2502161682, "kind": "diffusion_model", "scope": "required_3060", "profiles": ["rtx_3060_local", "rtx_5090"]},
+    "dit_fp16": {"label": "MiniMax Music 3 DiT FP16 (RTX 5090)", "filename": "minimax_music3_dit_fp16.safetensors", "url": "https://huggingface.co/Comfy-Org/MiniMax-Music-3/resolve/main/diffusion_models/minimax_music3_dit_fp16.safetensors?download=true", "target": ("diffusion_models", "music3", "minimax_music3_dit_fp16.safetensors"), "min_bytes": 4800000000, "size_bytes": 4914197682, "kind": "diffusion_model", "scope": "optional_5090", "profiles": ["rtx_5090"]},
+    "text_encoder": {"label": "MiniMax Music 3 INT8 text encoder", "filename": "minimax_music3_text_encoder_pruned_int8_convrot.safetensors", "url": "https://huggingface.co/Comfy-Org/MiniMax-Music-3/resolve/main/text_encoders/minimax_music3_text_encoder_pruned_int8_convrot.safetensors?download=true", "target": ("text_encoders", "music3", "minimax_music3_text_encoder_pruned_int8_convrot.safetensors"), "min_bytes": 9000000000, "size_bytes": 9196611886, "kind": "text_encoder", "scope": "base_model", "profiles": ["rtx_3060_local", "rtx_5090"]},
+    "vae": {"label": "MiniMax Music 3 DAV audio VAE", "filename": "minimax_music3_dav.safetensors", "url": "https://huggingface.co/Comfy-Org/MiniMax-Music-3/resolve/main/vae/minimax_music3_dav.safetensors?download=true", "target": ("vae", "music3", "minimax_music3_dav.safetensors"), "min_bytes": 210000000, "size_bytes": 216696128, "kind": "vae", "scope": "base_model", "profiles": ["rtx_3060_local", "rtx_5090"]},
+}
+MUSIC3_REQUIRED_COMFY_NODES = ("UNETLoader", "CLIPLoader", "VAELoader", "MiniMaxMusic3TextEncode", "EmptyMiniMaxMusic3LatentAudio", "ConditioningZeroOut", "KSampler", "VAEDecodeAudio", "VAEDecodeAudioTiled", "ComfySwitchNode", "SaveAudioAdvanced")
 
 # Official Comfy-Org split files for the open-weight MiniMax H3 release.
 # Keep FL2VA (T2V/I2V) and REF2VA (reference-to-video) separate: they are
@@ -3013,6 +3025,7 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
         "loras": _enriched_lora_metadata(request),
         "distilled_loras": [item.model_dump(mode="json") for item in request.distilled_loras],
         "video": video,
+        "music": _sanitize_embedded_media_metadata(dict(request.music or {})),
         "director": _sanitize_embedded_media_metadata(request.director),
         "vae": assets.get("vae") or assets.get("video_vae") or request.vae,
         "text_encoder": assets.get("text_encoder") or request.text_encoder,
@@ -3061,6 +3074,8 @@ def _generation_metadata(request: GenerateRequest, assets: dict[str, Any] | None
 
 
 def _generation_activity_label(request: GenerateRequest) -> str:
+    if request.preset.lower() in {"music3", "music 3", "minimax_music3", "minimax-music-3"}:
+        return "text_to_music"
     if request.activity != "img2img":
         return request.activity
     if (
@@ -3652,7 +3667,8 @@ def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[st
     if not settings.output_dir.exists():
         return []
     model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".spz", ".ksplat"}
-    media_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mkv", ".mov", ".avi", *model_suffixes}
+    audio_suffixes = {".mp3", ".wav", ".flac", ".opus", ".ogg", ".m4a"}
+    media_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mkv", ".mov", ".avi", *audio_suffixes, *model_suffixes}
     root = settings.output_dir.resolve()
     candidates: list[Path] = []
     for path in settings.output_dir.rglob("*"):
@@ -3671,7 +3687,7 @@ def _recent_output_files(start_timestamp: float, limit: int = 8) -> list[dict[st
     for path in sorted(candidates, key=lambda item: item.stat().st_mtime, reverse=True)[:limit]:
         relative = path.relative_to(settings.output_dir).as_posix()
         suffix = path.suffix.lower()
-        kind = "3d" if suffix in model_suffixes else ("video" if suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "image")
+        kind = "3d" if suffix in model_suffixes else ("video" if suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else ("audio" if suffix in audio_suffixes else "image"))
         outputs.append(
             {
                 "kind": kind,
@@ -4064,7 +4080,7 @@ def _extras_output(kind: str, suffix: str, stem: str = "extras") -> Path:
 def _output_item(path: Path, kind: str | None = None) -> dict[str, Any]:
     relative = path.resolve().relative_to(settings.output_dir.resolve()).as_posix()
     suffix = path.suffix.lower()
-    media_kind = kind or ("video" if suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "image")
+    media_kind = kind or ("video" if suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "audio" if suffix in {".mp3", ".wav", ".flac", ".opus", ".ogg", ".m4a"} else "image")
     return {
         "kind": media_kind,
         "filename": path.name,
@@ -7427,6 +7443,98 @@ async def krea2_assets_download_start(payload: dict[str, Any] | None = None) -> 
     job_id = f"krea2_{uuid.uuid4().hex[:8]}"
     download_jobs[job_id] = {"job_id": job_id, "kind": "krea2_assets", "requested_assets": keys, "status": "queued", "progress": 0, "message": "Krea 2 local asset download queued.", "error": None, "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat()}
     asyncio.create_task(_run_krea2_assets_download_job(job_id, keys))
+    return download_jobs[job_id]
+
+
+def _music3_artifact_target(key: str) -> Path:
+    return settings.models_dir.joinpath(*(str(part) for part in MUSIC3_HF_ARTIFACTS[key]["target"]))
+
+
+def _music3_artifact_status(key: str) -> dict[str, Any]:
+    artifact = MUSIC3_HF_ARTIFACTS[key]
+    target = _music3_artifact_target(key)
+    minimum = int(artifact.get("min_bytes") or 1024 * 1024)
+    installed = target.exists() and target.stat().st_size >= minimum
+    return {"key": key, "label": artifact["label"], "filename": artifact["filename"], "url": artifact["url"], "kind": artifact.get("kind", "model"), "scope": artifact.get("scope", "dependency"), "profiles": list(artifact.get("profiles") or []), "destination": str(target), "path": str(target) if installed else "", "installed": installed, "size_bytes_min": minimum, "size_bytes": target.stat().st_size if target.exists() else int(artifact.get("size_bytes") or minimum)}
+
+
+def _music3_missing_core_support(object_info: dict[str, Any] | None) -> list[str]:
+    registry = object_info or {}
+    missing = [name for name in MUSIC3_REQUIRED_COMFY_NODES if name not in registry]
+    clip_info = registry.get("CLIPLoader") or {}
+    clip_type_options = ((clip_info.get("input") or {}).get("required") or {}).get("type") or [[], {}]
+    try:
+        clip_types = {str(item) for item in (clip_type_options[0] or [])}
+    except (TypeError, IndexError):
+        clip_types = set()
+    if clip_types and "minimax" not in clip_types:
+        missing.append("CLIPLoader type minimax")
+    return missing
+
+
+async def _music3_status_snapshot() -> dict[str, Any]:
+    assets = [_music3_artifact_status(key) for key in MUSIC3_HF_ARTIFACTS]
+    gpu = _nvidia_smi_memory_snapshot()
+    vram = float(gpu.get("total_mb") or 0) / 1024 if gpu.get("available") else 0.0
+    profile = "rtx_5090" if vram >= 30 else "rtx_3060_local"
+    runtime_checked = await comfy.is_running()
+    missing_core: list[str] = []
+    if runtime_checked:
+        try:
+            missing_core = _music3_missing_core_support(await comfy.object_info())
+        except Exception as exc:
+            missing_core = [f"Comfy object_info unavailable: {exc}"]
+    int8_item = next(item for item in assets if item["key"] == "dit_int8")
+    fp16_item = next(item for item in assets if item["key"] == "dit_fp16")
+    required = [item for item in assets if item["key"] in {"text_encoder", "vae"} and not item["installed"]]
+    if profile == "rtx_5090":
+        if not int8_item["installed"] and not fp16_item["installed"]:
+            required.append(fp16_item)
+    elif not int8_item["installed"]:
+        required.append(int8_item)
+    optional = [item for item in assets if item["key"] == "dit_fp16" and not item["installed"] and item not in required]
+    return {"template": "Music3", "label": "Music 3", "installed": not required, "generation_ready": not required and not missing_core, "dependencies_installed": not required and not missing_core, "assets": assets, "missing_assets": required + optional, "missing_required_assets": required, "missing_optional_assets": optional, "missing_core_nodes": missing_core, "comfy_update_required": bool(missing_core), "restart_recommended": bool(missing_core), "runtime_checked": runtime_checked, "models_dir": str(settings.models_dir), "comfy_root": str(settings.comfy_root), "detected_vram_gb": round(vram, 2), "recommended_profile": profile, "storage_layout": {"root": str(settings.models_dir / "music3"), "diffusion_models": str(settings.models_dir / "diffusion_models" / "music3"), "text_encoders": str(settings.models_dir / "text_encoders" / "music3"), "vae": str(settings.models_dir / "vae" / "music3"), "comfy_compatibility": "Music 3 weights use standard Comfy categories with a music3 subfolder."}, "profiles": {"rtx_3060_local": {"supported": vram >= 11, "resolution": "audio", "steps": 30, "runtime_flags": ["--use-sage-attention", "--disable-smart-memory"], "note": "INT8 DiT with tiled decode; start with 30–60 seconds on 12 GB."}, "rtx_5090": {"supported": vram >= 30, "resolution": "audio", "steps": 30, "runtime_flags": ["--use-sage-attention"], "note": "FP16 DiT and non-tiled decode for best throughput."}}, "capabilities": {"text_to_music": True, "instrumental": True, "instrumental_vocal_textures": True, "lyrics": True, "caption": True, "negative_guidance": True, "duration_max_seconds": 300, "native_audio": True, "tiled_decode": True, "image_reference": False, "video_reference": False, "lora": False}, "estimated_missing_required_bytes": sum(int(item["size_bytes"]) for item in required), "estimated_missing_optional_bytes": sum(int(item["size_bytes"]) for item in optional), "note": "Music 3 is a dedicated local audio template. It uses the native MiniMax Music 3 nodes; pure instrumentals use [instrumental], while vocal textures use an empty lyrics field plus Vocal Details."}
+
+
+async def _run_music3_assets_download_job(job_id: str, keys: list[str] | None = None) -> None:
+    try:
+        selected = [key for key in (keys or []) if key in MUSIC3_HF_ARTIFACTS]
+        if not selected:
+            selected = [item["key"] for item in (await _music3_status_snapshot())["missing_required_assets"]]
+        completed = []
+        for key in selected:
+            status = _music3_artifact_status(key)
+            if status["installed"]:
+                completed.append({**status, "already_downloaded": True})
+                continue
+            artifact = MUSIC3_HF_ARTIFACTS[key]
+            _update_download_job(job_id, {"status": "downloading", "message": f"Downloading {artifact['label']}"})
+            result = await asyncio.to_thread(_download_url_to_file, artifact["url"], _music3_artifact_target(key), job_id)
+            completed.append({**result, "key": key, "label": artifact["label"]})
+        ensure_model_tree(settings)
+        _update_download_job(job_id, {"status": "downloaded", "progress": 100, "message": "Music 3 local assets ready.", "assets": completed, "status_snapshot": await _music3_status_snapshot(), "completed_at": datetime.now().isoformat(timespec="seconds")})
+    except Exception as exc:
+        _update_download_job(job_id, {"status": "failed", "progress": 100, "message": str(exc), "error": str(exc)})
+
+
+@app.get("/api/music3/assets/status")
+async def music3_assets_status() -> dict[str, Any]:
+    return await _music3_status_snapshot()
+
+
+@app.post("/api/music3/assets/download/start")
+async def music3_assets_download_start(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw = (payload or {}).get("assets") or (payload or {}).get("keys") or []
+    keys = list(dict.fromkeys(str(item) for item in raw if str(item) in MUSIC3_HF_ARTIFACTS)) if isinstance(raw, list) else []
+    # A browser refresh can re-submit the setup dialog while the original job is
+    # still running. Reuse that job so each artifact is downloaded only once.
+    active_statuses = {"queued", "resolving", "downloading", "saving_preview"}
+    for existing in reversed(list(download_jobs.values())):
+        if existing.get("kind") == "music3_assets" and str(existing.get("status") or "").lower() in active_statuses:
+            return existing
+    job_id = f"music3_{uuid.uuid4().hex[:8]}"
+    download_jobs[job_id] = {"job_id": job_id, "kind": "music3_assets", "requested_assets": keys, "status": "queued", "progress": 0, "message": "Music 3 asset download queued.", "error": None, "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat()}
+    asyncio.create_task(_run_music3_assets_download_job(job_id, keys))
     return download_jobs[job_id]
 
 
@@ -11261,6 +11369,12 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             _update_generation_job(job_id, {"status": "preparing", "progress": 4, "message": "Resolving generation assets"})
         _normalize_ltx_outpaint_workflow_scope(request)
         assets = resolve_generation_assets(settings, request)
+        if request.preset.lower() in {"music3", "music 3", "minimax_music3", "minimax-music-3"}:
+            missing_music_assets = [name for name, key in (("DiT diffusion model", "primary_model"), ("text encoder", "text_encoder"), ("audio VAE", "vae")) if not assets.get(key)]
+            if missing_music_assets:
+                raise ValueError("Music 3 missing required local assets: " + ", ".join(missing_music_assets) + ". Open the Music 3 dependency panel and confirm the download.")
+            if request.workflow_override:
+                raise ValueError("Music 3 uses the synchronized native audio workflow; custom image/video workflows are not compatible with this template.")
         if request.preset.lower() == "ltx" and float(request.cfg or 0) == 7.0:
             request.cfg = 1.0
         _ensure_ltx_default_distilled_loras(request, assets)
@@ -11530,6 +11644,8 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
             workflow_path = None
         if request.preset.lower() in {"krea2", "krea-2"} and not request.workflow_id:
             workflow_path = None
+        if request.preset.lower() in {"music3", "music 3", "minimax_music3", "minimax-music-3"}:
+            workflow_path = None
         if base_video_name and not request.workflow_id and request.preset.lower() in {"wan", "ltx", "ltx25", "ltx_25", "ltx-2.5", "ltx2.5"}:
             workflow_path = None
         if request.preset.lower() == "qwen" and request.activity == "img2img" and reference_image_name:
@@ -11575,6 +11691,10 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                     "Krea 2 requires a newer ComfyUI core with the official Krea 2 nodes. "
                     f"Missing runtime support: {missing}. Update ComfyUI, then restart Nexus when the active training job is finished."
                 )
+        if request.preset.lower() in {"music3", "music 3", "minimax_music3", "minimax-music-3"}:
+            missing_music_core = _music3_missing_core_support(object_info)
+            if missing_music_core:
+                raise ValueError("Music 3 requires a current ComfyUI core with native MiniMax Music 3 nodes. Missing runtime support: " + ", ".join(missing_music_core[:8]) + f". Run update.bat for the configured ComfyUI at {settings.comfy_root}, then restart Nexus.")
         if request.preset.lower() in {"minimaxh3", "minimax_h3", "minimax-h3"}:
             missing_h3_core = _minimax_h3_missing_core_support(object_info)
             if missing_h3_core:
@@ -11729,6 +11849,15 @@ async def _run_generation_core(request: GenerateRequest, job_id: str | None = No
                 temporal_upscale_name=assets.get("temporal_upscale"),
                 available_nodes=set(object_info or {}),
             )
+        elif request.preset.lower() in {"music3", "music 3", "minimax_music3", "minimax-music-3"}:
+            music_model_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
+            music_text_encoder = assets.get("text_encoder")
+            music_vae = assets.get("vae")
+            if not music_model_name or not music_text_encoder or not music_vae:
+                raise ValueError("Music 3 requires its DiT model, text encoder and audio VAE.")
+            if job_id:
+                _update_generation_job(job_id, {"status": "building", "progress": 9, "message": "Building synchronized Music 3 audio workflow"})
+            prompt = build_basic_music3_workflow(request, music_model_name, music_text_encoder, music_vae)
         elif request.preset.lower() in {"krea2", "krea-2"} and not request.workflow_override:
             krea2_model_name = assets.get("primary_model") or Path(request.model_path or request.model_name or "").name
             krea2_text_encoder = assets.get("text_encoder")
@@ -12556,12 +12685,13 @@ async def gallery() -> list[dict[str, Any]]:
     if not settings.output_dir.exists():
         return items
     model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".spz", ".ksplat"}
+    audio_suffixes = {".mp3", ".wav", ".flac", ".opus", ".ogg", ".m4a"}
     for path in sorted(settings.output_dir.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
-        if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", *model_suffixes}:
+        if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", *audio_suffixes, *model_suffixes}:
             continue
         relative = path.relative_to(settings.output_dir).as_posix()
         url_path = quote(relative, safe="/")
-        media_type = "3d" if path.suffix.lower() in model_suffixes else ("video" if path.suffix.lower() in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "image")
+        media_type = "3d" if path.suffix.lower() in model_suffixes else ("video" if path.suffix.lower() in {".mp4", ".webm", ".mkv", ".mov", ".avi"} else "audio" if path.suffix.lower() in audio_suffixes else "image")
         if media_type == "image" and relative.replace("\\", "/").startswith("video/"):
             continue
         metadata = _read_output_metadata(path)

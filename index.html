@@ -2505,6 +2505,7 @@
             .preset-btn[data-preset="Lumina"]::after { content: "LU"; }
             .preset-btn[data-preset="Wan"]::after { content: "WN"; }
             .preset-btn[data-preset="LTX"]::after { content: "LX"; }
+            .preset-btn[data-preset="Music3"]::after { content: "M3"; }
             .preset-btn[data-preset="Anima"]::after { content: "AN"; }
             .preset-btn[data-preset="Ideogram4"]::after { content: "ID"; }
             .preset-btn[data-preset="Model3D"]::after { content: "3D"; }
@@ -3273,6 +3274,7 @@
                     </button>
                     <img id="galleryModalImage" src="" alt="Gallery selected output" draggable="false" class="max-w-full max-h-full object-contain border border-nexus-border">
                     <video id="galleryModalVideo" src="" controls loop playsinline disablepictureinpicture class="hidden max-w-full max-h-full object-contain border border-nexus-border"></video>
+                    <audio id="galleryModalAudio" src="" controls class="hidden w-[min(640px,90%)]"></audio>
                     <button onclick="navigateGalleryModal(1)" class="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-9 h-9 bg-nexus-panel border border-nexus-border rounded-sm text-nexus-muted hover:text-white hover:border-nexus-red" title="Next">
                         <i class="fa-solid fa-chevron-right"></i>
                     </button>
@@ -3574,6 +3576,7 @@
                 <button data-preset="LTX" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'LTX')">LTX 2.3</button>
                 <button data-preset="LTX25" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'LTX25')">LTX 2.5</button>
                 <button data-preset="MiniMaxH3" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'MiniMaxH3')">MINIMAX H3</button>
+                <button data-preset="Music3" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Music3')">MUSIC 3</button>
                 <button data-preset="Anima" class="preset-btn active px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white bg-nexus-red rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Anima')">ANIMA</button>
                 <button data-preset="Ideogram4" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Ideogram4')">IDEOGRAM 4</button>
                 <button data-preset="Model3D" class="preset-btn px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-nexus-muted hover:text-white hover:bg-nexus-hover rounded-sm transition-colors shrink-0" onclick="setPreset(this, 'Model3D')">3D MODEL</button>
@@ -3595,6 +3598,7 @@
                     <option value="LTX">LTX</option>
                     <option value="LTX25">LTX 2.5</option>
                     <option value="MiniMaxH3">MINIMAX H3</option>
+                    <option value="Music3">MUSIC 3</option>
                     <option value="Anima">ANIMA</option>
                     <option value="Ideogram4">Ideogram-4</option>
                     <option value="Model3D">3D</option>
@@ -3856,7 +3860,7 @@
                         </button>
                     </div>
                     
-                    <div class="relative">
+                    <div id="negativePromptField" class="relative">
                         <textarea id="negPrompt" rows="2" class="w-full bg-nexus-bg border border-nexus-border rounded-sm p-2 pr-10 pb-8 text-xs text-nexus-muted placeholder-zinc-600 focus:outline-none focus:border-nexus-red resize-none" placeholder="Negative prompt: worst quality, blurry, deformed..."></textarea>
                         <button id="negativeEmbeddingBtn" type="button" onclick="openEmbeddingModal('negative')" class="absolute bottom-2 right-2 h-6 px-2 bg-nexus-panel border border-nexus-border text-[9px] font-bold text-nexus-muted hover:text-white hover:border-nexus-red rounded-sm transition-colors" title="Add embedding to negative prompt">
                             <i class="fa-solid fa-fingerprint text-nexus-red mr-1"></i> Emb
@@ -4050,7 +4054,7 @@
                     <div id="leftPinnedNodesList" class="space-y-2"></div>
                 </div>
 
-                <div class="sortable-panel space-y-1.5 pt-3 border-t border-nexus-border" data-panel-key="concepts" data-panel-title="Concepts (LoRA)" draggable="true">
+                <div id="conceptsPanel" class="sortable-panel space-y-1.5 pt-3 border-t border-nexus-border" data-panel-key="concepts" data-panel-title="Concepts (LoRA)" draggable="true">
                     <div class="flex justify-between items-center">
                         <label class="text-[10px] font-bold text-white uppercase tracking-wider"><i class="fa-solid fa-grip-vertical panel-drag-handle text-nexus-muted mr-1"></i>Concepts (LoRA)</label>
                         <button onclick="openLoraModal()" class="text-[10px] font-bold text-nexus-red hover:text-white transition-colors bg-nexus-hover px-2 py-0.5 rounded-sm"><i class="fa-solid fa-plus"></i> Add</button>
@@ -4126,7 +4130,7 @@
                 </div>
 
                 <!-- Distilled LoRA slots for motion/video templates -->
-                <div class="sortable-panel space-y-1 pt-2" data-panel-key="distilledLora" data-panel-title="Distilled LoRA" draggable="true">
+                <div id="distilledLoraPanel" class="sortable-panel space-y-1 pt-2" data-panel-key="distilledLora" data-panel-title="Distilled LoRA" draggable="true">
                     <div class="flex justify-between items-center cursor-pointer p-1 rounded-sm" onclick="toggleAccordion('distilledLoraAccordion')">
                         <label id="distilledLoraPanelLabel" class="text-[10px] font-bold text-nexus-muted uppercase tracking-wider cursor-pointer"><i class="fa-solid fa-grip-vertical panel-drag-handle mr-1"></i>Distilled LoRA</label>
                         <i id="distilledLoraAccordionIcon" class="fa-solid fa-chevron-down text-[10px] text-nexus-muted transition-transform"></i>
@@ -4164,7 +4168,7 @@
                 </div>
 
                 <!-- Dimensions & Sizing (Inline Sliders) -->
-                <div class="sortable-panel space-y-3 pt-3 border-t border-nexus-border" data-panel-key="dimensions" data-panel-title="Image Dimensions" draggable="true">
+                <div id="dimensionsPanel" class="sortable-panel space-y-3 pt-3 border-t border-nexus-border" data-panel-key="dimensions" data-panel-title="Image Dimensions" draggable="true">
                     <div class="flex justify-between items-center">
                         <label id="dimensionsTitle" class="text-[10px] font-bold text-white uppercase tracking-wider"><i class="fa-solid fa-grip-vertical panel-drag-handle text-nexus-muted mr-1"></i>Image Dimensions</label>
                     </div>
@@ -4340,9 +4344,83 @@
                             </div>
                         </label>
                         <input id="seedInput" type="text" value="-1" class="w-full bg-nexus-bg border border-nexus-border rounded-sm px-2 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-nexus-red">
-                    </div>
+                        </div>
 
-                    <!-- Video, Refiner & Advanced Collapsible Sections below Seed -->
+                        <!-- Dedicated MiniMax Music 3 controls -->
+                        <div id="music3SettingsPanel" class="hidden sortable-panel space-y-2 pt-3 border-t border-nexus-border" data-panel-key="music3" data-panel-title="Music 3" draggable="true">
+                            <div class="bg-nexus-panel border border-nexus-border rounded-sm p-2 cursor-pointer flex justify-between items-center" onclick="toggleAccordion('music3Accordion')">
+                                <span class="text-[10px] font-bold text-nexus-muted uppercase tracking-wider"><i class="fa-solid fa-grip-vertical panel-drag-handle mr-1"></i>Music 3</span>
+                                <i id="music3AccordionIcon" class="fa-solid fa-chevron-down text-[10px] text-nexus-muted transition-transform"></i>
+                            </div>
+                            <div id="music3Accordion" class="p-2 border border-t-0 border-nexus-border bg-nexus-bg space-y-2">
+                                <div class="text-[9px] font-mono text-nexus-muted">Native MiniMax Music 3 audio workflow. The top model selector chooses the compatible DiT automatically.</div>
+                                <label class="space-y-1 block">
+                                    <span class="mini-label">Generation mode</span>
+                                    <select id="music3ModeSelect" class="flat-input appearance-none cursor-pointer">
+                                        <option value="instrumental" selected>Instrumental — no vocals</option>
+                                        <option value="instrumental_fx">Instrumental + vocal textures — no lyrics</option>
+                                        <option value="lyrics">Lyrics + caption — vocals</option>
+                                        <option value="caption">Caption + negative guidance</option>
+                                    </select>
+                                </label>
+                                <label class="space-y-1 block">
+                                    <span class="mini-label">Lyrics / structure (vocal mode)</span>
+                                    <textarea id="music3LyricsInput" rows="4" class="w-full bg-nexus-bg border border-nexus-border rounded-sm p-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-nexus-red resize-y" placeholder="[Verse]\nWrite lyrics here..." spellcheck="false"></textarea>
+                                </label>
+                                <label class="space-y-1 block">
+                                    <span class="mini-label">Negative guidance (caption / vocal-texture mode, optional)</span>
+                                    <textarea id="music3NegativeInput" rows="2" class="w-full bg-nexus-bg border border-nexus-border rounded-sm p-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-nexus-red resize-y" placeholder="lead vocals, singing, choir, chanting, spoken voice" spellcheck="false"></textarea>
+                                </label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <label class="space-y-1">
+                                        <span class="mini-label">Duration (seconds)</span>
+                                        <input id="music3DurationInput" class="flat-input font-mono text-right" type="number" value="60" min="0.04" max="300" step="0.1">
+                                    </label>
+                                    <label class="space-y-1">
+                                        <span class="mini-label">Top K</span>
+                                        <input id="music3TopKInput" class="flat-input font-mono text-right" type="number" value="50" min="1" max="4096" step="1">
+                                    </label>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <label class="space-y-1">
+                                        <span class="mini-label">Music CFG</span>
+                                        <input id="music3CfgInput" class="flat-input font-mono text-right" type="number" value="1.7" min="0" max="100" step="0.1">
+                                    </label>
+                                    <label class="space-y-1">
+                                        <span class="mini-label">Output format</span>
+                                        <select id="music3FormatSelect" class="flat-input appearance-none cursor-pointer">
+                                            <option value="mp3" selected>MP3</option>
+                                            <option value="flac">FLAC</option>
+                                            <option value="opus">Opus</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <label class="space-y-1 block">
+                                    <span class="mini-label">Encoding quality</span>
+                                    <select id="music3QualitySelect" class="flat-input appearance-none cursor-pointer">
+                                        <option value="V0" selected>MP3 V0 / automatic</option>
+                                        <option value="192k">192 kbps</option>
+                                        <option value="128k">128 kbps</option>
+                                    </select>
+                                </label>
+                                <label class="flex items-center justify-between gap-3 bg-nexus-panel border border-nexus-border px-2 py-2 rounded-sm text-xs text-white">
+                                    <span class="font-bold">Tiled audio decode <span class="text-[9px] text-nexus-muted font-normal">(RTX 3060)</span></span>
+                                    <span class="toggle-switch"><input id="music3TiledToggle" type="checkbox" checked><span class="toggle-track"></span></span>
+                                </label>
+                                <div id="music3StatusText" class="text-[9px] font-mono text-nexus-muted">Model: automatic Music 3 INT8 route. Download dependencies from the template when required.</div>
+                                <div id="music3DownloadProgress" class="hidden border border-nexus-border bg-zinc-950 rounded-sm p-2 space-y-1.5" aria-live="polite">
+                                    <div class="flex items-center justify-between gap-2 text-[9px] font-mono text-nexus-muted">
+                                        <span id="music3DownloadProgressLabel">Music 3 download</span>
+                                        <span id="music3DownloadProgressValue">0%</span>
+                                    </div>
+                                    <div class="h-1.5 w-full overflow-hidden rounded-sm bg-zinc-800">
+                                        <div id="music3DownloadProgressBar" class="h-full bg-nexus-red transition-all duration-300" style="width:0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Video, Refiner & Advanced Collapsible Sections below Seed -->
                     <div id="generationSubStack" class="pt-2 space-y-1.5">
                         <!-- Video generation settings -->
                         <div id="videoSettingsPanel" class="hidden sortable-panel space-y-2" data-panel-key="videoMotion" data-panel-title="Video / Motion" draggable="true">
@@ -5092,6 +5170,7 @@
                         </div>
                         <img id="mainImageDisplay" src="" alt="Generated Output" class="hidden max-w-full max-h-[75vh] object-contain border border-nexus-border shadow-xl">
                         <video id="mainVideoDisplay" src="" controls loop class="hidden max-w-full max-h-[75vh] object-contain border border-nexus-border shadow-xl"></video>
+                        <audio id="mainAudioDisplay" src="" controls class="hidden w-[min(640px,90%)]"></audio>
                         <div id="ideogramRegionLayer" class="ideogram-region-layer hidden" onpointerdown="beginIdeogramRegionCanvasPointer(event)"></div>
                         <div id="ideogramRegionToolbar" class="ideogram-region-toolbar hidden">
                             <button id="ideogramSelectToolBtn" type="button" onclick="setIdeogramRegionTool('select')" class="flat-button h-8 w-8 text-[10px]" title="Select / move boxes"><i class="fa-solid fa-hand"></i></button>
@@ -7186,7 +7265,8 @@
             'nexus_extras_mode',
             'nexus_model3d_preflight_cache_v1',
             'nexus_panel_order',
-            'nexus_pose_panel_order_v1'
+            'nexus_pose_panel_order_v1',
+            'nexus_music3_download_job_v1'
         ];
         const nexusSafeStorage = {
             get(key, fallback = '') {
@@ -7374,6 +7454,9 @@
         let sideMenuWorkflowSyncTimer = null;
         let backendBridgeInFlight = false;
         let backendBridgeEverReady = false;
+        let music3SetupPrompted = false;
+        let music3DownloadInFlight = false;
+        const MUSIC3_DOWNLOAD_JOB_STORAGE_KEY = 'nexus_music3_download_job_v1';
         let workflowCanvasLibraryCollapsed = nexusSafeStorage.get('nexus_workflow_canvas_library_collapsed', '0') === '1';
         let workflowFolderOpenState = nexusSafeStorage.json('nexus_workflow_folder_open_state', { Default: true, Saved: true, Custom: true, Loaded: true });
         let templateWorkflowSelections = nexusSafeStorage.json('nexus_template_workflows', {});
@@ -7845,6 +7928,7 @@
             ['LTX', 'LTX 2.3'],
             ['LTX25', 'LTX 2.5'],
             ['MiniMaxH3', 'MINIMAX H3'],
+            ['Music3', 'MUSIC 3'],
             ['Anima', 'ANIMA'],
             ['Ideogram4', 'Ideogram-4'],
             ['Model3D', '3D']
@@ -8034,6 +8118,7 @@
             Wan: 'WAN 2.2',
             LTX: 'LTX 2.3',
             LTX25: 'LTX 2.5',
+            Music3: 'MUSIC 3',
             Anima: 'ANIMA',
             Ideogram4: 'IDEOGRAM 4',
             Model3D: '3D MODEL'
@@ -8357,6 +8442,33 @@
                 chips: ['MINIMAX H3', 'Local RTX 3060', 'SageAttention', 'LoRA', 'Native Audio'],
                 video: 'RTX 3060 profile: 832x480, 56 frames / 24 FPS (~2.3s), 20 RES Multistep steps with dynamic offload. RTX 5090 profile can raise this to 1344x768 / 5s.',
                 videoSettings: { frames: 56, fps: 24, seconds: 2 }
+            },
+            Music3: {
+                template: 'MINIMAX_MUSIC_3',
+                type: 'audio',
+                folder: './models/diffusion_models/music3',
+                checkpoint: 'minimax_music3_dit_int8_convrot.safetensors',
+                models: ['minimax_music3_dit_int8_convrot.safetensors', 'minimax_music3_dit_fp16.safetensors'],
+                width: 512,
+                height: 512,
+                steps: 20,
+                cfg: 4,
+                sampler: 'Euler',
+                samplers: ['Euler', 'FlowMatch Euler'],
+                scheduler: 'Simple',
+                schedulers: ['Simple', 'Normal'],
+                vae: ['minimax_music3_dav.safetensors', 'Automatic'],
+                encoder: ['minimax_music3_text_encoder_pruned_int8_convrot.safetensors', 'Automatic'],
+                variants: ['Instrumental', 'Lyrics + Music', 'Caption + Guidance'],
+                precision: ['INT8 ConvRot', 'Auto', 'fp16'],
+                refiners: ['Off'],
+                supportsExtend: false,
+                supportsControlNet: false,
+                distilledLoras: ['None'],
+                distilledRoute: 'Music 3 uses the native MiniMax Music 3 text encoder, DiT and DAV VAE route.',
+                summary: 'Native MiniMax Music 3 audio generation with an explicit instrumental route, vocal caption + lyrics, optional negative guidance, duration and audio format controls.',
+                chips: ['MUSIC 3', 'Audio', 'Native ComfyUI', 'RTX 3060'],
+                video: ''
             },
             Anima: {
                 template: 'ANIMA_PORTRAIT',
@@ -8760,6 +8872,7 @@
                 ltx: ['ltx', 'eros', 'sulphur'],
                 ltx25: ['ltx25', 'ltxv25', 'ltx 2.5', 'ltxv 2.5', 'ltx-2.5', 'ltx_25', 'ltx_25'],
                 minimaxh3: ['minimax_h3', 'minimax-h3', 'minimax h3', 'minimaxh3'],
+                music3: ['minimax_music3', 'minimax music 3', 'music3', 'music 3'],
                 anima: ['anima', 'anime', 'pencil', 'cel'],
                 ideogram4: ['ideogram4', 'ideogram-4', 'ideogram 4', 'ideogram'],
                 model3d: ['trellis', '3d', 'glb', 'mesh']
@@ -8802,7 +8915,7 @@
                 .filter(model => !['LTX', 'LTX25'].includes(presetName) || !/projection|text_projection|proj/i.test([model.name, model.relative_path].join(' ')))
                 .filter(model => presetName !== 'Ideogram4' || !/unconditional/i.test([model.name, model.relative_path].join(' ')))
                 .filter(model => presetName !== 'Flux' || !/pid_|res2k|sr4x|upscale|super.?resolution|model_ema/i.test([model.name, model.folder, model.relative_path].join(' ')));
-            const strictModelPresets = new Set(['SD', 'XL', 'Flux', 'Qwen', 'ZImageTurbo', 'Lumina', 'Wan', 'LTX', 'LTX25', 'MiniMaxH3', 'Anima', 'Ideogram4', 'Model3D']);
+            const strictModelPresets = new Set(['SD', 'XL', 'Flux', 'Qwen', 'ZImageTurbo', 'Lumina', 'Wan', 'LTX', 'LTX25', 'MiniMaxH3', 'Music3', 'Anima', 'Ideogram4', 'Model3D']);
             const compatible = filtered.filter(model => modelMatchesPreset(model, presetName) && isPrimaryModelForPreset(model, presetName));
             const source = strictModelPresets.has(presetName) && compatible.length ? compatible : filtered;
             const matched = source
@@ -8896,6 +9009,7 @@
                 Anima: [/qwen.*image/i, /qwen/i],
                 Wan: [/wan_2\.1|wan2_1|wan2\.1/i, /wan/i],
                 MiniMaxH3: [/minimax.*h3.*video/i, /minimax.*h3/i],
+                Music3: [/minimax.*music.*3|music.*3/i],
                 XL: [/sdxl|xl/i],
                 SD: [/vae-ft-mse|sd15|sd1|kl-f8/i]
             }[presetName] || [];
@@ -8913,6 +9027,7 @@
                 Anima: [/anima2bqwen/i, /qwen35/i, /qwen.*3\.5/i, /qwen_3_06b/i, /qwen.*3.*06b/i, /qwen3/i, /anima.*qwen.*text/i, /qwen/i],
                 Wan: [/umt5/i, /t5/i],
                 MiniMaxH3: [/qwen3vl.*minimax.*h3/i, /minimax.*h3.*qwen/i],
+                Music3: [/minimax.*music.*3|music.*3/i],
                 XL: [/clip/i],
                 SD: [/clip/i]
             }[presetName] || [];
@@ -9499,6 +9614,8 @@
                         <span class="absolute bottom-1 right-1 bg-nexus-panel/90 border border-nexus-border px-1 text-[9px] text-white"><i class="fa-solid fa-cube"></i></span>`
                     : item.mediaType === 'video'
                     ? `<video src="${url}" muted playsinline class="w-full h-full object-cover"></video><span class="absolute bottom-1 right-1 bg-nexus-panel/90 border border-nexus-border px-1 text-[9px] text-white"><i class="fa-solid fa-film"></i></span>`
+                    : item.mediaType === 'audio'
+                    ? `<div class="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-950 text-emerald-300"><i class="fa-solid fa-music text-2xl"></i><span class="text-[9px] font-mono text-center px-2 truncate max-w-full">${escapeHtml(item.filename || 'audio')}</span></div><span class="absolute bottom-1 right-1 bg-nexus-panel/90 border border-nexus-border px-1 text-[9px] text-white"><i class="fa-solid fa-waveform"></i></span>`
                     : `<img src="${url}" draggable="false" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover">`;
                 const dragAttrs = `draggable="true" ondragstart="handleGalleryDragStart(event, ${index})" ondragend="handleGalleryDragEnd()"`;
                 const clickAction = activePreset === 'Model3D' && is3DOutput(item)
@@ -9759,6 +9876,12 @@
             const kind = String(item.media_type || item.mediaType || item.kind || '').toLowerCase();
             const filename = String(item.filename || item.title || item.image || '').toLowerCase();
             return kind.includes('video') || /\.(mp4|webm|mov|mkv)$/.test(filename);
+        }
+
+        function isAudioOutput(item) {
+            const kind = String(item?.media_type || item?.mediaType || item?.kind || '').toLowerCase();
+            const filename = String(item?.filename || item?.title || item?.image || item?.url || '').toLowerCase();
+            return kind.includes('audio') || /\.(mp3|wav|flac|opus|ogg|m4a)$/.test(filename);
         }
 
         function is3DOutput(item) {
@@ -11239,11 +11362,13 @@
             const shell = document.getElementById('linearMediaShell');
             const image = document.getElementById('mainImageDisplay');
             const video = document.getElementById('mainVideoDisplay');
+            const audio = document.getElementById('mainAudioDisplay');
             const empty = document.getElementById('linearEmptyState');
             const clearButton = document.getElementById('clearLinearOutputBtn');
             ideogramLinearOutputIsGuide = !!(item && (item.ideogramGuide || options.ideogramGuide));
             const mediaUrl = item?.image || item?.url || '';
             const isVideo = item && isVideoOutput(item);
+            const isAudio = item && isAudioOutput(item);
             const cacheSafeUrl = mediaUrl && !/^data:/i.test(mediaUrl)
                 ? appendUrlVersion(mediaUrl, item?.modified || Date.now())
                 : mediaUrl;
@@ -11259,8 +11384,8 @@
                 clearButton.classList.toggle('flex', !!mediaUrl && !protectIdeogramGuide);
             }
             if (image) {
-                image.classList.toggle('hidden', !mediaUrl || isVideo);
-                if (mediaUrl && !isVideo) {
+                image.classList.toggle('hidden', !mediaUrl || isVideo || isAudio);
+                if (mediaUrl && !isVideo && !isAudio) {
                     setMediaElementSource(image, cacheSafeUrl);
                 } else {
                     image.src = '';
@@ -11273,6 +11398,15 @@
                 } else {
                     video.pause?.();
                     video.src = '';
+                }
+            }
+            if (audio) {
+                audio.classList.toggle('hidden', !mediaUrl || !isAudio);
+                if (mediaUrl && isAudio) {
+                    setMediaElementSource(audio, cacheSafeUrl);
+                } else {
+                    audio.pause?.();
+                    audio.src = '';
                 }
             }
             if (item && activePreset === 'Qwen') {
@@ -11967,12 +12101,13 @@
             return false;
         }
 
-        async function pollDownloadJob(jobId, label) {
+        async function pollDownloadJob(jobId, label, options = {}) {
             let lastProgress = -1;
             for (let index = 0; index < 1800; index += 1) {
                 const job = await nexusFetch(`/civitai/download/${jobId}`);
                 const status = String(job?.status || '').toLowerCase();
                 const progress = Number(job?.progress ?? -1);
+                if (typeof options?.onUpdate === 'function') options.onUpdate(job);
                 if (progress >= 0 && Math.floor(progress) !== lastProgress && Math.floor(progress) % 10 === 0) {
                     lastProgress = Math.floor(progress);
                     showToast(label, `${lastProgress}%`);
@@ -12723,6 +12858,15 @@
                 minimaxH3BoosterStatus = status;
                 return false;
             }
+            if (audio) {
+                audio.classList.toggle('hidden', !mediaUrl || !isAudio);
+                if (mediaUrl && isAudio) {
+                    setMediaElementSource(audio, cacheSafeUrl);
+                } else {
+                    audio.pause?.();
+                    audio.src = '';
+                }
+            }
             const missingList = missing.map(item => `- ${item.label}\n  ${item.repo}\n  -> ${item.path || './custom_nodes/' + item.folder}`).join('\n');
             if (nexusBrowserOffline()) {
                 syncMiniMaxH3BoosterUi(false);
@@ -13000,8 +13144,119 @@
                 maybePrepareLtx25TemplateAssets().catch(error => showToast('LTX 2.5 Download Failed', String(error?.message || error).slice(0, 180)));
             } else if (presetName === 'MiniMaxH3') {
                 maybePrepareMiniMaxH3TemplateAssets().catch(error => showToast('MiniMax H3 Download Failed', String(error?.message || error).slice(0, 180)));
+            } else if (presetName === 'Music3') {
+                maybePrepareMusic3TemplateAssets().catch(error => showToast('Music 3 Download Failed', String(error?.message || error).slice(0, 180)));
             } else if (presetName === 'Ideogram4') {
                 maybePrepareIdeogram4TemplateAssets().catch(error => showToast('Ideogram 4 Download Failed', String(error?.message || error).slice(0, 180)));
+            }
+        }
+
+        function setMusic3DownloadProgress(job, label = 'Music 3 model files') {
+            const panel = document.getElementById('music3DownloadProgress');
+            if (!panel) return;
+            panel.classList.remove('hidden');
+            const value = Number(job?.progress);
+            const percent = Number.isFinite(value) && value >= 0 ? Math.max(0, Math.min(100, value)) : 0;
+            const status = String(job?.status || 'queued').toLowerCase();
+            const message = String(job?.message || '').trim();
+            const labelNode = document.getElementById('music3DownloadProgressLabel');
+            const valueNode = document.getElementById('music3DownloadProgressValue');
+            const bar = document.getElementById('music3DownloadProgressBar');
+            if (labelNode) labelNode.textContent = message || `${label} — ${status}`;
+            if (valueNode) valueNode.textContent = `${Math.round(percent)}%`;
+            if (bar) bar.style.width = `${percent}%`;
+        }
+
+        function clearMusic3DownloadJob() {
+            nexusSafeStorage.remove(MUSIC3_DOWNLOAD_JOB_STORAGE_KEY);
+        }
+
+        async function findMusic3ActiveDownloadJob() {
+            const activeStatuses = new Set(['queued', 'resolving', 'downloading', 'saving_preview']);
+            const savedId = nexusSafeStorage.get(MUSIC3_DOWNLOAD_JOB_STORAGE_KEY, '');
+            if (savedId) {
+                try {
+                    const savedJob = await nexusFetch(`/civitai/download/${encodeURIComponent(savedId)}`);
+                    if (activeStatuses.has(String(savedJob?.status || '').toLowerCase())) return savedJob;
+                    if (['downloaded', 'completed'].includes(String(savedJob?.status || '').toLowerCase())) clearMusic3DownloadJob();
+                } catch (_) {
+                    clearMusic3DownloadJob();
+                }
+            }
+            try {
+                const listing = await nexusFetch('/civitai/downloads');
+                const jobs = Array.isArray(listing?.jobs) ? listing.jobs : [];
+                const active = jobs.slice().reverse().find(job => job?.kind === 'music3_assets' && activeStatuses.has(String(job?.status || '').toLowerCase()));
+                if (active?.job_id) nexusSafeStorage.set(MUSIC3_DOWNLOAD_JOB_STORAGE_KEY, active.job_id);
+                return active || null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        async function resumeMusic3DownloadJob(job) {
+            if (!job?.job_id) return null;
+            nexusSafeStorage.set(MUSIC3_DOWNLOAD_JOB_STORAGE_KEY, job.job_id);
+            setMusic3DownloadProgress(job);
+            try {
+                const finished = await pollDownloadJob(job.job_id, 'Music 3 model files', { onUpdate: update => setMusic3DownloadProgress(update) });
+                clearMusic3DownloadJob();
+                setMusic3DownloadProgress({ ...finished, status: 'completed', progress: 100, message: 'Music 3 local assets ready.' });
+                return finished;
+            } catch (error) {
+                const failed = { status: 'failed', progress: 100, message: String(error?.message || error) };
+                setMusic3DownloadProgress(failed);
+                clearMusic3DownloadJob();
+                throw error;
+            }
+        }
+
+        async function maybePrepareMusic3TemplateAssets() {
+            if (activePreset !== 'Music3' || nexusBrowserOffline() || music3DownloadInFlight) return;
+            music3DownloadInFlight = true;
+            try {
+                const status = await nexusFetch('/music3/assets/status');
+                if (status?.generation_ready) {
+                    clearMusic3DownloadJob();
+                    document.getElementById('music3DownloadProgress')?.classList.add('hidden');
+                    syncMusic3Ui({ quiet: true });
+                    return;
+                }
+                const activeJob = await findMusic3ActiveDownloadJob();
+                if (activeJob) {
+                    await resumeMusic3DownloadJob(activeJob);
+                } else {
+                    const requiredMissing = (status?.missing_required_assets || [])
+                        .map(item => item?.label || item?.filename || item?.key || String(item))
+                        .filter(Boolean);
+                    const coreMissing = (status?.missing_core_nodes || []).join(', ');
+                    // A core-node-only mismatch must not trigger another model download on every refresh.
+                    if (!requiredMissing.length) {
+                        if (coreMissing) showToast('Music 3 ComfyUI update needed', `Missing native nodes: ${coreMissing}. Run update.bat for ${status?.comfy_root || 'the configured ComfyUI'} and restart Nexus.`);
+                        syncMusic3Ui({ quiet: true });
+                        return;
+                    }
+                    const detail = [
+                        `Missing model files:\n- ${requiredMissing.join('\n- ')}`,
+                        coreMissing ? `Missing ComfyUI core nodes:\n- ${coreMissing}` : ''
+                    ].filter(Boolean).join('\n\n');
+                    const accepted = window.confirm(`Music 3 local setup\n\n${detail}\n\nDownload the required Music 3 model files now?`);
+                    if (!accepted) return;
+                    const started = await nexusFetch('/music3/assets/download/start', { method: 'POST', body: JSON.stringify({}) });
+                    if (started?.job_id) await resumeMusic3DownloadJob(started);
+                }
+                await refreshModelCatalog();
+                const ready = await nexusFetch('/music3/assets/status');
+                syncMusic3Ui({ quiet: true });
+                if (!ready?.generation_ready) {
+                    const remaining = (ready?.missing_required_assets || []).map(item => item?.label || item?.filename || item?.key).filter(Boolean).join(', ');
+                    if (remaining) throw new Error(`${remaining}${ready?.missing_core_nodes?.length ? '; update ComfyUI core nodes.' : ''}`);
+                    if (ready?.missing_core_nodes?.length) showToast('Music 3 ComfyUI update needed', `Missing native nodes: ${ready.missing_core_nodes.join(', ')}. Run update.bat and restart Nexus.`);
+                } else {
+                    showToast('Music 3 Ready', 'Native Music 3 model files are available in the configured ComfyUI model paths.');
+                }
+            } finally {
+                music3DownloadInFlight = false;
             }
         }
 
@@ -13121,7 +13376,7 @@
                 video: item.video || {},
                 director: item.director || {},
                 metadata: item.metadata || item.workflow_metadata || {},
-                mediaType: is3DOutput(item) ? '3d' : (isVideoOutput(item) ? 'video' : 'image'),
+                mediaType: is3DOutput(item) ? '3d' : (isVideoOutput(item) ? 'video' : (isAudioOutput(item) ? 'audio' : 'image')),
                 modified
             };
         }
@@ -13569,6 +13824,10 @@
                     scheduleComfyReadySync();
                 }
                 setBootState('Nexus ready.', true);
+                if (activePreset === 'Music3' && !music3SetupPrompted) {
+                    music3SetupPrompted = true;
+                    maybePrepareMusic3TemplateAssets().catch(error => showToast('Music 3 Download Failed', String(error?.message || error).slice(0, 180)));
+                }
                 syncGalleryFromBackend({ quiet: true, preferNewest: true, focusNewest: false, updateLinearOutput: false, force: true }).catch(error => {
                     console.warn('Deferred gallery sync failed.', error);
                 });
@@ -14098,6 +14357,11 @@
                 localStorage.setItem('nexus_current_activity', currentActivity);
                 setActiveActivityButton(getActivityButton('img2img'));
             }
+            if (presetName === 'Music3' && currentActivity !== 'txt2img') {
+                currentActivity = 'txt2img';
+                localStorage.setItem('nexus_current_activity', currentActivity);
+                setActiveActivityButton(getActivityButton('txt2img'));
+            }
             if (currentActivity === 'trainLora') {
                 setActiveActivityButton(getActivityButton('trainLora'));
             }
@@ -14112,7 +14376,16 @@
 
             activatePresetButton(presetName);
             populateModelSelect(presetName);
-            const selectedModelPath = savedFields.modelSelect || profile.selectedModelPath || profile.backendModels?.[0]?.value || '';
+            let selectedModelPath = savedFields.modelSelect || profile.selectedModelPath || profile.backendModels?.[0]?.value || '';
+            if (presetName === 'Music3') {
+                // Never carry a checkpoint saved by another template into Music 3.
+                // The Music 3 selector may only use entries returned by the strict
+                // Music 3 catalog filter (or remain empty while assets are missing).
+                const music3Entries = (profile.backendModels || []).filter(model => modelMatchesPreset(model, 'Music3'));
+                const music3Paths = new Set(music3Entries.map(model => String(model.value || '')));
+                selectedModelPath = [savedFields.modelSelect, profile.selectedModelPath, music3Entries[0]?.value]
+                    .find(path => path && music3Paths.has(String(path))) || '';
+            }
             setSelectValue('modelSelect', selectedModelPath);
             setElementOptions('vaeSelect', profile.vae);
             setElementOptions('textEncoderSelect', profile.encoder);
@@ -14201,6 +14474,17 @@
             } else if (presetName === 'MiniMaxH3') {
                 const audioToggle = document.getElementById('activeAudioToggle');
                 if (audioToggle) audioToggle.checked = savedFields.activeAudioToggle !== undefined ? !!savedFields.activeAudioToggle : true;
+            } else if (presetName === 'Music3') {
+                setSelectValue('music3ModeSelect', savedFields.music3ModeSelect || 'instrumental');
+                if (document.getElementById('music3LyricsInput')) document.getElementById('music3LyricsInput').value = savedFields.music3LyricsInput || '';
+                if (document.getElementById('music3NegativeInput')) document.getElementById('music3NegativeInput').value = savedFields.music3NegativeInput || '';
+                if (document.getElementById('music3DurationInput')) document.getElementById('music3DurationInput').value = savedFields.music3DurationInput || '60';
+                if (document.getElementById('music3TopKInput')) document.getElementById('music3TopKInput').value = savedFields.music3TopKInput || '50';
+                if (document.getElementById('music3CfgInput')) document.getElementById('music3CfgInput').value = savedFields.music3CfgInput || '1.7';
+                setSelectValue('music3FormatSelect', savedFields.music3FormatSelect || 'mp3');
+                setSelectValue('music3QualitySelect', savedFields.music3QualitySelect || 'V0');
+                const tiledToggle = document.getElementById('music3TiledToggle');
+                if (tiledToggle) tiledToggle.checked = savedFields.music3TiledToggle !== undefined ? !!savedFields.music3TiledToggle : true;
             }
             setElementOptions('distilledLoraOneSelect', profile.distilledLoras || ['None']);
             setElementOptions('distilledLoraTwoSelect', profile.distilledLoras || ['None']);
@@ -14601,6 +14885,60 @@
             `;
         }
 
+        function syncMusic3Ui(options = {}) {
+            if (activePreset !== 'Music3') return;
+            const mode = document.getElementById('music3ModeSelect')?.value || 'instrumental';
+            const lyrics = document.getElementById('music3LyricsInput');
+            const negative = document.getElementById('music3NegativeInput');
+            const instrumental = mode === 'instrumental';
+            const vocalTexture = mode === 'instrumental_fx';
+            if (lyrics) {
+                if (instrumental) {
+                    lyrics.value = '[instrumental]';
+                } else if (lyrics.value.trim().toLowerCase() === '[instrumental]') {
+                    lyrics.value = '';
+                }
+                lyrics.disabled = mode !== 'lyrics';
+                lyrics.classList.toggle('opacity-50', mode !== 'lyrics');
+                lyrics.title = instrumental
+                    ? 'Music 3 structure tag used to suppress vocals.'
+                    : (vocalTexture ? 'Lyrics stay empty; describe wordless vocal textures in the caption.' : '');
+            }
+            if (negative) {
+                negative.disabled = instrumental;
+                negative.classList.toggle('opacity-50', instrumental);
+                negative.placeholder = instrumental
+                    ? 'Instrumental mode uses [instrumental] automatically.'
+                    : (vocalTexture ? 'lyrics, lead singing, spoken words (optional)' : 'lead vocals, singing, choir, chanting, spoken voice');
+            }
+            const formatSelect = document.getElementById('music3FormatSelect');
+            const qualitySelect = document.getElementById('music3QualitySelect');
+            if (formatSelect && qualitySelect) {
+                const format = String(formatSelect.value || 'mp3').toLowerCase();
+                const qualityOptions = format === 'opus'
+                    ? [['64k', '64 kbps'], ['96k', '96 kbps'], ['128k', '128 kbps'], ['192k', '192 kbps'], ['320k', '320 kbps']]
+                    : format === 'flac'
+                        ? []
+                        : [['V0', 'MP3 V0'], ['128k', '128 kbps'], ['320k', '320 kbps']];
+                const currentQuality = qualitySelect.value;
+                qualitySelect.innerHTML = qualityOptions.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+                qualitySelect.disabled = qualityOptions.length === 0;
+                if (qualityOptions.length) qualitySelect.value = qualityOptions.some(([value]) => value === currentQuality) ? currentQuality : qualityOptions[0][0];
+            }
+            const model = document.getElementById('modelSelect')?.selectedOptions?.[0]?.textContent?.trim()
+                || modelProfiles.Music3?.checkpoint
+                || 'Automatic Music 3 DiT';
+            const status = document.getElementById('music3StatusText');
+            const modeLabel = instrumental
+                ? 'instrumental route ([instrumental] tag; no vocals)'
+                : (vocalTexture ? 'instrumental route with wordless vocal textures' : (mode === 'lyrics' ? 'vocal route (caption + lyrics)' : 'caption route (negative guidance optional)'));
+            if (status) status.innerText = `Model: ${model}. ${modeLabel}. Native Music 3 audio route; dependencies are checked when the template is selected.`;
+            if (!options.quiet) {
+                updateWorkflowPreview();
+                savePresetRuntimeState(activePreset);
+            }
+        }
+
         function updateModelTypeUi() {
             const profile = modelProfiles[activePreset];
             const isVideo = profile?.type === 'video';
@@ -14609,6 +14947,7 @@
             const ltxOnly = activePreset === 'LTX';
             const ltx25Native = activePreset === 'LTX25';
             const h3NativeAudio = activePreset === 'MiniMaxH3';
+            const music3NativeAudio = activePreset === 'Music3';
             if (h3NativeAudio) syncMiniMaxH3CheckpointForMode();
             const framesWrapper = document.getElementById('framesFieldWrapper');
             const ltxVaePanel = document.getElementById('ltxVaePanel');
@@ -14620,6 +14959,11 @@
             const minimaxH3BoosterPanel = document.getElementById('minimaxH3BoosterPanel');
             const minimaxH3LtxUpscalePanel = document.getElementById('minimaxH3LtxUpscalePanel');
             const minimaxH3PromptBoosterPanel = document.getElementById('minimaxH3PromptBoosterPanel');
+            const music3SettingsPanel = document.getElementById('music3SettingsPanel');
+            const dimensionsPanel = document.getElementById('dimensionsPanel');
+            const conceptsPanel = document.getElementById('conceptsPanel');
+            const distilledLoraPanel = document.getElementById('distilledLoraPanel');
+            const negativePromptField = document.getElementById('negativePromptField');
             const omnicineWrapper = document.getElementById('omnicineWrapper');
             const ltxUpscaleControls = document.getElementById('ltxUpscaleControls');
             const ltxDetailerControls = document.getElementById('ltxDetailerControls');
@@ -14633,6 +14977,12 @@
             if (ltxLatentUpscaleRefineWrapper) ltxLatentUpscaleRefineWrapper.classList.toggle('hidden', !(ltxOnly || ltx25Native));
             document.getElementById('ltx25TemporalUpscaleWrapper')?.classList.toggle('hidden', !ltx25Native);
             if (activeAudioWrapper) activeAudioWrapper.classList.toggle('hidden', !(ltxOnly || ltx25Native || h3NativeAudio));
+            if (music3SettingsPanel) music3SettingsPanel.classList.toggle('hidden', !music3NativeAudio);
+            if (dimensionsPanel) dimensionsPanel.classList.toggle('hidden', music3NativeAudio);
+            if (conceptsPanel) conceptsPanel.classList.toggle('hidden', music3NativeAudio);
+            if (distilledLoraPanel) distilledLoraPanel.classList.toggle('hidden', music3NativeAudio);
+            if (negativePromptField) negativePromptField.classList.toggle('hidden', music3NativeAudio);
+            if (music3NativeAudio) syncMusic3Ui({ quiet: true });
             if (minimaxH3ModeWrapper) minimaxH3ModeWrapper.classList.toggle('hidden', activePreset !== 'MiniMaxH3');
             if (minimaxH3BoosterPanel) minimaxH3BoosterPanel.classList.toggle('hidden', activePreset !== 'MiniMaxH3');
             if (minimaxH3LtxUpscalePanel) minimaxH3LtxUpscalePanel.classList.toggle('hidden', activePreset !== 'MiniMaxH3');
@@ -15537,7 +15887,9 @@
             document.getElementById('referenceImagePanel')?.classList.toggle('hidden', !isImg2Img || directorWorkspace);
             document.getElementById('img2imgControls')?.classList.toggle('hidden', !isImg2Img || directorWorkspace);
             syncInpaintEngineControls();
-            document.getElementById('promptPanelTitle').innerText = isImg2Img ? (isMotionTemplateActive() ? 'Prompt / Video Reference' : 'Prompt / Reference') : 'Prompt';
+            document.getElementById('promptPanelTitle').innerText = activePreset === 'Music3'
+                ? 'Music Caption'
+                : (isImg2Img ? (isMotionTemplateActive() ? 'Prompt / Video Reference' : 'Prompt / Reference') : 'Prompt');
             if (isModel3DTemplateActive()) {
                 document.getElementById('promptPanelTitle').innerText = model3DEngine === 'triposplat' ? '3D Prompt / Splat Reference' : '3D Prompt / References';
             }
@@ -23599,10 +23951,12 @@
 
             const image = document.getElementById('galleryModalImage');
             const video = document.getElementById('galleryModalVideo');
+            const audio = document.getElementById('galleryModalAudio');
             const isVideo = isVideoOutput(item);
+            const isAudio = isAudioOutput(item);
             if (image) {
-                image.classList.toggle('hidden', isVideo);
-                if (isVideo) {
+                image.classList.toggle('hidden', isVideo || isAudio);
+                if (isVideo || isAudio) {
                     image.src = '';
                 } else {
                     setMediaElementSource(image, item.image);
@@ -23615,6 +23969,15 @@
                 } else {
                     video.pause?.();
                     video.src = '';
+                }
+            }
+            if (audio) {
+                audio.classList.toggle('hidden', !isAudio);
+                if (isAudio) {
+                    setMediaElementSource(audio, item.image);
+                } else {
+                    audio.pause?.();
+                    audio.src = '';
                 }
             }
             document.getElementById('galleryModalTitle').innerText = item.title;
@@ -23694,6 +24057,11 @@
                 video.pause();
                 video.src = '';
             }
+            const audio = document.getElementById('galleryModalAudio');
+            if (audio) {
+                audio.pause?.();
+                audio.src = '';
+            }
             if (options.syncHistory !== false && isMobileBackTrapLayout() && history.state?.nexusMobileBackTrap === 'gallery') {
                 history.back();
             }
@@ -23764,6 +24132,15 @@
                 try {
                     await stage.requestFullscreen({ navigationUI: 'hide' });
                 } catch {
+                }
+            }
+            if (audio) {
+                audio.classList.toggle('hidden', !isAudio);
+                if (isAudio) {
+                    setMediaElementSource(audio, item.image);
+                } else {
+                    audio.pause?.();
+                    audio.src = '';
                 }
             }
             syncGalleryFullscreenUi();
@@ -27084,6 +27461,9 @@
                     switchView('viewer');
                 }
                 syncPromptEnhanceControlsUi();
+                if (presetName === 'Music3') {
+                    maybePrepareMusic3TemplateAssets().catch(error => showToast('Music 3 Download Failed', String(error?.message || error).slice(0, 180)));
+                }
                 syncMobilePresetSelect();
                 return;
             }
@@ -28217,7 +28597,8 @@
             'ltxDecodeTilesXInput', 'ltxDecodeTilesYInput', 'ltxDecodeOverlapInput', 'ltx25UpscaleStepsInput', 'ltx25UpscaleCfgInput', 'ltx25TemporalUpscaleToggle', 'ltx25MultishotToggle', 'ltx25MultishotCountSelect', 'ltxDetailerToggle', 'ltxDetailerLoraSelect',
             'ltxDetailerStrengthSlider', 'ltxIcCropSelect', 'ltxIcTiledEncodeSelect', 'ltxTransitionLoraToggle', 'ltxTransitionLoraSelect', 'ltxTransitionLoraStrength', 'ltxMotionTransferToggle', 'ltxMotionTransferModeSelect',
             'controlNetEnabledToggle', 'controlNetTypeSelect', 'controlNetModelSelect', 'controlNetBalanceSelect',
-            'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput', 'ideogramMethod2NoiseSamplerSelect'
+            'controlNetStrengthSlider', 'controlNetStartInput', 'controlNetEndInput', 'ideogramMethod2NoiseSamplerSelect',
+            'music3ModeSelect', 'music3LyricsInput', 'music3NegativeInput', 'music3DurationInput', 'music3TopKInput', 'music3CfgInput', 'music3FormatSelect', 'music3QualitySelect', 'music3TiledToggle'
         ];
 
         function persistPresetRuntimeStates() {
@@ -34311,6 +34692,44 @@
             const sideCfg = document.getElementById('cfgSlider')?.value || profile.cfg || 7;
             const sideSampler = document.getElementById('samplingMethodSelect')?.value || profile.sampler || 'Euler';
             const sideScheduler = document.getElementById('schedulerSelect')?.value || profile.scheduler || 'Simple';
+            if (preset === 'Music3') {
+                const musicDuration = Math.max(0.04, Math.min(300, Number(document.getElementById('music3DurationInput')?.value || 60)));
+                const musicCfg = Math.max(0, Math.min(100, Number(document.getElementById('music3CfgInput')?.value || 1.7)));
+                const musicTopK = Math.max(1, Math.min(4096, Number.parseInt(document.getElementById('music3TopKInput')?.value || '50', 10) || 50));
+                const musicMode = document.getElementById('music3ModeSelect')?.value || 'instrumental';
+                const musicLyrics = musicMode === 'lyrics'
+                    ? (document.getElementById('music3LyricsInput')?.value || '')
+                    : (musicMode === 'instrumental' ? '[instrumental]' : '');
+                const musicNegative = document.getElementById('music3NegativeInput')?.value || '';
+                const musicFormat = document.getElementById('music3FormatSelect')?.value || 'mp3';
+                const musicTiled = document.getElementById('music3TiledToggle')?.checked !== false;
+                const musicNodes = [
+                    { id: 'model', class_type: 'UNETLoader', title: 'MiniMax Music 3 DiT', x: 60, y: 100, width: 290, height: 110, inputs: [], outputs: ['MODEL'], widgets: [{ name: 'unet_name', value: selectedModelName }, { name: 'weight_dtype', value: 'default' }], color: '#1f3b63' },
+                    { id: 'clip', class_type: 'CLIPLoader', title: 'MiniMax Music 3 Text Encoder', x: 60, y: 270, width: 300, height: 112, inputs: [], outputs: ['CLIP'], widgets: [{ name: 'clip_name', value: document.getElementById('textEncoderSelect')?.value || profile.encoder?.[0] || 'Automatic' }, { name: 'type', value: 'minimax' }, { name: 'device', value: 'default' }], color: '#1f5f3a' },
+                    { id: 'vae', class_type: 'VAELoader', title: 'MiniMax Music 3 DAV VAE', x: 60, y: 440, width: 290, height: 100, inputs: [], outputs: ['VAE'], widgets: [{ name: 'vae_name', value: document.getElementById('vaeSelect')?.value || profile.vae?.[0] || 'Automatic' }], color: '#62305a' },
+                    { id: 'encode', class_type: 'MiniMaxMusic3TextEncode', title: 'Caption + Lyrics', x: 430, y: 220, width: 330, height: 180, inputs: ['clip'], outputs: ['CONDITIONING'], widgets: [{ name: 'generation_mode', value: musicMode }, { name: 'caption', value: document.getElementById('posPrompt')?.value || '' }, { name: 'lyrics', value: musicLyrics }, { name: 'negative_guidance', value: musicNegative }, { name: 'max_duration', value: musicDuration }, { name: 'cfg_scale', value: musicCfg }, { name: 'top_k', value: musicTopK }], color: '#0f766e' },
+                    { id: 'latent', class_type: 'EmptyMiniMaxMusic3LatentAudio', title: 'Music 3 Audio Latent', x: 430, y: 470, width: 300, height: 110, inputs: [], outputs: ['LATENT'], widgets: [{ name: 'seconds', value: musicDuration }, { name: 'batch_size', value: 1 }], color: '#4338ca' },
+                    { id: 'sample', class_type: 'KSampler', title: 'Music 3 Sampling', x: 850, y: 250, width: 300, height: 180, inputs: ['model', 'positive', 'negative', 'latent_image'], outputs: ['LATENT'], widgets: [{ name: 'steps', value: sideSteps }, { name: 'cfg', value: musicCfg }, { name: 'sampler_name', value: sideSampler }, { name: 'scheduler', value: sideScheduler }], color: '#2f3c4f' },
+                    { id: 'decode', class_type: musicTiled ? 'VAEDecodeAudioTiled' : 'VAEDecodeAudio', title: musicTiled ? 'Tiled Audio Decode — RTX 3060' : 'Audio Decode', x: 1230, y: 270, width: 285, height: 110, inputs: ['samples', 'vae'], outputs: ['AUDIO'], widgets: musicTiled ? [{ name: 'tile_size', value: 1536 }, { name: 'overlap', value: 64 }] : [], color: '#62305a' },
+                    { id: 'save', class_type: 'SaveAudioAdvanced', title: 'Save Music 3 Audio', x: 1590, y: 270, width: 270, height: 110, inputs: ['audio'], outputs: [], widgets: [{ name: 'filename_prefix', value: 'audio/music3' }, { name: 'format', value: musicFormat }, { name: 'format.quality', value: document.getElementById('music3QualitySelect')?.value || (musicFormat === 'opus' ? '128k' : 'V0') }], color: '#3f3f46' }
+                ];
+                return {
+                    nodes: musicNodes,
+                    links: [
+                        { from_node: 'clip', from_slot: 0, to_node: 'encode', to_slot: 0, type: 'CLIP' },
+                        { from_node: 'model', from_slot: 0, to_node: 'sample', to_slot: 0, type: 'MODEL' },
+                        { from_node: 'encode', from_slot: 0, to_node: 'sample', to_slot: 1, type: 'CONDITIONING' },
+                        { from_node: 'latent', from_slot: 0, to_node: 'sample', to_slot: 3, type: 'LATENT' },
+                        { from_node: 'sample', from_slot: 0, to_node: 'decode', to_slot: 0, type: 'LATENT' },
+                        { from_node: 'vae', from_slot: 0, to_node: 'decode', to_slot: 1, type: 'VAE' },
+                        { from_node: 'decode', from_slot: 0, to_node: 'save', to_slot: 0, type: 'AUDIO' }
+                    ],
+                    groups: [{ id: 'music3', title: 'MiniMax Music 3 — side-menu synchronized', x: 35, y: 65, width: 1890, height: 600, color: '#3f789e' }],
+                    width: 1950,
+                    height: 720,
+                    nexus_preset: preset
+                };
+            }
             if (preset === 'MiniMaxH3') {
                 const h3Mode = document.getElementById('minimaxH3ModeSelect')?.value || 'i2v';
                 const h3ImageEdit = minimaxH3ImageEditEnabled();
@@ -35903,6 +36322,21 @@
                     ltx_loop_post_seam_blend: ltxLoopCycleRoute ? false : undefined,
                     ltx_loop_mid_motion_guide: false
                 },
+                music: activePreset === 'Music3' ? {
+                    mode: document.getElementById('music3ModeSelect')?.value || 'instrumental',
+                    caption: effectivePrompt,
+                    lyrics: document.getElementById('music3ModeSelect')?.value === 'lyrics'
+                        ? (document.getElementById('music3LyricsInput')?.value || '')
+                        : (document.getElementById('music3ModeSelect')?.value === 'instrumental' ? '[instrumental]' : ''),
+                    negative_prompt: document.getElementById('music3NegativeInput')?.value || '',
+                    duration_seconds: Math.max(0.04, Math.min(300, Number(document.getElementById('music3DurationInput')?.value || 60))),
+                    cfg_scale: Math.max(0, Math.min(100, Number(document.getElementById('music3CfgInput')?.value || 1.7))),
+                    top_k: Math.max(1, Math.min(4096, Number.parseInt(document.getElementById('music3TopKInput')?.value || '50', 10) || 50)),
+                    steps: effectiveSteps,
+                    format: document.getElementById('music3FormatSelect')?.value || 'mp3',
+                    quality: document.getElementById('music3QualitySelect')?.value || 'V0',
+                    tiled_decode: document.getElementById('music3TiledToggle')?.checked !== false
+                } : undefined,
                 model3d: activePreset === 'Model3D' ? {
                     engine: normalizedModel3DEngine(),
                     model: normalizedModel3DEngine() === 'triposplat' ? 'VAST-AI/TripoSplat' : (selectedOption?.dataset?.model || 'microsoft/TRELLIS.2-4B'),
@@ -36262,7 +36696,7 @@
                 director: payload.director || {},
                 metadata: payload,
                 modified: Date.now() / 1000,
-                mediaType: is3DOutput(output) ? '3d' : (isVideoOutput(output) ? 'video' : 'image')
+                mediaType: is3DOutput(output) ? '3d' : (isVideoOutput(output) ? 'video' : (isAudioOutput(output) ? 'audio' : 'image'))
             }));
             const newKeys = new Set(newItems.map(galleryItemKey));
             galleryAllItems = [...newItems, ...galleryAllItems.filter(item => !newKeys.has(galleryItemKey(item)))];
@@ -36787,9 +37221,10 @@
                 wan: new Set(['wan']),
                 flux: new Set(['flux']),
                 lumina: new Set(['lumina']),
+                music3: new Set(['music3', 'music_3', 'minimax_music3', 'minimax-music-3']),
                 zimage: new Set(['zimage', 'zimageturbo', 'z-image', 'z_image'])
             };
-            const aliases = { SD: 'sd15', XL: 'xl', ZImageTurbo: 'zimage', LTX25: 'ltx25', MiniMaxH3: 'minimaxh3' };
+            const aliases = { SD: 'sd15', XL: 'xl', ZImageTurbo: 'zimage', LTX25: 'ltx25', MiniMaxH3: 'minimaxh3', Music3: 'music3' };
             const presetKey = aliases[presetName] || String(presetName || '').toLowerCase();
             const knownFamilies = new Set(Object.values(known).flatMap(set => [...set]));
             if (!family || !knownFamilies.has(family)) return true;
@@ -37911,6 +38346,10 @@
         ['widthInput', 'heightInput', 'fpsInput', 'secondsInput'].forEach(id => {
             document.getElementById(id)?.addEventListener('input', syncLtxOutpaintUi);
             document.getElementById(id)?.addEventListener('change', syncLtxOutpaintUi);
+        });
+        ['music3ModeSelect', 'music3LyricsInput', 'music3NegativeInput', 'music3DurationInput', 'music3TopKInput', 'music3CfgInput', 'music3FormatSelect', 'music3QualitySelect', 'music3TiledToggle'].forEach(id => {
+            document.getElementById(id)?.addEventListener('input', () => syncMusic3Ui());
+            document.getElementById(id)?.addEventListener('change', () => syncMusic3Ui());
         });
         populateExtrasModelControls();
         selectExtrasScale(extrasScaleFactor());

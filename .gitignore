@@ -15,6 +15,13 @@ workflows/comfyui/
 !workflows/nexus_base/*.json
 
 # Local configuration and caches
+.cache/
+cache/
+tmp/
+node_modules/
+logs/
+.pytest_cache/
+.mypy_cache/
 config/nexus_settings.json
 config/nexus_startup.json
 config/nexus_startup_env.cmd

@@ -12,7 +12,7 @@ If you are new here on Windows, start simple:
 4. Write a prompt.
 5. Click Generate.
 
-Nexus supports SD 1.5, SDXL, Flux, Qwen, Z-Image Turbo, Lumina, WAN 2.2, LTX 2.3, Anima, LoRAs, ControlNet, inpaint, img2img, txt2img, video tools, workflow nodes, template customization and early 3D routes.
+Nexus supports SD 1.5, SDXL, Flux, Qwen, Z-Image Turbo, Lumina, WAN 2.2, LTX 2.3/2.5, MiniMax H3, MiniMax Music 3, Krea 2, Anima, LoRAs, ControlNet, inpaint, img2img, txt2img, video tools, workflow nodes, template customization and early 3D routes.
 
 ## Offline Startup
 
@@ -92,6 +92,7 @@ The `examples/` folder includes quick visual references for the main workspaces.
 - Visual workflow view: inspect, link, multi-select, move and tune nodes without leaving the app; edited graphs are sent through the backend as Comfy workflow overrides.
 - Civitai and Concept LoRA modals: browse, download, preview, multi-select, and route assets into the right local folders.
 - Train LoRA workspace: prepare SD/SDXL/Flux/Qwen/WAN/LTX/Anima LoRA jobs, including LTX 2.3 Motion LoRA, Audio-Video LoRA and IC-LoRA plans with backend/Comfy route metadata.
+- MiniMax Music 3 workspace: generate local instrumental tracks, wordless vocal textures or lyric-driven songs with synchronized caption, lyrics, negative guidance, duration, quality and format controls. RTX 3060 uses the INT8/tiled route; RTX 5090 can use FP16/non-tiled decoding.
 - Template customization: save/load JSON templates, randomize modern color themes, customize side-menu panels, and keep pinned workflow nodes in sync.
 - Experimental 3D workspace: test image-to-3D, texture paint and UV routes. This area is still being optimized and can contain bugs.
 

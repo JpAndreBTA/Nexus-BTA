@@ -194,7 +194,8 @@ class ComfyClient:
         requested = str(preset or "").strip().lower()
         desired: str | None = None
         minimax_h3 = requested in {"minimaxh3", "minimax_h3", "minimax-h3"}
-        minimax_h3_low_vram = minimax_h3 and self._minimax_h3_requires_offload()
+        music3 = requested in {"music3", "music 3", "minimax_music3", "minimax-music-3"}
+        minimax_h3_low_vram = (minimax_h3 or music3) and self._minimax_h3_requires_offload()
         if requested == "qwen" and self._default_uses_sage_attention():
             desired = "xformers" if self._xformers_allowed() else "pytorch"
         changed = desired != self._attention_backend_override or minimax_h3_low_vram != self._minimax_h3_low_vram
@@ -791,6 +792,8 @@ class ComfyClient:
             media_kind = "video"
         elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
             media_kind = "image"
+        elif suffix in {".mp3", ".wav", ".flac", ".opus", ".ogg", ".m4a"}:
+            media_kind = "audio"
         else:
             return None
         safe_relative_path = relative.as_posix()
@@ -808,7 +811,7 @@ class ComfyClient:
         output_root = self.settings.output_dir
         if not output_root.exists():
             return []
-        suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae", ".spz", ".ksplat", ".mp4", ".webm", ".mkv", ".mov", ".avi", ".png", ".jpg", ".jpeg", ".webp"}
+        suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae", ".spz", ".ksplat", ".mp4", ".webm", ".mkv", ".mov", ".avi", ".mp3", ".wav", ".flac", ".opus", ".ogg", ".m4a", ".png", ".jpg", ".jpeg", ".webp"}
         records: list[dict[str, Any]] = []
         for path in output_root.rglob("*"):
             if not path.is_file() or path.suffix.lower() not in suffixes:
@@ -894,7 +897,7 @@ def extract_outputs(history_item: dict[str, Any]) -> list[dict[str, Any]]:
     outputs: list[dict[str, Any]] = []
     model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".3mf", ".dae", ".spz", ".ksplat"}
     for node_output in history_item.get("outputs", {}).values():
-        for key in ["images", "videos", "gifs", "meshes", "models", "model_files", "3d", "files"]:
+        for key in ["images", "videos", "gifs", "audios", "audio", "meshes", "models", "model_files", "3d", "files"]:
             for item in node_output.get(key, []) or []:
                 filename = item.get("filename")
                 if not filename:
@@ -911,6 +914,8 @@ def extract_outputs(history_item: dict[str, Any]) -> list[dict[str, Any]]:
                     media_kind = "3d"
                 elif suffix in {".mp4", ".webm", ".mkv", ".mov", ".avi"}:
                     media_kind = "video"
+                elif suffix in {".mp3", ".wav", ".flac", ".opus", ".ogg", ".m4a"} or key in {"audio", "audios"}:
+                    media_kind = "audio"
                 else:
                     media_kind = key[:-1]
                 outputs.append(

@@ -1,4 +1,4 @@
-export type MediaKind = 'image' | 'video' | string;
+export type MediaKind = 'image' | 'video' | 'audio' | string;
 
 export interface HealthResponse {
   nexus: string;
@@ -220,6 +220,7 @@ export interface GenerateRequest {
   img2img?: Record<string, unknown>;
   controlnet?: Record<string, unknown>;
   video: Record<string, unknown>;
+  music?: Record<string, unknown>;
   director?: Record<string, unknown>;
   runtime?: Record<string, unknown>;
 }

@@ -50,6 +50,10 @@ gguf>=0.10
 # Krea 2 local generation is provided by the embedded ComfyUI core (`CLIPLoader(type=krea2)`
 # and `TextEncodeQwenImageEditPlus`); no additional Python/custom-node dependency is required.
 
+# MiniMax Music 3 local generation is provided by current ComfyUI native nodes
+# (`MiniMaxMusic3TextEncode` and `EmptyMiniMaxMusic3LatentAudio`). Update ComfyUI
+# when the Music 3 dependency panel reports missing core support; no custom node is required.
+
 numpy>=2.4.6
 pillow>=12.2.0
 opencv-python>=4.10.0.84

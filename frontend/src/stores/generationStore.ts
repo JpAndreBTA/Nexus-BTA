@@ -65,6 +65,15 @@ export interface GenerationState {
   videoSeconds: number;
   videoMotionStrength: number;
   videoActiveAudio: boolean;
+  musicMode: 'instrumental' | 'instrumental_fx' | 'lyrics' | 'caption';
+  musicCaption: string;
+  musicLyrics: string;
+  musicNegativePrompt: string;
+  musicDurationSeconds: number;
+  musicCfgScale: number;
+  musicTopK: number;
+  musicTiledDecode: boolean;
+  musicFormat: 'flac' | 'mp3' | 'opus';
   vaeOverrideEnabled: boolean;
   textEncoderOverrideEnabled: boolean;
   audioVaeEnabled: boolean;
@@ -130,6 +139,15 @@ export interface GenerationState {
   setVideoTiming: (frames: number, fps: number, seconds: number) => void;
   setVideoMotionStrength: (strength: number) => void;
   setVideoActiveAudio: (enabled: boolean) => void;
+  setMusicMode: (value: 'instrumental' | 'instrumental_fx' | 'lyrics' | 'caption') => void;
+  setMusicCaption: (value: string) => void;
+  setMusicLyrics: (value: string) => void;
+  setMusicNegativePrompt: (value: string) => void;
+  setMusicDurationSeconds: (value: number) => void;
+  setMusicCfgScale: (value: number) => void;
+  setMusicTopK: (value: number) => void;
+  setMusicTiledDecode: (value: boolean) => void;
+  setMusicFormat: (value: 'flac' | 'mp3' | 'opus') => void;
   setVaeOverrideEnabled: (enabled: boolean) => void;
   setTextEncoderOverrideEnabled: (enabled: boolean) => void;
   setAudioVaeEnabled: (enabled: boolean) => void;
@@ -198,6 +216,15 @@ export const useGenerationStore = create<GenerationState>()(
   videoSeconds: 5,
   videoMotionStrength: 0.85,
   videoActiveAudio: false,
+  musicMode: 'instrumental',
+  musicCaption: '',
+  musicLyrics: '[instrumental]',
+  musicNegativePrompt: '',
+  musicDurationSeconds: 60,
+  musicCfgScale: 1.7,
+  musicTopK: 50,
+  musicTiledDecode: true,
+  musicFormat: 'mp3',
   vaeOverrideEnabled: false,
   textEncoderOverrideEnabled: false,
   audioVaeEnabled: true,
@@ -303,6 +330,40 @@ export const useGenerationStore = create<GenerationState>()(
           latentUpscaleEnabled: false,
         };
       }
+      if (lower === 'music3' || lower === 'music 3' || lower === 'minimax_music3') {
+        return {
+          ...state,
+          preset,
+          activity: 'txt2img',
+          img2imgMode: 'image',
+          workflowId: '',
+          workflowName: '',
+          modelPath: '',
+          modelName: '',
+          prompt: '',
+          negativePrompt: '',
+          width: 1,
+          height: 1,
+          steps: 30,
+          cfg: 1.7,
+          sampler: 'euler',
+          scheduler: 'simple',
+          seed: -1,
+          musicMode: 'instrumental',
+          musicCaption: '',
+          musicLyrics: '[instrumental]',
+          musicNegativePrompt: '',
+          musicDurationSeconds: 60,
+          musicCfgScale: 1.7,
+          musicTopK: 50,
+          musicTiledDecode: true,
+          musicFormat: 'mp3',
+          controlNetEnabled: false,
+          distilledLoraEnabled: false,
+          lightningLoraEnabled: false,
+          latentUpscaleEnabled: false,
+        };
+      }
       return { preset };
     }),
   setWorkflow: (workflowId, workflowName) => set({ workflowId, workflowName }),
@@ -389,6 +450,15 @@ export const useGenerationStore = create<GenerationState>()(
   setVideoTiming: (videoFrames, videoFps, videoSeconds) => set({ videoFrames, videoFps, videoSeconds }),
   setVideoMotionStrength: (videoMotionStrength) => set({ videoMotionStrength }),
   setVideoActiveAudio: (videoActiveAudio) => set({ videoActiveAudio }),
+  setMusicMode: (musicMode) => set((state) => ({ musicMode, musicLyrics: musicMode === 'instrumental' ? '[instrumental]' : (state.musicLyrics === '[instrumental]' ? '' : state.musicLyrics) })),
+  setMusicCaption: (musicCaption) => set({ musicCaption, prompt: musicCaption }),
+  setMusicLyrics: (musicLyrics) => set({ musicLyrics }),
+  setMusicNegativePrompt: (musicNegativePrompt) => set({ musicNegativePrompt }),
+  setMusicDurationSeconds: (musicDurationSeconds) => set({ musicDurationSeconds: Math.max(0.04, Math.min(300, musicDurationSeconds)) }),
+  setMusicCfgScale: (musicCfgScale) => set({ musicCfgScale: Math.max(0, Math.min(100, musicCfgScale)), cfg: Math.max(0, Math.min(100, musicCfgScale)) }),
+  setMusicTopK: (musicTopK) => set({ musicTopK: Math.max(1, Math.min(4096, Math.round(musicTopK))) }),
+  setMusicTiledDecode: (musicTiledDecode) => set({ musicTiledDecode }),
+  setMusicFormat: (musicFormat) => set({ musicFormat }),
   setVaeOverrideEnabled: (vaeOverrideEnabled) => set({ vaeOverrideEnabled }),
   setTextEncoderOverrideEnabled: (textEncoderOverrideEnabled) => set({ textEncoderOverrideEnabled }),
   setAudioVaeEnabled: (audioVaeEnabled) => set({ audioVaeEnabled }),
@@ -448,6 +518,15 @@ export const useGenerationStore = create<GenerationState>()(
         videoSeconds: state.videoSeconds,
         videoMotionStrength: state.videoMotionStrength,
         videoActiveAudio: state.videoActiveAudio,
+        musicMode: state.musicMode,
+        musicCaption: state.musicCaption,
+        musicLyrics: state.musicLyrics,
+        musicNegativePrompt: state.musicNegativePrompt,
+        musicDurationSeconds: state.musicDurationSeconds,
+        musicCfgScale: state.musicCfgScale,
+        musicTopK: state.musicTopK,
+        musicTiledDecode: state.musicTiledDecode,
+        musicFormat: state.musicFormat,
         vaeOverrideEnabled: state.vaeOverrideEnabled,
         textEncoderOverrideEnabled: state.textEncoderOverrideEnabled,
         audioVaeEnabled: state.audioVaeEnabled,

@@ -42,6 +42,8 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
         assets.update(_resolve_minimax_h3(by_category, selected_name, request))
     elif preset in {"krea2", "krea-2"}:
         assets.update(_resolve_krea2(by_category, selected_name, request))
+    elif preset in {"music3", "music 3", "minimax_music3", "minimax-music-3"}:
+        assets.update(_resolve_music3(by_category, selected_name, request))
     elif preset == "qwen":
         assets.pop("primary_model", None)
         assets.update(_resolve_qwen(by_category, selected_name, request))
@@ -968,6 +970,30 @@ def _resolve_krea2(by_category: dict[str, list[ModelFile]], selected_name: str, 
         style_lora = _first(by_category, ["loras"], ["krea2"])
     if style_lora:
         assets["krea2_style_lora"] = _comfy_name(style_lora)
+    return assets
+
+
+def _resolve_music3(by_category: dict[str, list[ModelFile]], selected_name: str, request: GenerateRequest) -> dict[str, str]:
+    """Resolve MiniMax Music 3 split weights, preferring the 3060-friendly INT8 model."""
+    assets: dict[str, str] = {}
+    primary = _find_name(by_category, selected_name)
+    if primary and primary.category not in {"diffusion_models", "unet", "checkpoints"}:
+        primary = None
+    if primary and "music3" not in _model_haystack(primary).lower() and "music-3" not in _model_haystack(primary).lower():
+        primary = None
+    primary = primary or _first_exact(by_category, ["diffusion_models", "unet"], "minimax_music3_dit_int8_convrot.safetensors")
+    primary = primary or _first_exact(by_category, ["diffusion_models", "unet"], "minimax_music3_dit_fp16.safetensors")
+    primary = primary or _first(by_category, ["diffusion_models", "unet", "checkpoints"], ["music3", "dit"])
+    if primary:
+        assets["primary_model"] = _comfy_name(primary)
+    text_encoder = _first_exact(by_category, ["text_encoders", "clip"], "minimax_music3_text_encoder_pruned_int8_convrot.safetensors")
+    text_encoder = text_encoder or _first(by_category, ["text_encoders", "clip"], ["minimax", "music3", "text"])
+    if text_encoder:
+        assets["text_encoder"] = _comfy_name(text_encoder)
+    vae = _first_exact(by_category, ["vae"], "minimax_music3_dav.safetensors")
+    vae = vae or _first(by_category, ["vae"], ["minimax", "music3"])
+    if vae:
+        assets["vae"] = _comfy_name(vae)
     return assets
 
 

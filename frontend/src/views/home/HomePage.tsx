@@ -77,6 +77,7 @@ function assetSelectOptions(catalog: ReturnType<typeof useModelCatalogQuery>['da
 function modelMatchesPreset(model: { label: string; name: string }, preset: string) {
   const haystack = `${model.label} ${model.name}`.toLowerCase();
   const key = preset.toLowerCase();
+  if (['music3', 'music 3', 'minimax_music3', 'minimax-music-3'].includes(key)) return undefined;
   const rules: Record<string, string[]> = {
     sd: ['sd15', 'sd1', '1.5', 'dreamshaper'],
     xl: ['sdxl', 'xl', 'illustrious'],
@@ -91,6 +92,7 @@ function modelMatchesPreset(model: { label: string; name: string }, preset: stri
     ltx: ['ltx'],
     anima: ['anima'],
     krea2: ['krea2', 'krea-2', 'krea'],
+    music3: ['minimax_music3', 'minimax-music3', 'music3', 'music-3'],
   };
   return (rules[key] || [key]).some((token) => haystack.includes(token));
 }
@@ -247,12 +249,24 @@ function preferredWorkflow(workflows: WorkflowSummary[] | undefined, preset: str
     anima: ['anima-base', 'anima'],
     zimageturbo: ['zimage-turbo-base', 'zimage'],
     flux: ['flux'],
+    music3: ['music3', 'music-3', 'minimax-music'],
     xl: ['sdxl-base', 'sdxl'],
     sdxl: ['sdxl-base', 'sdxl'],
     sd: ['sd15-base', 'sd15'],
   };
   const wanted = tokens[key] || [key];
   return workflows.find((workflow) => wanted.some((token) => workflow.id.toLowerCase().includes(token) || workflow.name.toLowerCase().includes(token) || workflow.tags?.includes(token))) || workflows[0];
+}
+
+function music3WorkflowGraph(generation: GenerationState): { nodes: WorkflowGraphNode[]; links: WorkflowGraphLink[]; width: number; height: number } {
+  const nodes: WorkflowGraphNode[] = [
+    ['1', 'UNETLoader', 'DiT model'], ['2', 'CLIPLoader', 'Music text encoder'], ['3', 'VAELoader', 'Audio VAE'], ['4', 'MiniMaxMusic3TextEncode', 'Caption + lyrics'], ['5', 'ConditioningZeroOut', 'Negative conditioning'], ['6', 'EmptyMiniMaxMusic3LatentAudio', 'Duration latent'], ['7', 'KSampler', 'Sampler'], ['8', 'VAEDecodeAudio', 'Decode'], ['9', 'VAEDecodeAudioTiled', 'Tiled decode'], ['10', 'ComfySwitchNode', 'Decode switch'], ['11', 'SaveAudioAdvanced', 'Audio output'],
+  ].map(([id, class_type, title], index) => ({ id, class_type, title, x: 40 + (index % 4) * 280, y: 40 + Math.floor(index / 4) * 180, width: 240, height: 120, inputs: [], outputs: [] }));
+  const links: WorkflowGraphLink[] = [['2', '4'], ['4', '5'], ['4', '7'], ['6', '7'], ['1', '7'], ['5', '7'], ['7', '8'], ['7', '9'], ['8', '10'], ['9', '10'], ['10', '11']].map(([from_node, to_node]) => ({ from_node, to_node }));
+  nodes.find((node) => node.id === '4')!.widgets = [{ name: 'caption', value: generation.musicCaption || generation.prompt }, { name: 'generation_mode', value: generation.musicMode }, { name: 'lyrics', value: generation.musicMode === 'instrumental' ? '[instrumental]' : generation.musicMode === 'lyrics' ? generation.musicLyrics : '' }, { name: 'negative_guidance', value: generation.musicNegativePrompt }, { name: 'max_duration', value: generation.musicDurationSeconds }, { name: 'cfg_scale', value: generation.musicCfgScale }, { name: 'top_k', value: generation.musicTopK }];
+  nodes.find((node) => node.id === '7')!.widgets = [{ name: 'steps', value: generation.steps }, { name: 'cfg', value: generation.musicCfgScale }, { name: 'sampler', value: generation.sampler }, { name: 'scheduler', value: generation.scheduler }];
+  nodes.find((node) => node.id === '10')!.widgets = [{ name: 'tiled_decode', value: generation.musicTiledDecode }];
+  return { nodes, links, width: 1400, height: 700 };
 }
 
 function directorPatchNodes(generation: GenerationState, directorFrames: number): WorkflowGraphNode[] {
@@ -558,6 +572,7 @@ export function HomePage() {
   const qwenImageEdit = generation.preset.toLowerCase() === 'qwen';
   const ideogram4Mode = ['ideogram4', 'ideogram'].includes(generation.preset.toLowerCase());
   const krea2Mode = ['krea2', 'krea-2'].includes(generation.preset.toLowerCase());
+  const music3Mode = ['music3', 'music 3', 'minimax_music3', 'minimax-music-3'].includes(generation.preset.toLowerCase());
   const ltxDirectorView = generation.preset.toLowerCase() === 'ltx' && viewMode === 'director';
   const directorMode = generation.preset.toLowerCase() === 'ltx' && generation.directorEnabled;
   const alignedFrames = alignVideoFrames(generation.preset, generation.videoFrames);
@@ -591,8 +606,20 @@ export function HomePage() {
     onSuccess: () => { void krea2Status.refetch(); },
     onError: (error) => setLocalError(error instanceof Error ? error.message : 'Krea 2 dependency download failed.'),
   });
+  const music3Status = useQuery({
+    queryKey: ['music3-assets-status'],
+    queryFn: nexusApi.music3AssetsStatus,
+    enabled: music3Mode,
+    refetchInterval: music3Mode ? 5000 : false,
+  });
+  const music3Download = useMutation({
+    mutationFn: (assets: string[]) => nexusApi.startMusic3AssetDownload({ assets }),
+    onSuccess: () => { void music3Status.refetch(); void catalog.refetch(); },
+    onError: (error) => setLocalError(error instanceof Error ? error.message : 'Music 3 dependency download failed.'),
+  });
   const krea2PromptShown = useRef(false);
   const krea2ProfileApplied = useRef(false);
+  const music3PromptShown = useRef(false);
   const ideogramPromptJson = useMutation({
     mutationFn: (request: Ideogram4PromptJsonRequest) => nexusApi.ideogram4PromptJson(request),
     onSuccess: (result) => {
@@ -610,6 +637,7 @@ export function HomePage() {
     ? ideogramAssetSelection
     : (ideogram4Status.data?.missing_required_assets ?? []).map((asset) => asset.key);
   const studioWorkflowGraph = useMemo(() => {
+    if (music3Mode) return music3WorkflowGraph(generation);
     const graph = workflowAnalysis.data?.visual_graph;
     return buildStudioWorkflowGraph(graph?.nodes ?? [], graph?.links ?? [], generation, alignedFrames, directorFrames);
   }, [alignedFrames, directorFrames, generation, workflowAnalysis.data?.visual_graph]);
@@ -644,6 +672,17 @@ export function HomePage() {
       krea2Status.data.recommended_profile === 'rtx_5090' ? 1024 : 768,
     );
   }, [generation, krea2Mode, krea2Status.data?.recommended_profile]);
+
+  useEffect(() => {
+    if (!music3Mode) { music3PromptShown.current = false; return; }
+    if (music3PromptShown.current || music3Status.isLoading || !music3Status.data || music3Status.data.generation_ready || (!music3Status.data.missing_required_assets?.length && !music3Status.data.missing_core_nodes?.length)) return;
+    music3PromptShown.current = true;
+    const missing = music3Status.data.missing_required_assets;
+    const core = music3Status.data.missing_core_nodes?.length ? `\n\nO ComfyUI também precisa ser atualizado para fornecer: ${music3Status.data.missing_core_nodes.join(', ')}. Deseja baixar os modelos agora?` : '';
+    if (window.confirm(`Music 3 encontrou dependências ausentes (${missing.map((item) => item.filename).join(', ') || 'nodes nativos do ComfyUI'}).${core}\n\nBaixar os modelos selecionados agora para ${music3Status.data.models_dir || 'a pasta configurada'}?`)) {
+      if (missing.length) music3Download.mutate(missing.map((item) => item.key));
+    }
+  }, [music3Download, music3Mode, music3Status.data, music3Status.isLoading]);
 
   useEffect(() => {
     if ((!generation.modelPath || !models.some((model) => model.value === generation.modelPath)) && models[0]) {
@@ -696,6 +735,18 @@ export function HomePage() {
       text_encoder: generation.textEncoderOverrideEnabled ? generation.textEncoder : 'Automatic',
       loras: loraStore.activeLoras,
       distilled_loras: generation.preset.toLowerCase() === 'ltx' && !generation.distilledLoraEnabled ? [{ name: 'None', strength: 0 }] : [],
+      music: music3Mode ? {
+        caption: generation.musicCaption || generation.prompt,
+        mode: generation.musicMode,
+        lyrics: generation.musicMode === 'instrumental' ? '[instrumental]' : generation.musicMode === 'lyrics' ? generation.musicLyrics : '',
+        negative_prompt: generation.musicNegativePrompt,
+        duration_seconds: generation.musicDurationSeconds,
+        steps: generation.steps,
+        cfg_scale: generation.musicCfgScale,
+        top_k: generation.musicTopK,
+        tiled_decode: generation.musicTiledDecode,
+        format: generation.musicFormat,
+      } : {},
       img2img: {
         mode: generation.img2imgMode === 'inpaint' ? 'Inpaint masked area' : 'Image to Image',
         resize_mode: generation.resizeMode,
@@ -795,9 +846,11 @@ export function HomePage() {
             enable_flash_attention: false,
             precision: 'auto',
           }
+        : music3Mode
+          ? { vram_policy: music3Status.data?.recommended_profile === 'rtx_5090' ? 'normal' : 'low', attention_backend: 'sage', disable_xformers: false, enable_sage_attention: true, precision: music3Status.data?.recommended_profile === 'rtx_5090' ? 'fp16' : 'int8' }
         : {},
     }),
-    [alignedFrames, allReferenceImages, controlNetCompatible, directorFrames, directorMode, generation, ideogram4Mode, loraStore.activeLoras, videoMode],
+    [alignedFrames, allReferenceImages, controlNetCompatible, directorFrames, directorMode, generation, ideogram4Mode, loraStore.activeLoras, music3Mode, videoMode],
   );
 
   const startMutation = useMutation({
@@ -822,8 +875,9 @@ export function HomePage() {
   const activeJob = jobQuery.data ?? startMutation.data;
   const processing = startMutation.isPending || (!!activeJob && !terminalStatus(activeJob));
   const generatedOutput = activeJob?.status === 'completed' ? activeJob.outputs?.[0] : null;
-  const previewUrl = outputUrl(generatedOutput?.url || newestGalleryItem?.image);
+  const previewUrl = outputUrl(generatedOutput?.url || (music3Mode ? '' : newestGalleryItem?.image));
   const previewIsVideo = /\.(mp4|mov|webm|mkv|avi)$/i.test(generatedOutput?.filename || newestGalleryItem?.filename || '');
+  const previewIsAudio = generatedOutput?.kind === 'audio' || /\.(mp3|wav|flac|opus|m4a|ogg)$/i.test(generatedOutput?.filename || newestGalleryItem?.filename || '');
 
   function handleLinearViewerWheel(event: WheelEvent<HTMLDivElement>) {
     if (viewMode !== 'linear') return;
@@ -861,7 +915,7 @@ export function HomePage() {
   }
 
   async function handleIdeogramMagicPrompt() {
-    if (!generation.prompt.trim()) {
+    if (!(music3Mode ? (generation.musicCaption || generation.prompt) : generation.prompt).trim()) {
       setLocalError('Prompt is required.');
       return;
     }
@@ -991,7 +1045,7 @@ export function HomePage() {
               {localError || activeJob?.error || activeJob?.message || generatedOutput?.filename}
             </div>
           )}
-          {!ltxDirectorView && (
+          {!ltxDirectorView && !music3Mode && (
             <div className="button-grid mode-switch">
               {qwenImageEdit ? (
                 <button className="active" type="button" onClick={() => generation.setActivity('img2img')}>img2img</button>
@@ -1004,7 +1058,7 @@ export function HomePage() {
             </div>
           )}
 
-          <label className="field">
+          {!music3Mode && <label className="field">
             <span className="field-title-row">
               Prompt
               {ideogram4Mode && (
@@ -1021,14 +1075,36 @@ export function HomePage() {
               )}
             </span>
             <textarea value={generation.prompt} onChange={(event) => generation.setPrompt(event.currentTarget.value)} placeholder="Describe the image..." />
-          </label>
+          </label>}
 
-          <label className="field">
+          {!music3Mode && <label className="field">
             <span>Negative Prompt</span>
             <textarea value={generation.negativePrompt} onChange={(event) => generation.setNegativePrompt(event.currentTarget.value)} placeholder="Avoid..." />
-          </label>
+          </label>}
 
-          <div className="img2img-source reference-source-block">
+          {music3Mode && (
+            <div className="control-stack music3-panel">
+              <label className="field"><span>Music description / Caption</span><textarea value={generation.musicCaption} onChange={(event) => generation.setMusicCaption(event.currentTarget.value)} placeholder="Genre, mood, BPM, key, vocals and arrangement..." /></label>
+              <label className="field"><span>Generation mode</span><select value={generation.musicMode} onChange={(event) => generation.setMusicMode(event.currentTarget.value as 'instrumental' | 'instrumental_fx' | 'lyrics' | 'caption')}><option value="instrumental">Instrumental — no vocals</option><option value="instrumental_fx">Instrumental + vocal textures — no lyrics</option><option value="lyrics">Lyrics + caption — vocals</option><option value="caption">Caption + negative guidance</option></select></label>
+              <label className="field"><span>Lyrics (optional)</span><textarea value={generation.musicMode === 'instrumental' ? '[instrumental]' : generation.musicLyrics} disabled={generation.musicMode !== 'lyrics'} onChange={(event) => generation.setMusicLyrics(event.currentTarget.value)} placeholder="[Intro]\n...\n[Verse]\n...\n[Chorus]\n..." /></label>
+              <label className="field"><span>Negative guidance (optional)</span><textarea value={generation.musicNegativePrompt} onChange={(event) => generation.setMusicNegativePrompt(event.currentTarget.value)} placeholder="Avoid instruments, moods, voices or styles..." /></label>
+              <div className="two-col">
+                <label className="field"><span>Duration (seconds)</span><input type="number" min={0.04} max={300} step={0.04} value={generation.musicDurationSeconds} onChange={(event) => generation.setMusicDurationSeconds(Number(event.currentTarget.value))} /></label>
+                <label className="field"><span>Steps</span><input type="number" min={1} max={100} value={generation.steps} onChange={(event) => generation.setSteps(Number(event.currentTarget.value))} /></label>
+              </div>
+              <div className="two-col">
+                <label className="field"><span>CFG scale</span><input type="number" min={0} max={100} step={0.1} value={generation.musicCfgScale} onChange={(event) => generation.setMusicCfgScale(Number(event.currentTarget.value))} /></label>
+                <label className="field"><span>Top-K</span><input type="number" min={1} max={4096} value={generation.musicTopK} onChange={(event) => generation.setMusicTopK(Number(event.currentTarget.value))} /></label>
+              </div>
+              <div className="two-col">
+                <label className="field"><span>Output format</span><select value={generation.musicFormat} onChange={(event) => generation.setMusicFormat(event.currentTarget.value as 'flac' | 'mp3' | 'opus')}><option value="mp3">MP3 (V0)</option><option value="flac">FLAC</option><option value="opus">Opus</option></select></label>
+                <label className="toggle-row"><input type="checkbox" checked={generation.musicTiledDecode} onChange={(event) => generation.setMusicTiledDecode(event.currentTarget.checked)} /><span>Tiled decode (RTX 3060)</span></label>
+              </div>
+              <details className="control-section" open><summary>Music 3 Dependencies <span>{music3Status.data?.generation_ready ? 'Ready' : 'Download required'}</span></summary><div className="control-stack"><div className={music3Status.data?.generation_ready ? 'studio-inline-status' : 'studio-inline-status error'}>{music3Status.isLoading ? 'Checking Music 3 assets...' : music3Status.data?.generation_ready ? 'Native Music 3 nodes and models ready.' : `${formatBytes(music3Status.data?.estimated_missing_required_bytes)} required assets missing.`}</div>{music3Status.data?.missing_core_nodes?.length ? <p className="compact-note">ComfyUI core support missing: {music3Status.data.missing_core_nodes.join(', ')}. Run the normal ComfyUI update, then restart when no training job is active.</p> : null}<button type="button" className="primary-button" disabled={music3Download.isPending || !(music3Status.data?.missing_required_assets?.length)} onClick={() => music3Download.mutate((music3Status.data?.missing_required_assets ?? []).map((asset) => asset.key))}>{music3Download.isPending ? 'Downloading...' : 'Download Music 3 base files'}</button><p className="compact-note">RTX 3060 uses INT8 + tiled decode. RTX 5090 can use FP16 and non-tiled decode. Native Music 3 support is delivered by current ComfyUI core; no third-party node is required.</p></div></details>
+            </div>
+          )}
+
+          {!music3Mode && <div className="img2img-source reference-source-block">
             <label className="dropzone small-dropzone">
               <input
                 type="file"
@@ -1114,7 +1190,7 @@ export function HomePage() {
                 )}
               </>
             )}
-          </div>
+          </div>}
 
           {ideogram4Mode && (
             <details className="control-section" open>
@@ -1641,7 +1717,7 @@ export function HomePage() {
             <div className="studio-view-strip">
             {generation.preset.toLowerCase() === 'ltx' && <button className={viewMode === 'director' ? 'active' : ''} type="button" onClick={() => { setViewMode('director'); generation.setDirectorEnabled(true); }}><Clapperboard size={13} /> LTX 2.3 Director</button>}
             <button className={viewMode === 'linear' ? 'active' : ''} type="button" onClick={() => setViewMode('linear')}>Linear Viewer</button>
-            <button
+            {!music3Mode && <button
               className={viewMode === 'inpaint' ? 'active' : ''}
               type="button"
               onClick={() => {
@@ -1651,7 +1727,7 @@ export function HomePage() {
               }}
             >
               Inpaint Canvas
-            </button>
+            </button>}
             <button className={viewMode === 'workflow' ? 'active' : ''} type="button" onClick={() => setViewMode('workflow')}>
               <Workflow size={13} />
               Node Workflow
@@ -1670,7 +1746,7 @@ export function HomePage() {
                 {ideogram4Mode ? (
                   <IdeogramRegionEditor generation={generation} sourceUrl={generation.activity === 'img2img' ? generation.referenceImage || previewUrl : previewUrl} previewIsVideo={previewIsVideo && generation.activity !== 'img2img'} />
                 ) : previewUrl ? (
-                  previewIsVideo ? <video className="extras-media" src={previewUrl} controls playsInline /> : <img className="extras-media" src={previewUrl} alt="Studio output preview" />
+                  previewIsVideo ? <video className="extras-media" src={previewUrl} controls playsInline /> : previewIsAudio ? <audio className="music3-audio-player" src={previewUrl} controls /> : <img className="extras-media" src={previewUrl} alt="Studio output preview" />
                 ) : (
                   <div className="preview-empty"><Images size={38} /><p>No output loaded</p><span>Generated files appear from ./output</span></div>
                 )}

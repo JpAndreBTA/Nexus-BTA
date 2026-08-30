@@ -1,6 +1,6 @@
-# NexusBTA v0.2.46
+# NexusBTA v0.2.47
 
-`NexusBTA v0.2.46 - LTX 2.5, MiniMax H3 latent bridge and Image Edit`
+`NexusBTA v0.2.47 - MiniMax H3, Music 3 and Train LoRA synchronization`
 
 Short release summary:
 
@@ -16,7 +16,12 @@ Short release summary:
 - MiniMax H3 latent upscale uses the local LTX 2.5 bridge only when enabled, preserving the native H3 workflow when disabled.
 - MiniMax H3 REF2VA adds a synchronized one-image Image Edit route with editable sampling steps (8 by default) and first-frame PNG output.
 - Silent MiniMax H3 reference videos receive a temporary AAC track so VHS audio extraction cannot fail after sampling completes.
+- MiniMax Music 3 adds a dedicated local audio template with automatic model-path selection for RTX 3060 INT8 and RTX 5090 FP16 routes.
+- Music 3 supports instrumental-only generation, wordless vocal textures, caption plus negative guidance, and caption + lyrics vocal songs.
+- Music 3 audio export now sends ComfyUI DynamicCombo fields correctly and recovers MP3, FLAC, Opus, WAV and other audio outputs in the UI gallery.
+- Music 3 output, format quality, mode, lyrics and negative guidance remain synchronized between the side menu, workflow preview and backend payload.
+- Train LoRA dependency and trainer configuration fixes remain included in this release.
 
 Complete version:
 
-[docs/releases/v0.2.46.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.46/docs/releases/v0.2.46.md)
+[docs/releases/v0.2.47.md](https://github.com/JpAndreBTA/Nexus-BTA/blob/v0.2.47/docs/releases/v0.2.47.md)

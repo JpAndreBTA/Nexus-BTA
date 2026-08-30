@@ -60,6 +60,13 @@ export const nexusApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
+  music3AssetsStatus: () => nexusFetch<Krea2AssetsStatus>('/music3/assets/status'),
+  startMusic3AssetDownload: (payload: Record<string, unknown>) =>
+    nexusFetch<GenerationJob>('/music3/assets/download/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
   startIdeogram4AssetDownload: (payload: Record<string, unknown>) =>
     nexusFetch<GenerationJob>('/ideogram4/assets/download/start', {
       method: 'POST',

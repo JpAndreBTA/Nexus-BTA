@@ -12,6 +12,10 @@ function isVideo(item: GalleryItem) {
   return item.media_type === 'video' || /\.(mp4|mov|webm|mkv|avi)$/i.test(item.filename);
 }
 
+function isAudio(item: GalleryItem) {
+  return item.media_type === 'audio' || /\.(mp3|wav|flac|opus|ogg|m4a)$/i.test(item.filename);
+}
+
 function extrasHref(item: GalleryItem) {
   const base = window.location.pathname.startsWith('/app') ? '/app' : '';
   const params = new URLSearchParams({
@@ -80,7 +84,7 @@ export function GalleryPage() {
         <div className="gallery-grid">
           {pagedItems.map((item) => (
             <button key={`${item.relative_path}:${item.modified}`} className={active?.relative_path === item.relative_path ? 'gallery-card active' : 'gallery-card'} type="button" onClick={() => setSelected(item)}>
-              {isVideo(item) ? <video src={mediaUrl(item.thumb || item.image)} muted playsInline /> : <img src={mediaUrl(item.thumb || item.image)} alt={item.filename} loading="lazy" />}
+              {isVideo(item) ? <video src={mediaUrl(item.thumb || item.image)} muted playsInline /> : isAudio(item) ? <audio src={mediaUrl(item.image)} controls /> : <img src={mediaUrl(item.thumb || item.image)} alt={item.filename} loading="lazy" />}
               <span title={item.filename}>{item.filename}</span>
             </button>
           ))}
@@ -90,7 +94,7 @@ export function GalleryPage() {
           {active ? (
             <>
               <div className="gallery-preview-media">
-                {isVideo(active) ? <video src={mediaUrl(active.image)} controls playsInline /> : <img src={mediaUrl(active.image)} alt={active.filename} />}
+                {isVideo(active) ? <video src={mediaUrl(active.image)} controls playsInline /> : isAudio(active) ? <audio src={mediaUrl(active.image)} controls /> : <img src={mediaUrl(active.image)} alt={active.filename} />}
               </div>
               <div className="gallery-meta">
                 <h2>{active.filename}</h2>
