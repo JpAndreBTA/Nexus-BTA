@@ -1,0 +1,16 @@
+[package]
+name = "nexus-image-core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Opt-in pure image operations for native Rust and future WASM"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen"]
+
+[dependencies]
+wasm-bindgen = { version = "0.2", optional = true }

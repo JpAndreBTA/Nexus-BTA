@@ -1,0 +1,49 @@
+name: Nexus M1 quality gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'scripts/**'
+      - 'crates/**'
+      - '.github/workflows/nexus-m1-quality.yml'
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install reproducible frontend dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Typecheck and production build
+        run: npm run check
+        working-directory: frontend
+        env:
+          NEXUS_FRONTEND_BASE: /app/
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile backend source without launching GPU
+        run: python -m compileall -q backend/nexus_backend backend/run_backend.py
+      - name: Check network access guard without GPU
+        run: |
+          PYTHONPATH=backend python -c "from nexus_backend.security import cors_allowed_origins,require_explicit_network_ack; assert '*' not in cors_allowed_origins(); require_explicit_network_ack('127.0.0.1'); import os; os.environ.pop('NEXUS_UNSAFE_NETWORK_ACK',None); import sys; exec(\"try: require_explicit_network_ack('0.0.0.0'); raise AssertionError('unsafe open')\\nexcept RuntimeError: pass\")"
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path crates/nexus-image-core/Cargo.toml
