@@ -54,7 +54,7 @@ export function GalleryPage() {
   const currentPage = Math.min(pageIndex, totalPages - 1);
   const pagedItems = items.slice(currentPage * pageSize, currentPage * pageSize + pageSize);
 
-  const active = selected ?? pagedItems[0] ?? items[0] ?? null;
+  const active = (selected ? items.find((item) => item.relative_path === selected.relative_path) : undefined) ?? pagedItems[0] ?? items[0] ?? null;
 
   return (
     <section className="page gallery-layout">

@@ -12690,7 +12690,7 @@ async def gallery() -> list[dict[str, Any]]:
     model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".spz", ".ksplat"}
     audio_suffixes = {".mp3", ".wav", ".flac", ".opus", ".ogg", ".m4a"}
     accepted_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", *audio_suffixes, *model_suffixes}
-    for path, modified in recent_media_files(settings.output_dir, accepted_suffixes, limit=200):
+    for path, modified in recent_media_files(settings.output_dir, accepted_suffixes, limit=200, skip_video_images=True):
         if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", *audio_suffixes, *model_suffixes}:
             continue
         relative = path.relative_to(settings.output_dir).as_posix()

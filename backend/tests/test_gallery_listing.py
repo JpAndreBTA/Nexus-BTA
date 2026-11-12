@@ -23,6 +23,20 @@ class GalleryListingTests(unittest.TestCase):
             self.assertEqual(len(result), 5)
             self.assertEqual([p.name for p, _ in result], ["44.png", "43.png", "42.png", "41.png", "40.png"])
 
+    def test_video_sidecars_do_not_count_toward_gallery_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            video = root / "video"
+            video.mkdir()
+            sidecar = video / "temporary_preview.png"
+            sidecar.write_bytes(b"x")
+            os.utime(sidecar, (30000, 30000))
+            retained = root / "final.png"
+            retained.write_bytes(b"y")
+            os.utime(retained, (20000, 20000))
+            result = recent_media_files(root, {".png"}, limit=1, skip_video_images=True)
+            self.assertEqual([path.name for path, _ in result], ["final.png"])
+
     def test_empty_missing_and_disabled(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

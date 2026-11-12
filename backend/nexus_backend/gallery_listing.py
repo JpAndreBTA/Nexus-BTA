@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def recent_media_files(
-    root: Path, extensions: set[str], limit: int = 200
+    root: Path, extensions: set[str], limit: int = 200, skip_video_images: bool = False
 ) -> list[tuple[Path, float]]:
     if limit <= 0 or not root.is_dir():
         return []
@@ -20,8 +20,12 @@ def recent_media_files(
     sequence = count()
     for path in root.rglob("*"):
         try:
-            if path.is_symlink() or path.suffix.lower() not in extensions or not path.is_file():
+            suffix = path.suffix.lower()
+            if path.is_symlink() or suffix not in extensions or not path.is_file():
                 continue
+            if skip_video_images and suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                if path.relative_to(root).as_posix().startswith("video/"):
+                    continue
             modified = path.stat().st_mtime
         except OSError:
             # Outputs can be deleted while a generation is finishing.
