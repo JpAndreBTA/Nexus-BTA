@@ -79,10 +79,50 @@ function AppTopbar() {
   const generation = useGenerationStore();
   const [civitaiOpen, setCivitaiOpen] = useState(false);
   const [civitaiFilter, setCivitaiFilter] = useState('All Types');
+  const [civitaiDownloadJobId, setCivitaiDownloadJobId] = useState('');
+  const [civitaiDownloadStatus, setCivitaiDownloadStatus] = useState('');
+  const [civitaiDownloading, setCivitaiDownloading] = useState(false);
   const [civitaiQuery, setCivitaiQuery] = useState('');
   const [civitaiResults, setCivitaiResults] = useState<CivitaiModelItem[]>([]);
   const [civitaiStatus, setCivitaiStatus] = useState('');
   const checkpoints = checkpointOptions(catalog.data, generation.preset);
+
+  useEffect(() => {
+    if (!civitaiDownloadJobId) return;
+    let disposed = false;
+    const poll = async () => {
+      try {
+        const job = await nexusApi.civitaiDownloadJob(civitaiDownloadJobId);
+        if (disposed) return;
+        setCivitaiDownloadStatus(`${job.message || job.status} (${Math.round(job.progress || 0)}%)`);
+        if (['completed', 'failed', 'cancelled'].includes(job.status)) {
+          setCivitaiDownloading(false);
+          setCivitaiDownloadJobId('');
+        }
+      } catch (error) {
+        if (disposed) return;
+        setCivitaiDownloading(false);
+        setCivitaiDownloadJobId('');
+        setCivitaiDownloadStatus(error instanceof Error ? error.message : 'Download status unavailable.');
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => { void poll(); }, 1500);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [civitaiDownloadJobId]);
+
+  async function downloadCivitaiModel(url: string) {
+    if (!url || civitaiDownloading) return;
+    setCivitaiDownloading(true);
+    setCivitaiDownloadStatus('Starting download…');
+    try {
+      const job = await nexusApi.startCivitaiDownload(url, generation.preset);
+      setCivitaiDownloadJobId(job.job_id);
+    } catch (error) {
+      setCivitaiDownloading(false);
+      setCivitaiDownloadStatus(error instanceof Error ? error.message : 'Download could not start.');
+    }
+  }
 
   async function runCivitaiLookup() {
     const query = civitaiQuery.trim();
@@ -187,11 +227,15 @@ function AppTopbar() {
                   {item.preview && !isVideoPreview(item.preview) ? <img src={item.preview} alt={item.name} loading="lazy" decoding="async" /> : <div><span>{item.versions?.[0]?.base_model || item.type}</span></div>}
                   <strong>{item.name}</strong>
                   <small>{item.creator ? `by ${item.creator}` : item.type} {item.versions?.[0]?.file_name ? `/ ${item.versions[0].file_name}` : ''}</small>
+                  <button type="button" className="mini-button" disabled={!item.versions?.[0]?.url || civitaiDownloading}
+                    onClick={() => { void downloadCivitaiModel(item.versions?.[0]?.url || ''); }}>
+                    <Download size={13} /> Download
+                  </button>
                 </article>
               ))}
             </div>
             <footer className="modal-footer">
-              <span>{civitaiStatus || 'Search uses the local backend Civitai bridge.'}</span>
+              <span role="status" aria-live="polite">{civitaiDownloadStatus || civitaiStatus || 'Search uses the local backend Civitai bridge.'}</span>
               <Link className="flat-button" to="/models" onClick={() => setCivitaiOpen(false)}>Open Local Models</Link>
             </footer>
           </div>

@@ -33,6 +33,14 @@ export const nexusApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
+  startCivitaiDownload: (url: string, preset: string) =>
+    nexusFetch<DownloadJob>('/civitai/download/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, preset, target_kind: 'auto', save_preview: true }),
+    }),
+  civitaiDownloadJob: (jobId: string) =>
+    nexusFetch<DownloadJob>(`/civitai/download/${encodeURIComponent(jobId)}`),
   civitaiResolve: (payload: Record<string, unknown>) =>
     nexusFetch<Record<string, unknown>>('/civitai/resolve', {
       method: 'POST',
