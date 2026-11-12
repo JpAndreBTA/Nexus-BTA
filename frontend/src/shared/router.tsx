@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, Outlet, createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
 import { Activity, Download, GalleryHorizontalEnd, GitBranch, ImageUp, Images, MonitorCog, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Settings, X } from 'lucide-react';
 
@@ -78,6 +78,7 @@ function AppTopbar() {
   const catalog = useModelCatalogQuery();
   const generation = useGenerationStore();
   const [civitaiOpen, setCivitaiOpen] = useState(false);
+  const civitaiDialogRef = useRef<HTMLDivElement | null>(null);
   const [civitaiFilter, setCivitaiFilter] = useState('All Types');
   const [civitaiDownloadJobId, setCivitaiDownloadJobId] = useState('');
   const [civitaiDownloadStatus, setCivitaiDownloadStatus] = useState('');
@@ -110,6 +111,47 @@ function AppTopbar() {
     const timer = window.setInterval(() => { void poll(); }, 1500);
     return () => { disposed = true; window.clearInterval(timer); };
   }, [civitaiDownloadJobId]);
+
+  useEffect(() => {
+    if (!civitaiOpen) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = civitaiDialogRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    dialog?.querySelector<HTMLInputElement>('input')?.focus();
+
+    function handleDialogKeydown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setCivitaiOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !dialog) return;
+      const tabbable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )).filter((element) => element.getClientRects().length > 0);
+      if (!tabbable.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = tabbable[0];
+      const last = tabbable[tabbable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener('keydown', handleDialogKeydown);
+    return () => {
+      document.removeEventListener('keydown', handleDialogKeydown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, [civitaiOpen]);
 
   async function downloadCivitaiModel(url: string) {
     if (!url || civitaiDownloading) return;
@@ -201,7 +243,7 @@ function AppTopbar() {
       </header>
       {civitaiOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Nexus Civitai downloader">
-          <div className="modal-panel civitai-modal">
+          <div className="modal-panel civitai-modal" ref={civitaiDialogRef}>
             <header className="modal-header">
               <strong>Nexus Civitai Downloader</strong>
               <button className="icon-button" type="button" onClick={() => setCivitaiOpen(false)} title="Close Civitai downloader">
