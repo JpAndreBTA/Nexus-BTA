@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, Outlet, createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
 import { Activity, Download, GalleryHorizontalEnd, GitBranch, ImageUp, Images, MonitorCog, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Settings, X } from 'lucide-react';
 
-import { ExtrasPage } from '../views/extras/ExtrasPage';
-import { GalleryPage } from '../views/gallery/GalleryPage';
-import { HomePage } from '../views/home/HomePage';
-import { ModelsPage } from '../views/modelCatalog/ModelsPage';
-import { SettingsPage } from '../views/settings/SettingsPage';
-import { WorkflowPage } from '../views/workflow/WorkflowPage';
+const ExtrasPage = lazy(() => import('../views/extras/ExtrasPage').then((module) => ({ default: module.ExtrasPage })));
+const GalleryPage = lazy(() => import('../views/gallery/GalleryPage').then((module) => ({ default: module.GalleryPage })));
+const HomePage = lazy(() => import('../views/home/HomePage').then((module) => ({ default: module.HomePage })));
+const ModelsPage = lazy(() => import('../views/modelCatalog/ModelsPage').then((module) => ({ default: module.ModelsPage })));
+const SettingsPage = lazy(() => import('../views/settings/SettingsPage').then((module) => ({ default: module.SettingsPage })));
+const WorkflowPage = lazy(() => import('../views/workflow/WorkflowPage').then((module) => ({ default: module.WorkflowPage })));
 import { useModelCatalogQuery } from '../api/queries';
 import { nexusApi } from '../api/nexusClient';
 import { useUiStore } from '../stores/uiStore';
@@ -78,6 +78,7 @@ function AppTopbar() {
   const catalog = useModelCatalogQuery();
   const generation = useGenerationStore();
   const [civitaiOpen, setCivitaiOpen] = useState(false);
+  const [civitaiFilter, setCivitaiFilter] = useState('All Types');
   const [civitaiQuery, setCivitaiQuery] = useState('');
   const [civitaiResults, setCivitaiResults] = useState<CivitaiModelItem[]>([]);
   const [civitaiStatus, setCivitaiStatus] = useState('');
@@ -104,7 +105,7 @@ function AppTopbar() {
       }
       const result = await nexusApi.civitaiSearch({
         query,
-        types: '',
+        types: ({ 'All Types': '', Checkpoints: 'Checkpoint', LoRAs: 'LORA', Embeddings: 'TextualInversion' } as Record<string, string>)[civitaiFilter] || '',
         base_model: civitaiBaseModel(generation.preset),
         sort: 'Most Downloaded',
         period: 'AllTime',
@@ -174,19 +175,14 @@ function AppTopbar() {
             </div>
             <div className="modal-filter-row">
               {['All Types', 'Checkpoints', 'LoRAs', 'Embeddings'].map((label) => (
-                <button className="mini-button" type="button" key={label}>{label}</button>
+                <button className={civitaiFilter === label ? 'mini-button active' : 'mini-button'} type="button" key={label} aria-pressed={civitaiFilter === label} onClick={() => setCivitaiFilter(label)}>{label}</button>
               ))}
               <span>Base: {civitaiBaseModel(generation.preset)}</span>
               <span>Order: Most Downloaded</span>
             </div>
             <div className="civitai-card-grid">
-              {(civitaiResults.length ? civitaiResults : [
-                { name: 'Realistic Vision V6.0 B1', type: 'Checkpoint', versions: [{ base_model: 'SD 1.5' }] },
-                { name: 'DreamShaper', type: 'Checkpoint', versions: [{ base_model: 'SD 1.5' }] },
-                { name: 'Juggernaut XL', type: 'Checkpoint', versions: [{ base_model: 'SDXL' }] },
-                { name: 'LTX-2.3 Motion Master', type: 'LoRA', versions: [{ base_model: 'LTX 2.3' }] },
-                { name: 'Cyberpunk Aesthetic', type: 'LoRA', versions: [{ base_model: 'Anima' }] },
-              ]).map((item) => (
+              {!civitaiResults.length && <p className="muted" role="status">No models loaded. Enter a search or a Civitai URL to show verified results.</p>}
+              {civitaiResults.map((item) => (
                 <article className="civitai-card" key={`${item.id || item.name}`}>
                   {item.preview && !isVideoPreview(item.preview) ? <img src={item.preview} alt={item.name} loading="lazy" decoding="async" /> : <div><span>{item.versions?.[0]?.base_model || item.type}</span></div>}
                   <strong>{item.name}</strong>
@@ -207,6 +203,13 @@ function AppTopbar() {
 
 function RootLayout() {
   const ui = useUiStore();
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.nexusTheme = ui.theme;
+    root.dataset.nexusAccent = ui.accent;
+    root.dataset.nexusDensity = ui.density;
+    root.dataset.nexusReducedMotion = String(ui.reducedMotion);
+  }, [ui.theme, ui.accent, ui.density, ui.reducedMotion]);
 
   return (
     <div className={ui.sidebarCollapsed ? 'app-shell rail-collapsed' : 'app-shell'}>
@@ -263,37 +266,37 @@ const rootRoute = createRootRoute({
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  component: HomePage,
+  component: () => <Suspense fallback={<div className="page workspace-loading" role="status">Loading workspace…</div>}><HomePage /></Suspense>,
 });
 
 const extrasRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/extras',
-  component: ExtrasPage,
+  component: () => <Suspense fallback={<div className="page workspace-loading" role="status">Loading workspace…</div>}><ExtrasPage /></Suspense>,
 });
 
 const modelsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/models',
-  component: ModelsPage,
+  component: () => <Suspense fallback={<div className="page workspace-loading" role="status">Loading workspace…</div>}><ModelsPage /></Suspense>,
 });
 
 const galleryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/gallery',
-  component: GalleryPage,
+  component: () => <Suspense fallback={<div className="page workspace-loading" role="status">Loading workspace…</div>}><GalleryPage /></Suspense>,
 });
 
 const workflowRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/workflow',
-  component: WorkflowPage,
+  component: () => <Suspense fallback={<div className="page workspace-loading" role="status">Loading workspace…</div>}><WorkflowPage /></Suspense>,
 });
 
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
-  component: SettingsPage,
+  component: () => <Suspense fallback={<div className="page workspace-loading" role="status">Loading workspace…</div>}><SettingsPage /></Suspense>,
 });
 
 const routeTree = rootRoute.addChildren([homeRoute, extrasRoute, modelsRoute, galleryRoute, workflowRoute, settingsRoute]);

@@ -6,6 +6,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { queryClient } from './shared/queryClient';
 import { router } from './shared/router';
 import './styles.css';
+import './styles/appearance.css';
 
 const root = document.getElementById('root');
 

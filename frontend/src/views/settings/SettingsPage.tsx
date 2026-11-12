@@ -1,4 +1,5 @@
-import { Globe2, HardDrive, Network, Server, ShieldAlert } from 'lucide-react';
+import { Globe2, HardDrive, Network, Palette, RotateCcw, Server, ShieldAlert } from 'lucide-react';
+import { useUiStore, type NexusTheme, type NexusAccent, type ShellDensity } from '../../stores/uiStore';
 
 import { useHealthQuery } from '../../api/queries';
 
@@ -12,6 +13,7 @@ const checklist = [
 
 export function SettingsPage() {
   const health = useHealthQuery();
+  const ui = useUiStore();
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
   return (
@@ -19,6 +21,37 @@ export function SettingsPage() {
       <span className="route-sentinel" data-route="settings" aria-label="Settings workspace" />
 
       <div className="settings-grid">
+        <article className="surface settings-card wide-card appearance-workspace">
+          <header className="appearance-heading"><div><Palette size={22} /><h2>Customize your workspace</h2></div>
+            <button type="button" className="mini-button" onClick={ui.resetAppearance}><RotateCcw size={14} /> Reset appearance</button>
+          </header>
+          <p className="muted">Live preview. Appearance preferences are stored only in this browser.</p>
+          <div className="appearance-controls">
+            <label>Theme
+              <select value={ui.theme} onChange={(event) => ui.setTheme(event.currentTarget.value as NexusTheme)}>
+                <option value="graphite">Graphite</option><option value="midnight">Midnight</option><option value="obsidian">Obsidian</option>
+              </select>
+            </label>
+            <label>Accent
+              <select value={ui.accent} onChange={(event) => ui.setAccent(event.currentTarget.value as NexusAccent)}>
+                <option value="red">Red</option><option value="blue">Blue</option><option value="violet">Violet</option>
+                <option value="emerald">Emerald</option><option value="amber">Amber</option>
+              </select>
+            </label>
+            <label>Density
+              <select value={ui.density} onChange={(event) => ui.setDensity(event.currentTarget.value as ShellDensity)}>
+                <option value="compact">Compact</option><option value="comfortable">Comfortable</option>
+              </select>
+            </label>
+            <label className="appearance-check"><input type="checkbox" checked={ui.reducedMotion}
+              onChange={(event) => ui.setReducedMotion(event.currentTarget.checked)} /> Reduce animation</label>
+          </div>
+          <div className="appearance-preview" aria-label="Theme preview">
+            <span>Preview: model panel</span><button type="button" className="primary-button" onClick={() => ui.toggleSidebar()}>
+              {ui.sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            </button>
+          </div>
+        </article>
         <article className="surface settings-card">
           <Server size={22} />
           <h2>Backend</h2>
