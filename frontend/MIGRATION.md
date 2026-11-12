@@ -221,3 +221,13 @@ Screenshots:
 - `test-results/backend-app-studio-controlnet.png`
 - `test-results/backend-app-workflow-graph.png`
 - `test-results/app-smoke-generation-contract.png`
+
+## Checkpoint: M1 modernization candidate (2026-11-12)
+
+- Six React routes are lazy loaded instead of downloading the Studio as part of the initial shell.
+- Appearance settings now persist under the existing `nexus-ui-state` key (theme/accent/density/motion).
+- Civitai picker no longer lists imaginary search results and includes actual filters and download progress.
+- CORS is restricted; accidental LAN/tunnel use is blocked by default until an explicit unsafe-network acknowledgment. This does **not** provide remote authentication.
+- Rust mask core is an isolated experimental crate, not enabled in production.
+- Reference: `docs/audit/NEXUS_UI_AUDIT_2026_11_12.md`.
+- Gate remains: CI checks, browser smoke with actual backend, Windows + ComfyUI work, visual confirmation. Do not redirect /ui to /app yet.

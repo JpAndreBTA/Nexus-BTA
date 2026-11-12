@@ -1,5 +1,7 @@
 # Nexus BTA
 
+> **Modernization M1 (November 2026):** [UI and architecture audit](docs/audit/NEXUS_UI_AUDIT_2026_11_12.md) — React /app is being modernized on a separate branch. Legacy /ui remains supported until feature parity; remote tunnel access is not authenticated yet.
+
 [![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jpandre)
 
 Nexus BTA is a local AI image, video, workflow and 3D experiment studio built around an embedded ComfyUI runtime. It keeps the most common controls in one clean interface, while still letting advanced users inspect and edit the Comfy workflow graph.
