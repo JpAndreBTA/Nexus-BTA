@@ -21,6 +21,8 @@ from urllib.request import Request, urlopen
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+
+from .security import cors_allowed_origins
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -6208,10 +6210,10 @@ def _runtime_attention_capabilities() -> dict[str, Any]:
 app = FastAPI(title="Nexus BTA Backend", version="0.1.1")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_allowed_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 if settings.output_dir.exists():
