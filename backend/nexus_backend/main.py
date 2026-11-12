@@ -23,6 +23,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .security import cors_allowed_origins
+from .gallery_listing import recent_media_files
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -9691,7 +9692,7 @@ def _pose_file_record(path: Path) -> dict[str, Any] | None:
         "path": str(path),
         "relative_path": relative,
         "url": f"/outputs/{quote(relative, safe='/')}",
-        "modified": path.stat().st_mtime,
+        "modified": modified,
         "size_bytes": path.stat().st_size,
     }
 
@@ -12688,7 +12689,8 @@ async def gallery() -> list[dict[str, Any]]:
         return items
     model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".spz", ".ksplat"}
     audio_suffixes = {".mp3", ".wav", ".flac", ".opus", ".ogg", ".m4a"}
-    for path in sorted(settings.output_dir.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
+    accepted_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", *audio_suffixes, *model_suffixes}
+    for path, modified in recent_media_files(settings.output_dir, accepted_suffixes, limit=200):
         if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", *audio_suffixes, *model_suffixes}:
             continue
         relative = path.relative_to(settings.output_dir).as_posix()

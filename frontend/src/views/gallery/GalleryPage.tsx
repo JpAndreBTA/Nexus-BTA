@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
+import { Box, ChevronLeft, ChevronRight, Film, Music, RefreshCw, Search } from 'lucide-react';
 
 import type { GalleryItem } from '../../api/types';
 import { useGalleryQuery } from '../../api/queries';
@@ -14,6 +14,10 @@ function isVideo(item: GalleryItem) {
 
 function isAudio(item: GalleryItem) {
   return item.media_type === 'audio' || /\.(mp3|wav|flac|opus|ogg|m4a)$/i.test(item.filename);
+}
+
+function is3D(item: GalleryItem) {
+  return item.media_type === '3d' || /\\.(glb|gltf|obj|fbx|stl|ply|usdz|spz|ksplat)$/i.test(item.filename);
 }
 
 function extrasHref(item: GalleryItem) {
@@ -84,7 +88,10 @@ export function GalleryPage() {
         <div className="gallery-grid">
           {pagedItems.map((item) => (
             <button key={`${item.relative_path}:${item.modified}`} className={active?.relative_path === item.relative_path ? 'gallery-card active' : 'gallery-card'} type="button" onClick={() => setSelected(item)}>
-              {isVideo(item) ? <video src={mediaUrl(item.thumb || item.image)} muted playsInline /> : isAudio(item) ? <audio src={mediaUrl(item.image)} controls /> : <img src={mediaUrl(item.thumb || item.image)} alt={item.filename} loading="lazy" />}
+              {isVideo(item) ? <div className="gallery-media-placeholder"><Film size={26} /><small>Video</small></div> : isAudio(item) ?
+                <div className="gallery-media-placeholder"><Music size={26} /><small>Audio</small></div> : is3D(item) ?
+                <div className="gallery-media-placeholder"><Box size={26} /><small>3D asset</small></div> :
+                <img src={mediaUrl(item.thumb || item.image)} alt={item.filename} loading="lazy" decoding="async" />}
               <span title={item.filename}>{item.filename}</span>
             </button>
           ))}
@@ -94,14 +101,18 @@ export function GalleryPage() {
           {active ? (
             <>
               <div className="gallery-preview-media">
-                {isVideo(active) ? <video src={mediaUrl(active.image)} controls playsInline /> : isAudio(active) ? <audio src={mediaUrl(active.image)} controls /> : <img src={mediaUrl(active.image)} alt={active.filename} />}
+                {isVideo(active) ? <video key={active.relative_path} src={mediaUrl(active.image)} controls playsInline preload="metadata" /> : isAudio(active) ?
+                  <audio key={active.relative_path} src={mediaUrl(active.image)} controls preload="none" /> : is3D(active) ?
+                  <div className="gallery-media-placeholder large"><Box size={42} /><span>3D preview is not yet available in React.</span>
+                    <a className="mini-button" href={mediaUrl(active.image)} download={active.filename}>Download 3D asset</a></div> :
+                  <img src={mediaUrl(active.image)} alt={active.filename} decoding="async" />}
               </div>
               <div className="gallery-meta">
                 <h2>{active.filename}</h2>
                 <p>{active.folder || 'output'}</p>
-                <a className="primary-button gallery-send" href={extrasHref(active)}>
+                {!is3D(active) && !isAudio(active) && <a className="primary-button gallery-send" href={extrasHref(active)}>
                   Send to Extras
-                </a>
+                </a>}
                 <dl>
                   <div>
                     <dt>Preset</dt>

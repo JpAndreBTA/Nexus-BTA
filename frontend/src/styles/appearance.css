@@ -28,3 +28,10 @@
 .appearance-controls input { accent-color:var(--accent); }
 .appearance-preview { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap;
   border:1px dashed var(--border); background:var(--panel-strong); padding:12px; border-radius:8px; }
+
+/* Avoid creating dozens of media decoders for video and audio gallery tiles. */
+.gallery-media-placeholder { display:grid; gap:8px; place-content:center; place-items:center; width:100%;
+  min-height:120px; aspect-ratio:1; background:var(--panel-strong); color:var(--muted); border:1px solid var(--border); border-radius:5px; }
+.gallery-media-placeholder.large { aspect-ratio:auto; min-height:260px; padding:24px; text-align:center; }
+.gallery-media-placeholder small { font-size:12px; }
+.gallery-media-placeholder .mini-button { text-decoration:none; }
