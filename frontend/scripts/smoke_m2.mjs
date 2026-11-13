@@ -40,8 +40,8 @@ try {
 
   await page.goto(`${base}/settings`, { waitUntil: 'domcontentloaded' });
   await page.getByText('Customize your workspace').waitFor();
-  await page.getByLabel('Theme').selectOption('midnight');
-  await page.getByLabel('Accent').selectOption('violet');
+  await page.locator('.appearance-controls select').nth(0).selectOption('midnight');
+  await page.locator('.appearance-controls select').nth(1).selectOption('violet');
   assert.equal(await page.evaluate(() => document.documentElement.dataset.nexusTheme), 'midnight');
   assert.equal(await page.evaluate(() => document.documentElement.dataset.nexusAccent), 'violet');
 
