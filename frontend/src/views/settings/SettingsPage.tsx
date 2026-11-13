@@ -7,8 +7,8 @@ import { exportWorkspacePreset, importWorkspacePreset, MAX_PRESET_BYTES } from '
 
 const checklist = [
   'Keep local mode on 127.0.0.1 for personal use.',
-  'LAN is disabled by default; an authenticated gateway is still required.'
-  'Do not expose StartTunnel or the backend publicly without authentication and HTTPS.'
+  'LAN is disabled by default; an authenticated gateway is still required.',
+  'Do not expose StartTunnel or the backend publicly without authentication and HTTPS.',
   'Restrict CORS and file endpoints before remote production.',
   'Keep /ui legacy available until /app reaches feature parity.',
 ];
