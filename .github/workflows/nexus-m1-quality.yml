@@ -54,7 +54,8 @@ jobs:
       - run: cargo test --manifest-path crates/nexus-image-core/Cargo.toml
 
   browser-smoke:
-    runs-on: ubuntu-latest
+    # Playwright 1.60's official Chromium runtime is verified for Ubuntu 24.04.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
