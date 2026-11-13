@@ -8,116 +8,153 @@ interface InpaintCanvasProps {
   onMaskChange: (mask: string | null) => void;
 }
 
-const MASK_SIZE = 768;
+// Keep the edit surface bounded, even for 8K reference images.
+// Backend workflows can resample the mask as required by their model resolution.
+const MAX_EDIT_EDGE = 1536;
+const MAX_HISTORY_STEPS = 12;
+const MAX_HISTORY_BYTES = 32 * 1024 * 1024;
 type PaintTool = 'mask' | 'eraser' | 'sketch';
+type Point = { x: number; y: number };
+type History = { undo: ImageData[]; redo: ImageData[] };
 
-function pointFromEvent(event: PointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement) {
+function pointFromEvent(event: PointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement): Point {
   const rect = canvas.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * canvas.width;
+  const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * canvas.height;
   return {
-    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
-    y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    x: Math.min(canvas.width, Math.max(0, x)),
+    y: Math.min(canvas.height, Math.max(0, y)),
   };
 }
 
-function exportMask(canvas: HTMLCanvasElement) {
-  const source = canvas.getContext('2d');
+// Preserves the legacy black/white PNG contract, but reuses a single export canvas.
+function exportMask(sourceCanvas: HTMLCanvasElement, exportCanvas: HTMLCanvasElement): string | null {
+  const source = sourceCanvas.getContext('2d', { willReadFrequently: true });
   if (!source) return null;
 
-  const pixels = source.getImageData(0, 0, canvas.width, canvas.height);
+  const pixels = source.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
   let hasMask = false;
   for (let index = 0; index < pixels.data.length; index += 4) {
-    const alpha = pixels.data[index + 3];
-    if (alpha > 3) {
-      pixels.data[index] = 255;
-      pixels.data[index + 1] = 255;
-      pixels.data[index + 2] = 255;
-      pixels.data[index + 3] = 255;
-      hasMask = true;
-    } else {
-      pixels.data[index] = 0;
-      pixels.data[index + 1] = 0;
-      pixels.data[index + 2] = 0;
-      pixels.data[index + 3] = 255;
-    }
+    const marked = pixels.data[index + 3] > 3;
+    const value = marked ? 255 : 0;
+    pixels.data[index] = value;
+    pixels.data[index + 1] = value;
+    pixels.data[index + 2] = value;
+    pixels.data[index + 3] = 255;
+    if (marked) hasMask = true;
   }
-
   if (!hasMask) return null;
-  const out = document.createElement('canvas');
-  out.width = canvas.width;
-  out.height = canvas.height;
-  out.getContext('2d')?.putImageData(pixels, 0, 0);
-  return out.toDataURL('image/png');
+  if (exportCanvas.width !== sourceCanvas.width || exportCanvas.height !== sourceCanvas.height) {
+    exportCanvas.width = sourceCanvas.width;
+    exportCanvas.height = sourceCanvas.height;
+  }
+  const target = exportCanvas.getContext('2d');
+  if (!target) return null;
+  target.putImageData(pixels, 0, 0);
+  return exportCanvas.toDataURL('image/png');
 }
 
 export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChange }: InpaintCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const drawingRef = useRef(false);
-  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const exportCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activePointerIdRef = useRef<number | null>(null);
+  const lastPointRef = useRef<Point | null>(null);
+  const historyRef = useRef<History>({ undo: [], redo: [] });
+  const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
   const [tool, setTool] = useState<PaintTool>('mask');
   const [sketchColor, setSketchColor] = useState('#ff3b3b');
-  const [undoStack, setUndoStack] = useState<string[]>([]);
-  const [redoStack, setRedoStack] = useState<string[]>([]);
-  const [canvasSize, setCanvasSize] = useState({ width: MASK_SIZE, height: MASK_SIZE });
+  const [canvasSize, setCanvasSize] = useState({ width: MAX_EDIT_EDGE, height: MAX_EDIT_EDGE });
 
   useEffect(() => {
+    let disposed = false;
     const source = new Image();
     source.onload = () => {
-      const naturalWidth = source.naturalWidth || MASK_SIZE;
-      const naturalHeight = source.naturalHeight || MASK_SIZE;
-      const scale = MASK_SIZE / Math.max(naturalWidth, naturalHeight);
+      if (disposed) return;
+      const naturalWidth = Math.max(1, source.naturalWidth || MAX_EDIT_EDGE);
+      const naturalHeight = Math.max(1, source.naturalHeight || MAX_EDIT_EDGE);
+      const scale = Math.min(1, MAX_EDIT_EDGE / Math.max(naturalWidth, naturalHeight));
       setCanvasSize({
         width: Math.max(16, Math.round(naturalWidth * scale)),
         height: Math.max(16, Math.round(naturalHeight * scale)),
       });
     };
     source.src = image;
+    return () => {
+      disposed = true;
+      source.onload = null;
+      source.src = '';
+    };
   }, [image]);
 
+  // Reset if the source changes, even when the next image has the same dimensions.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     canvas.width = canvasSize.width;
     canvas.height = canvasSize.height;
     canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
-    setUndoStack([]);
-    setRedoStack([]);
+    activePointerIdRef.current = null;
+    lastPointRef.current = null;
+    historyRef.current = { undo: [], redo: [] };
+    setHistoryCounts({ undo: 0, redo: 0 });
     onMaskChange(null);
-  }, [canvasSize, onMaskChange]);
+  }, [image, canvasSize.width, canvasSize.height, onMaskChange]);
 
-  function snapshot() {
+  useEffect(() => () => {
+    historyRef.current = { undo: [], redo: [] };
+    if (exportCanvasRef.current) {
+      exportCanvasRef.current.width = 0;
+      exportCanvasRef.current.height = 0;
+      exportCanvasRef.current = null;
+    }
+  }, []);
+
+  function snapshot(): ImageData | null {
     const canvas = canvasRef.current;
-    return canvas ? canvas.toDataURL('image/png') : '';
+    return canvas?.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, canvas.width, canvas.height) ?? null;
   }
 
-  function restore(dataUrl: string) {
+  function syncHistory() {
+    const canvas = canvasRef.current;
+    const history = historyRef.current;
+    // Count both stacks against a shared memory budget, not just number of actions.
+    const bytes = Math.max(1, (canvas?.width || 1) * (canvas?.height || 1) * 4);
+    const limit = Math.max(1, Math.min(MAX_HISTORY_STEPS, Math.floor(MAX_HISTORY_BYTES / bytes)));
+    while (history.undo.length + history.redo.length > limit) {
+      if (history.undo.length > 1 || !history.redo.length) history.undo.shift();
+      else history.redo.shift();
+    }
+    setHistoryCounts({ undo: history.undo.length, redo: history.redo.length });
+  }
+
+  function restore(snapshotValue: ImageData) {
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
-    if (!canvas || !context) return;
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    if (!dataUrl) {
-      onMaskChange(null);
-      return;
-    }
-    const imageElement = new Image();
-    imageElement.onload = () => {
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(imageElement, 0, 0, canvas.width, canvas.height);
-      onMaskChange(exportMask(canvas));
-    };
-    imageElement.src = dataUrl;
+    if (!canvas || !context || snapshotValue.width !== canvas.width || snapshotValue.height !== canvas.height) return;
+    context.putImageData(snapshotValue, 0, 0);
+    publishMask();
+  }
+
+  function publishMask() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (!exportCanvasRef.current) exportCanvasRef.current = document.createElement('canvas');
+    onMaskChange(exportMask(canvas, exportCanvasRef.current));
   }
 
   function pushUndo() {
-    setUndoStack((current) => [...current.slice(-24), snapshot()]);
-    setRedoStack([]);
+    const captured = snapshot();
+    if (!captured) return;
+    historyRef.current.undo.push(captured);
+    historyRef.current.redo = [];
+    syncHistory();
   }
 
-  function drawTo(point: { x: number; y: number }) {
+  function drawTo(point: Point) {
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     const lastPoint = lastPointRef.current;
     if (!canvas || !context || !lastPoint) return;
-
     context.save();
     context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
     context.strokeStyle = tool === 'sketch' ? sketchColor : 'rgba(255,255,255,0.9)';
@@ -132,7 +169,7 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
     lastPointRef.current = point;
   }
 
-  function drawDot(point: { x: number; y: number }) {
+  function drawDot(point: Point) {
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
@@ -145,11 +182,11 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
     context.restore();
   }
 
-  function finishDrawing() {
-    const canvas = canvasRef.current;
-    drawingRef.current = false;
+  function finishDrawing(pointerId: number) {
+    if (activePointerIdRef.current !== pointerId) return;
+    activePointerIdRef.current = null;
     lastPointRef.current = null;
-    onMaskChange(canvas ? exportMask(canvas) : null);
+    publishMask();
   }
 
   function clearMask() {
@@ -161,36 +198,36 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
   }
 
   function undo() {
-    setUndoStack((current) => {
-      if (!current.length) return current;
-      const previous = current[current.length - 1];
-      setRedoStack((redo) => [...redo.slice(-24), snapshot()]);
-      restore(previous);
-      return current.slice(0, -1);
-    });
+    if (activePointerIdRef.current !== null) return;
+    const previous = historyRef.current.undo.pop();
+    if (!previous) return;
+    const current = snapshot();
+    if (current) historyRef.current.redo.push(current);
+    restore(previous);
+    syncHistory();
   }
 
   function redo() {
-    setRedoStack((current) => {
-      if (!current.length) return current;
-      const next = current[current.length - 1];
-      setUndoStack((undoHistory) => [...undoHistory.slice(-24), snapshot()]);
-      restore(next);
-      return current.slice(0, -1);
-    });
+    if (activePointerIdRef.current !== null) return;
+    const next = historyRef.current.redo.pop();
+    if (!next) return;
+    const current = snapshot();
+    if (current) historyRef.current.undo.push(current);
+    restore(next);
+    syncHistory();
   }
 
   return (
     <section className="inpaint-editor">
       <div className="inpaint-toolbar">
         <div className="tool-segment">
-          <button className={tool === 'mask' ? 'active' : ''} type="button" onClick={() => setTool('mask')} title="Mask brush">
+          <button className={tool === 'mask' ? 'active' : ''} aria-label="Mask brush" type="button" onClick={() => setTool('mask')} title="Mask brush">
             <Brush size={14} />
           </button>
-          <button className={tool === 'eraser' ? 'active' : ''} type="button" onClick={() => setTool('eraser')} title="Erase mask">
+          <button className={tool === 'eraser' ? 'active' : ''} aria-label="Erase mask" type="button" onClick={() => setTool('eraser')} title="Erase mask">
             <Eraser size={14} />
           </button>
-          <button className={tool === 'sketch' ? 'active' : ''} type="button" onClick={() => setTool('sketch')} title="Inpaint sketch">
+          <button className={tool === 'sketch' ? 'active' : ''} aria-label="Inpaint sketch" type="button" onClick={() => setTool('sketch')} title="Inpaint sketch">
             <Pencil size={14} />
           </button>
         </div>
@@ -202,13 +239,13 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
           <input type="color" value={sketchColor} onChange={(event) => setSketchColor(event.currentTarget.value)} />
           <span style={{ background: sketchColor }} />
         </label>
-        <button className="mini-button" type="button" onClick={undo} disabled={!undoStack.length} title="Undo">
+        <button className="mini-button" type="button" onClick={undo} disabled={!historyCounts.undo} aria-label="Undo mask change" title="Undo">
           <RotateCcw size={14} />
         </button>
-        <button className="mini-button" type="button" onClick={redo} disabled={!redoStack.length} title="Redo">
+        <button className="mini-button" type="button" onClick={redo} disabled={!historyCounts.redo} aria-label="Redo mask change" title="Redo">
           <RotateCw size={14} />
         </button>
-        <button className="mini-button" type="button" onClick={clearMask} title="Clear inpaint mask">
+        <button className="mini-button" type="button" onClick={clearMask} aria-label="Clear inpaint mask" title="Clear inpaint mask">
           <Trash2 size={14} />
         </button>
       </div>
@@ -218,22 +255,21 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
           ref={canvasRef}
           aria-label="Inpaint mask canvas"
           onPointerDown={(event) => {
+            if (activePointerIdRef.current !== null || (event.pointerType === 'mouse' && event.button !== 0)) return;
             event.currentTarget.setPointerCapture(event.pointerId);
             pushUndo();
-            drawingRef.current = true;
+            activePointerIdRef.current = event.pointerId;
             const point = pointFromEvent(event, event.currentTarget);
             lastPointRef.current = point;
             drawDot(point);
           }}
           onPointerMove={(event) => {
-            if (!drawingRef.current) return;
+            if (activePointerIdRef.current !== event.pointerId) return;
             drawTo(pointFromEvent(event, event.currentTarget));
           }}
-          onPointerUp={finishDrawing}
-          onPointerCancel={finishDrawing}
-          onPointerLeave={() => {
-            if (drawingRef.current) finishDrawing();
-          }}
+          onPointerUp={(event) => finishDrawing(event.pointerId)}
+          onPointerCancel={(event) => finishDrawing(event.pointerId)}
+          onLostPointerCapture={(event) => finishDrawing(event.pointerId)}
         />
       </div>
     </section>
