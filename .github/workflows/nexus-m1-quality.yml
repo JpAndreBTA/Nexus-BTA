@@ -24,6 +24,11 @@ jobs:
       - name: Install reproducible frontend dependencies
         run: npm ci
         working-directory: frontend
+      - name: Inspect npm advisories (capture exact packages)
+        working-directory: frontend
+        run: |
+          npm audit --json > /tmp/nexus-npm-audit.json || true
+          node -e 'const a=require("/tmp/nexus-npm-audit.json"); for(const [name,v] of Object.entries(a.vulnerabilities||{})){ console.log(JSON.stringify({name,severity:v.severity,via:v.via,range:v.range,fixAvailable:v.fixAvailable})); }'
       - name: Workspace preset unit tests
         run: npm run test:unit
         working-directory: frontend
