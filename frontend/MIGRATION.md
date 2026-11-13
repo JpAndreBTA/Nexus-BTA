@@ -231,3 +231,7 @@ Screenshots:
 - Rust mask core is an isolated experimental crate, not enabled in production.
 - Reference: `docs/audit/NEXUS_UI_AUDIT_2026_11_12.md`.
 - Gate remains: CI checks, browser smoke with actual backend, Windows + ComfyUI work, visual confirmation. Do not redirect /ui to /app yet.
+
+## Checkpoint: M2 UI modules, bounded inpaint, layout presets and browser-smoke
+
+See `docs/production/NEXUS_M2_CHECKPOINT_2026_11_12.md` for the completed commits, accepted tests, remaining regressions and next milestone. Do not mark legacy `/ui` deprecated yet.
