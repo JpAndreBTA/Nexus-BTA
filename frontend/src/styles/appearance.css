@@ -35,3 +35,27 @@
 .gallery-media-placeholder.large { aspect-ratio:auto; min-height:260px; padding:24px; text-align:center; }
 .gallery-media-placeholder small { font-size:12px; }
 .gallery-media-placeholder .mini-button { text-decoration:none; }
+
+/* Customizable desktop panel splits, without overriding the tablet/mobile collapse. */
+@media (min-width: 1440px) {
+  .studio-columns {
+    grid-template-columns: minmax(320px, var(--nexus-controls-width, 430px)) minmax(0, 1fr);
+  }
+  .studio-gallery-open .studio-columns {
+    grid-template-columns: minmax(320px, var(--nexus-controls-width, 430px)) minmax(0, 1fr) minmax(220px, var(--nexus-gallery-width, 310px));
+  }
+  .studio-gallery-expanded .studio-columns {
+    grid-template-columns: minmax(320px, var(--nexus-controls-width, 430px)) minmax(0, 1fr) minmax(360px, max(360px, var(--nexus-gallery-width, 310px)));
+  }
+  .studio-controls-collapsed .studio-columns {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+  .studio-controls-collapsed.studio-gallery-open .studio-columns {
+    grid-template-columns: 52px minmax(0, 1fr) minmax(220px, var(--nexus-gallery-width, 310px));
+  }
+  .studio-controls-collapsed.studio-gallery-expanded .studio-columns {
+    grid-template-columns: 52px minmax(0, 1fr) minmax(360px, max(360px, var(--nexus-gallery-width, 310px)));
+  }
+}
+.appearance-preset-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.appearance-controls input[type="range"] { width: min(240px, 100%); cursor: ew-resize; }

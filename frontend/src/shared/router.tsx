@@ -20,7 +20,9 @@ function RootLayout() {
     root.dataset.nexusAccent = ui.accent;
     root.dataset.nexusDensity = ui.density;
     root.dataset.nexusReducedMotion = String(ui.reducedMotion);
-  }, [ui.theme, ui.accent, ui.density, ui.reducedMotion]);
+    root.style.setProperty('--nexus-controls-width', `${ui.controlsWidth}px`);
+    root.style.setProperty('--nexus-gallery-width', `${ui.galleryWidth}px`);
+  }, [ui.theme, ui.accent, ui.density, ui.reducedMotion, ui.controlsWidth, ui.galleryWidth]);
 
   return (
     <div className={ui.sidebarCollapsed ? 'app-shell rail-collapsed' : 'app-shell'}>

@@ -1,12 +1,14 @@
-import { Globe2, HardDrive, Network, Palette, RotateCcw, Server, ShieldAlert } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Download, Globe2, HardDrive, Network, Palette, RotateCcw, Server, ShieldAlert, Upload } from 'lucide-react';
 import { useUiStore, type NexusTheme, type NexusAccent, type ShellDensity } from '../../stores/uiStore';
 
 import { useHealthQuery } from '../../api/queries';
+import { exportWorkspacePreset, importWorkspacePreset, MAX_PRESET_BYTES } from '../../shared/workspacePreset';
 
 const checklist = [
   'Keep local mode on 127.0.0.1 for personal use.',
-  'Use 0.0.0.0 only for trusted LAN testing.',
-  'Require auth and HTTPS before exposing to the internet.',
+  'LAN is disabled by default; an authenticated gateway is still required.'
+  'Do not expose StartTunnel or the backend publicly without authentication and HTTPS.'
   'Restrict CORS and file endpoints before remote production.',
   'Keep /ui legacy available until /app reaches feature parity.',
 ];
@@ -14,6 +16,33 @@ const checklist = [
 export function SettingsPage() {
   const health = useHealthQuery();
   const ui = useUiStore();
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+  const [layoutMessage, setLayoutMessage] = useState('');
+  function downloadLayout() {
+    const contents = exportWorkspacePreset(useUiStore.getState());
+    const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'nexus-workspace-preset.json';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setLayoutMessage('Workspace preset exported (appearance and layout only).');
+  }
+  async function uploadLayout(file: File | undefined) {
+    if (!file) return;
+    try {
+      if (file.size > MAX_PRESET_BYTES) throw new Error('Workspace preset exceeds 16 KB.');
+      const preferences = importWorkspacePreset(await file.text());
+      useUiStore.setState(preferences);
+      setLayoutMessage('Workspace preset imported successfully.');
+    } catch (error) {
+      setLayoutMessage(error instanceof Error ? error.message : 'Unable to import preset.');
+    } finally {
+      if (importFileRef.current) importFileRef.current.value = '';
+    }
+  }
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
   return (
@@ -46,6 +75,23 @@ export function SettingsPage() {
             <label className="appearance-check"><input type="checkbox" checked={ui.reducedMotion}
               onChange={(event) => ui.setReducedMotion(event.currentTarget.checked)} /> Reduce animation</label>
           </div>
+          <div className="appearance-controls" role="group" aria-label="Studio panel width">
+            <label>Studio controls: {ui.controlsWidth}px
+              <input type="range" min={320} max={600} step={10} value={ui.controlsWidth}
+                onChange={(event) => ui.setControlsWidth(Number(event.currentTarget.value))} />
+            </label>
+            <label>Gallery panel: {ui.galleryWidth}px
+              <input type="range" min={220} max={480} step={10} value={ui.galleryWidth}
+                onChange={(event) => ui.setGalleryWidth(Number(event.currentTarget.value))} />
+            </label>
+          </div>
+          <div className="appearance-preset-actions">
+            <button type="button" className="mini-button" onClick={downloadLayout}><Download size={14} /> Export layout JSON</button>
+            <button type="button" className="mini-button" onClick={() => importFileRef.current?.click()}><Upload size={14} /> Import layout JSON</button>
+            <input ref={importFileRef} type="file" accept=".json,application/json" hidden aria-label="Import Nexus workspace preset"
+              onChange={(event) => { void uploadLayout(event.currentTarget.files?.[0]); }} />
+          </div>
+          {layoutMessage && <p className="muted" role="status" aria-live="polite">{layoutMessage}</p>}
           <div className="appearance-preview" aria-label="Theme preview">
             <span>Preview: model panel</span><button type="button" className="primary-button" onClick={() => ui.toggleSidebar()}>
               {ui.sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
