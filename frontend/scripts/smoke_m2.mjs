@@ -28,7 +28,7 @@ await page.route('**/api/**', async (route) => {
 
 try {
   await page.goto(base, { waitUntil: 'domcontentloaded' });
-  await page.locator('[data-route="studio"]').waitFor({ timeout: 15000 });
+  await page.locator('[data-route="studio"]').waitFor({ state: 'attached', timeout: 15000 });
   await page.getByRole('button', { name: 'Civitai' }).click();
   await page.getByRole('dialog', { name: 'Nexus Civitai downloader' }).waitFor();
   await page.getByPlaceholder('Search terms or paste a Civitai URL...').fill('test model');
@@ -69,7 +69,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--nexus-controls-width')), '480px');
 
   await page.goto(`${base}/gallery`, { waitUntil: 'domcontentloaded' });
-  await page.locator('[data-route="gallery"]').waitFor();
+  await page.locator('[data-route="gallery"]').waitFor({ state: 'attached' });
   await page.getByText('No outputs found.').waitFor();
   assert.deepEqual(runtimeErrors, []);
   console.log('M2 browser shell: Studio, Civitai, settings persistence, import/export and Gallery passed');
