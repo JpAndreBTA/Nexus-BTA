@@ -8,11 +8,7 @@ interface InpaintCanvasProps {
   onMaskChange: (mask: string | null) => void;
 }
 
-// Keep the edit surface bounded, even for 8K reference images.
-// Backend workflows can resample the mask as required by their model resolution.
-const MAX_EDIT_EDGE = 1536;
-const MAX_HISTORY_STEPS = 12;
-const MAX_HISTORY_BYTES = 32 * 1024 * 1024;
+import { MAX_EDIT_EDGE, binaryMaskPixels, fittedMaskSize, historyLimit } from './maskPixels';
 type PaintTool = 'mask' | 'eraser' | 'sketch';
 type Point = { x: number; y: number };
 type History = { undo: ImageData[]; redo: ImageData[] };
@@ -33,17 +29,7 @@ function exportMask(sourceCanvas: HTMLCanvasElement, exportCanvas: HTMLCanvasEle
   if (!source) return null;
 
   const pixels = source.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
-  let hasMask = false;
-  for (let index = 0; index < pixels.data.length; index += 4) {
-    const marked = pixels.data[index + 3] > 3;
-    const value = marked ? 255 : 0;
-    pixels.data[index] = value;
-    pixels.data[index + 1] = value;
-    pixels.data[index + 2] = value;
-    pixels.data[index + 3] = 255;
-    if (marked) hasMask = true;
-  }
-  if (!hasMask) return null;
+  if (!binaryMaskPixels(pixels.data)) return null;
   if (exportCanvas.width !== sourceCanvas.width || exportCanvas.height !== sourceCanvas.height) {
     exportCanvas.width = sourceCanvas.width;
     exportCanvas.height = sourceCanvas.height;
@@ -70,13 +56,7 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
     const source = new Image();
     source.onload = () => {
       if (disposed) return;
-      const naturalWidth = Math.max(1, source.naturalWidth || MAX_EDIT_EDGE);
-      const naturalHeight = Math.max(1, source.naturalHeight || MAX_EDIT_EDGE);
-      const scale = Math.min(1, MAX_EDIT_EDGE / Math.max(naturalWidth, naturalHeight));
-      setCanvasSize({
-        width: Math.max(16, Math.round(naturalWidth * scale)),
-        height: Math.max(16, Math.round(naturalHeight * scale)),
-      });
+      setCanvasSize(fittedMaskSize(source.naturalWidth, source.naturalHeight));
     };
     source.src = image;
     return () => {
@@ -118,8 +98,7 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
     const canvas = canvasRef.current;
     const history = historyRef.current;
     // Count both stacks against a shared memory budget, not just number of actions.
-    const bytes = Math.max(1, (canvas?.width || 1) * (canvas?.height || 1) * 4);
-    const limit = Math.max(1, Math.min(MAX_HISTORY_STEPS, Math.floor(MAX_HISTORY_BYTES / bytes)));
+    const limit = historyLimit(canvas?.width || 1, canvas?.height || 1);
     while (history.undo.length + history.redo.length > limit) {
       if (history.undo.length > 1 || !history.redo.length) history.undo.shift();
       else history.redo.shift();
