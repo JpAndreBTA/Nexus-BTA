@@ -26,5 +26,8 @@
     "@types/react-dom": "latest",
     "playwright": "^1.60.0",
     "typescript": "latest"
+  },
+  "overrides": {
+    "seroval": "1.6.8"
   }
 }

@@ -24,14 +24,9 @@ jobs:
       - name: Install reproducible frontend dependencies
         run: npm ci
         working-directory: frontend
-      - name: Resolve verified security patch metadata
+      - name: Security audit (all npm packages)
         working-directory: frontend
-        run: npm view seroval@1.6.8 version dist.integrity dist.tarball --json
-      - name: Inspect npm advisories (capture exact packages)
-        working-directory: frontend
-        run: |
-          npm audit --json > /tmp/nexus-npm-audit.json || true
-          node -e 'const a=require("/tmp/nexus-npm-audit.json"); for(const [name,v] of Object.entries(a.vulnerabilities||{})){ console.log(JSON.stringify({name,severity:v.severity,via:v.via,range:v.range,fixAvailable:v.fixAvailable})); }'
+        run: npm audit --audit-level=high
       - name: Workspace preset unit tests
         run: npm run test:unit
         working-directory: frontend
