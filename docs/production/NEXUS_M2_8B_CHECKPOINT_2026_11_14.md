@@ -34,11 +34,21 @@
 - Tests prove the pure selector does not call `scan_models`, the live adapter delegates with the same catalog and produces the same result, and an empty catalog does not invent a selected model.
 - Important remaining boundary: the current live `scan_models` implementation is still the filesystem-backed catalog producer and is not yet the bounded planner catalog. Do not call it from a new dry-run until a separate bounded, symlink-safe catalog builder is available.
 
+### M2.8B-3 — bounded model catalog for future planning
+
+- New `scan_models_bounded(settings, include_references=False)` in `backend/nexus_backend/scanner.py`, returning `BoundedModelCatalogScan` with the catalog, completeness/truncation state, roots checked, entries scanned and files indexed.
+- The planner scan follows the current live catalog's root/category selection rules, but applies independent hard limits: 64 configured roots, 20,000 directory entries, depth 8 and 4,096 model files.
+- It skips symlink roots, directories and files; resolved paths must remain under the configured root. It reads filesystem metadata only (name, size and mtime) and does not open model contents, generate previews, or modify the live `scan_models` path.
+- Missing/inaccessible roots, symlinks, depth limits and exhausted budgets mark the scan incomplete. A partial catalog is explicitly marked `complete=False`; a future planner must not treat it as exhaustive.
+- The existing live `scan_models` function and generation behavior are unchanged. This bounded scan is an opt-in building block for dry-run planning only.
+- Tests cover managed and configured roots, category/source labels, symlink escapes, depth limits, missing roots, and root/entry budgets.
+
 ## Verification
 
 - M2.8A final code head `6a824e0`: GitHub Actions run **4/4 passed** (Python, frontend, Rust, Chromium), run ID `43570475700`.
 - M2.8B shared-builder head `9edb2e4`: GitHub Actions run **4/4 passed**, run ID `43570719653`.
 - M2.8B-2 pure asset selection head `220fb7c`: GitHub Actions run **4/4 passed**, run ID `43570958765`.
+- M2.8B-3 bounded model catalog head `9e3e95d`: GitHub Actions run **4/4 passed**, run ID `43571303935`.
 - Chromium uses a mocked backend and asserts the model-source details render and preflight never submits `/api/generate`. It does not certify real Comfy, model weights, CUDA or GPU behavior.
 - Python tests compare the live registry loader's prepared graph with the shared builder for a deterministic saved API workflow and assert the original graph remains unchanged.
 
@@ -49,18 +59,14 @@
 3. No custom-node package version drift check is implemented. The Comfy `schema_signature` fingerprints active node schemas, not the installed custom-node package revision.
 4. No real Windows + installed ComfyUI + GPU acceptance was possible in this CI.
 
-## Next ideal substage — M2.8B-3: bounded model catalog and dispatch boundary
+## Next ideal substage — M2.8B-4: bounded logical asset plan
 
-Proceed in this order; do not duplicate the preset switch:
-
-1. Inspect and classify every helper called by `_run_generation_core` as pure normalization, filesystem read, filesystem write/staging, Comfy process/VRAM action, node installation, or prompt submission.
-2. Extract an immutable request snapshot and pure validation/normalization helpers first. Keep the existing request object semantics until callers are explicitly migrated.
-3. Build a separate bounded, symlink-safe model catalog for planning (maximum roots/files/depth, explicit partial state). Do not call the current unbounded `scan_models` recursive catalog scan from a dry-run.
-4. Reuse `resolve_generation_assets_from_catalog` against that bounded catalog to return logical selected asset identifiers and source evidence before any file staging.
-5. Represent unstaged reference images, masks, videos, Director frames and audio as typed placeholders. A plan must never create temporary files or upload them.
-6. Make runtime startup/restart/free-memory, node install/enable, file staging, Comfy upload and prompt queue explicit effectful operations outside planning.
-7. Add deterministic plan/dispatch parity for at least one supported saved API workflow. Unsupported complex media routes must return `unverified/unsupported`, never a false "ready".
-8. Only after the shared planner can describe the exact selected preset route, add custom-node source/version metadata and correlate modules with live Comfy schema signatures. Do not infer version from file timestamps alone.
+1. Add a side-effect-free `plan_generation_assets(settings, request)` that calls `scan_models_bounded` and `resolve_generation_assets_from_catalog`, returning selected logical asset identifiers plus scan completeness/evidence.
+2. Never label an incomplete catalog "ready"; if the catalog is partial, return its tentative selections as advisory only and keep status unverified/partial.
+3. Add preset-specific required-asset validation as pure functions that can consume the same plan, without installing/downloading anything.
+4. Keep this asset plan separate from media staging and runtime actions. It must not call `_prepare_reference_images`, mask/video/Director helpers, `ensure_running`, restart/free-memory, custom-node install, Comfy upload or prompt queue.
+5. Then build a typed generation plan with explicit unsupported states and add plan/dispatch parity for a deterministic saved API workflow.
+6. Only after parity is established, correlate custom-node source/module metadata with live Comfy schema signatures. Do not infer package version from timestamps alone.
 
 ## Other pending work
 
