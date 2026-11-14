@@ -221,7 +221,7 @@ def make_comfy_capability_router(
             return await asyncio.to_thread(
                 inspect_patched_preview, payload, original, registry, model_source_auditor,
             )
-        except (ValueError, KeyError, TypeError, RuntimeError, OverflowError):
+        except (ValueError, KeyError, TypeError, RuntimeError, OverflowError, OSError):
             # Never leak prompts, absolute model paths, input file names or
             # underlying runtime details into a public-looking error.
             raise HTTPException(status_code=422, detail="This workflow cannot be previewed safely.")

@@ -82,6 +82,7 @@ class ModelSourceAuditTests(unittest.TestCase):
             model_root.mkdir(parents=True)
             external = Path(outside)
             (external / "outside.safetensors").write_bytes(b"")
+            (root / "external-checkpoints").mkdir()
             link = model_root / "external-link"
             try:
                 link.symlink_to(external, target_is_directory=True)
@@ -103,6 +104,7 @@ class ModelSourceAuditTests(unittest.TestCase):
             model_root.mkdir(parents=True)
             external_file = Path(outside) / "external.safetensors"
             external_file.write_bytes(b"")
+            (root / "external-checkpoints").mkdir()
             link = model_root / "external.safetensors"
             try:
                 link.symlink_to(external_file)
@@ -145,3 +147,22 @@ class ModelSourceAuditTests(unittest.TestCase):
                 }},
             }, self.make_settings(root))
             self.assertEqual(report["entries"][0]["status"], "unverified")
+
+    def test_multiple_physical_matches_are_not_confused_with_duplicate_source_labels(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            managed = root / "models" / "checkpoints" / "one"
+            external = root / "external-checkpoints" / "two"
+            managed.mkdir(parents=True)
+            external.mkdir(parents=True)
+            (managed / "same.safetensors").write_bytes(b"")
+            (external / "same.safetensors").write_bytes(b"")
+            report = audit_model_references({
+                "1": {"class_type": "CheckpointLoaderSimple", "inputs": {
+                    "ckpt_name": "same.safetensors",
+                }},
+            }, self.make_settings(root))
+            self.assertEqual(report["multiple_matches"], 1)
+            self.assertEqual(report["entries"][0]["status"], "multiple_matches")
+            self.assertEqual(report["entries"][0]["match_count"], 2)
+            self.assertEqual(len(report["entries"][0]["sources"]), 2)

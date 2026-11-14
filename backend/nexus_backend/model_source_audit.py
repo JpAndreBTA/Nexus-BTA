@@ -200,7 +200,7 @@ def _scan_root(
         root_real = root.resolve(strict=True)
         if not root_real.is_dir():
             return matches, False, False
-    except OSError:
+    except (OSError, RuntimeError):
         return matches, False, False
 
     scanned = True
@@ -255,9 +255,9 @@ def _scan_root(
                             for label in sorted(labels):
                                 if label not in labels_for_file and len(labels_for_file) < MAX_MATCHES_PER_REFERENCE:
                                     labels_for_file.append(label)
-                    except OSError:
+                    except (OSError, RuntimeError):
                         complete = False
-        except OSError:
+        except (OSError, RuntimeError):
             complete = False
     return matches, complete, scanned
 
