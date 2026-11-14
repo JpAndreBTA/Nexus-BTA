@@ -59,3 +59,26 @@ class GalleryHTTPContractTests(unittest.TestCase):
             result = client.get("/api/gallery/page?refresh=true").json()
             self.assertEqual(result["total"], 1)
             self.assertEqual(result["items"][0]["media_type"], "3d")
+
+    def test_query_sort_and_media_applies_to_entire_index(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "outputs"
+            root.mkdir()
+            for i in range(105):
+                (root / f"Ocean {i:03}.png").write_bytes(b"mock")
+            for i in range(5):
+                (root / f"Forest {i:03}.glb").write_bytes(b"3d")
+            app = FastAPI()
+            app.include_router(make_gallery_router(lambda: root, lambda _: {}))
+            client = TestClient(app)
+            result = client.get("/api/gallery/page", params={
+                "limit": 20, "q": "forest", "media": "3d", "sort": "name"
+            })
+            self.assertEqual(result.status_code, 200)
+            body = result.json()
+            self.assertEqual(body["total"], 5)
+            self.assertEqual(len(body["items"]), 5)
+            self.assertEqual(body["items"][0]["filename"], "Forest 000.glb")
+            self.assertEqual(client.get("/api/gallery/page?media=private").status_code, 400)
+            self.assertEqual(client.get("/api/gallery/page?sort=invalid").status_code, 400)
+            self.assertEqual(client.get("/api/gallery/page?q=" + "x" * 130).status_code, 422)

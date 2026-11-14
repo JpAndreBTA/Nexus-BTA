@@ -110,6 +110,9 @@ def make_gallery_router(
         limit: int = Query(default=48, ge=1, le=100),
         cursor: str | None = Query(default=None, max_length=512),
         refresh: bool = Query(default=False),
+        q: str = Query(default="", max_length=120),
+        media: str = Query(default="all", max_length=16),
+        sort: str = Query(default="newest", max_length=16),
     ) -> dict[str, Any]:
         """Keyset pagination for React Gallery; legacy /api/gallery stays unchanged.
 
@@ -118,7 +121,7 @@ def make_gallery_router(
         """
         index = _get_gallery_index()
         try:
-            page = await asyncio.to_thread(index.page, limit, cursor, refresh)
+            page = await asyncio.to_thread(index.page, limit, cursor, refresh, q, media, sort)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         # Metadata decoding is bounded by the requested page size, and must not
