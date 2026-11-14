@@ -1,4 +1,4 @@
-import type { CivitaiSearchResponse, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GalleryPageResult, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, Krea2AssetsStatus, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
+import type { CivitaiSearchResponse, ComfyCapabilityReport, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GalleryPageResult, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, Krea2AssetsStatus, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -24,6 +24,10 @@ export async function nexusFetch<T>(path: string, init?: RequestInit): Promise<T
 
 export const nexusApi = {
   health: () => nexusFetch<HealthResponse>('/health'),
+  comfyCapabilities: (classes: string[], signal?: AbortSignal) =>
+    nexusFetch<ComfyCapabilityReport>(
+      `/comfy/capabilities?classes=${encodeURIComponent(classes.join(','))}`, { signal },
+    ),
   refreshModelTree: () => nexusFetch<{ ok?: boolean }>('/model-tree', { method: 'POST' }),
   models: () => nexusFetch<ModelCatalog>('/models'),
   loras: () => nexusFetch<LoraAsset[]>('/loras'),

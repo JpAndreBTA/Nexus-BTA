@@ -366,3 +366,14 @@ export interface GenerationJob {
   preset?: string;
   workflow_id?: string | null;
 }
+
+export interface ComfyCapabilityReport {
+  status: 'ready' | 'missing' | 'offline' | 'unavailable';
+  runtime_checked: boolean;
+  ready: boolean;
+  requested: string[];
+  available: string[];
+  missing: string[];
+  unverified: string[];
+  registered_count: number;
+}

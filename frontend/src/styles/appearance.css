@@ -77,3 +77,20 @@
 .inpaint-toolbar { display: flex; flex-wrap: wrap; align-items: center; }
 .inpaint-toolbar > label.field { flex: 1 1 130px; min-width: 120px; }
 .inpaint-zoom-indicator { font-size: 11px; min-width: 43px; text-align: center; font-variant-numeric: tabular-nums; }
+
+.studio-node-capabilities {
+  position: relative;
+  z-index: 3;
+  padding: 8px 12px;
+  margin: 10px;
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--text, inherit);
+  background: var(--surface, #18191c);
+  border: 1px solid var(--border, #555);
+  font-size: 12px;
+}
+.studio-node-capabilities.missing { border-color: #c08b52; }
+.studio-node-capabilities small { width: 100%; opacity: 0.8; }

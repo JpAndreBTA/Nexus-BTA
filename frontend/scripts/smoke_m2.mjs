@@ -43,6 +43,13 @@ await page.route('**/api/**', async (route) => {
             : { items: [media(2)], total: 2, next_cursor: 'next-page' };
   }
   else if (path === '/api/loras' || path === '/api/gallery' || path === '/api/workflows') result = [];
+  else if (path === '/api/comfy/capabilities') {
+    const requested = (url.searchParams.get('classes') || '').split(',').filter(Boolean);
+    result = {
+      status: 'offline', runtime_checked: false, ready: false,
+      requested, available: [], missing: [], unverified: requested, registered_count: 0,
+    };
+  }
   else if (path === '/api/health') result = {
     comfy_running: false,
     comfy_url: 'http://127.0.0.1:8189',
@@ -59,6 +66,9 @@ await page.route('**/api/**', async (route) => {
 try {
   await page.goto(base, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-route="studio"]').waitFor({ state: 'attached', timeout: 15000 });
+  await page.getByRole('button', { name: /Node Workflow/ }).click();
+  await page.getByText(/compatibility is unverified|No imported workflow nodes available/).waitFor();
+  await page.getByRole('button', { name: 'Linear Viewer' }).click();
   await page.getByRole('button', { name: 'Civitai' }).click();
   await page.getByRole('dialog', { name: 'Nexus Civitai downloader' }).waitFor();
   await page.getByPlaceholder('Search terms or paste a Civitai URL...').fill('test model');

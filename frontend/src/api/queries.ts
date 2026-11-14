@@ -74,3 +74,18 @@ export function useGalleryIndexQuery({
     staleTime: 10_000,
   });
 }
+
+/**
+ * Inspect already running ComfyUI; never requests startup/downloads.
+ * Only real backend workflow classes are checked (not synthetic editor nodes).
+ */
+export function useComfyCapabilitiesQuery(classes: string[], enabled: boolean) {
+  const key = classes.join(',');
+  return useQuery({
+    queryKey: ['comfy-capabilities', key],
+    queryFn: ({ signal }) => nexusApi.comfyCapabilities(classes, signal),
+    enabled: enabled && classes.length > 0,
+    staleTime: 30_000,
+    retry: 1,
+  });
+}
