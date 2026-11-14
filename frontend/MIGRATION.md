@@ -239,3 +239,7 @@ See `docs/production/NEXUS_M2_CHECKPOINT_2026_11_12.md` for the completed commit
 ## M2.2 checkpoint — 13 November 2026
 
 See `docs/production/NEXUS_M2_2_CHECKPOINT_2026_11_13.md`. New paginated React Gallery uses `/api/gallery/page` with an SQLite index; `/api/gallery` and `/ui` are intentionally retained. The Studio generation request serializer and validation are modular and unit-tested. Search and sort remain local to loaded Gallery pages. Do not mark /app feature complete.
+
+## M2.3 checkpoint — 13 November 2026
+
+See `docs/production/NEXUS_M2_3_CHECKPOINT_2026_11_13.md`. This supersedes M2.2's limitation that search/sort applied only to loaded pages: the new Gallery searches filenames/folders and sorts/filters over the full SQLite index. Image tiles use safe bounded on-demand WebP thumbs. Source/mask share a zoomable/pannable inpaint viewport. Video/3D previews, full-resolution mask export mapping and real Windows/ComfyUI tests remain pending.
