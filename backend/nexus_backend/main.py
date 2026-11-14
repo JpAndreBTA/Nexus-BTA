@@ -5811,6 +5811,12 @@ workflow_registry = WorkflowRegistry(settings)
 comfy = ComfyClient(settings)
 
 
+def _workflow_classes_for_inspection(workflow_id: str) -> list[str] | None:
+    path = workflow_registry.find(workflow_id)
+    return workflow_registry.summarize(path).class_types if path is not None else None
+
+
+
 def _canonical_vram_policy(value: str | None) -> str:
     text = str(value or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
     if text in {"gpu", "gpuonly", "onlygpu", "cudaonly"}:
@@ -6212,7 +6218,10 @@ def _runtime_attention_capabilities() -> dict[str, Any]:
 
 
 app = FastAPI(title="Nexus BTA Backend", version="0.1.1")
-app.include_router(make_comfy_capability_router(lambda: read_comfy_registry_readonly(comfy)))
+app.include_router(make_comfy_capability_router(
+    lambda: read_comfy_registry_readonly(comfy),
+    workflow_lookup=_workflow_classes_for_inspection,
+))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allowed_origins(),

@@ -33,6 +33,50 @@ class ComfyCapabilityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 parse_requested_classes(invalid)
 
+    def test_workflow_check_uses_actual_class_list_and_never_updates_runtime(self):
+        requested_workflows = []
+        calls = []
+        def lookup(workflow_id: str):
+            requested_workflows.append(workflow_id)
+            return ["KSampler", "VAEDecode", "CustomMissing", "KSampler"] if workflow_id == "my-wf" else None
+
+        async def registry_reader():
+            calls.append("registry")
+            return {"KSampler": {}, "VAEDecode": {}}
+
+        app = FastAPI()
+        app.include_router(make_comfy_capability_router(registry_reader, workflow_lookup=lookup))
+        with TestClient(app) as client:
+            response = client.get("/api/comfy/workflow-capabilities?workflow_id=my-wf")
+            self.assertEqual(response.status_code, 200)
+            report = response.json()
+            self.assertEqual(report["requested"], ["KSampler", "VAEDecode", "CustomMissing"])
+            self.assertEqual(report["missing"], ["CustomMissing"])
+            self.assertFalse(report["ready"])
+            self.assertEqual(report["required_count"], 3)
+            self.assertEqual(calls, ["registry"])
+            self.assertEqual(client.get("/api/comfy/workflow-capabilities?workflow_id=../bad").status_code, 400)
+            self.assertEqual(client.get("/api/comfy/workflow-capabilities?workflow_id=none").status_code, 404)
+            self.assertEqual(calls, ["registry"], "invalid and missing workflow must not query runtime")
+            self.assertEqual(requested_workflows, ["my-wf", "none"])
+
+    def test_workflow_unverified_offline_and_oversized_are_distinct(self):
+        async def offline_reader():
+            return None
+        app = FastAPI()
+        app.include_router(make_comfy_capability_router(
+            offline_reader, workflow_lookup=lambda wid: ["CustomNode"] if wid == "small" else [f"Node{i}" for i in range(300)]
+        ))
+        with TestClient(app) as client:
+            offline = client.get("/api/comfy/workflow-capabilities?workflow_id=small").json()
+            self.assertEqual(offline["status"], "offline")
+            self.assertEqual(offline["missing"], [])
+            oversized = client.get("/api/comfy/workflow-capabilities?workflow_id=big").json()
+            self.assertEqual(oversized["status"], "unverified")
+            self.assertEqual(oversized["required_count"], 300)
+            self.assertFalse(oversized["ready"])
+            self.assertLessEqual(len(oversized["requested"]), 16)
+
     def test_readonly_http_backend_and_offline_behavior(self):
         calls = []
         async def registry_reader():

@@ -16,6 +16,8 @@ from fastapi import APIRouter, HTTPException, Query
 
 MAX_REGISTRY_BYTES = 16 * 1024 * 1024
 MAX_CLASSES = 64
+MAX_WORKFLOW_CLASSES = 256
+_WORKFLOW_ID = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _CLASS_NAME = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
 
 
@@ -81,6 +83,8 @@ async def read_comfy_registry_readonly(comfy: Any) -> dict[str, Any] | None:
 
 def make_comfy_capability_router(
     registry_reader: Callable[[], Awaitable[dict[str, Any] | None]],
+    *,
+    workflow_lookup: Callable[[str], list[str] | None] | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -100,5 +104,59 @@ def make_comfy_capability_router(
             report["status"] = "unavailable"
             return report
         return summarize_capabilities(selected, registry)
+
+
+    @router.get("/api/comfy/workflow-capabilities")
+    async def workflow_capabilities(
+        workflow_id: str = Query(..., min_length=1, max_length=128),
+    ) -> dict[str, Any]:
+        """Check all class types defined in the actual imported workflow JSON."""
+        if not _WORKFLOW_ID.fullmatch(workflow_id):
+            raise HTTPException(status_code=400, detail="Invalid workflow ID.")
+        if workflow_lookup is None:
+            raise HTTPException(status_code=404, detail="Workflow inspection unavailable.")
+        try:
+            raw_classes = workflow_lookup(workflow_id)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=422, detail="Workflow could not be inspected.") from exc
+        if raw_classes is None:
+            raise HTTPException(status_code=404, detail="Workflow not found.")
+        unique_classes = list(dict.fromkeys(raw_classes))
+        valid_classes = [
+            item for item in unique_classes
+            if isinstance(item, str) and item.strip() and len(item) <= 128
+            and not any(ord(char) < 32 for char in item)
+        ]
+        invalid_count = len(unique_classes) - len(valid_classes)
+        if not unique_classes or len(unique_classes) > MAX_WORKFLOW_CLASSES:
+            return {
+                "status": "unverified",
+                "runtime_checked": False,
+                "ready": False,
+                "requested": valid_classes[:16],
+                "available": [],
+                "missing": [],
+                "unverified": valid_classes[:16],
+                "registered_count": 0,
+                "workflow_id": workflow_id,
+                "required_count": len(unique_classes),
+                "invalid_class_count": invalid_count,
+                "warning": "No workflow node classes or too many classes for a bounded inspection.",
+            }
+        try:
+            registry = await registry_reader()
+        except (httpx.HTTPError, ValueError, json.JSONDecodeError, OSError):
+            report = summarize_capabilities(valid_classes, None)
+            report["status"] = "unavailable"
+        else:
+            report = summarize_capabilities(valid_classes, registry)
+        report["workflow_id"] = workflow_id
+        report["required_count"] = len(unique_classes)
+        report["invalid_class_count"] = invalid_count
+        if invalid_count:
+            report["ready"] = False
+            report["status"] = "partial"
+            report["warning"] = "Some workflow node identifiers are not inspectable."
+        return report
 
     return router
