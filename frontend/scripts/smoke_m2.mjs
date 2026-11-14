@@ -176,6 +176,44 @@ try {
   assert.equal(await sharedViewport.locator('canvas').count(), 1);
   assert.ok((await sharedViewport.evaluate((element) => element.style.transform)).includes('scale(1.25)'));
 
+  // A 2048x1024 source is edited on the 1536px mask grid, but its emitted
+  // opaque binary PNG must map back to the full native source resolution.
+  const nativeSource = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2048;
+    canvas.height = 1024;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#6f91a3';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/png');
+  });
+  await page.locator('.reference-source-block input[type=file]').first().setInputFiles({
+    name: 'qa-native-reference.png', mimeType: 'image/png',
+    buffer: Buffer.from(nativeSource.split(',')[1], 'base64'),
+  });
+  await page.getByText(/Source 2048×1024 · edit 1536×768 · mask export 2048×1024/).waitFor();
+  await page.evaluate(() => {
+    const original = HTMLCanvasElement.prototype.toDataURL;
+    window.__nexusMaskExportSizes = [];
+    HTMLCanvasElement.prototype.toDataURL = function (...args) {
+      if (args[0] === 'image/png' && this.width > 1536) {
+        window.__nexusMaskExportSizes.push([this.width, this.height]);
+      }
+      return original.apply(this, args);
+    };
+  });
+  const maskViewport = page.locator('canvas[aria-label="Inpaint mask canvas"]');
+  await maskViewport.scrollIntoViewIfNeeded();
+  const bounds = await maskViewport.boundingBox();
+  assert.ok(bounds && bounds.width > 30 && bounds.height > 30, 'mask editor must have measurable bounds');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForFunction(() => window.__nexusMaskExportSizes?.some(
+    (size) => size[0] === 2048 && size[1] === 1024,
+  ));
+  await page.screenshot({ path: 'artifacts/inpaint-native-mask.png', fullPage: true });
+
   await page.goto(`${base}/settings`, { waitUntil: 'domcontentloaded' });
   await page.getByText('Customize your workspace').waitFor();
   await page.locator('.appearance-controls select').nth(0).selectOption('midnight');

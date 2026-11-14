@@ -89,5 +89,6 @@ jobs:
           path: |
             frontend/artifacts/gallery-paginated.png
             frontend/artifacts/gallery-glb-preview.png
+            frontend/artifacts/inpaint-native-mask.png
           if-no-files-found: ignore
           retention-days: 7
