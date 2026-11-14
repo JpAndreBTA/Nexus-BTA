@@ -259,3 +259,7 @@ See `docs/production/NEXUS_M2_6_CHECKPOINT_2026_11_14.md`: a bounded read-only s
 ## M2.7 checkpoint — 14 November 2026
 
 See `docs/production/NEXUS_M2_7_CHECKPOINT_2026_11_14.md`. The Node Workflow view includes an explicit manual scalar-only patched-template preflight; its preview is performed on copies without Comfy prompt submission or file uploads and does **not** reproduce full dispatch staging. Node schema ABI signature and model menu visibility are exposed as bounded privacy-preserving diagnostics, not claims of physical weight availability. `/ui` and localhost default remain unchanged; PR #17 stays draft.
+
+## M2.8A checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_8A_CHECKPOINT_2026_11_14.md`. The manual patched-template preflight now performs bounded, read-only filename checks against the same configured managed/category roots used by Nexus asset resolution. It never opens model weights or follows symlinks; incomplete scans remain unverified. The audit covers model file references in the patched graph only, not auto-resolved preset dependencies or the exact dispatch graph. M2.8B is the shared pure generation-planning extraction; keep `/ui`, localhost defaults and PR #17 draft.
