@@ -388,6 +388,29 @@ export interface WorkflowInputFinding {
   class_type: string;
   input: string;
 }
+export interface ModelSourceAuditEntry {
+  node_id: string;
+  class_type: string;
+  input: string;
+  categories: string[];
+  status: 'found' | 'multiple_matches' | 'not_found' | 'unverified' | string;
+  match_count: number;
+  sources: string[];
+}
+export interface ModelSourceAuditReport {
+  status: 'not_applicable' | 'complete' | 'issues' | 'partial' | string;
+  references_checked: number;
+  found: number;
+  multiple_matches: number;
+  not_found: number;
+  unverified: number;
+  roots_checked: number;
+  entries_scanned: number;
+  truncated: boolean;
+  entries: ModelSourceAuditEntry[];
+  note: string;
+}
+
 export interface WorkflowInputReport {
   workflow_id: string;
   status: 'offline' | 'unavailable' | 'review' | 'issues' | 'static_valid' | 'unsupported' | 'ui_format';
@@ -403,6 +426,7 @@ export interface WorkflowInputReport {
   model_choices_checked?: number;
   model_choices_unavailable?: number;
   schema_signature?: string | null;
+  model_sources?: ModelSourceAuditReport;
   unverified_inputs: number;
   findings: WorkflowInputFinding[];
   truncated_findings: boolean;

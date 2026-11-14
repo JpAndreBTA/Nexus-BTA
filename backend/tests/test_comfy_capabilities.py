@@ -167,6 +167,9 @@ class ComfyCapabilityTests(unittest.TestCase):
             app.include_router(make_comfy_capability_router(
                 read_registry,
                 workflow_path_lookup=lambda name: path if name == "qa" else None,
+                model_source_auditor=lambda graph: {
+                    "status": "complete", "found": 1, "graph_nodes": len(graph),
+                },
             ))
             original = path.read_bytes()
             with TestClient(app) as client:
@@ -179,6 +182,8 @@ class ComfyCapabilityTests(unittest.TestCase):
                 self.assertTrue(preview["preview"])
                 self.assertFalse(preview["ready"])
                 self.assertGreaterEqual(preview["changed_input_fields"], 1)
+                self.assertEqual(preview["model_sources"]["found"], 1)
+                self.assertEqual(preview["model_sources"]["graph_nodes"], 2)
                 self.assertNotIn("selected.safetensors", response.text)
                 self.assertNotIn("old.safetensors", response.text)
                 self.assertEqual(calls, ["object_info_only"])

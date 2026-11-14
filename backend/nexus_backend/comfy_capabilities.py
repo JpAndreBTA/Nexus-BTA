@@ -91,6 +91,7 @@ def make_comfy_capability_router(
     *,
     workflow_lookup: Callable[[str], list[str] | None] | None = None,
     workflow_path_lookup: Callable[[str], Path | None] | None = None,
+    model_source_auditor: Callable[[dict[str, dict[str, Any]]], dict[str, Any]] | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -217,7 +218,9 @@ def make_comfy_capability_router(
         except (httpx.HTTPError, ValueError, json.JSONDecodeError, OSError):
             registry = None
         try:
-            return await asyncio.to_thread(inspect_patched_preview, payload, original, registry)
+            return await asyncio.to_thread(
+                inspect_patched_preview, payload, original, registry, model_source_auditor,
+            )
         except (ValueError, KeyError, TypeError, RuntimeError, OverflowError):
             # Never leak prompts, absolute model paths, input file names or
             # underlying runtime details into a public-looking error.

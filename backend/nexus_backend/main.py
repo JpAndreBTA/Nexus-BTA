@@ -38,6 +38,7 @@ from .asset_resolver import (
 from .civitai import download_civitai_asset, resolve_civitai_asset, search_civitai_models
 from .comfy_client import ComfyClient, extract_outputs
 from .comfy_capabilities import make_comfy_capability_router, read_comfy_registry_readonly
+from .model_source_audit import audit_model_references
 from .config import DEFAULT_MODEL_SOURCES, coerce_path_list, load_settings, save_settings, sync_startup_model_path
 from .dependencies import (
     custom_node_dependency_status,
@@ -6222,6 +6223,7 @@ app.include_router(make_comfy_capability_router(
     lambda: read_comfy_registry_readonly(comfy),
     workflow_lookup=_workflow_classes_for_inspection,
     workflow_path_lookup=lambda workflow_id: workflow_registry.find(workflow_id),
+    model_source_auditor=lambda graph: audit_model_references(graph, settings),
 ))
 app.add_middleware(
     CORSMiddleware,

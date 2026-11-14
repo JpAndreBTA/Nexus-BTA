@@ -11,6 +11,7 @@ Director frames or other user assets are staged. Treat results as advisory.
 from __future__ import annotations
 
 from copy import deepcopy
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -51,6 +52,7 @@ def inspect_patched_preview(
     payload: WorkflowPreflightRequest,
     workflow: Any,
     registry: dict[str, Any] | None,
+    model_source_auditor: Callable[[dict[str, dict[str, Any]]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build an in-memory preview with fixed seed and no side effects."""
     base_note = (
@@ -122,6 +124,8 @@ def inspect_patched_preview(
         )
 
     report = inspect_workflow_inputs(payload.workflow_id, patched_nodes, registry)
+    if model_source_auditor is not None:
+        report["model_sources"] = model_source_auditor(patched_nodes)
     report.update({
         "preview": True,
         "ready": False,

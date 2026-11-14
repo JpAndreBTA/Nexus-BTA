@@ -44,7 +44,11 @@ class WorkflowPreflightTests(unittest.TestCase):
             workflow_id="test-workflow", preset="SD",
             model_name="chosen.safetensors", steps=17, cfg=4.5, seed=42,
         )
-        report = inspect_patched_preview(payload, source, self.registry())
+        audited_graphs = []
+        def audit(graph):
+            audited_graphs.append(graph)
+            return {"status": "complete", "found": 1}
+        report = inspect_patched_preview(payload, source, self.registry(), audit)
         self.assertEqual(source, original, "read-only preflight must not mutate saved workflow")
         self.assertTrue(report["preview"])
         self.assertFalse(report["ready"])
@@ -54,6 +58,9 @@ class WorkflowPreflightTests(unittest.TestCase):
         self.assertNotIn("chosen.safetensors", str(report))
         self.assertNotIn("original.safetensors", str(report))
         self.assertEqual(report["workflow_id"], "test-workflow")
+        self.assertEqual(report["model_sources"]["found"], 1)
+        self.assertEqual(len(audited_graphs), 1)
+        self.assertNotEqual(audited_graphs[0], source)
 
     def test_offline_never_claims_compatibility(self):
         report = inspect_patched_preview(WorkflowPreflightRequest(workflow_id="qa"), self.sample_graph(), None)

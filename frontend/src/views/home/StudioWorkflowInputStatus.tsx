@@ -24,6 +24,20 @@ export function StudioWorkflowInputStatus({
       <span>{report.missing_required_inputs} potentially missing inputs · {report.choice_mismatches} choice mismatches · {report.unverified_inputs} unverified inputs</span>
       <span>{report.model_choices_unavailable ?? 0} / {report.model_choices_checked ?? 0} model selections not advertised by the current registry</span>
       {report.schema_signature && <small>Comfy node schema signature: {report.schema_signature} (changes when registered input menus or ABI change)</small>}
+      {report.model_sources && (
+        <details>
+          <summary>Local model files: {report.model_sources.found + report.model_sources.multiple_matches} found · {report.model_sources.not_found} not found · {report.model_sources.unverified} unverified</summary>
+          <small>{report.model_sources.note} Checked {report.model_sources.roots_checked} configured roots and {report.model_sources.entries_scanned} directory entries{report.model_sources.truncated ? ' (scan truncated)' : ''}.</small>
+          <ul>
+            {report.model_sources.entries.map((entry, index) => (
+              <li key={`${entry.node_id}-${entry.input}-${index}`}>
+                {entry.class_type} #{entry.node_id} / {entry.input}: {entry.status}
+                {entry.sources.length > 0 ? ` · ${entry.sources.join(', ')}` : ''}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {report.findings.length > 0 && (
         <details>
           <summary>Inspect first {report.findings.length} findings{report.truncated_findings ? ' (truncated)' : ''}</summary>
