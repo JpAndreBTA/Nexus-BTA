@@ -26,10 +26,19 @@
 - This removes the previous split where live dispatch parsed/converts/patches in `WorkflowRegistry`, while the preflight independently called `patch_workflow`.
 - Existing live request mutation semantics are preserved: `patch_workflow` may normalize/mutate the request object passed by live dispatch. Dry-run explicitly passes a deep copy. The builder is shared, but it is not yet a fully immutable `GenerationPlan`.
 
+### M2.8B-2 — pure logical asset selection
+
+- New `resolve_generation_assets_from_catalog(by_category, request)` contains the existing preset-aware logical asset selection rules without filesystem I/O.
+- Existing `resolve_generation_assets(settings, request)` remains the live adapter: it builds the existing `scan_models(..., include_references=False)` catalog and delegates to the new pure selector. No selection rules or live root behavior were intentionally changed.
+- The pure selector reads the supplied catalog/request and does not mutate the request. This lets a future planner supply a bounded catalog without invoking the live recursive filesystem scan.
+- Tests prove the pure selector does not call `scan_models`, the live adapter delegates with the same catalog and produces the same result, and an empty catalog does not invent a selected model.
+- Important remaining boundary: the current live `scan_models` implementation is still the filesystem-backed catalog producer and is not yet the bounded planner catalog. Do not call it from a new dry-run until a separate bounded, symlink-safe catalog builder is available.
+
 ## Verification
 
 - M2.8A final code head `6a824e0`: GitHub Actions run **4/4 passed** (Python, frontend, Rust, Chromium), run ID `43570475700`.
 - M2.8B shared-builder head `9edb2e4`: GitHub Actions run **4/4 passed**, run ID `43570719653`.
+- M2.8B-2 pure asset selection head `220fb7c`: GitHub Actions run **4/4 passed**, run ID `43570958765`.
 - Chromium uses a mocked backend and asserts the model-source details render and preflight never submits `/api/generate`. It does not certify real Comfy, model weights, CUDA or GPU behavior.
 - Python tests compare the live registry loader's prepared graph with the shared builder for a deterministic saved API workflow and assert the original graph remains unchanged.
 
@@ -40,7 +49,7 @@
 3. No custom-node package version drift check is implemented. The Comfy `schema_signature` fingerprints active node schemas, not the installed custom-node package revision.
 4. No real Windows + installed ComfyUI + GPU acceptance was possible in this CI.
 
-## Next ideal substage — M2.8B-2: pure asset resolution and dispatch boundary
+## Next ideal substage — M2.8B-3: bounded model catalog and dispatch boundary
 
 Proceed in this order; do not duplicate the preset switch:
 

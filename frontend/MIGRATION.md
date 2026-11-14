@@ -267,3 +267,5 @@ See `docs/production/NEXUS_M2_8A_CHECKPOINT_2026_11_14.md`. The manual patched-t
 ## M2.8B checkpoint — 14 November 2026
 
 See `docs/production/NEXUS_M2_8B_CHECKPOINT_2026_11_14.md`. Model-source presence auditing is bounded, read-only and symlink-safe; the live saved-workflow loader and manual preflight now share `prepare_workflow_graph` for API/UI conversion and patching. This is the first shared-planner extraction, not yet a complete dispatch plan: model auto-resolution, media staging, runtime effects, node installation and prompt submission remain outside it. Keep `/ui`, localhost defaults and PR #17 draft.
+
+M2.8B-2 further separated pure preset-aware logical asset selection into `resolve_generation_assets_from_catalog`; the live resolver remains a filesystem catalog adapter and preserves existing selection rules. The planner must use a future bounded catalog producer rather than calling the current unbounded `scan_models` scan.
