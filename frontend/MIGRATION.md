@@ -251,3 +251,7 @@ See `docs/production/NEXUS_M2_4_CHECKPOINT_2026_11_14.md`. The Gallery now suppo
 ## M2.5 checkpoint — 14 November 2026
 
 See `docs/production/NEXUS_M2_5_CHECKPOINT_2026_11_14.md`. FastAPI capability router registration order corrected with structural test. Non-loopback requests now require an explicitly configured strong token AND unsafe-network acknowledgment; all remotely exposed paths are read-only allowlisted, other routes and mounts denied. This is not permission to publish Nexus on a network or a replacement for an authenticated HTTPS gateway. Studio workflow capability checks now derive exact class names from stored workflow JSON, not synthetic graph nodes; offline remains unverified. Legacy `/ui` and default local mode are preserved.
+
+## M2.6 checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_6_CHECKPOINT_2026_11_14.md`: a bounded read-only static Comfy API workflow input/link/choice report is now available in Studio, with explicit unverified states and no automatic installs. Inpaint emits a native-source-resolution opaque binary PNG mask up to a 16 MP / 8192px memory cap and otherwise falls back to editor resolution with an explicit warning. Real Windows/Comfy/GPU behavior is not certified by Chromium mock acceptance; keep /ui, default localhost and PR draft.
