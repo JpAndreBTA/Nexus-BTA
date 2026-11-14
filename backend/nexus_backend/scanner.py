@@ -207,17 +207,27 @@ def scan_models_bounded(
     continues to use scan_models() so its existing selection behavior is not
     changed by planner limits.
     """
-    roots: list[tuple[Path, str, str | None]] = [
-        (root, "managed" if root == settings.models_dir else "reference", category)
-        for root, category in _configured_model_roots(settings)
-    ]
-    if include_references:
-        roots.extend((source, "reference", None) for source in settings.reference_model_sources)
+    roots: list[tuple[Path, str, str | None]] = [(settings.models_dir, "managed", None)]
+    truncated = False
+    for alias, paths in settings.model_sources.items():
+        category = MODEL_SOURCE_CATEGORY_ALIASES.get(str(alias).strip().lower())
+        for path in paths:
+            if len(roots) >= MAX_BOUNDED_MODEL_ROOTS:
+                truncated = True
+                break
+            roots.append((Path(path), "reference", category))
+        if truncated:
+            break
+    if include_references and not truncated:
+        for source_root in settings.reference_model_sources:
+            if len(roots) >= MAX_BOUNDED_MODEL_ROOTS:
+                truncated = True
+                break
+            roots.append((source_root, "reference", None))
 
     categories: dict[str, list[ModelFile]] = {category: [] for category in MODEL_CATEGORIES}
     supported = {str(ext).lower() for ext in settings.supported_model_extensions}
-    complete = True
-    truncated = False
+    complete = not truncated
     roots_checked = 0
     entries_scanned = 0
     files_indexed = 0
@@ -225,10 +235,6 @@ def scan_models_bounded(
     stop = False
 
     for root, source, category_override in roots:
-        if roots_checked >= MAX_BOUNDED_MODEL_ROOTS:
-            complete = False
-            truncated = True
-            break
         try:
             if root.is_symlink() or not root.exists():
                 complete = False
@@ -260,12 +266,12 @@ def scan_models_bounded(
                     continue
                 with os.scandir(current_real) as entries:
                     for entry in entries:
-                        entries_scanned += 1
-                        if entries_scanned > MAX_BOUNDED_MODEL_ENTRIES:
+                        if entries_scanned >= MAX_BOUNDED_MODEL_ENTRIES:
                             complete = False
                             truncated = True
                             stop = True
                             break
+                        entries_scanned += 1
                         try:
                             if entry.is_symlink():
                                 complete = False

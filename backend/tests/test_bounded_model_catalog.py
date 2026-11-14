@@ -92,4 +92,22 @@ class BoundedModelCatalogTests(unittest.TestCase):
                 result = scan_models_bounded(self.settings(root))
             self.assertFalse(result.complete)
             self.assertTrue(result.truncated)
-            self.assertLessEqual(result.entries_scanned, 4)
+            self.assertLessEqual(result.entries_scanned, 3)
+
+    def test_root_budget_is_enforced_before_scanning_excess_sources(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "models").mkdir()
+            sources = [root / f"source-{index}" for index in range(4)]
+            for source in sources:
+                source.mkdir()
+            settings = NexusSettings(
+                models_dir=root / "models",
+                model_sources={"checkpoints": sources},
+                reference_model_sources=[],
+            )
+            with patch("nexus_backend.scanner.MAX_BOUNDED_MODEL_ROOTS", 2):
+                result = scan_models_bounded(settings)
+            self.assertFalse(result.complete)
+            self.assertTrue(result.truncated)
+            self.assertLessEqual(result.roots_checked, 2)
