@@ -89,7 +89,7 @@ try {
   await page.locator('[data-route="gallery"]').waitFor({ state: 'attached' });
   await page.getByText('No outputs found.').waitFor();
   galleryTestPages = true;
-  await page.getByRole('button', { name: 'Refresh' }).click();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await page.getByRole('button', { name: /Load more/ }).waitFor();
   await page.getByRole('button', { name: /Load more/ }).click();
   await page.getByText('2 / 2 loaded').waitFor();
