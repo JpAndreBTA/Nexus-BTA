@@ -9,8 +9,21 @@ from .schemas import GenerateRequest, ModelFile
 
 
 def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest) -> dict[str, str]:
+    """Filesystem-backed catalog adapter; selection rules live in the pure helper."""
     catalog = scan_models(settings, include_references=False)
-    by_category = catalog.categories
+    return resolve_generation_assets_from_catalog(catalog.categories, request)
+
+
+def resolve_generation_assets_from_catalog(
+    by_category: dict[str, list[ModelFile]],
+    request: GenerateRequest,
+) -> dict[str, str]:
+    """Resolve logical model assets from an existing catalog without filesystem I/O.
+
+    The caller owns catalog construction/bounds. This function only reads the
+    supplied catalog and request, preserving the same preset selection rules
+    used by live generation.
+    """
     assets: dict[str, str] = {}
 
     selected_name = Path(request.model_path or request.model_name or "").name
@@ -67,7 +80,6 @@ def resolve_generation_assets(settings: NexusSettings, request: GenerateRequest)
 
     assets.update(_resolve_controlnet(by_category, request))
     return {key: value for key, value in assets.items() if value}
-
 
 def resolve_minimax_h3_ltx_pixel_upscale_assets(settings: NexusSettings, scale_factor: int = 2) -> dict[str, str]:
     """Resolve the local LTX 2.3 files used by the H3 pixel-upscale bridge.

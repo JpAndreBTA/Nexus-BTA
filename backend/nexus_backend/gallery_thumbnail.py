@@ -1,0 +1,132 @@
+"""On-demand thumbnail cache for local gallery images.
+
+Never copies original metadata, scans unrelated paths, or writes under /outputs.
+The cache is bounded and keyed by source file identity (relative path, mtime, size).
+No previews are generated eagerly while indexing the output folder.
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import os
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+from PIL import Image, ImageOps, UnidentifiedImageError
+
+from .gallery_index import IMAGE_SUFFIXES, default_gallery_db_path, VIDEO_SUFFIXES
+
+MAX_SOURCE_BYTES = 128 * 1024 * 1024
+MAX_SOURCE_PIXELS = 64_000_000
+MAX_CACHE_BYTES = 384 * 1024 * 1024
+MAX_EDGE = 512
+
+
+def safe_media_path(root: Path, relative_path: str, extensions: frozenset[str]) -> Path:
+    """Never resolve a user path outside the gallery; no URL or virtual-file support."""
+    if (
+        not relative_path or len(relative_path) > 1024
+        or relative_path[0] in ("/", chr(92))
+        or chr(92) in relative_path or "\x00" in relative_path
+        or any(part in ("", ".", "..") for part in relative_path.split("/"))
+    ):
+        raise ValueError("Invalid gallery media path.")
+    candidate = root / relative_path
+    if candidate.suffix.lower() not in extensions or candidate.is_symlink():
+        raise ValueError("Unsupported gallery media input.")
+    try:
+        resolved = candidate.resolve(strict=True)
+        if not resolved.is_relative_to(root) or not resolved.is_file():
+            raise ValueError("Media source is outside the gallery.")
+    except (OSError, RuntimeError) as exc:
+        raise ValueError("Gallery media not found.") from exc
+    return resolved
+
+
+def safe_image_path(root: Path, relative_path: str) -> Path:
+    return safe_media_path(root, relative_path, IMAGE_SUFFIXES)
+
+
+def safe_video_path(root: Path, relative_path: str) -> Path:
+    return safe_media_path(root, relative_path, VIDEO_SUFFIXES)
+
+
+class GalleryThumbnailCache:
+    def __init__(self, root: Path, *, cache_root: Path | None = None):
+        self.root = root.resolve()
+        namespace = hashlib.sha256(os.fsencode(str(self.root))).hexdigest()[:20]
+        self.cache_root = (cache_root or (default_gallery_db_path(self.root).parent / "gallery-thumbs" / namespace)).resolve()
+        if self.cache_root.is_relative_to(self.root):
+            raise ValueError("Thumbnail cache must be outside public outputs.")
+        self._lock = threading.RLock()
+        self._last_trim = 0.0
+
+    def _trim_cache(self) -> None:
+        """Best-effort oldest-first eviction, with a soft 384 MiB disk budget."""
+        files: list[tuple[float, int, Path]] = []
+        total = 0
+        for path in self.cache_root.glob("*.webp"):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            total += stat.st_size
+            files.append((stat.st_mtime, stat.st_size, path))
+        if total <= MAX_CACHE_BYTES:
+            return
+        for _, size, path in sorted(files):
+            try:
+                path.unlink()
+                total -= size
+            except OSError:
+                pass
+            if total <= MAX_CACHE_BYTES:
+                break
+
+    def thumbnail(self, relative_path: str, size: int = 320) -> Path:
+        if not 64 <= size <= MAX_EDGE:
+            raise ValueError("Thumbnail size must be between 64 and 512.")
+        source = safe_image_path(self.root, relative_path)
+        stat = source.stat()
+        if stat.st_size > MAX_SOURCE_BYTES:
+            raise ValueError("Image exceeds thumbnail processing size limit.")
+        key = hashlib.sha256(
+            f"{relative_path}\\0{stat.st_mtime_ns}\\0{stat.st_size}\\0{size}".encode("utf-8")
+        ).hexdigest()
+        output = self.cache_root / f"{key}.webp"
+        with self._lock:
+            if output.is_file() and not output.is_symlink():
+                return output
+            self.cache_root.mkdir(parents=True, exist_ok=True)
+            # Limit source pixels *before* converting/decoding full RGB/RGBA surfaces.
+            try:
+                with Image.open(source) as opened:
+                    if opened.width * opened.height > MAX_SOURCE_PIXELS:
+                        raise ValueError("Image exceeds thumbnail pixel budget.")
+                    opened.draft("RGB", (size * 2, size * 2))
+                    opened.thumbnail((size, size), Image.Resampling.LANCZOS)
+                    upright = ImageOps.exif_transpose(opened)
+                    upright.thumbnail((size, size), Image.Resampling.LANCZOS)
+                    if upright.mode not in ("RGB", "RGBA"):
+                        upright = upright.convert("RGBA" if "A" in upright.getbands() else "RGB")
+                    data = io.BytesIO()
+                    upright.save(data, format="WEBP", quality=74, method=4)
+            except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+                raise ValueError("Unable to decode thumbnail source.") from exc
+            fd, scratch = tempfile.mkstemp(prefix=".tmp-gallery-", suffix=".webp", dir=self.cache_root)
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(data.getvalue())
+                os.replace(scratch, output)
+            finally:
+                if os.path.exists(scratch):
+                    os.unlink(scratch)
+            # Avoid rescanning the entire cache directory after each card in a
+            # busy gallery. A short delay amortizes eviction for batch previews.
+            now = time.monotonic()
+            if now - self._last_trim >= 30:
+                self._trim_cache()
+                self._last_trim = now
+            return output

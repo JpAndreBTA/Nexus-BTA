@@ -207,6 +207,12 @@ if ($LASTEXITCODE -ne 0) {
 }
 Import-NexusStartupEnv
 
+# This launcher exposes administrative routes and local file mounts.
+# Explicit acknowledgement prevents accidental publication via a tunnel or LAN.
+if ($env:NEXUS_UNSAFE_NETWORK_ACK -ne "I_UNDERSTAND_THE_RISK") {
+    throw "Network mode is disabled by default because Nexus currently has no built-in authentication. Use the local run.bat, or only when an authenticated gateway is configured explicitly set NEXUS_UNSAFE_NETWORK_ACK=I_UNDERSTAND_THE_RISK before launching."
+}
+
 $env:NEXUS_BACKEND_HOST = if ($Mode -eq "lan") { "0.0.0.0" } else { "127.0.0.1" }
 $env:NEXUS_BACKEND_PORT = [string]$Port
 

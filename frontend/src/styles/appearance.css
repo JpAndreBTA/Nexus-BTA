@@ -1,0 +1,121 @@
+/* Isolated appearance tokens: dark themes avoid overriding workspace-specific controls. */
+:root[data-nexus-theme="graphite"] { --bg:#09090b; --panel:#141417; --panel-strong:#18181b; --border:#27272a; --muted:#9ca3af; }
+:root[data-nexus-theme="midnight"] { --bg:#080f1c; --panel:#111b2b; --panel-strong:#17253c; --border:#30415a; --muted:#a5b4c9; }
+:root[data-nexus-theme="obsidian"] { --bg:#050506; --panel:#101012; --panel-strong:#161618; --border:#313136; --muted:#abb0b9; }
+:root[data-nexus-accent="red"] { --accent:#ff3b3b; --accent-dark:#c92323; }
+:root[data-nexus-accent="blue"] { --accent:#4f9bff; --accent-dark:#2368ce; }
+:root[data-nexus-accent="violet"] { --accent:#ae8bff; --accent-dark:#754cc8; }
+:root[data-nexus-accent="emerald"] { --accent:#2ecfa4; --accent-dark:#13906f; }
+:root[data-nexus-accent="amber"] { --accent:#efa64b; --accent-dark:#b8721b; }
+:root[data-nexus-theme="midnight"] .activity-rail,
+:root[data-nexus-theme="obsidian"] .activity-rail { background:var(--bg); }
+:root[data-nexus-density="comfortable"] .app-shell { grid-template-columns:88px minmax(0,1fr); }
+:root[data-nexus-density="comfortable"] .app-shell.rail-collapsed { grid-template-columns:52px minmax(0,1fr); }
+:root[data-nexus-density="comfortable"] .activity-nav { gap:12px; }
+:root[data-nexus-density="comfortable"] .nav-item { min-height:48px; }
+:root[data-nexus-reduced-motion="true"] *, :root[data-nexus-reduced-motion="true"] *::before,
+:root[data-nexus-reduced-motion="true"] *::after {
+  animation-duration:0.01ms !important; transition-duration:0.01ms !important; scroll-behavior:auto !important;
+}
+.workspace-loading { min-height:180px; display:grid; place-content:center; color:var(--muted); }
+.appearance-workspace { display:grid; gap:12px; }
+.appearance-heading { display:flex; gap:12px; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+.appearance-heading > div { display:flex; gap:10px; align-items:center; }
+.appearance-controls { display:flex; align-items:end; flex-wrap:wrap; gap:16px; }
+.appearance-controls label { display:grid; gap:6px; min-width:140px; }
+.appearance-controls select { background:var(--panel-strong); color:inherit; border:1px solid var(--border); padding:8px; border-radius:6px; }
+.appearance-controls .appearance-check { display:flex; gap:8px; align-items:center; cursor:pointer; }
+.appearance-controls input { accent-color:var(--accent); }
+.appearance-preview { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+  border:1px dashed var(--border); background:var(--panel-strong); padding:12px; border-radius:8px; }
+
+/* Avoid creating dozens of media decoders for video and audio gallery tiles. */
+.gallery-media-placeholder { display:grid; gap:8px; place-content:center; place-items:center; width:100%;
+  min-height:120px; aspect-ratio:1; background:var(--panel-strong); color:var(--muted); border:1px solid var(--border); border-radius:5px; }
+.gallery-media-placeholder.large { aspect-ratio:auto; min-height:260px; padding:24px; text-align:center; }
+.gallery-media-placeholder small { font-size:12px; }
+.gallery-media-placeholder .mini-button { text-decoration:none; }
+
+/* Customizable desktop panel splits, without overriding the tablet/mobile collapse. */
+@media (min-width: 1440px) {
+  .studio-columns {
+    grid-template-columns: minmax(320px, var(--nexus-controls-width, 430px)) minmax(0, 1fr);
+  }
+  .studio-gallery-open .studio-columns {
+    grid-template-columns: minmax(320px, var(--nexus-controls-width, 430px)) minmax(0, 1fr) minmax(220px, var(--nexus-gallery-width, 310px));
+  }
+  .studio-gallery-expanded .studio-columns {
+    grid-template-columns: minmax(320px, var(--nexus-controls-width, 430px)) minmax(0, 1fr) minmax(360px, max(360px, var(--nexus-gallery-width, 310px)));
+  }
+  .studio-controls-collapsed .studio-columns {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+  .studio-controls-collapsed.studio-gallery-open .studio-columns {
+    grid-template-columns: 52px minmax(0, 1fr) minmax(220px, var(--nexus-gallery-width, 310px));
+  }
+  .studio-controls-collapsed.studio-gallery-expanded .studio-columns {
+    grid-template-columns: 52px minmax(0, 1fr) minmax(360px, max(360px, var(--nexus-gallery-width, 310px)));
+  }
+}
+.appearance-preset-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.appearance-controls input[type="range"] { width: min(240px, 100%); cursor: ew-resize; }
+
+/* Cursor-backed gallery: the index is authoritative, client filters cover only loaded pages. */
+.gallery-index-count { white-space: nowrap; color: var(--muted); font-size: 11px; }
+.gallery-load-more { grid-column: 1 / -1; min-height: 38px; justify-self: stretch; }
+
+/* M2.3: inpaint source and mask always share one transformed viewport. */
+.inpaint-stage .inpaint-viewport {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
+}
+.inpaint-stage canvas.inpaint-pan-canvas { cursor: grab; }
+.inpaint-stage canvas.inpaint-pan-canvas:active { cursor: grabbing; }
+.inpaint-toolbar { display: flex; flex-wrap: wrap; align-items: center; }
+.inpaint-toolbar > label.field { flex: 1 1 130px; min-width: 120px; }
+.inpaint-zoom-indicator { font-size: 11px; min-width: 43px; text-align: center; font-variant-numeric: tabular-nums; }
+
+.studio-node-capabilities {
+  position: relative;
+  z-index: 3;
+  padding: 8px 12px;
+  margin: 10px;
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--text, inherit);
+  background: var(--surface, #18191c);
+  border: 1px solid var(--border, #555);
+  font-size: 12px;
+}
+.studio-node-capabilities.missing { border-color: #c08b52; }
+.studio-node-capabilities small { width: 100%; opacity: 0.8; }
+
+/* Experimental local GLB geometry view; no embedded external URLs or viewer library. */
+.gallery-glb-viewer { width: 100%; display: grid; gap: 8px; }
+.gallery-glb-viewer canvas {
+  width: 100%;
+  height: clamp(260px, 36vh, 480px);
+  background: #0b0e14;
+  touch-action: none;
+  cursor: grab;
+  display: block;
+  outline-offset: -3px;
+}
+.gallery-glb-viewer canvas:active { cursor: grabbing; }
+.gallery-glb-legend {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.gallery-glb-legend small { opacity: 0.8; }
+.gallery-glb-legend a { justify-self: start; }
+
+.inpaint-export-note { display: block; padding: 5px 9px; font-size: 11px; color: var(--muted); line-height: 1.5; }

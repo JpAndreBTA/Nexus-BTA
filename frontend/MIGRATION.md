@@ -221,3 +221,55 @@ Screenshots:
 - `test-results/backend-app-studio-controlnet.png`
 - `test-results/backend-app-workflow-graph.png`
 - `test-results/app-smoke-generation-contract.png`
+
+## Checkpoint: M1 modernization candidate (2026-11-12)
+
+- Six React routes are lazy loaded instead of downloading the Studio as part of the initial shell.
+- Appearance settings now persist under the existing `nexus-ui-state` key (theme/accent/density/motion).
+- Civitai picker no longer lists imaginary search results and includes actual filters and download progress.
+- CORS is restricted; accidental LAN/tunnel use is blocked by default until an explicit unsafe-network acknowledgment. This does **not** provide remote authentication.
+- Rust mask core is an isolated experimental crate, not enabled in production.
+- Reference: `docs/audit/NEXUS_UI_AUDIT_2026_11_12.md`.
+- Gate remains: CI checks, browser smoke with actual backend, Windows + ComfyUI work, visual confirmation. Do not redirect /ui to /app yet.
+
+## Checkpoint: M2 UI modules, bounded inpaint, layout presets and browser-smoke
+
+See `docs/production/NEXUS_M2_CHECKPOINT_2026_11_12.md` for the completed commits, accepted tests, remaining regressions and next milestone. Do not mark legacy `/ui` deprecated yet.
+
+## M2.2 checkpoint — 13 November 2026
+
+See `docs/production/NEXUS_M2_2_CHECKPOINT_2026_11_13.md`. New paginated React Gallery uses `/api/gallery/page` with an SQLite index; `/api/gallery` and `/ui` are intentionally retained. The Studio generation request serializer and validation are modular and unit-tested. Search and sort remain local to loaded Gallery pages. Do not mark /app feature complete.
+
+## M2.3 checkpoint — 13 November 2026
+
+See `docs/production/NEXUS_M2_3_CHECKPOINT_2026_11_13.md`. This supersedes M2.2's limitation that search/sort applied only to loaded pages: the new Gallery searches filenames/folders and sorts/filters over the full SQLite index. Image tiles use safe bounded on-demand WebP thumbs. Source/mask share a zoomable/pannable inpaint viewport. Video/3D previews, full-resolution mask export mapping and real Windows/ComfyUI tests remain pending.
+
+## M2.4 checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_4_CHECKPOINT_2026_11_14.md`. The Gallery now supports on-demand bounded local FFmpeg WebP video posters and an experimental lazy GLB first-mesh geometry view. The Studio Node Workflow mode performs read-only ComfyUI registration checks without auto-starting or installing nodes. This does not certify full PBR 3D assets, model generation or Windows GPU parity. Legacy `/ui` and default routes remain intact.
+
+## M2.5 checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_5_CHECKPOINT_2026_11_14.md`. FastAPI capability router registration order corrected with structural test. Non-loopback requests now require an explicitly configured strong token AND unsafe-network acknowledgment; all remotely exposed paths are read-only allowlisted, other routes and mounts denied. This is not permission to publish Nexus on a network or a replacement for an authenticated HTTPS gateway. Studio workflow capability checks now derive exact class names from stored workflow JSON, not synthetic graph nodes; offline remains unverified. Legacy `/ui` and default local mode are preserved.
+
+## M2.6 checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_6_CHECKPOINT_2026_11_14.md`: a bounded read-only static Comfy API workflow input/link/choice report is now available in Studio, with explicit unverified states and no automatic installs. Inpaint emits a native-source-resolution opaque binary PNG mask up to a 16 MP / 8192px memory cap and otherwise falls back to editor resolution with an explicit warning. Real Windows/Comfy/GPU behavior is not certified by Chromium mock acceptance; keep /ui, default localhost and PR draft.
+
+## M2.7 checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_7_CHECKPOINT_2026_11_14.md`. The Node Workflow view includes an explicit manual scalar-only patched-template preflight; its preview is performed on copies without Comfy prompt submission or file uploads and does **not** reproduce full dispatch staging. Node schema ABI signature and model menu visibility are exposed as bounded privacy-preserving diagnostics, not claims of physical weight availability. `/ui` and localhost default remain unchanged; PR #17 stays draft.
+
+## M2.8A checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_8A_CHECKPOINT_2026_11_14.md`. The manual patched-template preflight now performs bounded, read-only filename checks against the same configured managed/category roots used by Nexus asset resolution. It never opens model weights or follows symlinks; incomplete scans remain unverified. The audit covers model file references in the patched graph only, not auto-resolved preset dependencies or the exact dispatch graph. M2.8B is the shared pure generation-planning extraction; keep `/ui`, localhost defaults and PR #17 draft.
+
+## M2.8B checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_8B_CHECKPOINT_2026_11_14.md`. Model-source presence auditing is bounded, read-only and symlink-safe; the live saved-workflow loader and manual preflight now share `prepare_workflow_graph` for API/UI conversion and patching. This is the first shared-planner extraction, not yet a complete dispatch plan: model auto-resolution, media staging, runtime effects, node installation and prompt submission remain outside it. Keep `/ui`, localhost defaults and PR #17 draft.
+
+M2.8B-2 further separated pure preset-aware logical asset selection into `resolve_generation_assets_from_catalog`; the live resolver remains a filesystem catalog adapter and preserves existing selection rules. The planner must use a future bounded catalog producer rather than calling the current unbounded `scan_models` scan.
+
+M2.8B-3 added an opt-in bounded, symlink-safe model catalog for future dry-run planning (64 roots, 20,000 entries, depth 8, 4,096 model files). It reports incomplete scans explicitly and does not alter the live `scan_models` generation path. Next: combine this catalog with the pure asset selector to build an advisory logical asset plan.
+
+M2.8B-4 adds `plan_generation_assets`, an immutable, read-only logical asset plan composed from the bounded catalog and pure preset selector. Its `generation_ready` field is always false: this is not yet a full dispatch plan. Next is M2.8C, combining the shared graph builder and logical asset plan behind typed effect boundaries.

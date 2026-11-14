@@ -21,6 +21,11 @@ from urllib.request import Request, urlopen
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+
+from .security import cors_allowed_origins
+from .remote_gate import RemoteReadOnlyGate
+from .gallery_listing import recent_media_files
+from .gallery_api import make_gallery_router
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -32,6 +37,8 @@ from .asset_resolver import (
 )
 from .civitai import download_civitai_asset, resolve_civitai_asset, search_civitai_models
 from .comfy_client import ComfyClient, extract_outputs
+from .comfy_capabilities import make_comfy_capability_router, read_comfy_registry_readonly
+from .model_source_audit import audit_model_references
 from .config import DEFAULT_MODEL_SOURCES, coerce_path_list, load_settings, save_settings, sync_startup_model_path
 from .dependencies import (
     custom_node_dependency_status,
@@ -5805,6 +5812,12 @@ workflow_registry = WorkflowRegistry(settings)
 comfy = ComfyClient(settings)
 
 
+def _workflow_classes_for_inspection(workflow_id: str) -> list[str] | None:
+    path = workflow_registry.find(workflow_id)
+    return workflow_registry.summarize(path).class_types if path is not None else None
+
+
+
 def _canonical_vram_policy(value: str | None) -> str:
     text = str(value or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
     if text in {"gpu", "gpuonly", "onlygpu", "cudaonly"}:
@@ -6206,13 +6219,21 @@ def _runtime_attention_capabilities() -> dict[str, Any]:
 
 
 app = FastAPI(title="Nexus BTA Backend", version="0.1.1")
+app.include_router(make_comfy_capability_router(
+    lambda: read_comfy_registry_readonly(comfy),
+    workflow_lookup=_workflow_classes_for_inspection,
+    workflow_path_lookup=lambda workflow_id: workflow_registry.find(workflow_id),
+    model_source_auditor=lambda graph: audit_model_references(graph, settings),
+))
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_allowed_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+# Outer authorization layer covers every mounted static directory and API route.
+app.add_middleware(RemoteReadOnlyGate)
 
 if settings.output_dir.exists():
     app.mount("/outputs", StaticFiles(directory=settings.output_dir), name="outputs")
@@ -9689,7 +9710,7 @@ def _pose_file_record(path: Path) -> dict[str, Any] | None:
         "path": str(path),
         "relative_path": relative,
         "url": f"/outputs/{quote(relative, safe='/')}",
-        "modified": path.stat().st_mtime,
+        "modified": modified,
         "size_bytes": path.stat().st_size,
     }
 
@@ -12679,6 +12700,11 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+
+# Indexed gallery has a separate, independently testable FastAPI router.
+app.include_router(make_gallery_router(lambda: settings.output_dir, _read_output_metadata))
+
+
 @app.get("/api/gallery")
 async def gallery() -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
@@ -12686,7 +12712,8 @@ async def gallery() -> list[dict[str, Any]]:
         return items
     model_suffixes = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".usdz", ".spz", ".ksplat"}
     audio_suffixes = {".mp3", ".wav", ".flac", ".opus", ".ogg", ".m4a"}
-    for path in sorted(settings.output_dir.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
+    accepted_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", *audio_suffixes, *model_suffixes}
+    for path, modified in recent_media_files(settings.output_dir, accepted_suffixes, limit=200, skip_video_images=True):
         if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", *audio_suffixes, *model_suffixes}:
             continue
         relative = path.relative_to(settings.output_dir).as_posix()
@@ -12726,7 +12753,7 @@ async def gallery() -> list[dict[str, Any]]:
                 "video": metadata.get("video", {}),
                 "director": metadata.get("director", {}),
                 "metadata": metadata,
-                "modified": path.stat().st_mtime,
+                "modified": modified,
             }
         )
         if len(items) >= 200:

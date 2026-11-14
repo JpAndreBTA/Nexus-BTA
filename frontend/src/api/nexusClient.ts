@@ -1,4 +1,4 @@
-import type { CivitaiSearchResponse, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, Krea2AssetsStatus, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
+import type { CivitaiSearchResponse, ComfyCapabilityReport, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GalleryPageResult, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, Krea2AssetsStatus, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowInputReport, WorkflowPreflightPayload, WorkflowPreflightReport, WorkflowSummary } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -24,6 +24,23 @@ export async function nexusFetch<T>(path: string, init?: RequestInit): Promise<T
 
 export const nexusApi = {
   health: () => nexusFetch<HealthResponse>('/health'),
+  comfyCapabilities: (classes: string[], signal?: AbortSignal) =>
+    nexusFetch<ComfyCapabilityReport>(
+      `/comfy/capabilities?classes=${encodeURIComponent(classes.join(','))}`, { signal },
+    ),
+  workflowCapabilities: (workflowId: string, signal?: AbortSignal) =>
+    nexusFetch<ComfyCapabilityReport>(
+      `/comfy/workflow-capabilities?workflow_id=${encodeURIComponent(workflowId)}`, { signal },
+    ),
+  workflowInputs: (workflowId: string, signal?: AbortSignal) =>
+    nexusFetch<WorkflowInputReport>(
+      `/comfy/workflow-inputs?workflow_id=${encodeURIComponent(workflowId)}`, { signal },
+    ),
+  workflowPreflight: (payload: WorkflowPreflightPayload) =>
+    nexusFetch<WorkflowPreflightReport>('/comfy/workflow-preflight', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
   refreshModelTree: () => nexusFetch<{ ok?: boolean }>('/model-tree', { method: 'POST' }),
   models: () => nexusFetch<ModelCatalog>('/models'),
   loras: () => nexusFetch<LoraAsset[]>('/loras'),
@@ -33,6 +50,14 @@ export const nexusApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
+  startCivitaiDownload: (url: string, preset: string) =>
+    nexusFetch<DownloadJob>('/civitai/download/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, preset, target_kind: 'auto', save_preview: true }),
+    }),
+  civitaiDownloadJob: (jobId: string) =>
+    nexusFetch<DownloadJob>(`/civitai/download/${encodeURIComponent(jobId)}`),
   civitaiResolve: (payload: Record<string, unknown>) =>
     nexusFetch<Record<string, unknown>>('/civitai/resolve', {
       method: 'POST',
@@ -90,6 +115,18 @@ export const nexusApi = {
   ideogram4OllamaPullJob: (jobId: string) => nexusFetch<DownloadJob>(`/ideogram4/ollama/pull/${encodeURIComponent(jobId)}`),
   extrasJob: (jobId: string) => nexusFetch<ExtrasJob>(`/extras/${encodeURIComponent(jobId)}`),
   gallery: () => nexusFetch<GalleryItem[]>('/gallery'),
+  galleryPage: (
+    cursor: string | null = null, limit = 48, refresh = false, signal?: AbortSignal,
+    filters: { query?: string; media?: string; sort?: string } = {},
+  ) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    if (refresh) params.set('refresh', 'true');
+    if (filters.query?.trim()) params.set('q', filters.query.trim());
+    if (filters.media && filters.media !== 'all') params.set('media', filters.media);
+    if (filters.sort && filters.sort !== 'newest') params.set('sort', filters.sort);
+    return nexusFetch<GalleryPageResult>(`/gallery/page?${params.toString()}`, { signal });
+  },
   workflows: () => nexusFetch<WorkflowSummary[]>('/workflows'),
   workflowAnalysis: (workflowId: string) => nexusFetch<WorkflowAnalysis>(`/workflows/${encodeURIComponent(workflowId)}/analysis`),
   loadWorkflow: async (file: File) => {

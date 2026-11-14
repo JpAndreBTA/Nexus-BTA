@@ -8,7 +8,9 @@
     "build": "rsbuild build",
     "preview": "rsbuild preview --host 127.0.0.1 --port 3000",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build"
+    "check": "npm run typecheck && npm run build",
+    "test:unit": "node --experimental-strip-types --test tests/*.test.mjs",
+    "smoke:m2": "node scripts/smoke_m2.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "latest",
@@ -25,5 +27,8 @@
     "@types/react-dom": "latest",
     "playwright": "^1.60.0",
     "typescript": "latest"
+  },
+  "overrides": {
+    "seroval": "1.6.8"
   }
 }

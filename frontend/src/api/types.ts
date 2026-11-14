@@ -195,6 +195,12 @@ export interface GalleryItem {
   modified: number;
 }
 
+export interface GalleryPageResult {
+  items: GalleryItem[];
+  total: number;
+  next_cursor: string | null;
+}
+
 export interface GenerateRequest {
   activity: string;
   workspace: string;
@@ -359,4 +365,92 @@ export interface GenerationJob {
   completed_at?: string;
   preset?: string;
   workflow_id?: string | null;
+}
+
+export interface ComfyCapabilityReport {
+  status: 'ready' | 'missing' | 'offline' | 'unavailable' | 'partial' | 'unverified';
+  runtime_checked: boolean;
+  ready: boolean;
+  requested: string[];
+  available: string[];
+  missing: string[];
+  unverified: string[];
+  registered_count: number;
+  workflow_id?: string;
+  required_count?: number;
+  invalid_class_count?: number;
+  warning?: string;
+}
+
+export interface WorkflowInputFinding {
+  kind: string;
+  node_id: string;
+  class_type: string;
+  input: string;
+}
+export interface ModelSourceAuditEntry {
+  node_id: string;
+  class_type: string;
+  input: string;
+  categories: string[];
+  status: 'found' | 'multiple_matches' | 'not_found' | 'unverified' | string;
+  match_count: number;
+  sources: string[];
+}
+export interface ModelSourceAuditReport {
+  status: 'not_applicable' | 'complete' | 'issues' | 'partial' | string;
+  references_checked: number;
+  found: number;
+  multiple_matches: number;
+  not_found: number;
+  unverified: number;
+  roots_checked: number;
+  entries_scanned: number;
+  truncated: boolean;
+  entries: ModelSourceAuditEntry[];
+  note: string;
+}
+
+export interface WorkflowInputReport {
+  workflow_id: string;
+  status: 'offline' | 'unavailable' | 'review' | 'issues' | 'static_valid' | 'unsupported' | 'ui_format';
+  runtime_checked: boolean;
+  static_valid: boolean;
+  ready: false;
+  node_count: number;
+  registered_count: number;
+  missing_classes: number;
+  broken_links: number;
+  missing_required_inputs: number;
+  choice_mismatches: number;
+  model_choices_checked?: number;
+  model_choices_unavailable?: number;
+  schema_signature?: string | null;
+  model_sources?: ModelSourceAuditReport;
+  unverified_inputs: number;
+  findings: WorkflowInputFinding[];
+  truncated_findings: boolean;
+  note: string;
+}
+
+/** Explicit scalar-only preview request; never uploads references or models. */
+export interface WorkflowPreflightPayload {
+  workflow_id: string;
+  preset: string;
+  model_name: string;
+  prompt: string;
+  negative_prompt: string;
+  width: number;
+  height: number;
+  steps: number;
+  cfg: number;
+  sampler: string;
+  scheduler: string;
+  seed: number;
+  denoise: number;
+}
+export interface WorkflowPreflightReport extends WorkflowInputReport {
+  preview: true;
+  changed_nodes: number;
+  changed_input_fields: number;
 }

@@ -3,14 +3,20 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Play, Redo2, Save, Send, SlidersHorizontal, Undo2, Wand2, Workflow, X } from 'lucide-react';
 
 import { nexusApi } from '../../api/nexusClient';
-import type { CatalogAsset, GenerateRequest, GenerationJob, Ideogram4PromptJsonRequest } from '../../api/types';
-import { useGalleryQuery, useModelCatalogQuery, useWorkflowAnalysisQuery, useWorkflowsQuery } from '../../api/queries';
+import type { CatalogAsset, GenerateRequest, GenerationJob, Ideogram4PromptJsonRequest, WorkflowPreflightPayload } from '../../api/types';
+import { useWorkflowCapabilitiesQuery, useWorkflowInputReportQuery, useGalleryQuery, useModelCatalogQuery, useWorkflowAnalysisQuery, useWorkflowsQuery } from '../../api/queries';
 import { useLorasQuery } from '../../api/queries';
 import type { WorkflowGraphLink, WorkflowGraphNode, WorkflowSummary } from '../../api/types';
 import { useGenerationStore, type GenerationState, type PromptRegion } from '../../stores/generationStore';
 import { useLoraStore } from '../../stores/loraStore';
 import { useUiStore } from '../../stores/uiStore';
 import { InpaintCanvas } from './InpaintCanvas';
+import { StudioNodeCapabilityStatus } from './StudioNodeCapabilityStatus';
+import { StudioWorkflowInputStatus } from './StudioWorkflowInputStatus';
+import { buildGenerationPayload, validateGeneration } from './generationPayload';
+import { IdeogramRegionEditor } from './IdeogramRegionEditor';
+import { StudioWorkflowGraph, buildStudioWorkflowGraph, music3WorkflowGraph, preferredWorkflow } from './StudioWorkflowGraph';
+import { alignVideoFrames, assetSelectOptions, controlNetCompatiblePreset, controlNetModelOptions, modelOptions, primaryModelMatchesPreset, videoPreset } from './StudioCatalog';
 
 function terminalStatus(job: GenerationJob | undefined) {
   return job?.status === 'completed' || job?.status === 'failed' || job?.status === 'cancelled';
@@ -38,500 +44,9 @@ function formatBytes(value: number | undefined) {
   return `${(bytes / 1024 ** index).toFixed(index >= 3 ? 2 : 1)} ${units[index]}`;
 }
 
-function clampRegion(region: PromptRegion): PromptRegion {
-  const w = Math.max(0.03, Math.min(1, region.w));
-  const h = Math.max(0.03, Math.min(1, region.h));
-  return {
-    ...region,
-    w,
-    h,
-    x: Math.max(0, Math.min(1 - w, region.x)),
-    y: Math.max(0, Math.min(1 - h, region.y)),
-  };
-}
-
-function modelOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data']) {
-  return [...(catalog?.categories.checkpoints ?? []), ...(catalog?.categories.unet ?? []), ...(catalog?.categories.diffusion_models ?? [])].map((asset) => ({
-    label: asset.relative_path || asset.name,
-    value: asset.relative_path || asset.path,
-    name: asset.name,
-  }));
-}
-
-function assetSelectOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data'], categories: string[], tokens: string[] = []) {
-  const lowered = tokens.map((token) => token.toLowerCase());
-  return categories
-    .flatMap((category) => ((catalog?.categories[category] ?? []) as CatalogAsset[]))
-    .filter((asset) => {
-      if (!lowered.length) return true;
-      const haystack = `${asset.name} ${asset.folder} ${asset.relative_path} ${asset.tags?.join(' ')}`.toLowerCase();
-      return lowered.some((token) => haystack.includes(token));
-    })
-    .sort((a, b) => (a.relative_path || a.name).localeCompare(b.relative_path || b.name))
-    .map((asset) => ({
-      label: asset.relative_path || asset.name,
-      value: asset.relative_path || asset.path || asset.name,
-    }));
-}
-
-function modelMatchesPreset(model: { label: string; name: string }, preset: string) {
-  const haystack = `${model.label} ${model.name}`.toLowerCase();
-  const key = preset.toLowerCase();
-  if (['music3', 'music 3', 'minimax_music3', 'minimax-music-3'].includes(key)) return undefined;
-  const rules: Record<string, string[]> = {
-    sd: ['sd15', 'sd1', '1.5', 'dreamshaper'],
-    xl: ['sdxl', 'xl', 'illustrious'],
-    sdxl: ['sdxl', 'xl', 'illustrious'],
-    flux: ['flux'],
-    qwen: ['qwen'],
-    ideogram4: ['ideogram'],
-    ideogram: ['ideogram'],
-    zimageturbo: ['z_image', 'zimage', 'z-image'],
-    lumina: ['lumina'],
-    wan: ['wan'],
-    ltx: ['ltx'],
-    anima: ['anima'],
-    krea2: ['krea2', 'krea-2', 'krea'],
-    music3: ['minimax_music3', 'minimax-music3', 'music3', 'music-3'],
-  };
-  return (rules[key] || [key]).some((token) => haystack.includes(token));
-}
-
-function primaryModelMatchesPreset(model: { label: string; name: string }, preset: string) {
-  const haystack = `${model.label} ${model.name}`.toLowerCase();
-  if (['ideogram4', 'ideogram'].includes(preset.toLowerCase())) {
-    return modelMatchesPreset(model, preset) && !haystack.includes('unconditional');
-  }
-  return modelMatchesPreset(model, preset);
-}
-
-function controlNetCompatiblePreset(preset: string) {
-  return ['sd', 'sd15', 'xl', 'sdxl', 'ltx', 'flux', 'qwen', 'zimageturbo', 'zimage'].includes(preset.toLowerCase());
-}
-
-function videoPreset(preset: string) {
-  return ['wan', 'ltx'].includes(preset.toLowerCase());
-}
-
-function alignVideoFrames(preset: string, frames: number) {
-  const step = preset.toLowerCase() === 'ltx' ? 8 : 4;
-  const safe = Math.max(1, Math.round(frames || 1));
-  return safe % step === 1 ? safe : Math.max(1, Math.round((safe - 1) / step) * step + 1);
-}
-
 async function readFilesAsReferenceImages(files: FileList | File[]) {
   const imageFiles = Array.from(files).filter((file) => file.type.startsWith('image/'));
   return Promise.all(imageFiles.map(async (file) => ({ dataUrl: await readFileAsDataUrl(file), name: file.name })));
-}
-
-function controlNetModelOptions(catalog: ReturnType<typeof useModelCatalogQuery>['data'], preset: string, type: string) {
-  const lowerPreset = preset.toLowerCase();
-  if (lowerPreset === 'ltx') {
-    return ((catalog?.categories.loras ?? []) as CatalogAsset[])
-      .filter((model) => {
-        const haystack = `${model.name} ${model.folder} ${model.relative_path} ${model.tags?.join(' ')}`.toLowerCase();
-        return haystack.includes('ltx') && ['ic-lora', 'ic_lora', 'control', 'cameraman', 'reference'].some((token) => haystack.includes(token));
-      })
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((model) => ({
-        label: (model.relative_path || model.name).replace(/^loras[\\/]/i, ''),
-        value: (model.relative_path || model.path || model.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\'),
-        name: (model.relative_path || model.name).replace(/^loras[\\/]/i, '').replaceAll('/', '\\'),
-      }));
-  }
-
-  if (['qwen', 'zimageturbo', 'zimage'].includes(lowerPreset)) {
-    const categories = [
-      ...(((catalog?.categories.model_patches ?? []) as CatalogAsset[])),
-      ...(((catalog?.categories.controlnet ?? []) as CatalogAsset[])),
-    ];
-    const presetTokens = lowerPreset === 'qwen'
-      ? ['qwen', 'diffsynth', 'instantx']
-      : ['zimage', 'z-image', 'z_image', 'fun', 'controlnet-union'];
-    return categories
-      .filter((model) => {
-        const haystack = `${model.name} ${model.folder} ${model.relative_path} ${model.tags?.join(' ')}`.toLowerCase();
-        return presetTokens.some((token) => haystack.includes(token));
-      })
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((model) => ({
-        label: model.relative_path || model.name,
-        value: (model.relative_path || model.path || model.name).replace(/^controlnet[\\/]/i, '').replace(/^model_patches[\\/]/i, '').replaceAll('/', '\\'),
-        name: (model.relative_path || model.name).replace(/^controlnet[\\/]/i, '').replace(/^model_patches[\\/]/i, '').replaceAll('/', '\\'),
-      }));
-  }
-
-  const presetTokens = lowerPreset === 'flux'
-    ? ['flux', 'flux.1', 'flux1', 'union']
-    : (['xl', 'sdxl'].includes(lowerPreset) ? ['sdxl', 'xl'] : ['sd15', 'sd1', 'v11', '1.5']);
-  const typeTokens: Record<string, string[]> = {
-    canny: ['canny'],
-    depth: ['depth'],
-    dwpose: ['dwpose', 'dw pose', 'openpose', 'pose'],
-    openpose: ['openpose', 'pose'],
-    lineart: ['lineart', 'line'],
-    tile: ['tile'],
-  };
-  const tokens = typeTokens[type] || [type];
-  const controlCategories = [
-    ...(((catalog?.categories.controlnet ?? []) as CatalogAsset[])),
-    ...(((catalog?.categories.model_patches ?? []) as CatalogAsset[])),
-  ];
-  return controlCategories
-    .filter((model) => {
-      const haystack = `${model.name} ${model.folder} ${model.relative_path} ${model.tags?.join(' ')}`.toLowerCase();
-      const customSource = String(model.source || '').toLowerCase() === 'reference';
-      if (lowerPreset === 'flux' && haystack.includes('union')) return customSource || presetTokens.some((token) => haystack.includes(token));
-      return (customSource || presetTokens.some((token) => haystack.includes(token))) && tokens.some((token) => haystack.includes(token));
-    })
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((model) => ({
-      label: model.relative_path || model.name,
-      value: (model.relative_path || model.path || model.name).replace(/^controlnet[\\/]/i, '').replace(/^model_patches[\\/]/i, '').replaceAll('/', '\\'),
-      name: (model.relative_path || model.name).replace(/^controlnet[\\/]/i, '').replace(/^model_patches[\\/]/i, '').replaceAll('/', '\\'),
-    }));
-}
-
-function workflowNodeKind(node: WorkflowGraphNode) {
-  const text = `${node.class_type} ${node.title || ''}`.toLowerCase();
-  if (text.includes('director') || text.includes('timeline')) return 'director';
-  if (text.includes('checkpoint') || text.includes('unet') || text.includes('model') || text.includes('loader')) return 'model';
-  if (text.includes('prompt') || text.includes('text') || text.includes('clip')) return 'text';
-  if (text.includes('sampler') || text.includes('scheduler') || text.includes('noise') || text.includes('latent')) return 'sample';
-  if (text.includes('vae') || text.includes('image') || text.includes('video') || text.includes('audio')) return 'media';
-  if (text.includes('lora') || text.includes('guide') || text.includes('control')) return 'control';
-  return 'utility';
-}
-
-function shortWorkflowValue(value: unknown) {
-  const text = String(value ?? '');
-  return text.length > 42 ? `${text.slice(0, 39)}...` : text;
-}
-
-function patchedWorkflowNode(
-  node: WorkflowGraphNode,
-  generation: GenerationState,
-  alignedFrames: number,
-  directorFrames: number,
-): WorkflowGraphNode {
-  const title = `${node.title || ''} ${node.class_type}`.toLowerCase();
-  const widgets = (node.widgets ?? []).map((widget) => {
-    const name = String(widget.name || '').toLowerCase();
-    let value = widget.value;
-    if (name === 'ckpt_name' || name === 'unet_name') value = generation.modelPath || generation.modelName || value;
-    if (name === 'text' && title.includes('positive')) value = generation.prompt || value;
-    if (name === 'text' && title.includes('negative')) value = generation.negativePrompt || value;
-    if (name === 'width' || name === 'custom_width') value = generation.width;
-    if (name === 'height' || name === 'custom_height') value = generation.height;
-    if (name === 'length' || name.includes('frame')) value = title.includes('director') ? directorFrames : alignedFrames;
-    if (name === 'fps' || name === 'frame_rate') value = generation.videoFps;
-    if (name === 'steps') value = generation.preset.toLowerCase() === 'ltx' ? Math.max(8, generation.steps) : generation.steps;
-    if (name === 'cfg') value = generation.cfg;
-    if (name === 'noise_seed') value = generation.seed;
-    if (name === 'sampler_name') value = generation.sampler;
-    if (name === 'strength' || name === 'guide_strength') value = generation.directorGuideStrength;
-    return { ...widget, value };
-  });
-  return { ...node, widgets };
-}
-
-function preferredWorkflow(workflows: WorkflowSummary[] | undefined, preset: string, activeId: string) {
-  if (!workflows?.length) return undefined;
-  const active = workflows.find((workflow) => workflow.id === activeId);
-  if (active) return active;
-  const key = preset.toLowerCase();
-  const tokens: Record<string, string[]> = {
-    ltx: ['ltx23-img2vid-512-base', 'ltx'],
-    wan: ['wan'],
-    qwen: ['qwen-img2img-base', 'qwen'],
-    ideogram4: ['ideogram4-kj-prompt-builder', 'ideogram4', 'ideogram'],
-    ideogram: ['ideogram4-kj-prompt-builder', 'ideogram4', 'ideogram'],
-    anima: ['anima-base', 'anima'],
-    zimageturbo: ['zimage-turbo-base', 'zimage'],
-    flux: ['flux'],
-    music3: ['music3', 'music-3', 'minimax-music'],
-    xl: ['sdxl-base', 'sdxl'],
-    sdxl: ['sdxl-base', 'sdxl'],
-    sd: ['sd15-base', 'sd15'],
-  };
-  const wanted = tokens[key] || [key];
-  return workflows.find((workflow) => wanted.some((token) => workflow.id.toLowerCase().includes(token) || workflow.name.toLowerCase().includes(token) || workflow.tags?.includes(token))) || workflows[0];
-}
-
-function music3WorkflowGraph(generation: GenerationState): { nodes: WorkflowGraphNode[]; links: WorkflowGraphLink[]; width: number; height: number } {
-  const nodes: WorkflowGraphNode[] = [
-    ['1', 'UNETLoader', 'DiT model'], ['2', 'CLIPLoader', 'Music text encoder'], ['3', 'VAELoader', 'Audio VAE'], ['4', 'MiniMaxMusic3TextEncode', 'Caption + lyrics'], ['5', 'ConditioningZeroOut', 'Negative conditioning'], ['6', 'EmptyMiniMaxMusic3LatentAudio', 'Duration latent'], ['7', 'KSampler', 'Sampler'], ['8', 'VAEDecodeAudio', 'Decode'], ['9', 'VAEDecodeAudioTiled', 'Tiled decode'], ['10', 'ComfySwitchNode', 'Decode switch'], ['11', 'SaveAudioAdvanced', 'Audio output'],
-  ].map(([id, class_type, title], index) => ({ id, class_type, title, x: 40 + (index % 4) * 280, y: 40 + Math.floor(index / 4) * 180, width: 240, height: 120, inputs: [], outputs: [] }));
-  const links: WorkflowGraphLink[] = [['2', '4'], ['4', '5'], ['4', '7'], ['6', '7'], ['1', '7'], ['5', '7'], ['7', '8'], ['7', '9'], ['8', '10'], ['9', '10'], ['10', '11']].map(([from_node, to_node]) => ({ from_node, to_node }));
-  nodes.find((node) => node.id === '4')!.widgets = [{ name: 'caption', value: generation.musicCaption || generation.prompt }, { name: 'generation_mode', value: generation.musicMode }, { name: 'lyrics', value: generation.musicMode === 'instrumental' ? '[instrumental]' : generation.musicMode === 'lyrics' ? generation.musicLyrics : '' }, { name: 'negative_guidance', value: generation.musicNegativePrompt }, { name: 'max_duration', value: generation.musicDurationSeconds }, { name: 'cfg_scale', value: generation.musicCfgScale }, { name: 'top_k', value: generation.musicTopK }];
-  nodes.find((node) => node.id === '7')!.widgets = [{ name: 'steps', value: generation.steps }, { name: 'cfg', value: generation.musicCfgScale }, { name: 'sampler', value: generation.sampler }, { name: 'scheduler', value: generation.scheduler }];
-  nodes.find((node) => node.id === '10')!.widgets = [{ name: 'tiled_decode', value: generation.musicTiledDecode }];
-  return { nodes, links, width: 1400, height: 700 };
-}
-
-function directorPatchNodes(generation: GenerationState, directorFrames: number): WorkflowGraphNode[] {
-  if (generation.preset.toLowerCase() !== 'ltx' || !generation.directorEnabled) return [];
-  return [
-    {
-      id: 'director_patch',
-      class_type: 'LTXDirector',
-      title: 'LTX Director Timeline Patch',
-      x: 330,
-      y: 530,
-      width: 260,
-      height: 148,
-      inputs: ['global_prompt', 'timeline_data', 'guide_strength', 'custom_audio'],
-      widgets: [
-        { name: 'duration_frames', value: directorFrames - 1 },
-        { name: 'duration_seconds', value: generation.directorDuration.toFixed(2) },
-        { name: 'guide_strength', value: generation.directorGuideStrength.toFixed(2) },
-        { name: 'resize_method', value: generation.directorResizeMethod },
-      ],
-    },
-    {
-      id: 'director_trim',
-      class_type: 'VHS_SelectImages',
-      title: 'Trim Director Frames To Timeline',
-      x: 1680,
-      y: 265,
-      width: 260,
-      height: 116,
-      inputs: ['image', 'indexes'],
-      widgets: [{ name: 'indexes', value: `0:${directorFrames}` }],
-    },
-  ];
-}
-
-function buildStudioWorkflowGraph(
-  backendNodes: WorkflowGraphNode[],
-  backendLinks: WorkflowGraphLink[],
-  generation: GenerationState,
-  alignedFrames: number,
-  directorFrames: number,
-) {
-  const nodes = backendNodes.map((node) => patchedWorkflowNode(node, generation, alignedFrames, directorFrames));
-  const links = [...backendLinks];
-  const directorNodes = directorPatchNodes(generation, directorFrames);
-  if (directorNodes.length) {
-    nodes.push(...directorNodes);
-    links.push(
-      { from_node: 'director_patch', to_node: '4', type: 'PROMPT' },
-      { from_node: 'director_patch', to_node: '7', type: 'DIRECTOR' },
-      { from_node: '13', to_node: 'director_trim', type: 'IMAGE' },
-      { from_node: 'director_trim', to_node: '14', type: 'IMAGE' },
-    );
-  }
-  const width = Math.max(2400, ...nodes.map((node) => Number(node.x || 0) + Number(node.width || 230) + 120));
-  const height = Math.max(920, ...nodes.map((node) => Number(node.y || 0) + Number(node.height || 118) + 120));
-  return { nodes, links, width, height };
-}
-
-function StudioWorkflowGraph({
-  nodes,
-  links,
-  width,
-  height,
-  workflowName,
-  synced,
-}: {
-  nodes: WorkflowGraphNode[];
-  links: WorkflowGraphLink[];
-  width: number;
-  height: number;
-  workflowName: string;
-  synced: boolean;
-}) {
-  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
-  const scaledWidth = Math.max(width, 1600);
-  const scaledHeight = Math.max(height, 900);
-
-  return (
-    <div className="studio-workflow-scroll">
-      <div className="studio-workflow-plane" style={{ width: scaledWidth, height: scaledHeight }}>
-        <div className="studio-node-group">{workflowName || 'Backend workflow'} {synced ? 'SYNCED' : 'FALLBACK'}</div>
-        <svg className="studio-workflow-wires" width={scaledWidth} height={scaledHeight}>
-          {links.map((link, index) => {
-            const from = nodeMap.get(String(link.from_node));
-            const to = nodeMap.get(String(link.to_node));
-            if (!from || !to) return null;
-            const x1 = Number(from.x || 0) + Number(from.width || 230);
-            const y1 = Number(from.y || 0) + 34 + Number(link.from_slot || 0) * 12;
-            const x2 = Number(to.x || 0);
-            const y2 = Number(to.y || 0) + 34 + Number(link.to_slot || 0) * 12;
-            const mid = Math.max(60, Math.abs(x2 - x1) * 0.45);
-            return (
-              <path
-                key={`${link.from_node}-${link.to_node}-${index}`}
-                className={`studio-workflow-wire wire-${workflowNodeKind(from)} wire-${workflowNodeKind(to)}`}
-                d={`M ${x1} ${y1} C ${x1 + mid} ${y1}, ${x2 - mid} ${y2}, ${x2} ${y2}`}
-              />
-            );
-          })}
-        </svg>
-        {nodes.map((node) => (
-          <article
-            className={`studio-template-node node-${workflowNodeKind(node)}`}
-            key={node.id}
-            style={{ left: Number(node.x || 0), top: Number(node.y || 0), width: Number(node.width || 230), minHeight: Number(node.height || 118) }}
-          >
-            <header><strong>{node.title || node.class_type}</strong><span>#{node.id}</span></header>
-            <small>{node.class_type}</small>
-            <div className="studio-node-ports">
-              <span>{(node.inputs ?? []).slice(0, 4).join(' / ') || 'input'}</span>
-              <span>{(node.outputs ?? []).slice(0, 3).join(' / ') || 'output'}</span>
-            </div>
-            <div className="studio-node-widgets">
-              {(node.widgets ?? []).slice(0, 5).map((widget, index) => (
-                <div key={`${node.id}-${widget.name || index}`}>
-                  <span>{widget.name || `value ${index + 1}`}</span>
-                  <b>{shortWorkflowValue(widget.value)}</b>
-                </div>
-              ))}
-            </div>
-          </article>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function IdeogramRegionEditor({
-  generation,
-  sourceUrl,
-  previewIsVideo,
-}: {
-  generation: GenerationState;
-  sourceUrl: string;
-  previewIsVideo: boolean;
-}) {
-  const [activeId, setActiveId] = useState('');
-  const [dragState, setDragState] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
-  const activeRegion = generation.promptRegions.find((region) => region.id === activeId) || generation.promptRegions[0];
-  const aspectRatio = `${Math.max(64, generation.width)} / ${Math.max(64, generation.height)}`;
-
-  function addRegion(type: 'obj' | 'text' = 'obj') {
-    const region = {
-      id: `region-${Date.now()}-${Math.round(Math.random() * 10000)}`,
-      type,
-      x: 0.18 + Math.min(0.18, generation.promptRegions.length * 0.04),
-      y: 0.18 + Math.min(0.18, generation.promptRegions.length * 0.04),
-      w: type === 'text' ? 0.42 : 0.34,
-      h: type === 'text' ? 0.16 : 0.3,
-      prompt: type === 'text' ? 'Localized text element' : 'Localized object or subject',
-      text: type === 'text' ? 'TEXT' : '',
-    };
-    generation.addPromptRegion(region);
-    setActiveId(region.id);
-  }
-
-  function updateRegion(id: string, updates: Partial<PromptRegion>) {
-    const current = generation.promptRegions.find((region) => region.id === id);
-    if (!current) return;
-    generation.updatePromptRegion(id, clampRegion({ ...current, ...updates }));
-  }
-
-  function pointerPosition(event: PointerEvent, element: Element | null) {
-    const rect = (element || event.currentTarget).getBoundingClientRect();
-    return {
-      x: (event.clientX - rect.left) / Math.max(1, rect.width),
-      y: (event.clientY - rect.top) / Math.max(1, rect.height),
-    };
-  }
-
-  return (
-    <div className="ideogram-region-shell">
-      <div className="ideogram-region-toolbar">
-        <button type="button" onClick={() => addRegion('obj')}><FilePlus2 size={13} /> ADD obj</button>
-        <button type="button" onClick={() => addRegion('text')}><FilePlus2 size={13} /> ADD text</button>
-        <button type="button" onClick={generation.undoPromptRegion} disabled={!generation.promptRegionHistory.length}><Undo2 size={13} /></button>
-        <button type="button" onClick={generation.redoPromptRegion} disabled={!generation.promptRegionFuture.length}><Redo2 size={13} /></button>
-        <button type="button" onClick={generation.clearPromptRegions} disabled={!generation.promptRegions.length}>Clear</button>
-      </div>
-      <div
-        className="ideogram-region-canvas"
-        style={{ aspectRatio }}
-        onPointerMove={(event) => {
-          if (!dragState) return;
-          const point = pointerPosition(event, event.currentTarget);
-          updateRegion(dragState.id, {
-            x: dragState.x + point.x - dragState.startX,
-            y: dragState.y + point.y - dragState.startY,
-          });
-        }}
-        onPointerUp={() => setDragState(null)}
-        onPointerCancel={() => setDragState(null)}
-      >
-        {sourceUrl ? (
-          previewIsVideo ? <video src={sourceUrl} muted playsInline /> : <img src={sourceUrl} alt="Ideogram regional guide" />
-        ) : (
-          <div className="ideogram-region-empty"><Images size={34} /><span>{generation.activity === 'img2img' ? 'Load img2img reference' : 'Regional prompt canvas'}</span></div>
-        )}
-        {generation.promptRegions.map((region, index) => (
-          <button
-            type="button"
-            key={region.id}
-            className={region.id === activeRegion?.id ? 'ideogram-region-box active' : 'ideogram-region-box'}
-            style={{
-              left: `${region.x * 100}%`,
-              top: `${region.y * 100}%`,
-              width: `${region.w * 100}%`,
-              height: `${region.h * 100}%`,
-            }}
-            onClick={() => setActiveId(region.id)}
-            onPointerDown={(event) => {
-              const point = pointerPosition(event, event.currentTarget.parentElement);
-              setActiveId(region.id);
-              setDragState({ id: region.id, startX: point.x, startY: point.y, x: region.x, y: region.y });
-              event.currentTarget.setPointerCapture(event.pointerId);
-            }}
-          >
-            <span>{String(index + 1).padStart(2, '0')}</span>
-            <strong>{region.type}</strong>
-            <em>{region.text || region.prompt || 'region'}</em>
-            <i
-              role="presentation"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                generation.removePromptRegion(region.id);
-              }}
-            >
-              x
-            </i>
-          </button>
-        ))}
-      </div>
-      {activeRegion ? (
-        <div className="ideogram-region-editor">
-          <div className="two-col">
-            <label className="field">
-              <span>Type</span>
-              <select value={activeRegion.type} onChange={(event) => updateRegion(activeRegion.id, { type: event.currentTarget.value as 'obj' | 'text' })}>
-                <option value="obj">obj</option>
-                <option value="text">text</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Text</span>
-              <input value={activeRegion.text || ''} onChange={(event) => updateRegion(activeRegion.id, { text: event.currentTarget.value })} placeholder="literal text" />
-            </label>
-          </div>
-          <label className="field">
-            <span>Region prompt</span>
-            <textarea value={activeRegion.prompt} onChange={(event) => updateRegion(activeRegion.id, { prompt: event.currentTarget.value })} placeholder="description of this region" />
-          </label>
-          <div className="four-col">
-            <label className="field"><span>X %</span><input type="number" min={0} max={100} value={Math.round(activeRegion.x * 100)} onChange={(event) => updateRegion(activeRegion.id, { x: Number(event.currentTarget.value) / 100 })} /></label>
-            <label className="field"><span>Y %</span><input type="number" min={0} max={100} value={Math.round(activeRegion.y * 100)} onChange={(event) => updateRegion(activeRegion.id, { y: Number(event.currentTarget.value) / 100 })} /></label>
-            <label className="field"><span>W %</span><input type="number" min={3} max={100} value={Math.round(activeRegion.w * 100)} onChange={(event) => updateRegion(activeRegion.id, { w: Number(event.currentTarget.value) / 100 })} /></label>
-            <label className="field"><span>H %</span><input type="number" min={3} max={100} value={Math.round(activeRegion.h * 100)} onChange={(event) => updateRegion(activeRegion.id, { h: Number(event.currentTarget.value) / 100 })} /></label>
-          </div>
-        </div>
-      ) : (
-        <div className="ideogram-region-editor empty">ADD creates localized prompt boxes for Ideogram 4 JSON layout guidance.</div>
-      )}
-    </div>
-  );
 }
 
 export function HomePage() {
@@ -561,6 +76,18 @@ export function HomePage() {
   const latentUpscaleOptions = useMemo(() => assetSelectOptions(catalog.data, ['latent_upscale_models', 'upscale_models'], ['ltx', 'spatial']), [catalog.data]);
   const studioWorkflow = useMemo(() => preferredWorkflow(workflows.data, generation.preset, generation.workflowId), [generation.preset, generation.workflowId, workflows.data]);
   const workflowAnalysis = useWorkflowAnalysisQuery(studioWorkflow?.id || '');
+  const workflowClassCount = studioWorkflow?.class_types?.length ?? 0;
+  const nodeCapabilities = useWorkflowCapabilitiesQuery(studioWorkflow?.id || '', viewMode === 'workflow');
+  const workflowInputReport = useWorkflowInputReportQuery(studioWorkflow?.id || '', viewMode === 'workflow');
+  // Manual-only: request scalar values; uploaded images, masks, LoRAs and
+  // installed files are never sent to the dry-run endpoint.
+  const workflowPreflight = useMutation({ mutationFn: (payload: WorkflowPreflightPayload) => nexusApi.workflowPreflight(payload) });
+  const preflightKey = JSON.stringify([
+    studioWorkflow?.id, generation.preset, generation.modelName, generation.prompt,
+    generation.negativePrompt, generation.width, generation.height, generation.steps,
+    generation.cfg, generation.sampler, generation.scheduler, generation.seed, generation.denoise,
+  ]);
+  useEffect(() => { workflowPreflight.reset(); }, [preflightKey, workflowPreflight.reset]);
   const models = useMemo(() => {
     const filtered = allModels.filter((model) => primaryModelMatchesPreset(model, generation.preset));
     if (['ideogram4', 'ideogram', 'krea2', 'krea-2'].includes(generation.preset.toLowerCase())) return filtered;
@@ -712,149 +239,24 @@ export function HomePage() {
   }, [generation, qwenImageEdit]);
 
   const payload = useMemo<GenerateRequest>(
-    () => ({
-      activity: directorMode ? 'txt2img' : generation.activity,
-      workspace: directorMode ? 'director' : 'viewer',
-      preset: generation.preset,
-      template: directorMode ? 'LTX_DIRECTOR_SUITE' : undefined,
-      workflow_id: generation.workflowId || null,
-      model_path: generation.modelPath,
-      model_name: generation.modelName,
-      prompt: generation.prompt,
-      negative_prompt: generation.negativePrompt,
-      width: generation.width,
-      height: generation.height,
-      steps: generation.steps,
-      cfg: generation.cfg,
-      sampler: generation.sampler,
-      scheduler: generation.scheduler,
-      seed: generation.seed,
-      batch_size: 1,
-      denoise: generation.activity === 'img2img' ? generation.denoise : 1,
-      vae: generation.vaeOverrideEnabled ? generation.videoVae : 'Automatic',
-      text_encoder: generation.textEncoderOverrideEnabled ? generation.textEncoder : 'Automatic',
-      loras: loraStore.activeLoras,
-      distilled_loras: generation.preset.toLowerCase() === 'ltx' && !generation.distilledLoraEnabled ? [{ name: 'None', strength: 0 }] : [],
-      music: music3Mode ? {
-        caption: generation.musicCaption || generation.prompt,
-        mode: generation.musicMode,
-        lyrics: generation.musicMode === 'instrumental' ? '[instrumental]' : generation.musicMode === 'lyrics' ? generation.musicLyrics : '',
-        negative_prompt: generation.musicNegativePrompt,
-        duration_seconds: generation.musicDurationSeconds,
-        steps: generation.steps,
-        cfg_scale: generation.musicCfgScale,
-        top_k: generation.musicTopK,
-        tiled_decode: generation.musicTiledDecode,
-        format: generation.musicFormat,
-      } : {},
-      img2img: {
-        mode: generation.img2imgMode === 'inpaint' ? 'Inpaint masked area' : 'Image to Image',
-        resize_mode: generation.resizeMode,
-        denoise: generation.denoise,
-        batch_count: 1,
-        mask_blur: generation.maskBlur,
-        mask_content: generation.maskContent,
-        inpaint_engine: generation.inpaintEngine,
-        differential_diffusion: generation.inpaintEngine === 'differential',
-        differential_strength: generation.differentialStrength,
-        lanpaint_thinking_steps: generation.lanpaintThinkingSteps,
-        lanpaint_prompt_mode: 'Image First',
-        reference_image: generation.referenceImage,
-        reference_images: allReferenceImages,
-        mask_image: generation.img2imgMode === 'inpaint' ? generation.inpaintMaskImage : null,
-      },
-      controlnet: {
-        enabled: controlNetCompatible && generation.controlNetEnabled,
-        type: generation.controlNetType,
-        model: generation.controlNetModel || generation.controlNetModelName || 'Automatic',
-        image: generation.controlNetImage || generation.referenceImage || null,
-        strength: generation.controlNetStrength,
-        start_percent: generation.controlNetStart,
-        end_percent: generation.controlNetEnd,
-        preprocessor: 'Auto',
-        low_threshold: 0.4,
-        high_threshold: 0.8,
-        balance: generation.controlNetBalance,
-      },
-      video: videoMode || ideogram4Mode
-        ? {
-            ...(ideogram4Mode
-              ? {
-                  ideogram_regions: generation.promptRegions,
-                  ideogram_reference_mode: generation.activity === 'img2img' ? 'layout_reference_only' : 'txt2img',
-                }
-              : {}),
-            ...(videoMode
-              ? {
-            frames: alignedFrames,
-            fps: generation.videoFps,
-            seconds: generation.videoSeconds,
-            duration: generation.videoSeconds,
-            motion_adapter: generation.preset.toLowerCase() === 'wan' ? 'WAN T2V / I2V' : 'LTX latent video',
-            motion_strength: generation.videoMotionStrength,
-            active_audio: generation.videoActiveAudio,
-            video_vae: generation.vaeOverrideEnabled ? generation.videoVae : 'Automatic',
-            audio_vae: generation.audioVaeEnabled ? generation.audioVae : 'None',
-            latent_upscale: generation.latentUpscaleEnabled ? generation.latentUpscale : 'None',
-            latent_upscale_refine: generation.latentUpscaleRefine,
-            qwen_auto_edit_lora: generation.lightningLoraEnabled,
-            decode_tiles_x: generation.decodeTilesX,
-            decode_tiles_y: generation.decodeTilesY,
-            decode_overlap: generation.decodeOverlap,
-            director_timeline: directorMode,
-              }
-              : {}),
-          }
-        : {},
-      director: directorMode
-        ? {
-            duration_frames: Math.max(1, directorFrames - 1),
-            duration_seconds: generation.directorDuration,
-            frame_rate: generation.videoFps,
-            local_prompts: generation.directorLocalPrompt || generation.prompt,
-            local_negative_prompts: generation.directorLocalNegative || generation.negativePrompt,
-            segment_lengths: String(generation.directorDuration),
-            epsilon: 0.001,
-            guide_strength: generation.directorGuideStrength,
-            use_custom_audio: generation.directorUseCustomAudio,
-            display_mode: 'seconds',
-            custom_width: generation.width,
-            custom_height: generation.height,
-            resize_method: generation.directorResizeMethod,
-            divisible_by: generation.directorDivisibleBy,
-            img_compression: generation.directorImgCompression,
-            timeline_data: {
-              duration: generation.directorDuration,
-              fps: generation.videoFps,
-              references: allReferenceImages.map((_src, index) => ({ id: `ref-${index + 1}`, start: index === 0 ? 0 : generation.directorDuration, end: generation.directorDuration })),
-              audioSegments: [],
-            },
-            timeline_data_json: JSON.stringify({
-              duration: generation.directorDuration,
-              fps: generation.videoFps,
-              references: allReferenceImages.map((_src, index) => ({ id: `ref-${index + 1}`, start: index === 0 ? 0 : generation.directorDuration, end: generation.directorDuration })),
-              audioSegments: [],
-            }),
-          }
-        : {},
-      runtime: ideogram4Mode
-        ? {
-            vram_policy: 'shared',
-            attention_backend: 'pytorch',
-            disable_xformers: false,
-            enable_sage_attention: false,
-            enable_flash_attention: false,
-            precision: 'auto',
-          }
-        : music3Mode
-          ? { vram_policy: music3Status.data?.recommended_profile === 'rtx_5090' ? 'normal' : 'low', attention_backend: 'sage', disable_xformers: false, enable_sage_attention: true, precision: music3Status.data?.recommended_profile === 'rtx_5090' ? 'fp16' : 'int8' }
-        : {},
+    () => buildGenerationPayload({
+      generation,
+      activeLoras: loraStore.activeLoras,
+      allReferenceImages,
+      alignedFrames,
+      directorFrames,
+      controlNetCompatible,
+      directorMode,
+      ideogram4Mode,
+      music3Mode,
+      videoMode,
+      music3RecommendedProfile: music3Status.data?.recommended_profile,
     }),
-    [alignedFrames, allReferenceImages, controlNetCompatible, directorFrames, directorMode, generation, ideogram4Mode, loraStore.activeLoras, music3Mode, videoMode],
+    [alignedFrames, allReferenceImages, controlNetCompatible, directorFrames, directorMode, generation, ideogram4Mode, loraStore.activeLoras, music3Mode, music3Status.data?.recommended_profile, videoMode],
   );
 
   const startMutation = useMutation({
-    mutationFn: () => nexusApi.startGeneration(payload),
+    mutationFn: (request: GenerateRequest) => nexusApi.startGeneration(request),
     onSuccess: (job) => {
       setJobId(job.job_id);
       setLocalError('');
@@ -981,41 +383,17 @@ export function HomePage() {
   }
 
   async function generate() {
-    if (!generation.prompt.trim()) {
-      setLocalError('Prompt is required.');
-      return;
-    }
-    if (!generation.modelPath && !generation.modelName && !ideogram4Mode) {
-      setLocalError('Select a model before generating.');
-      return;
-    }
-    if (generation.activity === 'img2img' && !generation.referenceImage) {
-      setLocalError('Load a reference image for img2img.');
-      return;
-    }
-    if (generation.activity === 'img2img' && generation.img2imgMode === 'inpaint' && !generation.inpaintMaskImage) {
-      setLocalError('Paint an inpaint mask before generating.');
-      return;
-    }
-    if (ideogram4Mode && generation.activity === 'img2img' && generation.img2imgMode === 'inpaint') {
-      setLocalError('Ideogram 4 local route does not support true mask inpaint yet. Use Linear Viewer ADD boxes as regional guides.');
-      return;
-    }
-    if (videoMode && generation.activity === 'img2img' && !generation.referenceImage) {
-      setLocalError(`${generation.preset} img2video requires a reference image.`);
-      return;
-    }
-    if (controlNetCompatible && generation.controlNetEnabled && !payload.controlnet?.image) {
-      setLocalError('Load a ControlNet image or use the img2img reference.');
-      return;
-    }
-    if (controlNetCompatible && generation.controlNetEnabled && !controlNetModels.length && generation.controlNetModel === 'Automatic') {
-      setLocalError('No compatible ControlNet model was detected for this preset and type.');
+    const error = validateGeneration({
+      generation, ideogram4Mode, videoMode, controlNetCompatible,
+      payload, controlNetModelCount: controlNetModels.length,
+    });
+    if (error) {
+      setLocalError(error);
       return;
     }
     setLocalError('');
     setJobId('');
-    await startMutation.mutateAsync();
+    await startMutation.mutateAsync(payload);
   }
 
   return (
@@ -1769,6 +1147,48 @@ export function HomePage() {
           )}
           {viewMode === 'workflow' && (
             <div className="studio-node-workspace">
+              <StudioNodeCapabilityStatus
+                report={nodeCapabilities.data}
+                count={nodeCapabilities.data?.required_count ?? workflowClassCount}
+                loading={nodeCapabilities.isLoading && workflowClassCount > 0}
+                error={nodeCapabilities.isError}
+              />
+              {studioWorkflow && <StudioWorkflowInputStatus
+                report={workflowInputReport.data}
+                loading={workflowInputReport.isLoading}
+                error={workflowInputReport.isError}
+              />}
+              {studioWorkflow && (
+                <section className="studio-node-capabilities">
+                  <button type="button" className="mini-button"
+                    aria-label="Run workflow preflight without generation"
+                    disabled={workflowPreflight.isPending || generation.prompt.length > 4096 || generation.negativePrompt.length > 4096}
+                    onClick={() => workflowPreflight.mutate({
+                      workflow_id: studioWorkflow.id,
+                      preset: generation.preset,
+                      model_name: generation.modelName,
+                      prompt: generation.prompt,
+                      negative_prompt: generation.negativePrompt,
+                      width: generation.width,
+                      height: generation.height,
+                      steps: generation.steps,
+                      cfg: generation.cfg,
+                      sampler: generation.sampler,
+                      scheduler: generation.scheduler,
+                      seed: generation.seed,
+                      denoise: generation.denoise,
+                    })}>
+                    {workflowPreflight.isPending ? 'Inspecting…' : 'Preflight selected settings'}
+                  </button>
+                  <small>Advisory only: cloned template + selected scalar settings. No Comfy submission, uploads, LoRAs or generated assets.</small>
+                  {generation.prompt.length > 4096 && <small>Preflight supports prompts up to 4096 characters.</small>}
+                  {workflowPreflight.isError && <small>Preflight unavailable; this workflow cannot be simulated safely.</small>}
+                  {workflowPreflight.data && <>
+                    <strong>{workflowPreflight.data.changed_nodes} changed nodes · {workflowPreflight.data.changed_input_fields} changed inputs</strong>
+                    <StudioWorkflowInputStatus report={workflowPreflight.data} loading={false} error={false} />
+                  </>}
+                </section>
+              )}
               {workflowAnalysis.isLoading ? (
                 <div className="preview-empty"><LoaderCircle className="spin" size={30} /><p>Loading backend workflow graph</p></div>
               ) : studioWorkflowGraph.nodes.length ? (
