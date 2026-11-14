@@ -5808,7 +5808,6 @@ ensure_templates_file()
 ensure_model_tree(settings)
 workflow_registry = WorkflowRegistry(settings)
 comfy = ComfyClient(settings)
-app.include_router(make_comfy_capability_router(lambda: read_comfy_registry_readonly(comfy)))
 
 
 def _canonical_vram_policy(value: str | None) -> str:
@@ -6212,6 +6211,7 @@ def _runtime_attention_capabilities() -> dict[str, Any]:
 
 
 app = FastAPI(title="Nexus BTA Backend", version="0.1.1")
+app.include_router(make_comfy_capability_router(lambda: read_comfy_registry_readonly(comfy)))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allowed_origins(),
