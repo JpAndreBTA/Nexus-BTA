@@ -13,6 +13,8 @@ import os
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -95,20 +97,26 @@ class GalleryIndex:
         self._last_scan = 0.0
         self._lock = threading.RLock()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """sqlite3.Connection.__exit__ only commits; it does NOT close the handle."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.db_path, timeout=10.0)
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute(
-            """CREATE TABLE IF NOT EXISTS media (
-                relative_path TEXT PRIMARY KEY,
-                modified_ns INTEGER NOT NULL,
-                size_bytes INTEGER NOT NULL,
-                media_type TEXT NOT NULL
-            )"""
-        )
-        connection.execute("CREATE INDEX IF NOT EXISTS media_recent ON media (modified_ns DESC, relative_path DESC)")
-        return connection
+        try:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS media (
+                    relative_path TEXT PRIMARY KEY,
+                    modified_ns INTEGER NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    media_type TEXT NOT NULL
+                )"""
+            )
+            connection.execute("CREATE INDEX IF NOT EXISTS media_recent ON media (modified_ns DESC, relative_path DESC)")
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def _scan(self, connection: sqlite3.Connection) -> None:
         connection.execute("CREATE TEMP TABLE IF NOT EXISTS seen (relative_path TEXT PRIMARY KEY)")
