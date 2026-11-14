@@ -263,3 +263,7 @@ See `docs/production/NEXUS_M2_7_CHECKPOINT_2026_11_14.md`. The Node Workflow vie
 ## M2.8A checkpoint — 14 November 2026
 
 See `docs/production/NEXUS_M2_8A_CHECKPOINT_2026_11_14.md`. The manual patched-template preflight now performs bounded, read-only filename checks against the same configured managed/category roots used by Nexus asset resolution. It never opens model weights or follows symlinks; incomplete scans remain unverified. The audit covers model file references in the patched graph only, not auto-resolved preset dependencies or the exact dispatch graph. M2.8B is the shared pure generation-planning extraction; keep `/ui`, localhost defaults and PR #17 draft.
+
+## M2.8B checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_8B_CHECKPOINT_2026_11_14.md`. Model-source presence auditing is bounded, read-only and symlink-safe; the live saved-workflow loader and manual preflight now share `prepare_workflow_graph` for API/UI conversion and patching. This is the first shared-planner extraction, not yet a complete dispatch plan: model auto-resolution, media staging, runtime effects, node installation and prompt submission remain outside it. Keep `/ui`, localhost defaults and PR #17 draft.
