@@ -55,11 +55,21 @@ export function useWorkflowAnalysisQuery(workflowId: string) {
 }
 
 /** Cursor-backed gallery for React: the legacy array route stays for Studio and /ui. */
-export function useGalleryIndexQuery() {
+export interface GalleryIndexFilters {
+  query?: string;
+  media?: 'all' | 'image' | 'video' | 'audio' | '3d';
+  sort?: 'newest' | 'oldest' | 'name' | 'type';
+  refreshId?: number;
+}
+
+export function useGalleryIndexQuery({
+  query = '', media = 'all', sort = 'newest', refreshId = 0,
+}: GalleryIndexFilters = {}) {
   return useInfiniteQuery({
-    queryKey: ['gallery-index'],
+    queryKey: ['gallery-index', query, media, sort, refreshId],
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam, signal }) => nexusApi.galleryPage(pageParam, 48, false, signal),
+    queryFn: ({ pageParam, signal }) =>
+      nexusApi.galleryPage(pageParam, 48, refreshId > 0 && !pageParam, signal, { query, media, sort }),
     getNextPageParam: (page) => page.next_cursor || undefined,
     staleTime: 10_000,
   });

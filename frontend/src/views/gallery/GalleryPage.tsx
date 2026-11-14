@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Box, ChevronLeft, ChevronRight, Film, Music, RefreshCw, Search } from 'lucide-react';
 
 import type { GalleryItem } from '../../api/types';
@@ -31,25 +31,27 @@ function extrasHref(item: GalleryItem) {
 }
 
 export function GalleryPage() {
-  const gallery = useGalleryIndexQuery();
+  const [query, setQuery] = useState('');
+  const [effectiveQuery, setEffectiveQuery] = useState('');
+  const [mediaType, setMediaType] = useState<'all' | 'image' | 'video' | 'audio' | '3d'>('all');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name' | 'type'>('newest');
+  const [refreshId, setRefreshId] = useState(0);
+  const gallery = useGalleryIndexQuery({ query: effectiveQuery, media: mediaType, sort: sortOrder, refreshId });
   const loadedItems = useMemo(() => gallery.data?.pages.flatMap((page) => page.items) ?? [], [gallery.data?.pages]);
   const indexedTotal = gallery.data?.pages[0]?.total ?? loadedItems.length;
-  const [query, setQuery] = useState('');
-  const [sortOrder, setSortOrder] = useState('newest');
   const [pageIndex, setPageIndex] = useState(0);
   const [selected, setSelected] = useState<GalleryItem | null>(null);
 
-  const items = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const source = loadedItems;
-    const filtered = normalized ? source.filter((item) => `${item.filename} ${item.folder} ${item.model} ${item.preset} ${item.activity}`.toLowerCase().includes(normalized)) : source;
-    return [...filtered].sort((a, b) => {
-      if (sortOrder === 'oldest') return a.modified - b.modified;
-      if (sortOrder === 'name') return a.filename.localeCompare(b.filename);
-      if (sortOrder === 'type') return String(a.media_type).localeCompare(String(b.media_type));
-      return b.modified - a.modified;
-    });
-  }, [loadedItems, query, sortOrder]);
+  // Filtering/sorting occur against the entire SQLite index, not just loaded pages.
+  const items = loadedItems;
+  useEffect(() => {
+    const timer = window.setTimeout(() => setEffectiveQuery(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  useEffect(() => {
+    setPageIndex(0);
+    setSelected(null);
+  }, [effectiveQuery, mediaType, sortOrder, refreshId]);
 
   const pageSize = 36;
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
@@ -62,7 +64,7 @@ export function GalleryPage() {
     <section className="page gallery-layout">
       <header className="page-controls">
         <span className="route-sentinel" data-route="gallery" aria-label="Gallery workspace" />
-        <button className="flat-button" type="button" onClick={() => gallery.refetch()}>
+        <button className="flat-button" type="button" onClick={() => setRefreshId((id) => id + 1)}>
           <RefreshCw size={14} />
           Refresh
         </button>
@@ -70,11 +72,20 @@ export function GalleryPage() {
 
       <div className="gallery-toolbar">
         <Search size={16} />
-        <input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search loaded outputs, folders, models..." />
-        <span className="gallery-index-count" title="Search and sorting currently apply to loaded pages only.">
+        <input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search all output filenames and folders..." aria-label="Search all gallery outputs" maxLength={120} />
+        <span className="gallery-index-count" title="Search, type and sorting apply to the full SQLite index; loaded items render incrementally.">
           {loadedItems.length} / {indexedTotal} loaded
         </span>
-        <select value={sortOrder} onChange={(event) => setSortOrder(event.currentTarget.value)}>
+        <select aria-label="Filter gallery media type" value={mediaType}
+          onChange={(event) => setMediaType(event.currentTarget.value as typeof mediaType)}>
+          <option value="all">All media</option>
+          <option value="image">Images</option>
+          <option value="video">Videos</option>
+          <option value="audio">Audio</option>
+          <option value="3d">3D models</option>
+        </select>
+        <select aria-label="Sort gallery" value={sortOrder}
+          onChange={(event) => setSortOrder(event.currentTarget.value as typeof sortOrder)}>
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
           <option value="name">Name</option>
