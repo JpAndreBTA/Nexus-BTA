@@ -81,3 +81,11 @@ jobs:
             sleep 1
           done
           npm run smoke:m2
+      - name: Save mocked browser screenshot for visual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-m2-browser-gallery
+          path: frontend/artifacts/gallery-paginated.png
+          if-no-files-found: ignore
+          retention-days: 7

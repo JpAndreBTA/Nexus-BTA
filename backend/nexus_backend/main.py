@@ -12736,7 +12736,7 @@ async def gallery() -> list[dict[str, Any]]:
                 "video": metadata.get("video", {}),
                 "director": metadata.get("director", {}),
                 "metadata": metadata,
-                "modified": path.stat().st_mtime,
+                "modified": modified,
             }
         )
         if len(items) >= 200:

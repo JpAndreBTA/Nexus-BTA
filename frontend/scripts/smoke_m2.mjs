@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const base = process.env.NEXUS_SMOKE_URL || 'http://127.0.0.1:3000';
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 940 }, acceptDownloads: true });
 const runtimeErrors = [];
+let galleryTestPages = false;
 page.on('pageerror', error => runtimeErrors.push(error.message));
 
 await page.route('**/api/**', async (route) => {
@@ -12,7 +14,21 @@ await page.route('**/api/**', async (route) => {
   const path = url.pathname;
   let result = {};
   if (path === '/api/models') result = { categories: { checkpoints: [], unet: [], diffusion_models: [], loras: [], vae: [], clip: [], controlnet: [] } };
-  else if (path === '/api/gallery/page') result = { items: [], total: 0, next_cursor: null };
+  else if (path === '/api/gallery/page') {
+    const cursor = url.searchParams.get('cursor');
+    const media = (id) => ({
+      title: `Acceptance ${id}.png`, filename: `Acceptance ${id}.png`,
+      path: `Acceptance ${id}.png`, relative_path: `Acceptance ${id}.png`,
+      folder: '', image: `/outputs/Acceptance%20${id}.png`,
+      thumb: `/outputs/Acceptance%20${id}.png`, media_type: 'image',
+      modified: id, model: 'QA model', preset: 'SD',
+    });
+    result = !galleryTestPages
+      ? { items: [], total: 0, next_cursor: null }
+      : cursor
+        ? { items: [media(1)], total: 2, next_cursor: null }
+        : { items: [media(2)], total: 2, next_cursor: 'next-page' };
+  }
   else if (path === '/api/loras' || path === '/api/gallery' || path === '/api/workflows') result = [];
   else if (path === '/api/health') result = {
     comfy_running: false,
@@ -72,6 +88,14 @@ try {
   await page.goto(`${base}/gallery`, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-route="gallery"]').waitFor({ state: 'attached' });
   await page.getByText('No outputs found.').waitFor();
+  galleryTestPages = true;
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await page.getByRole('button', { name: /Load more/ }).waitFor();
+  await page.getByRole('button', { name: /Load more/ }).click();
+  await page.getByText('2 / 2 loaded').waitFor();
+  await page.getByRole('button', { name: 'Acceptance 1.png' }).waitFor();
+  mkdirSync('artifacts', { recursive: true });
+  await page.screenshot({ path: 'artifacts/gallery-paginated.png', fullPage: true });
   assert.deepEqual(runtimeErrors, []);
   console.log('M2 browser shell: Studio, Civitai, settings persistence, import/export and Gallery passed');
 } finally {
