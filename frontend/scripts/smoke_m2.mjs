@@ -196,10 +196,12 @@ try {
     const original = HTMLCanvasElement.prototype.toDataURL;
     window.__nexusMaskExportSizes = [];
     HTMLCanvasElement.prototype.toDataURL = function (...args) {
+      const exported = original.apply(this, args);
       if (args[0] === 'image/png' && this.width > 1536) {
         window.__nexusMaskExportSizes.push([this.width, this.height]);
+        window.__nexusMaskExportPng = exported;
       }
-      return original.apply(this, args);
+      return exported;
     };
   });
   const maskViewport = page.locator('canvas[aria-label="Inpaint mask canvas"]');
@@ -212,6 +214,22 @@ try {
   await page.waitForFunction(() => window.__nexusMaskExportSizes?.some(
     (size) => size[0] === 2048 && size[1] === 1024,
   ));
+  const maskPixels = await page.evaluate(async () => {
+    const source = new Image();
+    source.src = window.__nexusMaskExportPng;
+    await source.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = source.naturalWidth;
+    canvas.height = source.naturalHeight;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(source, 0, 0);
+    const center = [...context.getImageData(1024, 512, 1, 1).data];
+    const corner = [...context.getImageData(0, 0, 1, 1).data];
+    return { center, corner };
+  });
+  assert.deepEqual(maskPixels.center, [255, 255, 255, 255], 'painted center must remain white');
+  assert.deepEqual(maskPixels.corner, [0, 0, 0, 255], 'untouched pixels must remain opaque black');
+
   await page.screenshot({ path: 'artifacts/inpaint-native-mask.png', fullPage: true });
 
   await page.goto(`${base}/settings`, { waitUntil: 'domcontentloaded' });
