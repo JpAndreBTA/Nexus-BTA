@@ -11,8 +11,10 @@ from typing import Any, Callable
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 
-from .gallery_index import GalleryIndex, IndexedMedia, default_gallery_db_path
+from .gallery_index import GalleryIndex, IndexedMedia, default_gallery_db_path, IMAGE_SUFFIXES
+from .gallery_thumbnail import GalleryThumbnailCache
 
 
 def make_gallery_router(
@@ -22,14 +24,16 @@ def make_gallery_router(
     router = APIRouter()
     _gallery_page_index: GalleryIndex | None = None
     _gallery_index_lock = threading.Lock()
+    _gallery_thumbnail_cache: GalleryThumbnailCache | None = None
 
     def _get_gallery_index() -> GalleryIndex:
         """Keep the indexed route independent from the legacy 200-item response."""
-        nonlocal _gallery_page_index
+        nonlocal _gallery_page_index, _gallery_thumbnail_cache
         root = output_dir().resolve()
         with _gallery_index_lock:
             if _gallery_page_index is None or _gallery_page_index.root != root:
                 _gallery_page_index = GalleryIndex(root, default_gallery_db_path(root))
+                _gallery_thumbnail_cache = GalleryThumbnailCache(root)
             return _gallery_page_index
 
 
@@ -53,7 +57,7 @@ def make_gallery_router(
             "relative_path": relative,
             "folder": path.parent.relative_to(root).as_posix() if path.parent != root else "",
             "image": f"/outputs/{url_path}",
-            "thumb": f"/outputs/{url_path}",
+            "thumb": f"/api/gallery/thumb/{url_path}?size=320" if path.suffix.lower() in IMAGE_SUFFIXES else f"/outputs/{url_path}",
             "media_type": indexed.media_type,
             "prompt": metadata.get("prompt", ""),
             "negative": metadata.get("negative", ""),
@@ -79,6 +83,27 @@ def make_gallery_router(
             "modified": modified,
         }
 
+
+
+    @router.get("/api/gallery/thumb/{relative_path:path}")
+    async def image_thumbnail(
+        relative_path: str,
+        size: int = Query(default=320, ge=64, le=512),
+    ) -> FileResponse:
+        index = _get_gallery_index()
+        with _gallery_index_lock:
+            cache = _gallery_thumbnail_cache
+        if cache is None:
+            raise HTTPException(status_code=503, detail="Gallery cache unavailable.")
+        try:
+            thumbnail_path = await asyncio.to_thread(cache.thumbnail, relative_path, size)
+        except ValueError as exc:
+            # A malformed file never leaks backend details/absolute paths to clients.
+            raise HTTPException(status_code=404, detail="Thumbnail not available.") from exc
+        return FileResponse(
+            thumbnail_path, media_type="image/webp",
+            headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"},
+        )
 
     @router.get("/api/gallery/page")
     async def gallery_page(
