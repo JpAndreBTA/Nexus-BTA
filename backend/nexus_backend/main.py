@@ -23,6 +23,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .security import cors_allowed_origins
+from .remote_gate import RemoteReadOnlyGate
 from .gallery_listing import recent_media_files
 from .gallery_api import make_gallery_router
 from fastapi.responses import FileResponse, RedirectResponse
@@ -6219,6 +6220,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
 )
+# Outer authorization layer covers every mounted static directory and API route.
+app.add_middleware(RemoteReadOnlyGate)
 
 if settings.output_dir.exists():
     app.mount("/outputs", StaticFiles(directory=settings.output_dir), name="outputs")

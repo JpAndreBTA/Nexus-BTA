@@ -27,14 +27,34 @@ def cors_allowed_origins() -> list[str]:
     return defaults
 
 
+def is_loopback_listener(host: str) -> bool:
+    return host.strip().lower() in {"127.0.0.1", "localhost", "::1", "[::1]"}
+
+
+def validate_remote_access_token(value: str | None) -> bool:
+    """Require an operator-provided, nontrivial token. No default credentials."""
+    return bool(
+        value and 32 <= len(value) <= 512 and value.isascii()
+        and not value.isspace() and not any(ch.isspace() for ch in value)
+        and len(set(value)) >= 12
+    )
+
+
 def require_explicit_network_ack(host: str) -> None:
-    """Fail closed for non-loopback listeners until a genuine auth gateway exists."""
-    if host.strip().lower() in {"127.0.0.1", "localhost", "::1", "[::1]"}:
+    """Non-loopback API is experimental, read-only and requires operator creds.
+
+    This does not enable safe raw public HTTP. Use a trusted HTTPS gateway.
+    """
+    if is_loopback_listener(host):
         return
     if os.environ.get("NEXUS_UNSAFE_NETWORK_ACK") != "I_UNDERSTAND_THE_RISK":
         raise RuntimeError(
-            "Nexus does not provide public API authentication yet. Non-loopback "
-            "listeners are disabled by default. Use localhost or explicitly set "
-            "NEXUS_UNSAFE_NETWORK_ACK=I_UNDERSTAND_THE_RISK only behind a trusted "
-            "network and an independently authenticated gateway."
+            "Non-loopback Nexus listeners require an explicit risk acknowledgment "
+            "and a trusted HTTPS gateway; public exposure remains unsupported."
+        )
+    if not validate_remote_access_token(os.environ.get("NEXUS_REMOTE_API_TOKEN")):
+        raise RuntimeError(
+            "Non-loopback Nexus listeners require NEXUS_REMOTE_API_TOKEN "
+            "(a random, private token of at least 32 characters). "
+            "All remote operations except the read-only allowlist are denied."
         )
