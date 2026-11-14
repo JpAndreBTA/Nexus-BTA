@@ -235,3 +235,7 @@ Screenshots:
 ## Checkpoint: M2 UI modules, bounded inpaint, layout presets and browser-smoke
 
 See `docs/production/NEXUS_M2_CHECKPOINT_2026_11_12.md` for the completed commits, accepted tests, remaining regressions and next milestone. Do not mark legacy `/ui` deprecated yet.
+
+## M2.2 checkpoint — 13 November 2026
+
+See `docs/production/NEXUS_M2_2_CHECKPOINT_2026_11_13.md`. New paginated React Gallery uses `/api/gallery/page` with an SQLite index; `/api/gallery` and `/ui` are intentionally retained. The Studio generation request serializer and validation are modular and unit-tested. Search and sort remain local to loaded Gallery pages. Do not mark /app feature complete.

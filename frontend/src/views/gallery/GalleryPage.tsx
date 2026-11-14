@@ -17,7 +17,7 @@ function isAudio(item: GalleryItem) {
 }
 
 function is3D(item: GalleryItem) {
-  return item.media_type === '3d' || /\\.(glb|gltf|obj|fbx|stl|ply|usdz|spz|ksplat)$/i.test(item.filename);
+  return item.media_type === '3d' || /\.(glb|gltf|obj|fbx|stl|ply|usdz|spz|ksplat)$/i.test(item.filename);
 }
 
 function extrasHref(item: GalleryItem) {
