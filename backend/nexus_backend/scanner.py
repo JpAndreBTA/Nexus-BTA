@@ -207,23 +207,35 @@ def scan_models_bounded(
     continues to use scan_models() so its existing selection behavior is not
     changed by planner limits.
     """
-    roots: list[tuple[Path, str, str | None]] = [(settings.models_dir, "managed", None)]
+    roots: list[tuple[Path, str, str | None]] = []
+    root_keys: set[tuple[str, str | None]] = set()
     truncated = False
+
+    def add_root(path: Path, source: str, category: str | None) -> None:
+        nonlocal truncated
+        key = (os.path.normcase(os.path.abspath(os.fspath(path))), category)
+        if key in root_keys:
+            return
+        if len(roots) >= MAX_BOUNDED_MODEL_ROOTS:
+            truncated = True
+            return
+        root_keys.add(key)
+        roots.append((path, source, category))
+
+    add_root(settings.models_dir, "managed", None)
     for alias, paths in settings.model_sources.items():
         category = MODEL_SOURCE_CATEGORY_ALIASES.get(str(alias).strip().lower())
         for path in paths:
-            if len(roots) >= MAX_BOUNDED_MODEL_ROOTS:
-                truncated = True
+            add_root(Path(path), "reference", category)
+            if truncated:
                 break
-            roots.append((Path(path), "reference", category))
         if truncated:
             break
     if include_references and not truncated:
         for source_root in settings.reference_model_sources:
-            if len(roots) >= MAX_BOUNDED_MODEL_ROOTS:
-                truncated = True
+            add_root(source_root, "reference", None)
+            if truncated:
                 break
-            roots.append((source_root, "reference", None))
 
     categories: dict[str, list[ModelFile]] = {category: [] for category in MODEL_CATEGORIES}
     supported = {str(ext).lower() for ext in settings.supported_model_extensions}
