@@ -79,7 +79,7 @@ try {
   const sharedViewport = page.locator('.inpaint-viewport');
   assert.equal(await sharedViewport.locator('img').count(), 1);
   assert.equal(await sharedViewport.locator('canvas').count(), 1);
-  assert.match(await sharedViewport.evaluate((element) => element.style.transform), /scale\\(1\\.25\\)/);
+  assert.ok((await sharedViewport.evaluate((element) => element.style.transform)).includes('scale(1.25)'));
 
   await page.goto(`${base}/settings`, { waitUntil: 'domcontentloaded' });
   await page.getByText('Customize your workspace').waitFor();
