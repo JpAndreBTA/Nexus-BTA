@@ -83,6 +83,8 @@ def _decode_cursor(value: str | None, signature: str) -> tuple[int, str, str, st
         if signature != _query_signature("", "all", "newest"):
             raise ValueError("Cursor does not match gallery filters.")
         return data[0], data[1], "", ""
+    if isinstance(data, list) and len(data) == 6 and data[0] == 2 and data[1] != signature:
+        raise ValueError("Cursor does not match gallery filters.")
     if (
         not isinstance(data, list) or len(data) != 6 or data[0] != 2 or
         data[1] != signature or type(data[2]) is not int or
