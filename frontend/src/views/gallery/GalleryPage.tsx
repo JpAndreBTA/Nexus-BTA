@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Box, ChevronLeft, ChevronRight, Film, Music, RefreshCw, Search } from 'lucide-react';
 
 import type { GalleryItem } from '../../api/types';
-import { useGalleryQuery } from '../../api/queries';
+import { useGalleryIndexQuery } from '../../api/queries';
 
 function mediaUrl(value: string) {
   return value.startsWith('/') ? value : `/${value.replace(/^\/+/, '')}`;
@@ -31,7 +31,9 @@ function extrasHref(item: GalleryItem) {
 }
 
 export function GalleryPage() {
-  const gallery = useGalleryQuery();
+  const gallery = useGalleryIndexQuery();
+  const loadedItems = useMemo(() => gallery.data?.pages.flatMap((page) => page.items) ?? [], [gallery.data?.pages]);
+  const indexedTotal = gallery.data?.pages[0]?.total ?? loadedItems.length;
   const [query, setQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('newest');
   const [pageIndex, setPageIndex] = useState(0);
@@ -39,7 +41,7 @@ export function GalleryPage() {
 
   const items = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    const source = gallery.data ?? [];
+    const source = loadedItems;
     const filtered = normalized ? source.filter((item) => `${item.filename} ${item.folder} ${item.model} ${item.preset} ${item.activity}`.toLowerCase().includes(normalized)) : source;
     return [...filtered].sort((a, b) => {
       if (sortOrder === 'oldest') return a.modified - b.modified;
@@ -47,7 +49,7 @@ export function GalleryPage() {
       if (sortOrder === 'type') return String(a.media_type).localeCompare(String(b.media_type));
       return b.modified - a.modified;
     });
-  }, [gallery.data, query, sortOrder]);
+  }, [loadedItems, query, sortOrder]);
 
   const pageSize = 36;
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
@@ -68,7 +70,10 @@ export function GalleryPage() {
 
       <div className="gallery-toolbar">
         <Search size={16} />
-        <input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search outputs, folders, models..." />
+        <input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search loaded outputs, folders, models..." />
+        <span className="gallery-index-count" title="Search and sorting currently apply to loaded pages only.">
+          {loadedItems.length} / {indexedTotal} loaded
+        </span>
         <select value={sortOrder} onChange={(event) => setSortOrder(event.currentTarget.value)}>
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
@@ -86,6 +91,9 @@ export function GalleryPage() {
 
       <div className="gallery-shell">
         <div className="gallery-grid">
+          {gallery.isError && <div className="studio-inline-status error" role="alert">
+            {gallery.error instanceof Error ? gallery.error.message : 'Gallery index unavailable.'}
+          </div>}
           {pagedItems.map((item) => (
             <button key={`${item.relative_path}:${item.modified}`} className={active?.relative_path === item.relative_path ? 'gallery-card active' : 'gallery-card'} type="button" onClick={() => setSelected(item)}>
               {isVideo(item) ? <div className="gallery-media-placeholder"><Film size={26} /><small>Video</small></div> : isAudio(item) ?
@@ -95,6 +103,13 @@ export function GalleryPage() {
               <span title={item.filename}>{item.filename}</span>
             </button>
           ))}
+          {gallery.hasNextPage && (
+            <button className="mini-button gallery-load-more" type="button"
+              disabled={gallery.isFetchingNextPage}
+              onClick={() => { void gallery.fetchNextPage(); }}>
+              {gallery.isFetchingNextPage ? 'Loading more outputs…' : `Load more (${loadedItems.length} / ${indexedTotal})`}
+            </button>
+          )}
         </div>
 
         <aside className="surface gallery-preview">

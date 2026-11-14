@@ -195,6 +195,12 @@ export interface GalleryItem {
   modified: number;
 }
 
+export interface GalleryPageResult {
+  items: GalleryItem[];
+  total: number;
+  next_cursor: string | null;
+}
+
 export interface GenerateRequest {
   activity: string;
   workspace: string;

@@ -1,4 +1,4 @@
-import type { CivitaiSearchResponse, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, Krea2AssetsStatus, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
+import type { CivitaiSearchResponse, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GalleryPageResult, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, Krea2AssetsStatus, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -98,6 +98,12 @@ export const nexusApi = {
   ideogram4OllamaPullJob: (jobId: string) => nexusFetch<DownloadJob>(`/ideogram4/ollama/pull/${encodeURIComponent(jobId)}`),
   extrasJob: (jobId: string) => nexusFetch<ExtrasJob>(`/extras/${encodeURIComponent(jobId)}`),
   gallery: () => nexusFetch<GalleryItem[]>('/gallery'),
+  galleryPage: (cursor: string | null = null, limit = 48, refresh = false) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    if (refresh) params.set('refresh', 'true');
+    return nexusFetch<GalleryPageResult>(`/gallery/page?${params.toString()}`);
+  },
   workflows: () => nexusFetch<WorkflowSummary[]>('/workflows'),
   workflowAnalysis: (workflowId: string) => nexusFetch<WorkflowAnalysis>(`/workflows/${encodeURIComponent(workflowId)}/analysis`),
   loadWorkflow: async (file: File) => {

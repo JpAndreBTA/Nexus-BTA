@@ -12,6 +12,7 @@ await page.route('**/api/**', async (route) => {
   const path = url.pathname;
   let result = {};
   if (path === '/api/models') result = { categories: { checkpoints: [], unet: [], diffusion_models: [], loras: [], vae: [], clip: [], controlnet: [] } };
+  else if (path === '/api/gallery/page') result = { items: [], total: 0, next_cursor: null };
   else if (path === '/api/loras' || path === '/api/gallery' || path === '/api/workflows') result = [];
   else if (path === '/api/health') result = {
     comfy_running: false,

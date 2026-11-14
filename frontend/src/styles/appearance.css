@@ -59,3 +59,7 @@
 }
 .appearance-preset-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .appearance-controls input[type="range"] { width: min(240px, 100%); cursor: ew-resize; }
+
+/* Cursor-backed gallery: the index is authoritative, client filters cover only loaded pages. */
+.gallery-index-count { white-space: nowrap; color: var(--muted); font-size: 11px; }
+.gallery-load-more { grid-column: 1 / -1; min-height: 38px; justify-self: stretch; }

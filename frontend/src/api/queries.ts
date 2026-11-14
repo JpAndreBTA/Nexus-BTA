@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 import { nexusApi } from './nexusClient';
 
@@ -51,5 +51,16 @@ export function useWorkflowAnalysisQuery(workflowId: string) {
     queryFn: () => nexusApi.workflowAnalysis(workflowId),
     enabled: !!workflowId,
     staleTime: 30_000,
+  });
+}
+
+/** Cursor-backed gallery for React: the legacy array route stays for Studio and /ui. */
+export function useGalleryIndexQuery() {
+  return useInfiniteQuery({
+    queryKey: ['gallery-index'],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => nexusApi.galleryPage(pageParam),
+    getNextPageParam: (page) => page.next_cursor || undefined,
+    staleTime: 10_000,
   });
 }
