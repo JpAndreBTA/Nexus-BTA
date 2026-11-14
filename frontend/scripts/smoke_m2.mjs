@@ -36,6 +36,7 @@ const runtimeErrors = [];
 let galleryTestPages = false;
 let thumbRequests = 0;
 let videoPosterRequests = 0;
+let selectedWorkflowCapabilityRequests = 0;
 page.on('pageerror', error => runtimeErrors.push(error.message));
 
 await page.route('**/outputs/**', async (route) => {
@@ -91,7 +92,30 @@ await page.route('**/api/**', async (route) => {
             ? { items: [media(1)], total: 2, next_cursor: null }
             : { items: [media(2)], total: 2, next_cursor: 'next-page' };
   }
-  else if (path === '/api/loras' || path === '/api/gallery' || path === '/api/workflows') result = [];
+  else if (path === '/api/workflows') result = [{
+    id: 'qa-workflow', name: 'QA Mock Workflow', path: '/mock/qa.json',
+    format: 'api', node_count: 2, class_types: ['KSampler', 'VAEDecode'], tags: [],
+  }];
+  else if (path === '/api/workflows/qa-workflow/analysis') result = {
+    workflow: { id: 'qa-workflow', name: 'QA Mock Workflow', path: '/mock/qa.json',
+      format: 'api', node_count: 2, class_types: ['KSampler', 'VAEDecode'], tags: [] },
+    missing_nodes: [], available_nodes: 0, manager_suggestions: {},
+    dependency_targets: [], dependencies_installed: [], dependency_errors: {},
+    visual_graph: { nodes: [], links: [], width: 700, height: 500 },
+    workflow_settings: {},
+  };
+  else if (path === '/api/loras' || path === '/api/gallery') result = [];
+  else if (path === '/api/comfy/workflow-capabilities') {
+    selectedWorkflowCapabilityRequests++;
+    const workflow_id = url.searchParams.get('workflow_id');
+    assert.equal(workflow_id, 'qa-workflow');
+    result = {
+      status: 'offline', runtime_checked: false, ready: false,
+      requested: ['KSampler', 'VAEDecode'], available: [], missing: [],
+      unverified: ['KSampler', 'VAEDecode'], registered_count: 0,
+      workflow_id, required_count: 2, invalid_class_count: 0,
+    };
+  }
   else if (path === '/api/comfy/capabilities') {
     const requested = (url.searchParams.get('classes') || '').split(',').filter(Boolean);
     result = {
@@ -116,7 +140,8 @@ try {
   await page.goto(base, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-route="studio"]').waitFor({ state: 'attached', timeout: 15000 });
   await page.getByRole('button', { name: /Node Workflow/ }).click();
-  await page.getByText(/compatibility is unverified|No imported workflow nodes available/).waitFor();
+  await page.getByText(/ComfyUI is offline. Node compatibility is unverified/).waitFor();
+  assert.ok(selectedWorkflowCapabilityRequests >= 1, 'Studio should check exact workflow classes from backend');
   await page.getByRole('button', { name: 'Linear Viewer' }).click();
   await page.getByRole('button', { name: 'Civitai' }).click();
   await page.getByRole('dialog', { name: 'Nexus Civitai downloader' }).waitFor();
