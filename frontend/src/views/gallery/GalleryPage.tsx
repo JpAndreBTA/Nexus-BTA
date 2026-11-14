@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Box, ChevronLeft, ChevronRight, Music, RefreshCw, Search } from 'lucide-react';
 
 import type { GalleryItem } from '../../api/types';
 import { useGalleryIndexQuery } from '../../api/queries';
 import { GalleryVideoTile } from './GalleryVideoTile';
+
+const GalleryGlbPreview = lazy(() => import('./GalleryGlbPreview').then((module) => ({ default: module.GalleryGlbPreview })));
 
 function mediaUrl(value: string) {
   return value.startsWith('/') ? value : `/${value.replace(/^\/+/, '')}`;
@@ -132,8 +134,13 @@ export function GalleryPage() {
               <div className="gallery-preview-media">
                 {isVideo(active) ? <video key={active.relative_path} src={mediaUrl(active.image)} controls playsInline preload="metadata" /> : isAudio(active) ?
                   <audio key={active.relative_path} src={mediaUrl(active.image)} controls preload="none" /> : is3D(active) ?
-                  <div className="gallery-media-placeholder large"><Box size={42} /><span>3D preview is not yet available in React.</span>
-                    <a className="mini-button" href={mediaUrl(active.image)} download={active.filename}>Download 3D asset</a></div> :
+                  /\.glb$/i.test(active.filename)
+                    ? <Suspense fallback={<div className="preview-empty"><Box size={30} /><span>Loading experimental GLB viewer…</span></div>}>
+                        <GalleryGlbPreview key={active.relative_path} src={mediaUrl(active.image)} filename={active.filename} />
+                      </Suspense>
+                    : <div className="gallery-media-placeholder large"><Box size={42} /><span>Geometry preview currently supports GLB only.</span>
+                        <a className="mini-button" href={mediaUrl(active.image)} download={active.filename}>Download 3D asset</a></div>
+                  :
                   <img src={mediaUrl(active.image)} alt={active.filename} decoding="async" />}
               </div>
               <div className="gallery-meta">

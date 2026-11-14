@@ -94,3 +94,26 @@
 }
 .studio-node-capabilities.missing { border-color: #c08b52; }
 .studio-node-capabilities small { width: 100%; opacity: 0.8; }
+
+/* Experimental local GLB geometry view; no embedded external URLs or viewer library. */
+.gallery-glb-viewer { width: 100%; display: grid; gap: 8px; }
+.gallery-glb-viewer canvas {
+  width: 100%;
+  height: clamp(260px, 36vh, 480px);
+  background: #0b0e14;
+  touch-action: none;
+  cursor: grab;
+  display: block;
+  outline-offset: -3px;
+}
+.gallery-glb-viewer canvas:active { cursor: grabbing; }
+.gallery-glb-legend {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.gallery-glb-legend small { opacity: 0.8; }
+.gallery-glb-legend a { justify-self: start; }
