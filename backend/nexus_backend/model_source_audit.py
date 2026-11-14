@@ -126,27 +126,29 @@ def _extract_references(
             categories = _MODEL_INPUT_CATEGORIES.get(key, _ALL_CATEGORIES)
             normalized = _normalize_model_reference(value, extensions)
             if normalized is None:
+                if len(references) + len(skipped) >= MAX_MODEL_REFERENCES:
+                    truncated = True
+                    return references, skipped, truncated
                 skipped.append({
                     **_entry_metadata(node_id, class_type, str(input_name), categories),
                     "status": "unverified",
                     "reason": "unsafe_or_unsupported_reference",
                 })
-            else:
-                basename, relative = normalized
-                identity = (str(node_id), key, basename, tuple(categories))
-                if identity in seen:
-                    continue
-                seen.add(identity)
-                references.append({
-                    **_entry_metadata(node_id, class_type, str(input_name), categories),
-                    "basename": basename,
-                    "relative": relative,
-                })
+                continue
+            basename, relative = normalized
+            identity = (str(node_id), key, basename, tuple(categories))
+            if identity in seen:
+                continue
+            seen.add(identity)
             if len(references) + len(skipped) >= MAX_MODEL_REFERENCES:
                 truncated = True
                 return references, skipped, truncated
+            references.append({
+                **_entry_metadata(node_id, class_type, str(input_name), categories),
+                "basename": basename,
+                "relative": relative,
+            })
     return references, skipped, truncated
-
 
 def _configured_roots(
     settings: NexusSettings,
@@ -225,7 +227,7 @@ def _scan_root(
                         return matches, False, scanned
                     try:
                         if entry.is_symlink():
-                            # Do not inspect the target, even to classify it.
+                            # Do not inspect or follow the target.
                             complete = False
                             continue
                         if entry.is_dir(follow_symlinks=False):

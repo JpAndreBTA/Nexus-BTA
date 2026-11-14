@@ -122,6 +122,18 @@ await page.route('**/api/**', async (route) => {
       unverified_inputs: 0, findings: [{ kind: 'possibly_missing_required',
         node_id: '2', class_type: 'KSampler', input: 'latent_image' }],
       truncated_findings: false, preview: true, changed_nodes: 2, changed_input_fields: 4,
+      model_sources: {
+        status: 'issues', references_checked: 2, found: 1, multiple_matches: 0,
+        not_found: 1, unverified: 0, roots_checked: 2, entries_scanned: 18,
+        truncated: false, note: 'Read-only configured model roots. No files opened.',
+        entries: [
+          { node_id: '1', class_type: 'CheckpointLoaderSimple', input: 'ckpt_name',
+            categories: ['checkpoints'], status: 'found', match_count: 1,
+            sources: ['models_dir/checkpoints'] },
+          { node_id: '3', class_type: 'VAELoader', input: 'vae_name',
+            categories: ['vae'], status: 'not_found', match_count: 0, sources: [] },
+        ],
+      },
       note: 'Advisory template patch only. No prompt submitted.',
     };
   }
@@ -174,6 +186,8 @@ try {
   await page.getByText('Input ABI unverified: ComfyUI is offline.').waitFor();
   await page.getByRole('button', { name: 'Run workflow preflight without generation' }).click();
   await page.getByText('2 changed nodes · 4 changed inputs').waitFor();
+  await page.getByText('Local model files: 1 found · 1 not found · 0 unverified').waitFor();
+  await page.getByText('CheckpointLoaderSimple #1 / ckpt_name: found').waitFor();
   await page.getByText(/Advisory template patch only/).waitFor();
   assert.ok(preflightRequests >= 1, 'manual preview must call only the preflight endpoint');
   assert.equal(generationSubmitRequests, 0, 'preflight may never submit a generation');

@@ -43,7 +43,22 @@ class ModelSourceAuditTests(unittest.TestCase):
             self.assertEqual(report["entries"][1]["status"], "not_found")
             self.assertNotIn("model.safetensors", str(report))
             self.assertNotIn(str(root), str(report))
-            self.assertEqual(report["roots_checked"], 1)
+            self.assertEqual(report["roots_checked"], 2)
+
+    def test_exact_limit_is_not_reported_as_truncated(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "models" / "checkpoints").mkdir(parents=True)
+            graph = {
+                str(index): {
+                    "class_type": "CheckpointLoaderSimple",
+                    "inputs": {"ckpt_name": f"model-{index}.safetensors"},
+                }
+                for index in range(24)
+            }
+            report = audit_model_references(graph, self.make_settings(root))
+            self.assertEqual(report["references_checked"], 24)
+            self.assertFalse(report["truncated"])
 
     def test_checks_additional_configured_model_sources(self):
         with tempfile.TemporaryDirectory() as folder:
