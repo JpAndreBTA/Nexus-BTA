@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
-import { Brush, Eraser, Pencil, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { Brush, Eraser, Hand, Pencil, RotateCcw, RotateCw, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
 interface InpaintCanvasProps {
   image: string;
@@ -8,8 +8,8 @@ interface InpaintCanvasProps {
   onMaskChange: (mask: string | null) => void;
 }
 
-import { MAX_EDIT_EDGE, binaryMaskPixels, fittedMaskSize, historyLimit } from './maskPixels';
-type PaintTool = 'mask' | 'eraser' | 'sketch';
+import { MAX_EDIT_EDGE, binaryMaskPixels, clampViewportPan, fittedMaskSize, historyLimit } from './maskPixels';
+type PaintTool = 'mask' | 'eraser' | 'sketch' | 'pan';
 type Point = { x: number; y: number };
 type History = { undo: ImageData[]; redo: ImageData[] };
 
@@ -42,6 +42,9 @@ function exportMask(sourceCanvas: HTMLCanvasElement, exportCanvas: HTMLCanvasEle
 
 export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChange }: InpaintCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const activePanPointerIdRef = useRef<number | null>(null);
+  const panStartRef = useRef<{ pointerX: number; pointerY: number; x: number; y: number } | null>(null);
   const exportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const lastPointRef = useRef<Point | null>(null);
@@ -49,6 +52,8 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
   const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
   const [tool, setTool] = useState<PaintTool>('mask');
   const [sketchColor, setSketchColor] = useState('#ff3b3b');
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: MAX_EDIT_EDGE, height: MAX_EDIT_EDGE });
 
   useEffect(() => {
@@ -74,7 +79,11 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
     canvas.height = canvasSize.height;
     canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     activePointerIdRef.current = null;
+    activePanPointerIdRef.current = null;
+    panStartRef.current = null;
     lastPointRef.current = null;
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
     historyRef.current = { undo: [], redo: [] };
     setHistoryCounts({ undo: 0, redo: 0 });
     onMaskChange(null);
@@ -168,6 +177,32 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
     publishMask();
   }
 
+  function resetViewport(nextZoom: number) {
+    setZoom(Math.max(1, Math.min(4, Math.round(nextZoom * 4) / 4)));
+    setPan({ x: 0, y: 0 });
+  }
+
+  function movePan(pointerId: number, clientX: number, clientY: number) {
+    if (activePanPointerIdRef.current !== pointerId || !panStartRef.current) return;
+    const stage = stageRef.current;
+    if (!stage) return;
+    const start = panStartRef.current;
+    setPan(clampViewportPan(
+      start.x + clientX - start.pointerX,
+      start.y + clientY - start.pointerY,
+      zoom, stage.clientWidth, stage.clientHeight,
+    ));
+  }
+
+  function finishPointer(pointerId: number) {
+    if (activePanPointerIdRef.current === pointerId) {
+      activePanPointerIdRef.current = null;
+      panStartRef.current = null;
+      return;
+    }
+    finishDrawing(pointerId);
+  }
+
   function clearMask() {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -209,6 +244,9 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
           <button className={tool === 'sketch' ? 'active' : ''} aria-label="Inpaint sketch" type="button" onClick={() => setTool('sketch')} title="Inpaint sketch">
             <Pencil size={14} />
           </button>
+          <button className={tool === 'pan' ? 'active' : ''} aria-label="Pan inpaint viewport" type="button" onClick={() => setTool('pan')} title="Pan view without changing mask">
+            <Hand size={14} />
+          </button>
         </div>
         <label className="field">
           <span>Brush {brushSize}px</span>
@@ -227,14 +265,30 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
         <button className="mini-button" type="button" onClick={clearMask} aria-label="Clear inpaint mask" title="Clear inpaint mask">
           <Trash2 size={14} />
         </button>
+        <button className="mini-button" type="button" onClick={() => resetViewport(zoom - 0.25)} disabled={zoom <= 1} aria-label="Zoom out inpaint image" title="Zoom out">
+          <ZoomOut size={14} />
+        </button>
+        <output aria-label="Inpaint zoom level" className="inpaint-zoom-indicator">{Math.round(zoom * 100)}%</output>
+        <button className="mini-button" type="button" onClick={() => resetViewport(zoom + 0.25)} disabled={zoom >= 4} aria-label="Zoom in inpaint image" title="Zoom in">
+          <ZoomIn size={14} />
+        </button>
+        <button className="mini-button" type="button" onClick={() => resetViewport(1)} disabled={zoom === 1} title="Reset view">1:1</button>
       </div>
-      <div className="inpaint-stage" style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}>
+      <div ref={stageRef} className="inpaint-stage" style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}>
+        <div className="inpaint-viewport" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
         <img src={image} alt="Inpaint reference" draggable={false} />
         <canvas
           ref={canvasRef}
+          className={tool === 'pan' ? 'inpaint-pan-canvas' : ''}
           aria-label="Inpaint mask canvas"
           onPointerDown={(event) => {
             if (activePointerIdRef.current !== null || (event.pointerType === 'mouse' && event.button !== 0)) return;
+            if (tool === 'pan') {
+              activePanPointerIdRef.current = event.pointerId;
+              panStartRef.current = { pointerX: event.clientX, pointerY: event.clientY, ...pan };
+              event.currentTarget.setPointerCapture(event.pointerId);
+              return;
+            }
             event.currentTarget.setPointerCapture(event.pointerId);
             pushUndo();
             activePointerIdRef.current = event.pointerId;
@@ -243,13 +297,18 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
             drawDot(point);
           }}
           onPointerMove={(event) => {
+            if (activePanPointerIdRef.current === event.pointerId) {
+              movePan(event.pointerId, event.clientX, event.clientY);
+              return;
+            }
             if (activePointerIdRef.current !== event.pointerId) return;
             drawTo(pointFromEvent(event, event.currentTarget));
           }}
-          onPointerUp={(event) => finishDrawing(event.pointerId)}
-          onPointerCancel={(event) => finishDrawing(event.pointerId)}
-          onLostPointerCapture={(event) => finishDrawing(event.pointerId)}
+          onPointerUp={(event) => finishPointer(event.pointerId)}
+          onPointerCancel={(event) => finishPointer(event.pointerId)}
+          onLostPointerCapture={(event) => finishPointer(event.pointerId)}
         />
+        </div>
       </div>
     </section>
   );

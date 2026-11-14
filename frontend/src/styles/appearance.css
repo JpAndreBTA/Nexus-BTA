@@ -63,3 +63,17 @@
 /* Cursor-backed gallery: the index is authoritative, client filters cover only loaded pages. */
 .gallery-index-count { white-space: nowrap; color: var(--muted); font-size: 11px; }
 .gallery-load-more { grid-column: 1 / -1; min-height: 38px; justify-self: stretch; }
+
+/* M2.3: inpaint source and mask always share one transformed viewport. */
+.inpaint-stage .inpaint-viewport {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
+}
+.inpaint-stage canvas.inpaint-pan-canvas { cursor: grab; }
+.inpaint-stage canvas.inpaint-pan-canvas:active { cursor: grabbing; }
+.inpaint-toolbar { display: flex; flex-wrap: wrap; align-items: center; }
+.inpaint-toolbar > label.field { flex: 1 1 130px; min-width: 120px; }
+.inpaint-zoom-indicator { font-size: 11px; min-width: 43px; text-align: center; font-variant-numeric: tabular-nums; }

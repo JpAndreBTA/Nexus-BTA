@@ -34,3 +34,16 @@ export function binaryMaskPixels(pixels: Uint8ClampedArray): boolean {
   }
   return hasMask;
 }
+
+/** CSS pan limits, in viewport pixels, keep the zoomed image over the editor. */
+export function clampViewportPan(
+  x: number, y: number, zoom: number, viewportWidth: number, viewportHeight: number,
+): { x: number; y: number } {
+  if (!Number.isFinite(zoom) || zoom <= 1) return { x: 0, y: 0 };
+  const allowedX = Math.max(0, ((zoom - 1) * Math.max(0, viewportWidth)) / 2);
+  const allowedY = Math.max(0, ((zoom - 1) * Math.max(0, viewportHeight)) / 2);
+  return {
+    x: Math.max(-allowedX, Math.min(allowedX, Number.isFinite(x) ? x : 0)),
+    y: Math.max(-allowedY, Math.min(allowedY, Number.isFinite(y) ? y : 0)),
+  };
+}
