@@ -89,3 +89,17 @@ export function useComfyCapabilitiesQuery(classes: string[], enabled: boolean) {
     retry: 1,
   });
 }
+
+/**
+ * Backend checks the exact registered classes from the workflow's source JSON.
+ * The cached state is keyed by workflow ID; there is no Comfy auto-start.
+ */
+export function useWorkflowCapabilitiesQuery(workflowId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['comfy-workflow-capabilities', workflowId],
+    queryFn: ({ signal }) => nexusApi.workflowCapabilities(workflowId, signal),
+    enabled: enabled && !!workflowId,
+    staleTime: 30_000,
+    retry: 1,
+  });
+}

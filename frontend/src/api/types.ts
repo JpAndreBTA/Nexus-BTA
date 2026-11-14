@@ -368,7 +368,7 @@ export interface GenerationJob {
 }
 
 export interface ComfyCapabilityReport {
-  status: 'ready' | 'missing' | 'offline' | 'unavailable';
+  status: 'ready' | 'missing' | 'offline' | 'unavailable' | 'partial' | 'unverified';
   runtime_checked: boolean;
   ready: boolean;
   requested: string[];
@@ -376,4 +376,8 @@ export interface ComfyCapabilityReport {
   missing: string[];
   unverified: string[];
   registered_count: number;
+  workflow_id?: string;
+  required_count?: number;
+  invalid_class_count?: number;
+  warning?: string;
 }

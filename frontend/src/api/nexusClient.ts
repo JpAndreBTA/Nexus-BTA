@@ -28,6 +28,10 @@ export const nexusApi = {
     nexusFetch<ComfyCapabilityReport>(
       `/comfy/capabilities?classes=${encodeURIComponent(classes.join(','))}`, { signal },
     ),
+  workflowCapabilities: (workflowId: string, signal?: AbortSignal) =>
+    nexusFetch<ComfyCapabilityReport>(
+      `/comfy/workflow-capabilities?workflow_id=${encodeURIComponent(workflowId)}`, { signal },
+    ),
   refreshModelTree: () => nexusFetch<{ ok?: boolean }>('/model-tree', { method: 'POST' }),
   models: () => nexusFetch<ModelCatalog>('/models'),
   loras: () => nexusFetch<LoraAsset[]>('/loras'),
