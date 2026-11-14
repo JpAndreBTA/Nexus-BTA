@@ -22,6 +22,8 @@ export function StudioWorkflowInputStatus({
       <strong>{requiresReview ? 'Input ABI needs review' : 'Static input checks passed'}</strong>
       <span>{report.node_count} nodes · {report.missing_classes} missing classes · {report.broken_links} link issues</span>
       <span>{report.missing_required_inputs} potentially missing inputs · {report.choice_mismatches} choice mismatches · {report.unverified_inputs} unverified inputs</span>
+      <span>{report.model_choices_unavailable ?? 0} / {report.model_choices_checked ?? 0} model selections not advertised by the current registry</span>
+      {report.schema_signature && <small>Comfy node schema signature: {report.schema_signature} (changes when registered input menus or ABI change)</small>}
       {report.findings.length > 0 && (
         <details>
           <summary>Inspect first {report.findings.length} findings{report.truncated_findings ? ' (truncated)' : ''}</summary>

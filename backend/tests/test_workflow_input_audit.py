@@ -80,3 +80,43 @@ class WorkflowInputAuditTests(unittest.TestCase):
             path.write_bytes(b" " * (MAX_WORKFLOW_BYTES + 1))
             with self.assertRaisesRegex(ValueError, "size limit"):
                 read_workflow_bounded(path)
+
+    def test_model_choices_and_registry_signature_report_only_menu_visibility(self):
+        source = {
+            "1": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {"ckpt_name": "not-advertised.safetensors"},
+            },
+            "2": {
+                "class_type": "KSampler",
+                "inputs": {"model": ["1", 0], "seed": 1, "steps": 25, "sampler_name": "euler"},
+            },
+        }
+        registry = {
+            "CheckpointLoaderSimple": {
+                "input": {"required": {"ckpt_name": [["available.safetensors"]]}},
+                "output": ["MODEL"],
+            },
+            "KSampler": {
+                "input": {
+                    "required": {"model": ["MODEL"], "seed": ["INT"], "steps": ["INT"]},
+                    "optional": {"sampler_name": [["euler", "heun"]]},
+                },
+            },
+        }
+        first = inspect_workflow_inputs("qa", source, registry)
+        self.assertEqual(first["model_choices_checked"], 1)
+        self.assertEqual(first["model_choices_unavailable"], 1)
+        self.assertEqual(first["choice_mismatches"], 1)
+        self.assertEqual(first["findings"][0]["kind"], "model_not_advertised")
+        self.assertEqual(len(first["schema_signature"]), 20)
+        self.assertNotIn("not-advertised.safetensors", str(first))
+        same = inspect_workflow_inputs("qa", source, registry)
+        self.assertEqual(first["schema_signature"], same["schema_signature"])
+        altered_registry = json.loads(json.dumps(registry))
+        altered_registry["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"][0].append("new.safetensors")
+        changed = inspect_workflow_inputs("qa", source, altered_registry)
+        self.assertNotEqual(first["schema_signature"], changed["schema_signature"])
+        offline = inspect_workflow_inputs("qa", source, None)
+        self.assertIsNone(offline["schema_signature"])
+        self.assertEqual(offline["model_choices_unavailable"], 0)

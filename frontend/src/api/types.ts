@@ -400,6 +400,9 @@ export interface WorkflowInputReport {
   broken_links: number;
   missing_required_inputs: number;
   choice_mismatches: number;
+  model_choices_checked?: number;
+  model_choices_unavailable?: number;
+  schema_signature?: string | null;
   unverified_inputs: number;
   findings: WorkflowInputFinding[];
   truncated_findings: boolean;

@@ -8,6 +8,7 @@ proof of a failed generation.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,31 @@ MAX_WORKFLOW_BYTES = 4 * 1024 * 1024
 MAX_WORKFLOW_NODES = 512
 MAX_INPUTS_PER_NODE = 128
 MAX_FINDINGS = 32
+MODEL_INPUTS = frozenset({
+    "ckpt_name", "checkpoint_name", "unet_name", "model_name", "lora_name",
+    "vae_name", "video_vae_name", "audio_vae_name", "clip_name",
+    "clip_name1", "clip_name2", "text_encoder", "control_net_name",
+    "upscale_model", "diffusion_model",
+})
+MODEL_FILE_SUFFIXES = (".safetensors", ".ckpt", ".pt", ".pth", ".gguf", ".onnx", ".bin")
+
+
+def schema_signature(nodes: dict[str, dict[str, Any]], registry: dict[str, Any] | None) -> str | None:
+    """Fingerprint only relevant node input/output ABI. Never return registry paths."""
+    if registry is None:
+        return None
+    classes = sorted({node["class_type"] for node in nodes.values()})
+    relevant = {
+        name: {
+            "input": registry.get(name, {}).get("input"),
+            "output": registry.get(name, {}).get("output"),
+        } if isinstance(registry.get(name), dict) else None
+        for name in classes
+    }
+    encoded = json.dumps(relevant, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:20]
+
+
 
 
 def read_workflow_bounded(path: Path) -> Any:
@@ -43,6 +69,9 @@ def inspect_workflow_inputs(
         "broken_links": 0,
         "missing_required_inputs": 0,
         "choice_mismatches": 0,
+        "model_choices_checked": 0,
+        "model_choices_unavailable": 0,
+        "schema_signature": None,
         "unverified_inputs": 0,
         "findings": [],
         "truncated_findings": False,
@@ -78,6 +107,7 @@ def inspect_workflow_inputs(
         result["note"] = "No API nodes found or workflow exceeds the 512-node inspection budget."
         return result
     result["node_count"] = len(nodes)
+    result["schema_signature"] = schema_signature(nodes, registry)
     if registry is None:
         return result
     for node_id, node in nodes.items():
@@ -145,9 +175,25 @@ def inspect_workflow_inputs(
                     result["unverified_inputs"] += 1
                     finding("unverified_link_type", node_id, kind, str(name))
             elif isinstance(expected, list) and isinstance(value, (str, int, float, bool)):
+                # The running ComfyUI registry advertises selectable file names.
+                # Absence from its menu is a model-choice warning, NOT proof the
+                # physical file is missing from every configured model source.
+                selected_model = (
+                    isinstance(value, str)
+                    and (
+                        str(name).lower() in MODEL_INPUTS
+                        or value.lower().endswith(MODEL_FILE_SUFFIXES)
+                    )
+                )
+                if selected_model:
+                    result["model_choices_checked"] += 1
                 if value not in expected:
                     result["choice_mismatches"] += 1
-                    finding("possible_choice_mismatch", node_id, kind, str(name))
+                    if selected_model:
+                        result["model_choices_unavailable"] += 1
+                        finding("model_not_advertised", node_id, kind, str(name))
+                    else:
+                        finding("possible_choice_mismatch", node_id, kind, str(name))
             elif expected is None:
                 result["unverified_inputs"] += 1
                 finding("unknown_registry_input", node_id, kind, str(name))
