@@ -25,8 +25,8 @@ class LogicalAssetPlanTests(unittest.TestCase):
     def test_complete_catalog_returns_logical_asset_selection_without_mutating_request(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            (root / "models" / "checkpoints" / "model.safetensors").write_bytes(b"")
             settings = self.settings(root)
+            (root / "models" / "checkpoints" / "model.safetensors").write_bytes(b"")
             request = GenerateRequest(preset="custom", model_name="model.safetensors")
             before = request.model_dump()
             plan = plan_generation_assets(settings, request)
@@ -40,8 +40,8 @@ class LogicalAssetPlanTests(unittest.TestCase):
     def test_partial_catalog_keeps_tentative_selection_unverified(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            (root / "models" / "checkpoints" / "model.safetensors").write_bytes(b"")
             settings = self.settings(root, external_exists=False)
+            (root / "models" / "checkpoints" / "model.safetensors").write_bytes(b"")
             plan = plan_generation_assets(
                 settings, GenerateRequest(preset="custom", model_name="model.safetensors"),
             )
