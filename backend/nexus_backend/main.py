@@ -6221,6 +6221,7 @@ app = FastAPI(title="Nexus BTA Backend", version="0.1.1")
 app.include_router(make_comfy_capability_router(
     lambda: read_comfy_registry_readonly(comfy),
     workflow_lookup=_workflow_classes_for_inspection,
+    workflow_path_lookup=lambda workflow_id: workflow_registry.find(workflow_id),
 ))
 app.add_middleware(
     CORSMiddleware,
