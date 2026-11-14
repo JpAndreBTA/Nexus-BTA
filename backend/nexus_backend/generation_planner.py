@@ -1,7 +1,9 @@
 """Read-only logical asset planning built on a bounded model catalog."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from .asset_resolver import resolve_generation_assets_from_catalog
 from .config import NexusSettings
@@ -14,7 +16,8 @@ class LogicalAssetPlan:
     """Advisory asset selection; never means the full generation is ready."""
 
     status: str
-    assets: dict[str, str]
+    assets: Mapping[str, str]
+    generation_ready: bool
     catalog_complete: bool
     truncated: bool
     roots_checked: int
@@ -43,12 +46,13 @@ def plan_generation_assets(
     if not scan.complete:
         status = "partial" if assets else "unverified"
     elif assets:
-        status = "resolved"
+        status = "selected"
     else:
         status = "no_assets"
     return LogicalAssetPlan(
         status=status,
-        assets=dict(assets),
+        assets=MappingProxyType(dict(assets)),
+        generation_ready=False,
         catalog_complete=scan.complete,
         truncated=scan.truncated,
         roots_checked=scan.roots_checked,

@@ -30,11 +30,14 @@ class LogicalAssetPlanTests(unittest.TestCase):
             request = GenerateRequest(preset="custom", model_name="model.safetensors")
             before = request.model_dump()
             plan = plan_generation_assets(settings, request)
-            self.assertEqual(plan.status, "resolved")
+            self.assertEqual(plan.status, "selected")
+            self.assertFalse(plan.generation_ready)
             self.assertTrue(plan.catalog_complete)
             self.assertFalse(plan.truncated)
             self.assertTrue(plan.assets["primary_model"].endswith("model.safetensors"))
             self.assertEqual(request.model_dump(), before)
+            with self.assertRaises(TypeError):
+                plan.assets["injected"] = "model.safetensors"
             self.assertIn("No prompt was submitted", plan.note)
 
     def test_partial_catalog_keeps_tentative_selection_unverified(self):
@@ -54,5 +57,6 @@ class LogicalAssetPlanTests(unittest.TestCase):
             settings = self.settings(Path(folder))
             plan = plan_generation_assets(settings, GenerateRequest(preset="custom"))
             self.assertEqual(plan.status, "no_assets")
-            self.assertEqual(plan.assets, {})
+            self.assertEqual(dict(plan.assets), {})
+            self.assertFalse(plan.generation_ready)
             self.assertTrue(plan.catalog_complete)
