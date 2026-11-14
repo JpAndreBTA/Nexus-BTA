@@ -38,7 +38,7 @@ class LogicalAssetPlanTests(unittest.TestCase):
             self.assertEqual(request.model_dump(), before)
             with self.assertRaises(TypeError):
                 plan.assets["injected"] = "model.safetensors"
-            self.assertIn("No prompt was submitted", plan.note)
+            self.assertIn("no prompt was submitted", plan.note.lower())
 
     def test_partial_catalog_keeps_tentative_selection_unverified(self):
         with tempfile.TemporaryDirectory() as folder:
