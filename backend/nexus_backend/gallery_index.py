@@ -94,7 +94,7 @@ def _decode_cursor(value: str | None, signature: str) -> tuple[int, str, str, st
 
 
 def _escape_like(text: str) -> str:
-    return text.replace("\\\\", "\\\\\\\\").replace("%", "\\\\%").replace("_", "\\\\_")
+    return text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
 
 
 
@@ -231,7 +231,7 @@ class GalleryIndex:
         conditions: list[str] = []
         params: list[object] = []
         if query:
-            conditions.append("relative_path LIKE ? ESCAPE '\\\\' COLLATE NOCASE")
+            conditions.append("relative_path LIKE ? ESCAPE '!' COLLATE NOCASE")
             params.append(f"%{_escape_like(query)}%")
         if media_type != "all":
             conditions.append("media_type = ?")

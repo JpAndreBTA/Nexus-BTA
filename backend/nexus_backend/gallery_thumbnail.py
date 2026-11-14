@@ -27,7 +27,7 @@ def safe_image_path(root: Path, relative_path: str) -> Path:
     """Reject traversal and symlink escape even when a URL was manually crafted."""
     if (
         not relative_path or len(relative_path) > 1024 or
-        relative_path.startswith(("/", "\\\\")) or "\\\\" in relative_path or "\\x00" in relative_path or
+        relative_path[0] in ("/", chr(92)) or chr(92) in relative_path or "\\x00" in relative_path or
         any(p in ("", ".", "..") for p in relative_path.split("/"))
     ):
         raise ValueError("Invalid thumbnail path.")
