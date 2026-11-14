@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import unittest
+import json
+import tempfile
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -76,6 +79,64 @@ class ComfyCapabilityTests(unittest.TestCase):
             self.assertEqual(oversized["required_count"], 300)
             self.assertFalse(oversized["ready"])
             self.assertLessEqual(len(oversized["requested"]), 16)
+
+
+    def test_workflow_input_route_bounds_files_and_flags_choice_review(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "workflow.json"
+            path.write_text(json.dumps({
+                "1": {"class_type": "CheckpointLoaderSimple", "inputs": {
+                    "ckpt_name": "not-present.safetensors"}},
+                "2": {"class_type": "KSampler", "inputs": {
+                    "model": ["1", 0], "seed": 4}},
+            }), encoding="utf8")
+            calls = []
+            def lookup(key):
+                return path if key == "qa" else None
+            async def registry():
+                calls.append("registry")
+                return {
+                    "CheckpointLoaderSimple": {
+                        "input": {"required": {"ckpt_name": [["present.safetensors"]]}},
+                        "output": ["MODEL"],
+                    },
+                    "KSampler": {"input": {"required": {
+                        "model": ["MODEL"], "seed": ["INT"], "steps": ["INT"],
+                    }}},
+                }
+            app = FastAPI()
+            app.include_router(make_comfy_capability_router(
+                registry, workflow_path_lookup=lookup,
+            ))
+            client = TestClient(app)
+            report = client.get("/api/comfy/workflow-inputs?workflow_id=qa").json()
+            self.assertEqual(report["status"], "review")
+            self.assertEqual(report["missing_required_inputs"], 1)
+            self.assertEqual(report["choice_mismatches"], 1)
+            self.assertFalse(report["ready"])
+            self.assertEqual(calls, ["registry"])
+            self.assertEqual(client.get("/api/comfy/workflow-inputs?workflow_id=unknown").status_code, 404)
+            self.assertEqual(client.get("/api/comfy/workflow-inputs?workflow_id=../invalid").status_code, 400)
+            self.assertEqual(calls, ["registry"])
+            path.write_bytes(b" " * (4 * 1024 * 1024 + 1))
+            self.assertEqual(client.get("/api/comfy/workflow-inputs?workflow_id=qa").status_code, 422)
+            self.assertEqual(calls, ["registry"])
+
+    def test_workflow_input_route_offline_stays_unverified(self):
+        with tempfile.TemporaryDirectory() as folder:
+            file = Path(folder) / "workflow.json"
+            file.write_text('{"1":{"class_type":"Unavailable","inputs":{}}}', encoding="utf8")
+            async def offline():
+                return None
+            app = FastAPI()
+            app.include_router(make_comfy_capability_router(
+                offline, workflow_path_lookup=lambda _: file,
+            ))
+            report = TestClient(app).get("/api/comfy/workflow-inputs?workflow_id=qa").json()
+            self.assertEqual(report["status"], "offline")
+            self.assertEqual(report["missing_classes"], 0)
+            self.assertFalse(report["runtime_checked"])
+            self.assertFalse(report["ready"])
 
     def test_readonly_http_backend_and_offline_behavior(self):
         calls = []
