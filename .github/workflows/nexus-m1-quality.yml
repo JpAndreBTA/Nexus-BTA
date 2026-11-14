@@ -86,6 +86,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nexus-m2-browser-gallery
-          path: frontend/artifacts/gallery-paginated.png
+          path: |
+            frontend/artifacts/gallery-paginated.png
+            frontend/artifacts/gallery-glb-preview.png
           if-no-files-found: ignore
           retention-days: 7

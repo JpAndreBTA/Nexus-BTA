@@ -5,11 +5,47 @@ import { chromium } from 'playwright';
 const base = process.env.NEXUS_SMOKE_URL || 'http://127.0.0.1:3000';
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 940 }, acceptDownloads: true });
+
+function glbTriangleFixture() {
+  const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const meta = {
+    asset: { version: '2.0' },
+    buffers: [{ byteLength: positions.byteLength }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: positions.byteLength }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, mode: 4 }] }],
+  };
+  const json = Buffer.from(JSON.stringify(meta));
+  const padded = Buffer.concat([json, Buffer.alloc((4 - (json.length % 4)) % 4, 32)]);
+  const bin = Buffer.from(positions.buffer);
+  const glb = Buffer.alloc(12 + 8 + padded.length + 8 + bin.length);
+  glb.writeUInt32LE(0x46546c67, 0);
+  glb.writeUInt32LE(2, 4);
+  glb.writeUInt32LE(glb.length, 8);
+  glb.writeUInt32LE(padded.length, 12);
+  glb.writeUInt32LE(0x4e4f534a, 16);
+  padded.copy(glb, 20);
+  const offset = 20 + padded.length;
+  glb.writeUInt32LE(bin.length, offset);
+  glb.writeUInt32LE(0x004e4942, offset + 4);
+  bin.copy(glb, offset + 8);
+  return glb;
+}
+
 const runtimeErrors = [];
 let galleryTestPages = false;
 let thumbRequests = 0;
 let videoPosterRequests = 0;
 page.on('pageerror', error => runtimeErrors.push(error.message));
+
+await page.route('**/outputs/**', async (route) => {
+  const path = new URL(route.request().url()).pathname;
+  if (path.endsWith('.glb')) {
+    await route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glbTriangleFixture() });
+    return;
+  }
+  await route.continue();
+});
 
 await page.route('**/api/**', async (route) => {
   const url = new URL(route.request().url());
@@ -154,6 +190,14 @@ try {
   await page.getByRole('combobox', { name: 'Filter gallery media type' }).selectOption('3d');
   await page.locator('.gallery-card').filter({ hasText: 'Forest model.glb' }).waitFor();
   await page.getByText('1 / 1 loaded').waitFor();
+  await page.getByRole('img', { name: /Experimental GLB orbit preview/ }).waitFor();
+  // On supported browsers, render one real mocked triangle on a WebGL2 canvas.
+  if (await page.evaluate(() => Boolean(document.createElement('canvas').getContext('webgl2')))) {
+    await page.getByText(/First mesh primitive/).waitFor({ timeout: 15000 });
+  } else {
+    await page.getByText(/WebGL2 is unavailable/).waitFor();
+  }
+  await page.screenshot({ path: 'artifacts/gallery-glb-preview.png', fullPage: true });
   await page.getByRole('combobox', { name: 'Filter gallery media type' }).selectOption('video');
   await page.locator('.gallery-card').filter({ hasText: 'Demo clip.mp4' }).waitFor();
   await page.locator('img[alt="Video preview: Demo clip.mp4"]').waitFor();
