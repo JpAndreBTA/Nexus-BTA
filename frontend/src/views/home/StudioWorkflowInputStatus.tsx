@@ -39,10 +39,16 @@ export function StudioWorkflowInputStatus({
   if (report.status === 'ui_format' || report.status === 'unsupported') return (
     <div className="studio-node-capabilities" role="status">Input ABI not inspected: {report.note}</div>
   );
-  const requiresReview = report.status !== 'static_valid';
+  const modelSourceReview = Boolean(report.model_sources && (
+    report.model_sources.not_found > 0
+    || report.model_sources.unverified > 0
+    || report.model_sources.multiple_matches > 0
+    || report.model_sources.truncated
+  ));
+  const requiresReview = report.status !== 'static_valid' || modelSourceReview;
   return (
     <div className={requiresReview ? 'studio-node-capabilities missing' : 'studio-node-capabilities'} role="status">
-      <strong>{requiresReview ? 'Input ABI needs review' : 'Static input checks passed'}</strong>
+      <strong>{modelSourceReview ? 'Workflow preflight needs review' : requiresReview ? 'Input ABI needs review' : 'Static input checks passed'}</strong>
       <span>{report.node_count} nodes · {report.missing_classes} missing classes · {report.broken_links} link issues</span>
       <span>{report.missing_required_inputs} potentially missing inputs · {report.choice_mismatches} choice mismatches · {report.unverified_inputs} unverified inputs</span>
       <span>{report.model_choices_unavailable ?? 0} / {report.model_choices_checked ?? 0} model selections not advertised by the current registry</span>

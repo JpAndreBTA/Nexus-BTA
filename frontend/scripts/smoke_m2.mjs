@@ -116,11 +116,10 @@ await page.route('**/api/**', async (route) => {
     assert.ok(payload.width > 0 && payload.height > 0);
     assert.ok(!('reference_image' in payload) && !('mask_image' in payload));
     result = {
-      workflow_id: payload.workflow_id, status: 'review', runtime_checked: true,
-      static_valid: false, ready: false, node_count: 2, registered_count: 2,
-      missing_classes: 0, broken_links: 0, missing_required_inputs: 1, choice_mismatches: 0,
-      unverified_inputs: 0, findings: [{ kind: 'possibly_missing_required',
-        node_id: '2', class_type: 'KSampler', input: 'latent_image' }],
+      workflow_id: payload.workflow_id, status: 'static_valid', runtime_checked: true,
+      static_valid: true, ready: false, node_count: 2, registered_count: 2,
+      missing_classes: 0, broken_links: 0, missing_required_inputs: 0, choice_mismatches: 0,
+      unverified_inputs: 0, findings: [],
       truncated_findings: false, preview: true, changed_nodes: 2, changed_input_fields: 4,
       model_sources: {
         status: 'issues', references_checked: 2, found: 1, multiple_matches: 0,
@@ -186,6 +185,7 @@ try {
   await page.getByText('Input ABI unverified: ComfyUI is offline.').waitFor();
   await page.getByRole('button', { name: 'Run workflow preflight without generation' }).click();
   await page.getByText('2 changed nodes · 4 changed inputs').waitFor();
+  await page.getByText('Workflow preflight needs review').waitFor();
   await page.getByText('Local model files: 1 found · 1 not found · 0 unverified').waitFor();
   await page.getByText('CheckpointLoaderSimple #1 / ckpt_name: found').waitFor();
   await page.getByText(/Advisory template patch only/).waitFor();
