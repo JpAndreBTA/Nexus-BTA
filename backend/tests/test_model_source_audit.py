@@ -25,6 +25,7 @@ class ModelSourceAuditTests(unittest.TestCase):
             root = Path(folder)
             model_root = root / "models" / "checkpoints"
             model_root.joinpath("nested").mkdir(parents=True)
+            (root / "models" / "vae").mkdir(parents=True)
             (model_root / "nested" / "model.safetensors").write_bytes(b"")
             report = audit_model_references({
                 "1": {"class_type": "CheckpointLoaderSimple", "inputs": {
@@ -110,7 +111,9 @@ class ModelSourceAuditTests(unittest.TestCase):
                     "ckpt_name": str(root / "private.safetensors"),
                 }},
             }, self.make_settings(root))
-            self.assertEqual(absolute["references_checked"], 0)
+            self.assertEqual(absolute["references_checked"], 1)
+            self.assertEqual(absolute["unverified"], 1)
+            self.assertEqual(absolute["entries"][0]["reason"], "unsafe_or_unsupported_reference")
             self.assertNotIn(str(root), str(absolute))
 
     def test_depth_limit_is_explicit_and_conservative(self):

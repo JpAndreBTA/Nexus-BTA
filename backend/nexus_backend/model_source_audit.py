@@ -76,6 +76,11 @@ _ALL_CATEGORIES = tuple(DEFAULT_MODEL_SOURCES)
 _DEFAULT_EXTENSIONS = (".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf", ".onnx")
 
 
+def _model_suffix(value: str, extensions: set[str]) -> bool:
+    normalized = value.strip().replace("\\", "/")
+    return Path(normalized.rsplit("/", 1)[-1]).suffix.lower() in extensions
+
+
 def _normalize_model_reference(value: str, extensions: set[str]) -> tuple[str, str] | None:
     if not value or len(value) > 512 or any(ord(char) < 32 for char in value):
         return None
@@ -92,41 +97,55 @@ def _normalize_model_reference(value: str, extensions: set[str]) -> tuple[str, s
     return basename.casefold(), relative.casefold()
 
 
+def _entry_metadata(node_id: str, class_type: str, input_name: str, categories: tuple[str, ...]) -> dict[str, Any]:
+    return {
+        "node_id": str(node_id)[:80],
+        "class_type": class_type[:120],
+        "input": str(input_name)[:120],
+        "categories": list(categories[:4]),
+    }
+
+
 def _extract_references(
     graph: dict[str, dict[str, Any]],
     extensions: set[str],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
     references: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, tuple[str, ...]]] = set()
+    truncated = False
     for node_id, node in graph.items():
         inputs = node.get("inputs")
         if not isinstance(inputs, dict):
             continue
         class_type = str(node.get("class_type") or "")[:120]
         for input_name, value in inputs.items():
-            if not isinstance(value, str):
+            if not isinstance(value, str) or not _model_suffix(value, extensions):
                 continue
-            normalized = _normalize_model_reference(value, extensions)
-            if normalized is None:
-                continue
-            basename, relative = normalized
             key = str(input_name).lower()
             categories = _MODEL_INPUT_CATEGORIES.get(key, _ALL_CATEGORIES)
-            identity = (str(node_id), key, basename, tuple(categories))
-            if identity in seen:
-                continue
-            seen.add(identity)
-            references.append({
-                "node_id": str(node_id)[:80],
-                "class_type": class_type,
-                "input": str(input_name)[:120],
-                "basename": basename,
-                "relative": relative,
-                "categories": categories,
-            })
-            if len(references) >= MAX_MODEL_REFERENCES:
-                return references
-    return references
+            normalized = _normalize_model_reference(value, extensions)
+            if normalized is None:
+                skipped.append({
+                    **_entry_metadata(node_id, class_type, str(input_name), categories),
+                    "status": "unverified",
+                    "reason": "unsafe_or_unsupported_reference",
+                })
+            else:
+                basename, relative = normalized
+                identity = (str(node_id), key, basename, tuple(categories))
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                references.append({
+                    **_entry_metadata(node_id, class_type, str(input_name), categories),
+                    "basename": basename,
+                    "relative": relative,
+                })
+            if len(references) + len(skipped) >= MAX_MODEL_REFERENCES:
+                truncated = True
+                return references, skipped, truncated
+    return references, skipped, truncated
 
 
 def _configured_roots(
@@ -134,6 +153,7 @@ def _configured_roots(
     categories: tuple[str, ...],
 ) -> tuple[list[dict[str, Any]], bool]:
     roots: dict[str, dict[str, Any]] = {}
+    source_truncated = False
 
     def add(path: Path, label: str, category: str) -> None:
         key = os.path.normcase(os.path.abspath(os.fspath(path)))
@@ -151,11 +171,13 @@ def _configured_roots(
         normalized = _CATEGORY_ALIASES.get(str(alias).strip().lower(), str(alias).strip().lower())
         if normalized not in categories or not isinstance(paths, list):
             continue
+        if len(paths) > MAX_MODEL_SOURCE_ROOTS:
+            source_truncated = True
         for index, path in enumerate(paths[:MAX_MODEL_SOURCE_ROOTS]):
             add(Path(path), f"model_sources/{normalized}[{index + 1}]", normalized)
 
     ordered = sorted(roots.values(), key=lambda item: str(item["path"]).casefold())
-    truncated = len(ordered) > MAX_MODEL_SOURCE_ROOTS
+    truncated = source_truncated or len(ordered) > MAX_MODEL_SOURCE_ROOTS
     return ordered[:MAX_MODEL_SOURCE_ROOTS], truncated
 
 
@@ -164,9 +186,9 @@ def _scan_root(
     labels: set[str],
     wanted: list[dict[str, Any]],
     budget: dict[str, Any],
-) -> tuple[dict[int, list[str]], bool, bool]:
-    """Return matches by reference index, whether traversal was complete, and scanned."""
-    matches: dict[int, list[str]] = {}
+) -> tuple[dict[int, dict[str, list[str]]], bool, bool]:
+    """Return distinct physical file matches by reference index, completeness, scanned."""
+    matches: dict[int, dict[str, list[str]]] = {}
     complete = True
     scanned = False
 
@@ -179,6 +201,7 @@ def _scan_root(
     except OSError:
         return matches, False, False
 
+    scanned = True
     wanted_by_name: dict[str, list[tuple[int, dict[str, Any]]]] = {}
     for index, reference in enumerate(wanted):
         wanted_by_name.setdefault(reference["basename"], []).append((index, reference))
@@ -202,10 +225,8 @@ def _scan_root(
                         return matches, False, scanned
                     try:
                         if entry.is_symlink():
-                            if Path(entry.name).suffix.lower() in budget["extensions"]:
-                                complete = False
-                            elif entry.is_dir(follow_symlinks=False):
-                                complete = False
+                            # Do not inspect the target, even to classify it.
+                            complete = False
                             continue
                         if entry.is_dir(follow_symlinks=False):
                             if depth >= MAX_SCAN_DEPTH:
@@ -223,18 +244,19 @@ def _scan_root(
                             complete = False
                             continue
                         relative = file_real.relative_to(root_real).as_posix().casefold()
+                        file_identity = os.path.normcase(os.fspath(file_real))
                         for index, reference in candidates:
                             if "/" in reference["relative"] and relative != reference["relative"]:
                                 continue
-                            current_matches = matches.setdefault(index, [])
+                            by_file = matches.setdefault(index, {})
+                            labels_for_file = by_file.setdefault(file_identity, [])
                             for label in sorted(labels):
-                                if label not in current_matches and len(current_matches) < MAX_MATCHES_PER_REFERENCE:
-                                    current_matches.append(label)
+                                if label not in labels_for_file and len(labels_for_file) < MAX_MATCHES_PER_REFERENCE:
+                                    labels_for_file.append(label)
                     except OSError:
                         complete = False
         except OSError:
             complete = False
-    scanned = True
     return matches, complete, scanned
 
 
@@ -248,36 +270,34 @@ def audit_model_references(
         for item in settings.supported_model_extensions
         if str(item).strip()
     } or set(_DEFAULT_EXTENSIONS)
-    references = _extract_references(graph, extensions)
+    references, skipped, references_truncated = _extract_references(graph, extensions)
     result: dict[str, Any] = {
-        "status": "not_applicable" if not references else "partial",
-        "references_checked": len(references),
+        "status": "not_applicable" if not references and not skipped else "partial",
+        "references_checked": len(references) + len(skipped),
         "found": 0,
         "multiple_matches": 0,
         "not_found": 0,
-        "unverified": 0,
+        "unverified": len(skipped),
         "roots_checked": 0,
         "entries_scanned": 0,
-        "truncated": False,
-        "entries": [],
+        "truncated": references_truncated,
+        "entries": list(skipped),
         "note": (
             "Read-only filename checks in configured Nexus model roots only. "
             "No model contents were opened; symlinks were not traversed; no files were downloaded."
         ),
     }
     if not references:
+        if skipped:
+            result["status"] = "partial"
         return result
 
     all_categories = tuple(dict.fromkeys(
         category for reference in references for category in reference["categories"]
     ))
     roots, roots_truncated = _configured_roots(settings, all_categories)
-    budget: dict[str, Any] = {
-        "entries": 0,
-        "exhausted": False,
-        "extensions": extensions,
-    }
-    found_by_reference: dict[int, list[str]] = {}
+    budget: dict[str, Any] = {"entries": 0, "exhausted": False}
+    found_by_reference: dict[int, dict[str, list[str]]] = {}
     complete_by_reference = {index: not roots_truncated for index in range(len(references))}
     configured_by_reference = {index: 0 for index in range(len(references))}
 
@@ -299,12 +319,14 @@ def audit_model_references(
         if not complete:
             for index in applicable:
                 complete_by_reference[index] = False
-        for local_index, labels in matches.items():
+        for local_index, by_file in matches.items():
             original_index = applicable[local_index]
-            current = found_by_reference.setdefault(original_index, [])
-            for label in labels:
-                if label not in current and len(current) < MAX_MATCHES_PER_REFERENCE:
-                    current.append(label)
+            current = found_by_reference.setdefault(original_index, {})
+            for file_identity, labels in by_file.items():
+                current.setdefault(file_identity, [])
+                for label in labels:
+                    if label not in current[file_identity]:
+                        current[file_identity].append(label)
         if budget["exhausted"]:
             for index in range(len(references)):
                 if index not in found_by_reference:
@@ -312,13 +334,17 @@ def audit_model_references(
             break
 
     result["entries_scanned"] = budget["entries"]
-    result["truncated"] = roots_truncated or bool(budget["exhausted"])
+    result["truncated"] = result["truncated"] or roots_truncated or bool(budget["exhausted"])
     for index, reference in enumerate(references):
-        sources = found_by_reference.get(index, [])
-        if len(sources) > 1:
+        by_file = found_by_reference.get(index, {})
+        file_count = len(by_file)
+        sources = list(dict.fromkeys(
+            label for labels in by_file.values() for label in labels
+        ))[:MAX_MATCHES_PER_REFERENCE]
+        if file_count > 1:
             status = "multiple_matches"
             result["multiple_matches"] += 1
-        elif sources:
+        elif file_count == 1:
             status = "found"
             result["found"] += 1
         elif configured_by_reference[index] == 0 or not complete_by_reference[index]:
@@ -328,13 +354,13 @@ def audit_model_references(
             status = "not_found"
             result["not_found"] += 1
         result["entries"].append({
-            "node_id": reference["node_id"],
-            "class_type": reference["class_type"],
-            "input": reference["input"],
-            "categories": list(reference["categories"][:4]),
+            **_entry_metadata(
+                reference["node_id"], reference["class_type"], reference["input"],
+                tuple(reference["categories"]),
+            ),
             "status": status,
-            "match_count": len(sources),
-            "sources": sources[:MAX_MATCHES_PER_REFERENCE],
+            "match_count": file_count,
+            "sources": sources,
         })
 
     if result["unverified"] or result["truncated"]:
