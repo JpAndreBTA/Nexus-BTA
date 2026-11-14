@@ -7,6 +7,7 @@ This is an extra layer, NOT a replacement for an authenticated TLS gateway.
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import os
 from typing import Any
 
@@ -29,6 +30,27 @@ def allowed_remote_route(method: str, path: str) -> bool:
     )
 
 
+def _socket_is_loopback(scope: dict[str, Any]) -> bool:
+    for key in ("server", "client"):
+        endpoint = scope.get(key)
+        if not endpoint or not isinstance(endpoint, (tuple, list)) or not endpoint[0]:
+            continue
+        hostname = str(endpoint[0])
+        if is_loopback_listener(hostname):
+            continue
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError:
+            # Starlette TestClient uses a non-IP synthetic host. In
+            # production Uvicorn supplies real peer/socket IP addresses.
+            continue
+        if address.ipv4_mapped:
+            address = address.ipv4_mapped
+        if not address.is_loopback:
+            return False
+    return True
+
+
 class RemoteReadOnlyGate:
     def __init__(self, app: Any) -> None:
         self.app = app
@@ -41,7 +63,10 @@ class RemoteReadOnlyGate:
         # The actual app listener is local by default. Avoid locking out /ui and
         # /app on the intended desktop deployment.
         host = os.environ.get("NEXUS_BACKEND_HOST", "127.0.0.1")
-        if is_loopback_listener(host):
+        # Also inspect real ASGI socket and peer addresses. A direct
+        # uvicorn --host 0.0.0.0 launch may bypass run_backend.py and
+        # never set NEXUS_BACKEND_HOST. HTTP Host/X-Forwarded-* are untrusted.
+        if is_loopback_listener(host) and _socket_is_loopback(scope):
             await self.app(scope, receive, send)
             return
         if kind == "websocket":

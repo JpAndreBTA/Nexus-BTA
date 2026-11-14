@@ -57,6 +57,21 @@ class SecurityBoundaryTests(unittest.TestCase):
         }, clear=True):
             require_explicit_network_ack("0.0.0.0")
 
+    def test_asgi_actual_peer_prevents_direct_uvicorn_bypass(self):
+        from nexus_backend.remote_gate import _socket_is_loopback
+        self.assertFalse(_socket_is_loopback({
+            "server": ("192.168.1.22", 7861), "client": ("192.168.1.50", 49152)
+        }))
+        self.assertFalse(_socket_is_loopback({
+            "server": ("127.0.0.1", 7861), "client": ("203.0.113.10", 49152)
+        }))
+        self.assertFalse(_socket_is_loopback({
+            "server": ("::ffff:192.168.1.22", 7861), "client": ("::1", 49152)
+        }))
+        self.assertTrue(_socket_is_loopback({
+            "server": ("127.0.0.1", 7861), "client": ("127.0.0.1", 49152)
+        }))
+
     def test_readonly_remote_allowlist(self):
         self.assertTrue(allowed_remote_route("GET", "/api/gallery/page"))
         self.assertTrue(allowed_remote_route("GET", "/api/gallery/thumb/x.png"))
