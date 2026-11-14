@@ -247,3 +247,7 @@ See `docs/production/NEXUS_M2_3_CHECKPOINT_2026_11_13.md`. This supersedes M2.2'
 ## M2.4 checkpoint — 14 November 2026
 
 See `docs/production/NEXUS_M2_4_CHECKPOINT_2026_11_14.md`. The Gallery now supports on-demand bounded local FFmpeg WebP video posters and an experimental lazy GLB first-mesh geometry view. The Studio Node Workflow mode performs read-only ComfyUI registration checks without auto-starting or installing nodes. This does not certify full PBR 3D assets, model generation or Windows GPU parity. Legacy `/ui` and default routes remain intact.
+
+## M2.5 checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_5_CHECKPOINT_2026_11_14.md`. FastAPI capability router registration order corrected with structural test. Non-loopback requests now require an explicitly configured strong token AND unsafe-network acknowledgment; all remotely exposed paths are read-only allowlisted, other routes and mounts denied. This is not permission to publish Nexus on a network or a replacement for an authenticated HTTPS gateway. Studio workflow capability checks now derive exact class names from stored workflow JSON, not synthetic graph nodes; offline remains unverified. Legacy `/ui` and default local mode are preserved.
