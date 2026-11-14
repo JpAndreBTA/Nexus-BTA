@@ -106,6 +106,7 @@ class SecurityBoundaryTests(unittest.TestCase):
         with patch.dict(os.environ, {
             "NEXUS_BACKEND_HOST": "0.0.0.0",
             "NEXUS_REMOTE_API_TOKEN": token,
+            "NEXUS_UNSAFE_NETWORK_ACK": "I_UNDERSTAND_THE_RISK",
         }, clear=True):
             with TestClient(app) as client:
                 self.assertEqual(client.get("/api/gallery/page").status_code, 401)
@@ -115,6 +116,13 @@ class SecurityBoundaryTests(unittest.TestCase):
                 self.assertEqual(client.get("/outputs/private.png", headers=headers).status_code, 403)
                 self.assertEqual(client.get("/api/config", headers=headers).status_code, 403)
                 self.assertEqual(client.get("/api/gallery/page", headers={"Authorization": "Bearer wrong"}).status_code, 401)
+        with patch.dict(os.environ, {
+            "NEXUS_BACKEND_HOST": "0.0.0.0",
+            "NEXUS_REMOTE_API_TOKEN": token,
+        }, clear=True):
+            self.assertEqual(TestClient(app).get(
+                "/api/gallery/page", headers={"Authorization": "Bearer " + token}
+            ).status_code, 401, "direct uvicorn cannot bypass the explicit opt-in")
         with patch.dict(os.environ, {"NEXUS_BACKEND_HOST": "127.0.0.1"}, clear=True):
             self.assertEqual(TestClient(app).get("/api/gallery/page").status_code, 200)
 

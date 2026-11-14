@@ -76,8 +76,11 @@ class RemoteReadOnlyGate:
         method = scope.get("method", "").upper()
         path = scope.get("path", "")
         token = os.environ.get("NEXUS_REMOTE_API_TOKEN", "")
+        acknowledged = os.environ.get("NEXUS_UNSAFE_NETWORK_ACK") == "I_UNDERSTAND_THE_RISK"
         authenticated = False
-        if validate_remote_access_token(token):
+        # An app launched directly through uvicorn must meet the same opt-in
+        # contract as run_backend.py. Token alone cannot opt into LAN access.
+        if acknowledged and validate_remote_access_token(token):
             values = [
                 value for key, value in scope.get("headers", [])
                 if key.lower() == b"authorization"
