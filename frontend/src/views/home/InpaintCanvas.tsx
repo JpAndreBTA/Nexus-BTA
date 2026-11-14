@@ -8,7 +8,7 @@ interface InpaintCanvasProps {
   onMaskChange: (mask: string | null) => void;
 }
 
-import { MAX_EDIT_EDGE, binaryMaskPixels, clampViewportPan, fittedMaskSize, historyLimit } from './maskPixels';
+import { MAX_EDIT_EDGE, binaryMaskPixels, clampViewportPan, fittedMaskSize, historyLimit, planMaskExport } from './maskPixels';
 type PaintTool = 'mask' | 'eraser' | 'sketch' | 'pan';
 type Point = { x: number; y: number };
 type History = { undo: ImageData[]; redo: ImageData[] };
@@ -24,7 +24,10 @@ function pointFromEvent(event: PointerEvent<HTMLCanvasElement>, canvas: HTMLCanv
 }
 
 // Preserves the legacy black/white PNG contract, but reuses a single export canvas.
-function exportMask(sourceCanvas: HTMLCanvasElement, exportCanvas: HTMLCanvasElement): string | null {
+function exportMask(
+  sourceCanvas: HTMLCanvasElement, exportCanvas: HTMLCanvasElement,
+  exportSize: { width: number; height: number },
+): string | null {
   const source = sourceCanvas.getContext('2d', { willReadFrequently: true });
   if (!source) return null;
 
@@ -37,7 +40,24 @@ function exportMask(sourceCanvas: HTMLCanvasElement, exportCanvas: HTMLCanvasEle
   const target = exportCanvas.getContext('2d');
   if (!target) return null;
   target.putImageData(pixels, 0, 0);
-  return exportCanvas.toDataURL('image/png');
+  if (exportSize.width === exportCanvas.width && exportSize.height === exportCanvas.height) {
+    return exportCanvas.toDataURL('image/png');
+  }
+  // Native-size export has a strict 16 MP cap. No antialiasing: the opaque
+  // black/white mask must not acquire gray fringes while being upscaled.
+  const nativeCanvas = document.createElement('canvas');
+  nativeCanvas.width = exportSize.width;
+  nativeCanvas.height = exportSize.height;
+  try {
+    const output = nativeCanvas.getContext('2d');
+    if (!output) return null;
+    output.imageSmoothingEnabled = false;
+    output.drawImage(exportCanvas, 0, 0, exportSize.width, exportSize.height);
+    return nativeCanvas.toDataURL('image/png');
+  } finally {
+    nativeCanvas.width = 0;
+    nativeCanvas.height = 0;
+  }
 }
 
 export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChange }: InpaintCanvasProps) {
@@ -55,18 +75,27 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: MAX_EDIT_EDGE, height: MAX_EDIT_EDGE });
+  const [sourceSize, setSourceSize] = useState<{ width: number; height: number } | null>(null);
+  const exportPlan = planMaskExport(sourceSize, canvasSize);
 
   useEffect(() => {
     let disposed = false;
     const source = new Image();
+    setSourceSize(null);
     source.onload = () => {
       if (disposed) return;
-      setCanvasSize(fittedMaskSize(source.naturalWidth, source.naturalHeight));
+      const original = { width: source.naturalWidth, height: source.naturalHeight };
+      setSourceSize(original);
+      setCanvasSize(fittedMaskSize(original.width, original.height));
+    };
+    source.onerror = () => {
+      if (!disposed) setSourceSize(null);
     };
     source.src = image;
     return () => {
       disposed = true;
       source.onload = null;
+      source.onerror = null;
       source.src = '';
     };
   }, [image]);
@@ -127,7 +156,7 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
     const canvas = canvasRef.current;
     if (!canvas) return;
     if (!exportCanvasRef.current) exportCanvasRef.current = document.createElement('canvas');
-    onMaskChange(exportMask(canvas, exportCanvasRef.current));
+    onMaskChange(exportMask(canvas, exportCanvasRef.current, exportPlan.size));
   }
 
   function pushUndo() {
@@ -274,6 +303,10 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
         </button>
         <button className="mini-button" type="button" onClick={() => resetViewport(1)} disabled={zoom === 1} title="Reset view">1:1</button>
       </div>
+      <small className="inpaint-export-note" role="status">
+        {sourceSize ? `Source ${sourceSize.width}×${sourceSize.height} · edit ${canvasSize.width}×${canvasSize.height} · mask export ${exportPlan.size.width}×${exportPlan.size.height}` : 'Loading reference dimensions…'}
+        {sourceSize && exportPlan.mode === 'editor' ? ' · native export exceeds 16 MP/8192px safety cap' : ''}
+      </small>
       <div ref={stageRef} className="inpaint-stage" style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}>
         <div className="inpaint-viewport" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
         <img src={image} alt="Inpaint reference" draggable={false} />
@@ -282,7 +315,7 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
           className={tool === 'pan' ? 'inpaint-pan-canvas' : ''}
           aria-label="Inpaint mask canvas"
           onPointerDown={(event) => {
-            if (activePointerIdRef.current !== null || activePanPointerIdRef.current !== null || (event.pointerType === 'mouse' && event.button !== 0)) return;
+            if (!sourceSize || activePointerIdRef.current !== null || activePanPointerIdRef.current !== null || (event.pointerType === 'mouse' && event.button !== 0)) return;
             if (tool === 'pan') {
               activePanPointerIdRef.current = event.pointerId;
               panStartRef.current = { pointerX: event.clientX, pointerY: event.clientY, ...pan };

@@ -117,3 +117,5 @@
 }
 .gallery-glb-legend small { opacity: 0.8; }
 .gallery-glb-legend a { justify-self: start; }
+
+.inpaint-export-note { display: block; padding: 5px 9px; font-size: 11px; color: var(--muted); line-height: 1.5; }

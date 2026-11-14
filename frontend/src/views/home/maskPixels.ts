@@ -47,3 +47,29 @@ export function clampViewportPan(
     y: Math.max(-allowedY, Math.min(allowedY, Number.isFinite(y) ? y : 0)),
   };
 }
+
+export const MAX_NATIVE_EXPORT_PIXELS = 16_777_216;
+export const MAX_NATIVE_EXPORT_EDGE = 8192;
+
+export interface MaskDimensions { width: number; height: number }
+export interface MaskExportPlan {
+  size: MaskDimensions;
+  mode: 'source' | 'editor';
+}
+
+/**
+ * Export in the source's native pixel grid when the memory budget allows.
+ * Editing and undo snapshots remain at <=1536px, independent from PNG size.
+ * Above the cap the backend retains its existing nearest-scale mask path.
+ */
+export function planMaskExport(source: MaskDimensions | null, editor: MaskDimensions): MaskExportPlan {
+  if (
+    source && Number.isSafeInteger(source.width) && Number.isSafeInteger(source.height)
+    && source.width > 0 && source.height > 0
+    && source.width <= MAX_NATIVE_EXPORT_EDGE && source.height <= MAX_NATIVE_EXPORT_EDGE
+    && source.width * source.height <= MAX_NATIVE_EXPORT_PIXELS
+  ) {
+    return { size: { ...source }, mode: 'source' };
+  }
+  return { size: { ...editor }, mode: 'editor' };
+}
