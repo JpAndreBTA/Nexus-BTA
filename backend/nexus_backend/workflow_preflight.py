@@ -1,8 +1,8 @@
 """Manual, read-only preflight for saved ComfyUI API workflows.
 
 This path does not prepare/upload input files, start Comfy, write settings,
-queue prompts, install nodes or persist a patched graph. It only applies the
-existing in-memory workflow patcher to a deep-copied API graph with bounded,
+queue prompts, install nodes or persist a patched graph. It uses the same in-memory workflow graph builder as the live
+WorkflowRegistry dispatch on a cloned API graph with bounded,
 explicitly supplied scalar values, then checks that graph against /object_info.
 
 This is NOT the complete generation dispatch path. No source/mask/LoRA files,
@@ -92,12 +92,14 @@ def inspect_patched_preview(
         seed=0 if payload.seed == -1 else payload.seed,
         denoise=payload.denoise,
     )
-    # The production patcher may mutate both the graph and request; keep them
-    # private to this dry-run and never hand them to a persistence function.
-    from .workflows import patch_workflow
+    # The shared builder clones the graph; pass a private request copy because
+    # the production patcher may normalize/mutate it. Never persist this preview.
+    from .workflows import prepare_workflow_graph
 
-    patched = patch_workflow(
-        deepcopy(original), request.model_copy(deep=True),
+    patched = prepare_workflow_graph(
+        original,
+        request.model_copy(deep=True),
+        object_info=registry,
         assets={"primary_model": payload.model_name} if payload.model_name else {},
     )
     if not isinstance(patched, dict) or len(patched) > MAX_WORKFLOW_NODES:

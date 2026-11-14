@@ -334,19 +334,36 @@ class WorkflowRegistry:
         assets: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
-        fmt = detect_workflow_format(data)
-        if fmt == "api":
-            api = deepcopy(data)
-            api = {
-                str(node_id): node
-                for node_id, node in api.items()
-                if isinstance(node, dict) and "class_type" in node
-            }
-        elif fmt == "ui":
-            api = convert_ui_to_api(data, object_info or {})
-        else:
+        if detect_workflow_format(data) not in {"api", "ui"}:
             raise ValueError(f"Unsupported workflow format: {path}")
-        return patch_workflow(api, request, assets=assets)
+        return prepare_workflow_graph(data, request, object_info=object_info, assets=assets)
+
+
+def prepare_workflow_graph(
+    data: Any,
+    request: GenerateRequest,
+    object_info: dict[str, Any] | None = None,
+    assets: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Shared in-memory graph builder used by live dispatch and dry-run.
+
+    The API graph is cloned before patching. The supplied request is passed
+    through to the existing patcher, which may normalize/mutate request fields;
+    isolated callers must provide their own deep copy.
+    """
+    fmt = detect_workflow_format(data)
+    if fmt == "api":
+        api = deepcopy(data)
+        api = {
+            str(node_id): node
+            for node_id, node in api.items()
+            if isinstance(node, dict) and "class_type" in node
+        }
+    elif fmt == "ui":
+        api = convert_ui_to_api(data, object_info or {})
+    else:
+        raise ValueError(f"Unsupported workflow format: {fmt}")
+    return patch_workflow(api, request, assets=assets)
 
 
 def detect_workflow_format(data: Any) -> str:

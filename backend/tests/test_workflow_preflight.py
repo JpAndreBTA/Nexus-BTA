@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from pydantic import ValidationError
 
+from nexus_backend.config import NexusSettings
+from nexus_backend.schemas import GenerateRequest
+from nexus_backend.workflows import WorkflowRegistry, prepare_workflow_graph
 from nexus_backend.workflow_preflight import WorkflowPreflightRequest, inspect_patched_preview
 
 
@@ -61,6 +67,30 @@ class WorkflowPreflightTests(unittest.TestCase):
         self.assertEqual(report["model_sources"]["found"], 1)
         self.assertEqual(len(audited_graphs), 1)
         self.assertNotEqual(audited_graphs[0], source)
+
+    def test_live_registry_and_preflight_share_the_same_graph_builder(self):
+        source = self.sample_graph()
+        original = deepcopy(source)
+        request = GenerateRequest(
+            workflow_id="qa", preset="SD", prompt="same prompt",
+            model_name="chosen.safetensors", seed=42, steps=17, cfg=4.5,
+        )
+        assets = {"primary_model": "chosen.safetensors"}
+        expected = prepare_workflow_graph(
+            source, request.model_copy(deep=True), object_info=self.registry(), assets=assets,
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "workflow.json"
+            path.write_text(json.dumps(source), encoding="utf8")
+            settings = NexusSettings(
+                project_root=Path(folder),
+                workflows_dir=Path(folder) / "workflows",
+            )
+            actual = WorkflowRegistry(settings).load_api_workflow(
+                path, request.model_copy(deep=True), self.registry(), assets=assets,
+            )
+        self.assertEqual(actual, expected)
+        self.assertEqual(source, original)
 
     def test_offline_never_claims_compatibility(self):
         report = inspect_patched_preview(WorkflowPreflightRequest(workflow_id="qa"), self.sample_graph(), None)
