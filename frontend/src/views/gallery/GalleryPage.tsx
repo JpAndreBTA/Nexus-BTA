@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Box, ChevronLeft, ChevronRight, Film, Music, RefreshCw, Search } from 'lucide-react';
+import { Box, ChevronLeft, ChevronRight, Music, RefreshCw, Search } from 'lucide-react';
 
 import type { GalleryItem } from '../../api/types';
 import { useGalleryIndexQuery } from '../../api/queries';
+import { GalleryVideoTile } from './GalleryVideoTile';
 
 function mediaUrl(value: string) {
   return value.startsWith('/') ? value : `/${value.replace(/^\/+/, '')}`;
@@ -108,9 +109,7 @@ export function GalleryPage() {
           {pagedItems.map((item) => (
             <button key={`${item.relative_path}:${item.modified}`} className={active?.relative_path === item.relative_path ? 'gallery-card active' : 'gallery-card'} type="button" onClick={() => setSelected(item)}>
               {isVideo(item) ? (
-                item.thumb?.startsWith('/api/gallery/video-thumb/')
-                  ? <img src={mediaUrl(item.thumb)} alt={`Video preview: ${item.filename}`} loading="lazy" decoding="async" />
-                  : <div className="gallery-media-placeholder"><Film size={26} /><small>Video</small></div>
+                <GalleryVideoTile thumbnail={item.thumb || ''} filename={item.filename} />
               ) : isAudio(item) ?
                 <div className="gallery-media-placeholder"><Music size={26} /><small>Audio</small></div> : is3D(item) ?
                 <div className="gallery-media-placeholder"><Box size={26} /><small>3D asset</small></div> :

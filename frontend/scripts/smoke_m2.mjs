@@ -8,12 +8,19 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 940 }, acc
 const runtimeErrors = [];
 let galleryTestPages = false;
 let thumbRequests = 0;
+let videoPosterRequests = 0;
 page.on('pageerror', error => runtimeErrors.push(error.message));
 
 await page.route('**/api/**', async (route) => {
   const url = new URL(route.request().url());
   const path = url.pathname;
   let result = {};
+  if (path.startsWith('/api/gallery/video-thumb/')) {
+    videoPosterRequests++;
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+    await route.fulfill({ status: 200, contentType: 'image/png', body: png });
+    return;
+  }
   if (path.startsWith('/api/gallery/thumb/')) {
     thumbRequests++;
     // Tiny opaque fixture: browser exercises image decoding without opening local files.
@@ -29,13 +36,19 @@ await page.route('**/api/**', async (route) => {
     const media = (id, name = `Acceptance ${id}.png`, kind = 'image') => ({
       title: name, filename: name, path: name, relative_path: name,
       folder: '', image: `/outputs/${encodeURIComponent(name)}`,
-      thumb: kind === 'image' ? `/api/gallery/thumb/${encodeURIComponent(name)}?size=320` : `/outputs/${encodeURIComponent(name)}`,
+      thumb: kind === 'image'
+        ? `/api/gallery/thumb/${encodeURIComponent(name)}?size=320`
+        : kind === 'video'
+          ? `/api/gallery/video-thumb/${encodeURIComponent(name)}?size=320`
+          : '',
       media_type: kind, modified: id, model: 'QA model', preset: 'SD',
     });
     result = !galleryTestPages
       ? { items: [], total: 0, next_cursor: null }
       : mediaType === '3d'
         ? { items: [media(5, 'Forest model.glb', '3d')], total: 1, next_cursor: null }
+        : mediaType === 'video'
+          ? { items: [media(6, 'Demo clip.mp4', 'video')], total: 1, next_cursor: null }
         : q === 'Ocean'
           ? { items: [media(3, 'Ocean coast.png')], total: 1, next_cursor: null }
           : cursor
@@ -141,6 +154,10 @@ try {
   await page.getByRole('combobox', { name: 'Filter gallery media type' }).selectOption('3d');
   await page.locator('.gallery-card').filter({ hasText: 'Forest model.glb' }).waitFor();
   await page.getByText('1 / 1 loaded').waitFor();
+  await page.getByRole('combobox', { name: 'Filter gallery media type' }).selectOption('video');
+  await page.locator('.gallery-card').filter({ hasText: 'Demo clip.mp4' }).waitFor();
+  await page.locator('img[alt="Video preview: Demo clip.mp4"]').waitFor();
+  assert.ok(videoPosterRequests >= 1, 'Gallery must request a video poster on demand');
   assert.deepEqual(runtimeErrors, []);
   console.log('M2 browser shell: Studio, Civitai, settings persistence, import/export and Gallery passed');
 } finally {
