@@ -37,6 +37,8 @@ let galleryTestPages = false;
 let thumbRequests = 0;
 let videoPosterRequests = 0;
 let selectedWorkflowCapabilityRequests = 0;
+let preflightRequests = 0;
+let generationSubmitRequests = 0;
 page.on('pageerror', error => runtimeErrors.push(error.message));
 
 await page.route('**/outputs/**', async (route) => {
@@ -65,6 +67,7 @@ await page.route('**/api/**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'image/png', body: png });
     return;
   }
+  if (path === '/api/generate' && route.request().method() === 'POST') generationSubmitRequests++;
   if (path === '/api/models') result = { categories: { checkpoints: [], unet: [], diffusion_models: [], loras: [], vae: [], clip: [], controlnet: [] } };
   else if (path === '/api/gallery/page') {
     const cursor = url.searchParams.get('cursor');
@@ -106,6 +109,7 @@ await page.route('**/api/**', async (route) => {
   };
   else if (path === '/api/loras' || path === '/api/gallery') result = [];
   else if (path === '/api/comfy/workflow-preflight') {
+    preflightRequests++;
     assert.equal(route.request().method(), 'POST');
     const payload = route.request().postDataJSON();
     assert.equal(payload.workflow_id, 'qa-workflow');
@@ -171,6 +175,9 @@ try {
   await page.getByRole('button', { name: 'Run workflow preflight without generation' }).click();
   await page.getByText('2 changed nodes · 4 changed inputs').waitFor();
   await page.getByText(/Advisory template patch only/).waitFor();
+  assert.ok(preflightRequests >= 1, 'manual preview must call only the preflight endpoint');
+  assert.equal(generationSubmitRequests, 0, 'preflight may never submit a generation');
+  await page.screenshot({ path: 'artifacts/studio-workflow-preflight.png', fullPage: true });
   assert.ok(selectedWorkflowCapabilityRequests >= 1, 'Studio should check exact workflow classes from backend');
   await page.getByRole('button', { name: 'Linear Viewer' }).click();
   await page.getByRole('button', { name: 'Civitai' }).click();
