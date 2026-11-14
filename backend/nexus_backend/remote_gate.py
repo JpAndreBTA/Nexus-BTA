@@ -44,7 +44,7 @@ def _socket_is_loopback(scope: dict[str, Any]) -> bool:
             # Starlette TestClient uses a non-IP synthetic host. In
             # production Uvicorn supplies real peer/socket IP addresses.
             continue
-        if address.ipv4_mapped:
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
             address = address.ipv4_mapped
         if not address.is_loopback:
             return False
