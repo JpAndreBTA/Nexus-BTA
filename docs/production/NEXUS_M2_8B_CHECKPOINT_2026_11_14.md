@@ -55,11 +55,12 @@ Proceed in this order; do not duplicate the preset switch:
 
 1. Inspect and classify every helper called by `_run_generation_core` as pure normalization, filesystem read, filesystem write/staging, Comfy process/VRAM action, node installation, or prompt submission.
 2. Extract an immutable request snapshot and pure validation/normalization helpers first. Keep the existing request object semantics until callers are explicitly migrated.
-3. Split logical model selection from staging. Reuse the existing preset-aware asset resolver rules, but return logical selected asset identifiers and bounded source evidence separately from upload paths.
-4. Represent un-staged reference images, masks, videos, Director frames and audio as typed placeholders. A plan must never create temporary files or upload them.
-5. Make runtime startup/restart/free-memory, node install/enable, file staging, Comfy upload and prompt queue explicit effectful operations outside the planner.
-6. Use a plan/dispatch parity test for at least one deterministic API workflow before expanding preset coverage. Complex presets with unsupported media or dynamic nodes must return `unverified/unsupported`, not "ready".
-7. Only after the shared planner can describe the exact selected preset route, add custom-node source/version metadata and correlate module identity to live Comfy schema signatures. Do not infer version from file timestamps alone.
+3. Build a separate bounded, symlink-safe model catalog for planning (maximum roots/files/depth, explicit partial state). Do not call the current unbounded `scan_models` recursive catalog scan from a dry-run.
+4. Reuse `resolve_generation_assets_from_catalog` against that bounded catalog to return logical selected asset identifiers and source evidence before any file staging.
+5. Represent unstaged reference images, masks, videos, Director frames and audio as typed placeholders. A plan must never create temporary files or upload them.
+6. Make runtime startup/restart/free-memory, node install/enable, file staging, Comfy upload and prompt queue explicit effectful operations outside planning.
+7. Add deterministic plan/dispatch parity for at least one supported saved API workflow. Unsupported complex media routes must return `unverified/unsupported`, never a false "ready".
+8. Only after the shared planner can describe the exact selected preset route, add custom-node source/version metadata and correlate modules with live Comfy schema signatures. Do not infer version from file timestamps alone.
 
 ## Other pending work
 
