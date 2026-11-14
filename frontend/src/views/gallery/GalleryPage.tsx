@@ -107,7 +107,11 @@ export function GalleryPage() {
           </div>}
           {pagedItems.map((item) => (
             <button key={`${item.relative_path}:${item.modified}`} className={active?.relative_path === item.relative_path ? 'gallery-card active' : 'gallery-card'} type="button" onClick={() => setSelected(item)}>
-              {isVideo(item) ? <div className="gallery-media-placeholder"><Film size={26} /><small>Video</small></div> : isAudio(item) ?
+              {isVideo(item) ? (
+                item.thumb?.startsWith('/api/gallery/video-thumb/')
+                  ? <img src={mediaUrl(item.thumb)} alt={`Video preview: ${item.filename}`} loading="lazy" decoding="async" />
+                  : <div className="gallery-media-placeholder"><Film size={26} /><small>Video</small></div>
+              ) : isAudio(item) ?
                 <div className="gallery-media-placeholder"><Music size={26} /><small>Audio</small></div> : is3D(item) ?
                 <div className="gallery-media-placeholder"><Box size={26} /><small>3D asset</small></div> :
                 <img src={mediaUrl(item.thumb || item.image)} alt={item.filename} loading="lazy" decoding="async" />}

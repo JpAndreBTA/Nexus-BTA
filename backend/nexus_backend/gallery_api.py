@@ -15,25 +15,30 @@ from fastapi.responses import FileResponse
 
 from .gallery_index import GalleryIndex, IndexedMedia, default_gallery_db_path, IMAGE_SUFFIXES
 from .gallery_thumbnail import GalleryThumbnailCache
+from .gallery_video import GalleryVideoPosterCache
 
 
 def make_gallery_router(
     output_dir: Callable[[], Path],
     read_metadata: Callable[[Path], dict[str, Any]],
+    *,
+    video_cache_factory: Callable[[Path], GalleryVideoPosterCache] = GalleryVideoPosterCache,
 ) -> APIRouter:
     router = APIRouter()
     _gallery_page_index: GalleryIndex | None = None
     _gallery_index_lock = threading.Lock()
     _gallery_thumbnail_cache: GalleryThumbnailCache | None = None
+    _gallery_video_cache: GalleryVideoPosterCache | None = None
 
     def _get_gallery_index() -> GalleryIndex:
         """Keep the indexed route independent from the legacy 200-item response."""
-        nonlocal _gallery_page_index, _gallery_thumbnail_cache
+        nonlocal _gallery_page_index, _gallery_thumbnail_cache, _gallery_video_cache
         root = output_dir().resolve()
         with _gallery_index_lock:
             if _gallery_page_index is None or _gallery_page_index.root != root:
                 _gallery_page_index = GalleryIndex(root, default_gallery_db_path(root))
                 _gallery_thumbnail_cache = GalleryThumbnailCache(root)
+                _gallery_video_cache = video_cache_factory(root)
             return _gallery_page_index
 
 
@@ -57,7 +62,12 @@ def make_gallery_router(
             "relative_path": relative,
             "folder": path.parent.relative_to(root).as_posix() if path.parent != root else "",
             "image": f"/outputs/{url_path}",
-            "thumb": f"/api/gallery/thumb/{url_path}?size=320" if path.suffix.lower() in IMAGE_SUFFIXES else f"/outputs/{url_path}",
+            "thumb": (
+                f"/api/gallery/thumb/{url_path}?size=320" if path.suffix.lower() in IMAGE_SUFFIXES
+                else f"/api/gallery/video-thumb/{url_path}?size=320"
+                if indexed.media_type == "video" and _gallery_video_cache is not None and _gallery_video_cache.available
+                else ""
+            ),
             "media_type": indexed.media_type,
             "prompt": metadata.get("prompt", ""),
             "negative": metadata.get("negative", ""),
@@ -102,6 +112,25 @@ def make_gallery_router(
             raise HTTPException(status_code=404, detail="Thumbnail not available.") from exc
         return FileResponse(
             thumbnail_path, media_type="image/webp",
+            headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"},
+        )
+
+    @router.get("/api/gallery/video-thumb/{relative_path:path}")
+    async def video_thumbnail(
+        relative_path: str,
+        size: int = Query(default=320, ge=64, le=512),
+    ) -> FileResponse:
+        _get_gallery_index()
+        with _gallery_index_lock:
+            cache = _gallery_video_cache
+        if cache is None or not cache.available:
+            raise HTTPException(status_code=404, detail="Video poster decoder unavailable.")
+        try:
+            poster = await asyncio.to_thread(cache.poster, relative_path, size)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Video poster unavailable.") from exc
+        return FileResponse(
+            poster, media_type="image/webp",
             headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"},
         )
 

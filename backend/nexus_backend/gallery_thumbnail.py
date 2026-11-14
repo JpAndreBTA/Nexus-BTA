@@ -16,7 +16,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from .gallery_index import IMAGE_SUFFIXES, default_gallery_db_path
+from .gallery_index import IMAGE_SUFFIXES, default_gallery_db_path, VIDEO_SUFFIXES
 
 MAX_SOURCE_BYTES = 128 * 1024 * 1024
 MAX_SOURCE_PIXELS = 64_000_000
@@ -24,24 +24,33 @@ MAX_CACHE_BYTES = 384 * 1024 * 1024
 MAX_EDGE = 512
 
 
-def safe_image_path(root: Path, relative_path: str) -> Path:
-    """Reject traversal and symlink escape even when a URL was manually crafted."""
+def safe_media_path(root: Path, relative_path: str, extensions: frozenset[str]) -> Path:
+    """Never resolve a user path outside the gallery; no URL or virtual-file support."""
     if (
-        not relative_path or len(relative_path) > 1024 or
-        relative_path[0] in ("/", chr(92)) or chr(92) in relative_path or "\\x00" in relative_path or
-        any(p in ("", ".", "..") for p in relative_path.split("/"))
+        not relative_path or len(relative_path) > 1024
+        or relative_path[0] in ("/", chr(92))
+        or chr(92) in relative_path or "\x00" in relative_path
+        or any(part in ("", ".", "..") for part in relative_path.split("/"))
     ):
-        raise ValueError("Invalid thumbnail path.")
+        raise ValueError("Invalid gallery media path.")
     candidate = root / relative_path
-    if candidate.suffix.lower() not in IMAGE_SUFFIXES or candidate.is_symlink():
-        raise ValueError("Unsupported thumbnail input.")
+    if candidate.suffix.lower() not in extensions or candidate.is_symlink():
+        raise ValueError("Unsupported gallery media input.")
     try:
         resolved = candidate.resolve(strict=True)
         if not resolved.is_relative_to(root) or not resolved.is_file():
-            raise ValueError("Thumbnail source is outside the gallery.")
-    except OSError as exc:
-        raise ValueError("Thumbnail image not found.") from exc
+            raise ValueError("Media source is outside the gallery.")
+    except (OSError, RuntimeError) as exc:
+        raise ValueError("Gallery media not found.") from exc
     return resolved
+
+
+def safe_image_path(root: Path, relative_path: str) -> Path:
+    return safe_media_path(root, relative_path, IMAGE_SUFFIXES)
+
+
+def safe_video_path(root: Path, relative_path: str) -> Path:
+    return safe_media_path(root, relative_path, VIDEO_SUFFIXES)
 
 
 class GalleryThumbnailCache:
