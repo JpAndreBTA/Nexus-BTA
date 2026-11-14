@@ -1,4 +1,4 @@
-import type { CivitaiSearchResponse, ComfyCapabilityReport, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GalleryPageResult, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, Krea2AssetsStatus, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowSummary } from './types';
+import type { CivitaiSearchResponse, ComfyCapabilityReport, DownloadJob, ExtrasJob, ExtrasPlan, GalleryItem, GalleryPageResult, GenerateRequest, GenerationJob, HealthResponse, Ideogram4AssetsStatus, Ideogram4OllamaStatus, Ideogram4PromptJsonRequest, Ideogram4PromptJsonResponse, Krea2AssetsStatus, LoraAsset, ModelCatalog, NvidiaExtrasStatus, WorkflowAnalysis, WorkflowInputReport, WorkflowSummary } from './types';
 
 const API_BASE = (import.meta.env.NEXUS_API_URL || '/api').replace(/\/$/, '');
 
@@ -31,6 +31,10 @@ export const nexusApi = {
   workflowCapabilities: (workflowId: string, signal?: AbortSignal) =>
     nexusFetch<ComfyCapabilityReport>(
       `/comfy/workflow-capabilities?workflow_id=${encodeURIComponent(workflowId)}`, { signal },
+    ),
+  workflowInputs: (workflowId: string, signal?: AbortSignal) =>
+    nexusFetch<WorkflowInputReport>(
+      `/comfy/workflow-inputs?workflow_id=${encodeURIComponent(workflowId)}`, { signal },
     ),
   refreshModelTree: () => nexusFetch<{ ok?: boolean }>('/model-tree', { method: 'POST' }),
   models: () => nexusFetch<ModelCatalog>('/models'),

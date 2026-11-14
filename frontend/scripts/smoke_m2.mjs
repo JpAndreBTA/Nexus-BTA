@@ -105,6 +105,16 @@ await page.route('**/api/**', async (route) => {
     workflow_settings: {},
   };
   else if (path === '/api/loras' || path === '/api/gallery') result = [];
+  else if (path === '/api/comfy/workflow-inputs') {
+    assert.equal(url.searchParams.get('workflow_id'), 'qa-workflow');
+    result = {
+      workflow_id: 'qa-workflow', status: 'offline', runtime_checked: false, static_valid: false,
+      ready: false, node_count: 2, registered_count: 0, missing_classes: 0, broken_links: 0,
+      missing_required_inputs: 0, choice_mismatches: 0, unverified_inputs: 0,
+      findings: [], truncated_findings: false,
+      note: 'Saved workflow inspection only; no Comfy execution.',
+    };
+  }
   else if (path === '/api/comfy/workflow-capabilities') {
     selectedWorkflowCapabilityRequests++;
     const workflow_id = url.searchParams.get('workflow_id');
@@ -141,6 +151,7 @@ try {
   await page.locator('[data-route="studio"]').waitFor({ state: 'attached', timeout: 15000 });
   await page.getByRole('button', { name: /Node Workflow/ }).click();
   await page.getByText(/ComfyUI is offline. Node compatibility is unverified/).waitFor();
+  await page.getByText('Input ABI unverified: ComfyUI is offline.').waitFor();
   assert.ok(selectedWorkflowCapabilityRequests >= 1, 'Studio should check exact workflow classes from backend');
   await page.getByRole('button', { name: 'Linear Viewer' }).click();
   await page.getByRole('button', { name: 'Civitai' }).click();

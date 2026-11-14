@@ -381,3 +381,27 @@ export interface ComfyCapabilityReport {
   invalid_class_count?: number;
   warning?: string;
 }
+
+export interface WorkflowInputFinding {
+  kind: string;
+  node_id: string;
+  class_type: string;
+  input: string;
+}
+export interface WorkflowInputReport {
+  workflow_id: string;
+  status: 'offline' | 'unavailable' | 'review' | 'issues' | 'static_valid' | 'unsupported' | 'ui_format';
+  runtime_checked: boolean;
+  static_valid: boolean;
+  ready: false;
+  node_count: number;
+  registered_count: number;
+  missing_classes: number;
+  broken_links: number;
+  missing_required_inputs: number;
+  choice_mismatches: number;
+  unverified_inputs: number;
+  findings: WorkflowInputFinding[];
+  truncated_findings: boolean;
+  note: string;
+}

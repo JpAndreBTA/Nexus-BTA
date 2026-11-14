@@ -4,7 +4,7 @@ import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize
 
 import { nexusApi } from '../../api/nexusClient';
 import type { CatalogAsset, GenerateRequest, GenerationJob, Ideogram4PromptJsonRequest } from '../../api/types';
-import { useWorkflowCapabilitiesQuery, useGalleryQuery, useModelCatalogQuery, useWorkflowAnalysisQuery, useWorkflowsQuery } from '../../api/queries';
+import { useWorkflowCapabilitiesQuery, useWorkflowInputReportQuery, useGalleryQuery, useModelCatalogQuery, useWorkflowAnalysisQuery, useWorkflowsQuery } from '../../api/queries';
 import { useLorasQuery } from '../../api/queries';
 import type { WorkflowGraphLink, WorkflowGraphNode, WorkflowSummary } from '../../api/types';
 import { useGenerationStore, type GenerationState, type PromptRegion } from '../../stores/generationStore';
@@ -12,6 +12,7 @@ import { useLoraStore } from '../../stores/loraStore';
 import { useUiStore } from '../../stores/uiStore';
 import { InpaintCanvas } from './InpaintCanvas';
 import { StudioNodeCapabilityStatus } from './StudioNodeCapabilityStatus';
+import { StudioWorkflowInputStatus } from './StudioWorkflowInputStatus';
 import { buildGenerationPayload, validateGeneration } from './generationPayload';
 import { IdeogramRegionEditor } from './IdeogramRegionEditor';
 import { StudioWorkflowGraph, buildStudioWorkflowGraph, music3WorkflowGraph, preferredWorkflow } from './StudioWorkflowGraph';
@@ -77,6 +78,7 @@ export function HomePage() {
   const workflowAnalysis = useWorkflowAnalysisQuery(studioWorkflow?.id || '');
   const workflowClassCount = studioWorkflow?.class_types?.length ?? 0;
   const nodeCapabilities = useWorkflowCapabilitiesQuery(studioWorkflow?.id || '', viewMode === 'workflow');
+  const workflowInputReport = useWorkflowInputReportQuery(studioWorkflow?.id || '', viewMode === 'workflow');
   const models = useMemo(() => {
     const filtered = allModels.filter((model) => primaryModelMatchesPreset(model, generation.preset));
     if (['ideogram4', 'ideogram', 'krea2', 'krea-2'].includes(generation.preset.toLowerCase())) return filtered;
@@ -1142,6 +1144,11 @@ export function HomePage() {
                 loading={nodeCapabilities.isLoading && workflowClassCount > 0}
                 error={nodeCapabilities.isError}
               />
+              {studioWorkflow && <StudioWorkflowInputStatus
+                report={workflowInputReport.data}
+                loading={workflowInputReport.isLoading}
+                error={workflowInputReport.isError}
+              />}
               {workflowAnalysis.isLoading ? (
                 <div className="preview-empty"><LoaderCircle className="spin" size={30} /><p>Loading backend workflow graph</p></div>
               ) : studioWorkflowGraph.nodes.length ? (

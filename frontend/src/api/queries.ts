@@ -103,3 +103,14 @@ export function useWorkflowCapabilitiesQuery(workflowId: string, enabled: boolea
     retry: 1,
   });
 }
+
+/** Saved workflow vs node object_info inputs; no workflow is run or patched. */
+export function useWorkflowInputReportQuery(workflowId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['comfy-workflow-inputs', workflowId],
+    queryFn: ({ signal }) => nexusApi.workflowInputs(workflowId, signal),
+    enabled: enabled && Boolean(workflowId),
+    staleTime: 30_000,
+    retry: 1,
+  });
+}
