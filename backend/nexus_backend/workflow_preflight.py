@@ -13,7 +13,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .schemas import GenerateRequest
 from .workflow_input_audit import (
@@ -22,6 +22,8 @@ from .workflow_input_audit import (
 
 
 class WorkflowPreflightRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     workflow_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")
     preset: str = Field(default="SD", min_length=1, max_length=64)
     model_name: str = Field(default="", max_length=256)
@@ -99,6 +101,12 @@ def inspect_patched_preview(
     if not isinstance(patched, dict) or len(patched) > MAX_WORKFLOW_NODES:
         raise ValueError("Patched workflow exceeds the preflight node budget.")
     patched_nodes = _graph_snapshot(patched)
+    if any(
+        not isinstance(node.get("inputs", {}), dict)
+        or len(node.get("inputs", {})) > MAX_INPUTS_PER_NODE
+        for node in patched_nodes.values()
+    ):
+        raise ValueError("Patched workflow exceeds the preflight input budget.")
     changed_nodes = 0
     changed_fields = 0
     for node_id in set(original) | set(patched_nodes):

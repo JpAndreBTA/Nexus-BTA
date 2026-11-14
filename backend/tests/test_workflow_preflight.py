@@ -67,6 +67,8 @@ class WorkflowPreflightTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             WorkflowPreflightRequest(workflow_id="qa", prompt="x" * 5000)
         with self.assertRaises(ValidationError):
+            WorkflowPreflightRequest(workflow_id="qa", uploaded_mask="data:image/png;base64,AAA")
+        with self.assertRaises(ValidationError):
             WorkflowPreflightRequest(workflow_id="qa", cfg=float("nan"))
         invalid = inspect_patched_preview(
             WorkflowPreflightRequest(workflow_id="qa"),

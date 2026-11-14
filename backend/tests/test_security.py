@@ -82,6 +82,8 @@ class SecurityBoundaryTests(unittest.TestCase):
                      "/api/gallery/thumb/", "/api/gallery/video-thumb/"):
             self.assertFalse(allowed_remote_route("GET", path))
         self.assertFalse(allowed_remote_route("POST", "/api/gallery/page"))
+        self.assertFalse(allowed_remote_route("POST", "/api/comfy/workflow-preflight"))
+        self.assertFalse(allowed_remote_route("GET", "/api/comfy/workflow-preflight"))
 
     def test_remote_api_requires_bearer_and_denies_mutations_and_static_files(self):
         from fastapi import FastAPI
