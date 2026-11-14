@@ -59,7 +59,7 @@ export function useGalleryIndexQuery() {
   return useInfiniteQuery({
     queryKey: ['gallery-index'],
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => nexusApi.galleryPage(pageParam),
+    queryFn: ({ pageParam, signal }) => nexusApi.galleryPage(pageParam, 48, false, signal),
     getNextPageParam: (page) => page.next_cursor || undefined,
     staleTime: 10_000,
   });

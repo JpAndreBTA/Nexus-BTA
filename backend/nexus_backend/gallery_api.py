@@ -96,12 +96,17 @@ def make_gallery_router(
             page = await asyncio.to_thread(index.page, limit, cursor, refresh)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        # Metadata decoding is bounded by the requested page size.
-        items = []
-        for entry in page.records:
-            record = _indexed_gallery_item(entry, index.root)
-            if record is not None:
-                items.append(record)
+        # Metadata decoding is bounded by the requested page size, and must not
+        # block FastAPI's event loop when a large PNG has embedded metadata.
+        def serialize_page() -> list[dict[str, Any]]:
+            items: list[dict[str, Any]] = []
+            for entry in page.records:
+                record = _indexed_gallery_item(entry, index.root)
+                if record is not None:
+                    items.append(record)
+            return items
+
+        items = await asyncio.to_thread(serialize_page)
         return {"items": items, "total": page.total, "next_cursor": page.next_cursor}
 
     return router

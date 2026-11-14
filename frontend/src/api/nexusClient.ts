@@ -98,11 +98,11 @@ export const nexusApi = {
   ideogram4OllamaPullJob: (jobId: string) => nexusFetch<DownloadJob>(`/ideogram4/ollama/pull/${encodeURIComponent(jobId)}`),
   extrasJob: (jobId: string) => nexusFetch<ExtrasJob>(`/extras/${encodeURIComponent(jobId)}`),
   gallery: () => nexusFetch<GalleryItem[]>('/gallery'),
-  galleryPage: (cursor: string | null = null, limit = 48, refresh = false) => {
+  galleryPage: (cursor: string | null = null, limit = 48, refresh = false, signal?: AbortSignal) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
     if (refresh) params.set('refresh', 'true');
-    return nexusFetch<GalleryPageResult>(`/gallery/page?${params.toString()}`);
+    return nexusFetch<GalleryPageResult>(`/gallery/page?${params.toString()}`, { signal });
   },
   workflows: () => nexusFetch<WorkflowSummary[]>('/workflows'),
   workflowAnalysis: (workflowId: string) => nexusFetch<WorkflowAnalysis>(`/workflows/${encodeURIComponent(workflowId)}/analysis`),
