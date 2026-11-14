@@ -7,27 +7,40 @@ const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 940 }, acceptDownloads: true });
 const runtimeErrors = [];
 let galleryTestPages = false;
+let thumbRequests = 0;
 page.on('pageerror', error => runtimeErrors.push(error.message));
 
 await page.route('**/api/**', async (route) => {
   const url = new URL(route.request().url());
   const path = url.pathname;
   let result = {};
+  if (path.startsWith('/api/gallery/thumb/')) {
+    thumbRequests++;
+    // Tiny opaque fixture: browser exercises image decoding without opening local files.
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+    await route.fulfill({ status: 200, contentType: 'image/png', body: png });
+    return;
+  }
   if (path === '/api/models') result = { categories: { checkpoints: [], unet: [], diffusion_models: [], loras: [], vae: [], clip: [], controlnet: [] } };
   else if (path === '/api/gallery/page') {
     const cursor = url.searchParams.get('cursor');
-    const media = (id) => ({
-      title: `Acceptance ${id}.png`, filename: `Acceptance ${id}.png`,
-      path: `Acceptance ${id}.png`, relative_path: `Acceptance ${id}.png`,
-      folder: '', image: `/outputs/Acceptance%20${id}.png`,
-      thumb: `/outputs/Acceptance%20${id}.png`, media_type: 'image',
-      modified: id, model: 'QA model', preset: 'SD',
+    const q = url.searchParams.get('q');
+    const mediaType = url.searchParams.get('media');
+    const media = (id, name = `Acceptance ${id}.png`, kind = 'image') => ({
+      title: name, filename: name, path: name, relative_path: name,
+      folder: '', image: `/outputs/${encodeURIComponent(name)}`,
+      thumb: kind === 'image' ? `/api/gallery/thumb/${encodeURIComponent(name)}?size=320` : `/outputs/${encodeURIComponent(name)}`,
+      media_type: kind, modified: id, model: 'QA model', preset: 'SD',
     });
     result = !galleryTestPages
       ? { items: [], total: 0, next_cursor: null }
-      : cursor
-        ? { items: [media(1)], total: 2, next_cursor: null }
-        : { items: [media(2)], total: 2, next_cursor: 'next-page' };
+      : mediaType === '3d'
+        ? { items: [media(5, 'Forest model.glb', '3d')], total: 1, next_cursor: null }
+        : q === 'Ocean'
+          ? { items: [media(3, 'Ocean coast.png')], total: 1, next_cursor: null }
+          : cursor
+            ? { items: [media(1)], total: 2, next_cursor: null }
+            : { items: [media(2)], total: 2, next_cursor: 'next-page' };
   }
   else if (path === '/api/loras' || path === '/api/gallery' || path === '/api/workflows') result = [];
   else if (path === '/api/health') result = {
@@ -96,6 +109,15 @@ try {
   await page.getByRole('button', { name: 'Acceptance 1.png' }).waitFor();
   mkdirSync('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/gallery-paginated.png', fullPage: true });
+  assert.ok(thumbRequests >= 1, 'image grid must request thumbnail endpoint');
+
+  await page.getByRole('textbox', { name: 'Search all gallery outputs' }).fill('Ocean');
+  await page.locator('.gallery-card').filter({ hasText: 'Ocean coast.png' }).waitFor();
+  await page.getByText('1 / 1 loaded').waitFor();
+  await page.getByRole('textbox', { name: 'Search all gallery outputs' }).fill('');
+  await page.getByRole('combobox', { name: 'Filter gallery media type' }).selectOption('3d');
+  await page.locator('.gallery-card').filter({ hasText: 'Forest model.glb' }).waitFor();
+  await page.getByText('1 / 1 loaded').waitFor();
   assert.deepEqual(runtimeErrors, []);
   console.log('M2 browser shell: Studio, Civitai, settings persistence, import/export and Gallery passed');
 } finally {
