@@ -243,3 +243,7 @@ See `docs/production/NEXUS_M2_2_CHECKPOINT_2026_11_13.md`. New paginated React G
 ## M2.3 checkpoint — 13 November 2026
 
 See `docs/production/NEXUS_M2_3_CHECKPOINT_2026_11_13.md`. This supersedes M2.2's limitation that search/sort applied only to loaded pages: the new Gallery searches filenames/folders and sorts/filters over the full SQLite index. Image tiles use safe bounded on-demand WebP thumbs. Source/mask share a zoomable/pannable inpaint viewport. Video/3D previews, full-resolution mask export mapping and real Windows/ComfyUI tests remain pending.
+
+## M2.4 checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_4_CHECKPOINT_2026_11_14.md`. The Gallery now supports on-demand bounded local FFmpeg WebP video posters and an experimental lazy GLB first-mesh geometry view. The Studio Node Workflow mode performs read-only ComfyUI registration checks without auto-starting or installing nodes. This does not certify full PBR 3D assets, model generation or Windows GPU parity. Legacy `/ui` and default routes remain intact.
