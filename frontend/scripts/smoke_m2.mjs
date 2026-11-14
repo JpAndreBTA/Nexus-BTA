@@ -186,7 +186,7 @@ try {
   await page.getByRole('button', { name: 'Run workflow preflight without generation' }).click();
   await page.getByText('2 changed nodes · 4 changed inputs').waitFor();
   await page.getByText('Workflow preflight needs review').waitFor();
-  await page.getByText('Local model files: 1 found · 1 not found · 0 unverified').waitFor();
+  await page.getByText('Local model files: 1 found · 1 not found · 0 unverified').click();
   await page.getByText('CheckpointLoaderSimple #1 / ckpt_name: found').waitFor();
   await page.getByText(/Advisory template patch only/).waitFor();
   assert.ok(preflightRequests >= 1, 'manual preview must call only the preflight endpoint');
