@@ -68,6 +68,19 @@ try {
   assert.equal(await page.getByRole('dialog', { name: 'Nexus Civitai downloader' }).count(), 0);
   assert.equal(await page.evaluate(() => document.body.style.overflow), '');
 
+  // Inpaint's reference and mask must scale/pan as one viewport, not drift apart.
+  await page.locator('.reference-source-block input[type=file]').first().setInputFiles({
+    name: 'qa-reference.png', mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'),
+  });
+  await page.getByRole('button', { name: 'Inpaint Canvas' }).click();
+  await page.getByRole('button', { name: 'Zoom in inpaint image' }).click();
+  await page.getByText('125%', { exact: true }).waitFor();
+  const sharedViewport = page.locator('.inpaint-viewport');
+  assert.equal(await sharedViewport.locator('img').count(), 1);
+  assert.equal(await sharedViewport.locator('canvas').count(), 1);
+  assert.match(await sharedViewport.evaluate((element) => element.style.transform), /scale\\(1\\.25\\)/);
+
   await page.goto(`${base}/settings`, { waitUntil: 'domcontentloaded' });
   await page.getByText('Customize your workspace').waitFor();
   await page.locator('.appearance-controls select').nth(0).selectOption('midnight');
