@@ -255,3 +255,7 @@ See `docs/production/NEXUS_M2_5_CHECKPOINT_2026_11_14.md`. FastAPI capability ro
 ## M2.6 checkpoint — 14 November 2026
 
 See `docs/production/NEXUS_M2_6_CHECKPOINT_2026_11_14.md`: a bounded read-only static Comfy API workflow input/link/choice report is now available in Studio, with explicit unverified states and no automatic installs. Inpaint emits a native-source-resolution opaque binary PNG mask up to a 16 MP / 8192px memory cap and otherwise falls back to editor resolution with an explicit warning. Real Windows/Comfy/GPU behavior is not certified by Chromium mock acceptance; keep /ui, default localhost and PR draft.
+
+## M2.7 checkpoint — 14 November 2026
+
+See `docs/production/NEXUS_M2_7_CHECKPOINT_2026_11_14.md`. The Node Workflow view includes an explicit manual scalar-only patched-template preflight; its preview is performed on copies without Comfy prompt submission or file uploads and does **not** reproduce full dispatch staging. Node schema ABI signature and model menu visibility are exposed as bounded privacy-preserving diagnostics, not claims of physical weight availability. `/ui` and localhost default remain unchanged; PR #17 stays draft.
