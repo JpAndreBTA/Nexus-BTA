@@ -271,3 +271,5 @@ See `docs/production/NEXUS_M2_8B_CHECKPOINT_2026_11_14.md`. Model-source presenc
 M2.8B-2 further separated pure preset-aware logical asset selection into `resolve_generation_assets_from_catalog`; the live resolver remains a filesystem catalog adapter and preserves existing selection rules. The planner must use a future bounded catalog producer rather than calling the current unbounded `scan_models` scan.
 
 M2.8B-3 added an opt-in bounded, symlink-safe model catalog for future dry-run planning (64 roots, 20,000 entries, depth 8, 4,096 model files). It reports incomplete scans explicitly and does not alter the live `scan_models` generation path. Next: combine this catalog with the pure asset selector to build an advisory logical asset plan.
+
+M2.8B-4 adds `plan_generation_assets`, an immutable, read-only logical asset plan composed from the bounded catalog and pure preset selector. Its `generation_ready` field is always false: this is not yet a full dispatch plan. Next is M2.8C, combining the shared graph builder and logical asset plan behind typed effect boundaries.
