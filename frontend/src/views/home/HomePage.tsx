@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Brush, Clapperboard, FilePlus2, Grid3X3, Images, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Play, Redo2, Save, Send, SlidersHorizontal, Undo2, Wand2, Workflow, X } from 'lucide-react';
 
 import { nexusApi } from '../../api/nexusClient';
-import type { CatalogAsset, GenerateRequest, GenerationJob, Ideogram4PromptJsonRequest } from '../../api/types';
+import type { CatalogAsset, GenerateRequest, GenerationJob, Ideogram4PromptJsonRequest, WorkflowPreflightPayload } from '../../api/types';
 import { useWorkflowCapabilitiesQuery, useWorkflowInputReportQuery, useGalleryQuery, useModelCatalogQuery, useWorkflowAnalysisQuery, useWorkflowsQuery } from '../../api/queries';
 import { useLorasQuery } from '../../api/queries';
 import type { WorkflowGraphLink, WorkflowGraphNode, WorkflowSummary } from '../../api/types';
@@ -79,6 +79,15 @@ export function HomePage() {
   const workflowClassCount = studioWorkflow?.class_types?.length ?? 0;
   const nodeCapabilities = useWorkflowCapabilitiesQuery(studioWorkflow?.id || '', viewMode === 'workflow');
   const workflowInputReport = useWorkflowInputReportQuery(studioWorkflow?.id || '', viewMode === 'workflow');
+  // Manual-only: request scalar values; uploaded images, masks, LoRAs and
+  // installed files are never sent to the dry-run endpoint.
+  const workflowPreflight = useMutation({ mutationFn: (payload: WorkflowPreflightPayload) => nexusApi.workflowPreflight(payload) });
+  const preflightKey = JSON.stringify([
+    studioWorkflow?.id, generation.preset, generation.modelName, generation.prompt,
+    generation.negativePrompt, generation.width, generation.height, generation.steps,
+    generation.cfg, generation.sampler, generation.scheduler, generation.seed, generation.denoise,
+  ]);
+  useEffect(() => { workflowPreflight.reset(); }, [preflightKey, workflowPreflight.reset]);
   const models = useMemo(() => {
     const filtered = allModels.filter((model) => primaryModelMatchesPreset(model, generation.preset));
     if (['ideogram4', 'ideogram', 'krea2', 'krea-2'].includes(generation.preset.toLowerCase())) return filtered;
@@ -1149,6 +1158,37 @@ export function HomePage() {
                 loading={workflowInputReport.isLoading}
                 error={workflowInputReport.isError}
               />}
+              {studioWorkflow && (
+                <section className="studio-node-capabilities">
+                  <button type="button" className="mini-button"
+                    aria-label="Run workflow preflight without generation"
+                    disabled={workflowPreflight.isPending || generation.prompt.length > 4096 || generation.negativePrompt.length > 4096}
+                    onClick={() => workflowPreflight.mutate({
+                      workflow_id: studioWorkflow.id,
+                      preset: generation.preset,
+                      model_name: generation.modelName,
+                      prompt: generation.prompt,
+                      negative_prompt: generation.negativePrompt,
+                      width: generation.width,
+                      height: generation.height,
+                      steps: generation.steps,
+                      cfg: generation.cfg,
+                      sampler: generation.sampler,
+                      scheduler: generation.scheduler,
+                      seed: generation.seed,
+                      denoise: generation.denoise,
+                    })}>
+                    {workflowPreflight.isPending ? 'Inspecting…' : 'Preflight selected settings'}
+                  </button>
+                  <small>Advisory only: cloned template + selected scalar settings. No Comfy submission, uploads, LoRAs or generated assets.</small>
+                  {generation.prompt.length > 4096 && <small>Preflight supports prompts up to 4096 characters.</small>}
+                  {workflowPreflight.isError && <small>Preflight unavailable; this workflow cannot be simulated safely.</small>}
+                  {workflowPreflight.data && <>
+                    <strong>{workflowPreflight.data.changed_nodes} changed nodes · {workflowPreflight.data.changed_input_fields} changed inputs</strong>
+                    <StudioWorkflowInputStatus report={workflowPreflight.data} loading={false} error={false} />
+                  </>}
+                </section>
+              )}
               {workflowAnalysis.isLoading ? (
                 <div className="preview-empty"><LoaderCircle className="spin" size={30} /><p>Loading backend workflow graph</p></div>
               ) : studioWorkflowGraph.nodes.length ? (

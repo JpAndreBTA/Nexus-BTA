@@ -405,3 +405,25 @@ export interface WorkflowInputReport {
   truncated_findings: boolean;
   note: string;
 }
+
+/** Explicit scalar-only preview request; never uploads references or models. */
+export interface WorkflowPreflightPayload {
+  workflow_id: string;
+  preset: string;
+  model_name: string;
+  prompt: string;
+  negative_prompt: string;
+  width: number;
+  height: number;
+  steps: number;
+  cfg: number;
+  sampler: string;
+  scheduler: string;
+  seed: number;
+  denoise: number;
+}
+export interface WorkflowPreflightReport extends WorkflowInputReport {
+  preview: true;
+  changed_nodes: number;
+  changed_input_fields: number;
+}
