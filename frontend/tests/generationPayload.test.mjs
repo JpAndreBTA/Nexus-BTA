@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildGenerationPayload } from '../src/views/home/generationPayload.ts';
+import { buildGenerationPayload, validateGeneration } from '../src/views/home/generationPayload.ts';
 
 function baseGeneration(overrides = {}) {
   return {
@@ -113,4 +113,40 @@ test('Music3 chooses runtime profile from fresh dependency status', () => {
   assert.equal(high.runtime.precision, 'fp16');
   assert.equal(low.music.lyrics, 'original lyrics');
   assert.equal(high.music.format, 'flac');
+});
+
+test('generation validation preserves existing blocking rules and accepts valid dispatch', () => {
+  function error(gen, settings = {}) {
+    const context = ctx(gen, settings);
+    return validateGeneration({
+      generation: context.generation,
+      payload: buildGenerationPayload(context),
+      ideogram4Mode: context.ideogram4Mode,
+      videoMode: context.videoMode,
+      controlNetCompatible: context.controlNetCompatible,
+      controlNetModelCount: settings.controlNetModelCount ?? 1,
+    });
+  }
+  assert.equal(error({ prompt: '   ' }), 'Prompt is required.');
+  assert.equal(error({ modelPath: '', modelName: '' }), 'Select a model before generating.');
+  assert.equal(error({ activity: 'img2img' }), 'Load a reference image for img2img.');
+  assert.equal(error({
+    activity: 'img2img', img2imgMode: 'inpaint',
+    referenceImage: 'data:image/png;base64,REF',
+  }), 'Paint an inpaint mask before generating.');
+  assert.match(error({
+    preset: 'Ideogram4', activity: 'img2img', img2imgMode: 'inpaint',
+    referenceImage: 'data:image/png;base64,REF', inpaintMaskImage: 'data:image/png;base64,MASK',
+  }), /does not support true mask inpaint yet/);
+  assert.equal(error({
+    controlNetEnabled: true, controlNetImage: null,
+  }, { controlNetModelCount: 1 }), 'Load a ControlNet image or use the img2img reference.');
+  assert.equal(error({
+    controlNetEnabled: true, controlNetImage: 'data:image/png;base64,CN',
+  }, { controlNetModelCount: 0 }), 'No compatible ControlNet model was detected for this preset and type.');
+  assert.equal(error({}), null);
+  assert.equal(error({
+    activity: 'img2img', img2imgMode: 'inpaint',
+    referenceImage: 'data:image/png;base64,REF', inpaintMaskImage: 'data:image/png;base64,MASK',
+  }), null);
 });

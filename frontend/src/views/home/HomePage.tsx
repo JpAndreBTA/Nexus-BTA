@@ -11,7 +11,7 @@ import { useGenerationStore, type GenerationState, type PromptRegion } from '../
 import { useLoraStore } from '../../stores/loraStore';
 import { useUiStore } from '../../stores/uiStore';
 import { InpaintCanvas } from './InpaintCanvas';
-import { buildGenerationPayload } from './generationPayload';
+import { buildGenerationPayload, validateGeneration } from './generationPayload';
 import { IdeogramRegionEditor } from './IdeogramRegionEditor';
 import { StudioWorkflowGraph, buildStudioWorkflowGraph, music3WorkflowGraph, preferredWorkflow } from './StudioWorkflowGraph';
 import { alignVideoFrames, assetSelectOptions, controlNetCompatiblePreset, controlNetModelOptions, modelOptions, primaryModelMatchesPreset, videoPreset } from './StudioCatalog';
@@ -242,7 +242,7 @@ export function HomePage() {
   );
 
   const startMutation = useMutation({
-    mutationFn: () => nexusApi.startGeneration(payload),
+    mutationFn: (request: GenerateRequest) => nexusApi.startGeneration(request),
     onSuccess: (job) => {
       setJobId(job.job_id);
       setLocalError('');
@@ -369,41 +369,17 @@ export function HomePage() {
   }
 
   async function generate() {
-    if (!generation.prompt.trim()) {
-      setLocalError('Prompt is required.');
-      return;
-    }
-    if (!generation.modelPath && !generation.modelName && !ideogram4Mode) {
-      setLocalError('Select a model before generating.');
-      return;
-    }
-    if (generation.activity === 'img2img' && !generation.referenceImage) {
-      setLocalError('Load a reference image for img2img.');
-      return;
-    }
-    if (generation.activity === 'img2img' && generation.img2imgMode === 'inpaint' && !generation.inpaintMaskImage) {
-      setLocalError('Paint an inpaint mask before generating.');
-      return;
-    }
-    if (ideogram4Mode && generation.activity === 'img2img' && generation.img2imgMode === 'inpaint') {
-      setLocalError('Ideogram 4 local route does not support true mask inpaint yet. Use Linear Viewer ADD boxes as regional guides.');
-      return;
-    }
-    if (videoMode && generation.activity === 'img2img' && !generation.referenceImage) {
-      setLocalError(`${generation.preset} img2video requires a reference image.`);
-      return;
-    }
-    if (controlNetCompatible && generation.controlNetEnabled && !payload.controlnet?.image) {
-      setLocalError('Load a ControlNet image or use the img2img reference.');
-      return;
-    }
-    if (controlNetCompatible && generation.controlNetEnabled && !controlNetModels.length && generation.controlNetModel === 'Automatic') {
-      setLocalError('No compatible ControlNet model was detected for this preset and type.');
+    const error = validateGeneration({
+      generation, ideogram4Mode, videoMode, controlNetCompatible,
+      payload, controlNetModelCount: controlNetModels.length,
+    });
+    if (error) {
+      setLocalError(error);
       return;
     }
     setLocalError('');
     setJobId('');
-    await startMutation.mutateAsync();
+    await startMutation.mutateAsync(payload);
   }
 
   return (

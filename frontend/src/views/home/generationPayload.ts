@@ -168,3 +168,45 @@ export function buildGenerationPayload({
   };
   return payload;
 }
+
+/**
+ * Block invalid dispatch before it reaches FastAPI. No alerts, state writes,
+ * or asynchronous effects are allowed in this validation layer.
+ */
+export interface GenerationValidationContext {
+  generation: GenerationState;
+  payload: GenerateRequest;
+  ideogram4Mode: boolean;
+  videoMode: boolean;
+  controlNetCompatible: boolean;
+  controlNetModelCount: number;
+}
+
+export function validateGeneration({
+  generation, payload, ideogram4Mode, videoMode, controlNetCompatible,
+  controlNetModelCount,
+}: GenerationValidationContext): string | null {
+  if (!generation.prompt.trim()) return 'Prompt is required.';
+  if (!generation.modelPath && !generation.modelName && !ideogram4Mode) {
+    return 'Select a model before generating.';
+  }
+  if (generation.activity === 'img2img' && !generation.referenceImage) {
+    return 'Load a reference image for img2img.';
+  }
+  if (generation.activity === 'img2img' && generation.img2imgMode === 'inpaint' && !generation.inpaintMaskImage) {
+    return 'Paint an inpaint mask before generating.';
+  }
+  if (ideogram4Mode && generation.activity === 'img2img' && generation.img2imgMode === 'inpaint') {
+    return 'Ideogram 4 local route does not support true mask inpaint yet. Use Linear Viewer ADD boxes as regional guides.';
+  }
+  if (videoMode && generation.activity === 'img2img' && !generation.referenceImage) {
+    return `${generation.preset} img2video requires a reference image.`;
+  }
+  if (controlNetCompatible && generation.controlNetEnabled && !payload.controlnet?.image) {
+    return 'Load a ControlNet image or use the img2img reference.';
+  }
+  if (controlNetCompatible && generation.controlNetEnabled && controlNetModelCount === 0 && generation.controlNetModel === 'Automatic') {
+    return 'No compatible ControlNet model was detected for this preset and type.';
+  }
+  return null;
+}
