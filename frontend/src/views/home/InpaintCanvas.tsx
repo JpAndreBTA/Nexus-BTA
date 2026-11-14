@@ -282,7 +282,7 @@ export function InpaintCanvas({ image, brushSize, onBrushSizeChange, onMaskChang
           className={tool === 'pan' ? 'inpaint-pan-canvas' : ''}
           aria-label="Inpaint mask canvas"
           onPointerDown={(event) => {
-            if (activePointerIdRef.current !== null || (event.pointerType === 'mouse' && event.button !== 0)) return;
+            if (activePointerIdRef.current !== null || activePanPointerIdRef.current !== null || (event.pointerType === 'mouse' && event.button !== 0)) return;
             if (tool === 'pan') {
               activePanPointerIdRef.current = event.pointerId;
               panStartRef.current = { pointerX: event.clientX, pointerY: event.clientY, ...pan };

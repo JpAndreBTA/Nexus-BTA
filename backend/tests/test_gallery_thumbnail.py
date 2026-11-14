@@ -59,3 +59,22 @@ class GalleryThumbnailTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     safe_image_path(root, "link.png")
             self.assertFalse(index.cache_root.is_relative_to(root))
+
+    def test_thumbnail_cache_never_trusts_symlinked_cache_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "outputs"
+            root.mkdir()
+            Image.new("RGB", (96, 80), (12, 100, 200)).save(root / "cover.png")
+            cache = GalleryThumbnailCache(root, cache_root=Path(tmp) / "cache")
+            rendered = cache.thumbnail("cover.png", size=96)
+            rendered.unlink()
+            secret = Path(tmp) / "secret.webp"
+            secret.write_bytes(b"PRIVATE DATA")
+            try:
+                rendered.symlink_to(secret)
+            except OSError:
+                self.skipTest("Symlink privilege unavailable")
+            replacement = cache.thumbnail("cover.png", size=96)
+            self.assertEqual(replacement, rendered)
+            self.assertFalse(replacement.is_symlink())
+            self.assertNotEqual(replacement.read_bytes(), b"PRIVATE DATA")

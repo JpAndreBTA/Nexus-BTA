@@ -11,6 +11,7 @@ import io
 import os
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -51,9 +52,10 @@ class GalleryThumbnailCache:
         if self.cache_root.is_relative_to(self.root):
             raise ValueError("Thumbnail cache must be outside public outputs.")
         self._lock = threading.RLock()
+        self._last_trim = 0.0
 
     def _trim_cache(self) -> None:
-        """Best-effort LRU-by-mtime eviction, at most 384 MiB on disk."""
+        """Best-effort oldest-first eviction, with a soft 384 MiB disk budget."""
         files: list[tuple[float, int, Path]] = []
         total = 0
         for path in self.cache_root.glob("*.webp"):
@@ -86,7 +88,7 @@ class GalleryThumbnailCache:
         ).hexdigest()
         output = self.cache_root / f"{key}.webp"
         with self._lock:
-            if output.is_file():
+            if output.is_file() and not output.is_symlink():
                 return output
             self.cache_root.mkdir(parents=True, exist_ok=True)
             # Limit source pixels *before* converting/decoding full RGB/RGBA surfaces.
@@ -112,5 +114,10 @@ class GalleryThumbnailCache:
             finally:
                 if os.path.exists(scratch):
                     os.unlink(scratch)
-            self._trim_cache()
+            # Avoid rescanning the entire cache directory after each card in a
+            # busy gallery. A short delay amortizes eviction for batch previews.
+            now = time.monotonic()
+            if now - self._last_trim >= 30:
+                self._trim_cache()
+                self._last_trim = now
             return output
