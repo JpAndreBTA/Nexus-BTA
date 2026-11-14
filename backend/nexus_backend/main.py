@@ -36,6 +36,7 @@ from .asset_resolver import (
 )
 from .civitai import download_civitai_asset, resolve_civitai_asset, search_civitai_models
 from .comfy_client import ComfyClient, extract_outputs
+from .comfy_capabilities import make_comfy_capability_router, read_comfy_registry_readonly
 from .config import DEFAULT_MODEL_SOURCES, coerce_path_list, load_settings, save_settings, sync_startup_model_path
 from .dependencies import (
     custom_node_dependency_status,
@@ -5807,6 +5808,7 @@ ensure_templates_file()
 ensure_model_tree(settings)
 workflow_registry = WorkflowRegistry(settings)
 comfy = ComfyClient(settings)
+app.include_router(make_comfy_capability_router(lambda: read_comfy_registry_readonly(comfy)))
 
 
 def _canonical_vram_policy(value: str | None) -> str:
