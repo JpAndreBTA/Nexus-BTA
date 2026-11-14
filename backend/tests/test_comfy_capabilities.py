@@ -138,6 +138,59 @@ class ComfyCapabilityTests(unittest.TestCase):
             self.assertFalse(report["runtime_checked"])
             self.assertFalse(report["ready"])
 
+    def test_preflight_endpoint_does_not_start_or_submit_comfy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "qa.json"
+            path.write_text(json.dumps({
+                "1": {
+                    "class_type": "CheckpointLoaderSimple",
+                    "inputs": {"ckpt_name": "old.safetensors"},
+                },
+                "2": {
+                    "class_type": "KSampler",
+                    "inputs": {"model": ["1", 0], "seed": 1, "steps": 4, "cfg": 4},
+                },
+            }), encoding="utf8")
+            calls = []
+            async def read_registry():
+                calls.append("object_info_only")
+                return {
+                    "CheckpointLoaderSimple": {
+                        "input": {"required": {"ckpt_name": [["selected.safetensors"]]}},
+                        "output": ["MODEL"],
+                    },
+                    "KSampler": {"input": {"required": {
+                        "model": ["MODEL"], "seed": ["INT"], "steps": ["INT"], "cfg": ["FLOAT"],
+                    }}},
+                }
+            app = FastAPI()
+            app.include_router(make_comfy_capability_router(
+                read_registry,
+                workflow_path_lookup=lambda name: path if name == "qa" else None,
+            ))
+            original = path.read_bytes()
+            with TestClient(app) as client:
+                response = client.post("/api/comfy/workflow-preflight", json={
+                    "workflow_id": "qa", "preset": "SD", "model_name": "selected.safetensors",
+                    "steps": 22, "seed": 42,
+                })
+                self.assertEqual(response.status_code, 200, response.text)
+                preview = response.json()
+                self.assertTrue(preview["preview"])
+                self.assertFalse(preview["ready"])
+                self.assertGreaterEqual(preview["changed_input_fields"], 1)
+                self.assertNotIn("selected.safetensors", response.text)
+                self.assertNotIn("old.safetensors", response.text)
+                self.assertEqual(calls, ["object_info_only"])
+                self.assertEqual(path.read_bytes(), original)
+                self.assertEqual(client.post("/api/comfy/workflow-preflight", json={
+                    "workflow_id": "missing",
+                }).status_code, 404)
+                self.assertEqual(client.post("/api/comfy/workflow-preflight", json={
+                    "workflow_id": "../unsafe",
+                }).status_code, 422)
+                self.assertEqual(calls, ["object_info_only"])
+
     def test_readonly_http_backend_and_offline_behavior(self):
         calls = []
         async def registry_reader():

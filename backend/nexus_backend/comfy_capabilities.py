@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .workflow_input_audit import inspect_workflow_inputs, read_workflow_bounded
+from .workflow_preflight import WorkflowPreflightRequest, inspect_patched_preview
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -194,5 +195,32 @@ def make_comfy_capability_router(
                 report["status"] = "unavailable"
             return report
         return inspect_workflow_inputs(workflow_id, data, registry)
+
+    @router.post("/api/comfy/workflow-preflight")
+    async def workflow_preflight(
+        payload: WorkflowPreflightRequest,
+    ) -> dict[str, Any]:
+        """Manual static-only preview, not a Comfy prompt submission."""
+        if workflow_path_lookup is None:
+            raise HTTPException(status_code=404, detail="Workflow inspection unavailable.")
+        try:
+            path = await asyncio.to_thread(workflow_path_lookup, payload.workflow_id)
+            if path is None:
+                raise HTTPException(status_code=404, detail="Workflow not found.")
+            original = await asyncio.to_thread(read_workflow_bounded, path)
+        except HTTPException:
+            raise
+        except (OSError, ValueError, json.JSONDecodeError, UnicodeError):
+            raise HTTPException(status_code=422, detail="Workflow cannot be inspected safely.")
+        try:
+            registry = await registry_reader()
+        except (httpx.HTTPError, ValueError, json.JSONDecodeError, OSError):
+            registry = None
+        try:
+            return await asyncio.to_thread(inspect_patched_preview, payload, original, registry)
+        except (ValueError, KeyError, TypeError, RuntimeError, OverflowError):
+            # Never leak prompts, absolute model paths, input file names or
+            # underlying runtime details into a public-looking error.
+            raise HTTPException(status_code=422, detail="This workflow cannot be previewed safely.")
 
     return router
